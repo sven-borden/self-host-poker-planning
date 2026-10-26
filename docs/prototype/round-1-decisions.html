@@ -1,0 +1,1434 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
+<title>Poker Planning Round 1</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: a decision ledger anchored by a live table prototype; one 1120px column, sticky progress bar on top */
+:root {
+  --bg: #F3F5F4; --surface: #FFFFFF; --surface-2: #E9EFED; --ink: #13201E; --ink-2: #4B5B58; --line: #D3DCD9;
+  --spruce: #1E5A53; --spruce-2: #2C6B63; --spruce-ink: #0D3631; --on-spruce: #F1F7F5;
+  --brass: #A87A22; --brass-soft: #F4E8CC; --brass-ink: #5C410C;
+  --table: #22524C; --table-rim: #173E39; --table-ink: #E7F1EE;
+  --card-face: #FFFDF7; --card-ink: #13201E; --card-edge: #D9D3C3;
+  --good: #2F7A4D; --warn: #A86A12; --bad: #B0453B;
+  --shadow: 0 1px 2px rgba(16,32,30,.06), 0 4px 16px rgba(16,32,30,.07);
+  --f-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0D1413; --surface: #141D1C; --surface-2: #1A2624; --ink: #E4EDEA; --ink-2: #9BAEAA; --line: #283836;
+    --spruce: #4A9B8F; --spruce-2: #5BAA9E; --spruce-ink: #CFEAE4; --on-spruce: #0B1A18;
+    --brass: #D8A744; --brass-soft: #3A2E14; --brass-ink: #F1D9A0;
+    --table: #183B37; --table-rim: #0F2926; --table-ink: #DCEBE7;
+    --card-face: #F5F1E6; --card-ink: #13201E; --card-edge: #CFC8B5;
+    --good: #5BBE83; --warn: #E0A040; --bad: #E37468;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0D1413; --surface: #141D1C; --surface-2: #1A2624; --ink: #E4EDEA; --ink-2: #9BAEAA; --line: #283836;
+  --spruce: #4A9B8F; --spruce-2: #5BAA9E; --spruce-ink: #CFEAE4; --on-spruce: #0B1A18;
+  --brass: #D8A744; --brass-soft: #3A2E14; --brass-ink: #F1D9A0;
+  --table: #183B37; --table-rim: #0F2926; --table-ink: #DCEBE7;
+  --card-face: #F5F1E6; --card-ink: #13201E; --card-edge: #CFC8B5;
+  --good: #5BBE83; --warn: #E0A040; --bad: #E37468;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.35);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 15px/1.6 var(--f-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 64px;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+.wrap { max-width: 1120px; margin: 0 auto; }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; line-height: 1.12; }
+h1 { font-size: clamp(30px, 4.4vw, 48px); font-weight: 820; font-stretch: 116%; letter-spacing: -0.01em; }
+h2 { font-size: clamp(22px, 2.6vw, 28px); font-weight: 760; font-stretch: 110%; }
+h3 { font-size: 19px; font-weight: 720; font-stretch: 104%; }
+p { margin: 0; }
+a { color: var(--spruce); }
+code, .mono { font-family: var(--f-mono); font-size: 0.88em; }
+.label { font-family: var(--f-mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); }
+:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; border-radius: 4px; }
+
+/* Top bar */
+.topbar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  margin-inline: calc(-1 * max(16px, env(safe-area-inset-left, 0px)));
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
+}
+.topbar .wrap { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--f-display); font-weight: 760; font-stretch: 110%; font-size: 16px; min-width: 0; }
+.brand-mark { width: 22px; height: 30px; border-radius: 4px; background: var(--spruce); position: relative; box-shadow: 3px -2px 0 -0.5px var(--brass); transform: rotate(-6deg); flex: none; }
+.brand-mark::after { content: "8"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--on-spruce); font-size: 13px; font-weight: 800; transform: rotate(6deg); }
+.brand small { font-family: var(--f-mono); font-weight: 400; font-size: 11.5px; color: var(--ink-2); letter-spacing: .06em; text-transform: uppercase; font-stretch: 100%; }
+.topbar .spacer { flex: 1; }
+.progress { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+.progress-track { width: 120px; height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.progress-fill { height: 100%; width: 0; background: var(--spruce); transition: width .4s ease; }
+.btn {
+  appearance: none; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  font: 600 13.5px/1 var(--f-body); padding: 9px 14px; border-radius: 8px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; text-decoration: none;
+}
+.btn:hover { border-color: var(--spruce); }
+.btn.primary { background: var(--spruce); border-color: var(--spruce); color: var(--on-spruce); }
+.btn.primary:hover { background: var(--spruce-2); }
+.btn.ghost { background: transparent; }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }
+.sync { font-size: 12px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+.sync::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-2); }
+.sync[data-state="live"]::before { background: var(--good); }
+.sync[data-state="local"]::before { background: var(--warn); }
+
+/* Hero */
+.hero { padding-block: 40px 28px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.hero .eyebrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.pill { font-family: var(--f-mono); font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--ink-2); background: var(--surface); }
+.pill.brass { background: var(--brass-soft); border-color: transparent; color: var(--brass-ink); }
+.lede { font-size: 17px; max-width: 68ch; color: var(--ink-2); }
+.lede strong { color: var(--ink); font-weight: 600; }
+.howto { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; max-width: 920px; }
+.howto div { border-top: 2px solid var(--spruce); padding-top: 8px; font-size: 14px; color: var(--ink-2); }
+.howto b { display: block; color: var(--ink); font-weight: 600; }
+.stack { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 13px; padding: 4px 10px; border-radius: 6px; background: var(--surface-2); color: var(--ink); white-space: nowrap; }
+.chip.dashed { background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--ink-2); }
+
+/* Sections */
+section.block { padding-block: 36px 8px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+/* Grid children must be allowed to shrink, or a wide diagram or the card hand widens the page */
+.group, .decision, figure, .proto, .validate, .waves, .questions { grid-template-columns: minmax(0, 1fr); }
+.sec-head { display: grid; gap: 6px; max-width: 72ch; }
+.sec-head p { color: var(--ink-2); }
+.group-nav { display: flex; gap: 8px; flex-wrap: wrap; }
+.group-nav a { text-decoration: none; font-size: 13px; color: var(--ink); padding: 5px 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); }
+.group-nav a span { color: var(--ink-2); font-family: var(--f-mono); font-size: 11.5px; margin-left: 4px; }
+</style>
+<style>
+/* Decisions */
+.group { display: grid; gap: 14px; padding-top: 10px; }
+.group > .label { padding-top: 14px; border-top: 1px solid var(--line); }
+.decision { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; display: grid; gap: 12px; box-shadow: var(--shadow); }
+.decision header { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.did { font-family: var(--f-mono); font-size: 12px; color: var(--ink-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+.decision h3 { flex: 1 1 auto; min-width: 0; }
+.state { font-family: var(--f-mono); font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; padding: 3px 8px; border-radius: 99px; background: var(--surface-2); color: var(--ink-2); }
+.state[data-s="rec"] { background: var(--brass-soft); color: var(--brass-ink); }
+.state[data-s="changed"] { background: color-mix(in srgb, var(--spruce) 18%, transparent); color: var(--spruce); }
+.q { font-size: 16px; font-weight: 500; max-width: 75ch; }
+.ctx { color: var(--ink-2); font-size: 14.5px; max-width: 80ch; }
+.options { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.opt { position: relative; display: grid; gap: 8px; align-content: start; padding: 14px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: var(--bg); transition: border-color .15s, background .15s; min-width: 0; }
+.opt:hover { border-color: var(--spruce-2); }
+.opt input { position: absolute; opacity: 0; pointer-events: none; }
+.opt:has(input:checked) { border-color: var(--spruce); background: color-mix(in srgb, var(--spruce) 8%, var(--surface)); box-shadow: inset 0 0 0 1px var(--spruce); }
+.opt:has(input:focus-visible) { outline: 2px solid var(--brass); outline-offset: 2px; }
+.opt-head { display: flex; align-items: flex-start; gap: 8px; }
+.opt-key { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--line); display: grid; place-items: center; font: 600 11.5px/1 var(--f-mono); color: var(--ink-2); margin-top: 1px; }
+.opt:has(input:checked) .opt-key { background: var(--spruce); border-color: var(--spruce); color: var(--on-spruce); }
+.opt-title { font-weight: 600; line-height: 1.35; flex: 1; min-width: 0; }
+.rec { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; background: var(--brass-soft); color: var(--brass-ink); padding: 2px 6px; border-radius: 4px; white-space: nowrap; flex: none; }
+.opt p { font-size: 14px; color: var(--ink-2); }
+.tradeoffs { display: grid; gap: 3px; font-size: 13.5px; margin: 0; padding: 0; list-style: none; }
+.tradeoffs li { display: grid; grid-template-columns: 14px 1fr; gap: 6px; color: var(--ink-2); }
+.tradeoffs li::before { font-family: var(--f-mono); font-weight: 600; }
+.tradeoffs li.pro::before { content: "+"; color: var(--good); }
+.tradeoffs li.con::before { content: "\2212"; color: var(--bad); }
+.why { font-size: 14px; border-left: 3px solid var(--brass); padding: 4px 0 4px 12px; color: var(--ink-2); max-width: 85ch; }
+.why b { color: var(--ink); }
+.note-row { display: grid; gap: 4px; }
+.note-row label { font-size: 12.5px; color: var(--ink-2); }
+textarea, input[type="text"], select {
+  width: 100%; font: 14px/1.5 var(--f-body); color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+}
+textarea { min-height: 40px; resize: vertical; }
+textarea:focus, input[type="text"]:focus, select:focus { outline: 2px solid var(--brass); outline-offset: 0; border-color: transparent; }
+.readonly-note { font-size: 13px; color: var(--warn); }
+
+/* Room defaults (settings mock) */
+.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }
+.setting { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); align-content: start; }
+.setting .s-label { font-weight: 600; font-size: 14px; }
+.setting .s-help { font-size: 12.5px; color: var(--ink-2); }
+.switch { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; }
+.switch input { appearance: none; width: 36px; height: 20px; border-radius: 99px; background: var(--line); position: relative; cursor: pointer; flex: none; transition: background .2s; margin: 0; }
+.switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .2s; }
+.switch input:checked { background: var(--spruce); }
+.switch input:checked::after { transform: translateX(16px); }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.seg label { position: relative; font-size: 13px; padding: 5px 9px; border-radius: 6px; border: 1px solid var(--line); cursor: pointer; background: var(--surface); }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label:has(input:checked) { background: var(--spruce); border-color: var(--spruce); color: var(--on-spruce); }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--brass); outline-offset: 1px; }
+
+/* Figures */
+figure { margin: 0; display: grid; gap: 10px; }
+.fig-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 16px; }
+.fig-scroll svg { display: block; width: 100%; min-width: 720px; height: auto; color: var(--ink); }
+figcaption { font-size: 13.5px; color: var(--ink-2); max-width: 85ch; }
+.targets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.target { padding: 14px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); display: grid; gap: 6px; align-content: start; font-size: 14px; color: var(--ink-2); }
+.target h4 { margin: 0; font: 700 15px/1.3 var(--f-display); font-stretch: 106%; color: var(--ink); }
+.target ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; }
+
+/* Waves */
+.waves { display: grid; gap: 10px; }
+.wave { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 16px; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.wave-id { font: 800 26px/1 var(--f-display); font-stretch: 120%; color: var(--spruce); }
+.wave-id small { display: block; font: 400 11px/1.4 var(--f-mono); color: var(--ink-2); letter-spacing: .05em; margin-top: 6px; text-transform: uppercase; font-stretch: 100%; }
+.wave-body { display: grid; gap: 8px; min-width: 0; }
+.wave-body .goal { font-weight: 600; }
+.wave-body ul { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 14px; columns: 2 300px; column-gap: 28px; }
+.wave-body li { break-inside: avoid; margin-bottom: 3px; }
+.wave-foot { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.wave-foot input[type="text"] { flex: 1 1 260px; min-width: 0; width: auto; }
+
+/* Questions */
+.questions { display: grid; gap: 10px; }
+.question { display: grid; gap: 6px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.question b { font-weight: 600; }
+.question .why-q { font-size: 13.5px; color: var(--ink-2); }
+
+/* Validate band */
+.validate { margin-top: 28px; padding: 22px; border-radius: var(--radius); background: var(--surface); color: var(--ink); border: 2px solid var(--spruce); display: grid; gap: 12px; }
+.validate .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.validate .status-line { font-size: 14px; color: var(--ink-2); }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) translateY(20px); opacity: 0; background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 14px; transition: opacity .2s, transform .2s; z-index: 50; pointer-events: none; max-width: calc(100% - 32px); }
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.copy-fallback { width: 100%; min-height: 160px; font-family: var(--f-mono); font-size: 12.5px; }
+
+@media (max-width: 760px) {
+  .howto, .targets { grid-template-columns: minmax(0, 1fr); }
+  .wave { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .topbar .brand small { display: none; }
+}
+@media (max-width: 640px) {
+  .progress, #copy-btn { display: none; }
+  .seat.voted .avatar::after { width: 13px; height: 13px; font-size: 8px; right: -6px; bottom: -5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
+}
+</style>
+<style>
+/* Live table prototype */
+:root { --av1: #2F6F8F; --av2: #8A4F9E; --av3: #B0553A; --av4: #3D7F4F; --av5: #9A6A1E; --av6: #5A5FB0; --av7: #A0476B; --av8: #1E5A53; }
+.proto { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; display: grid; }
+.proto-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.room-name { font: 700 15px/1.2 var(--f-display); font-stretch: 106%; }
+.subject { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; padding: 4px 8px; border-radius: 6px; background: var(--surface-2); min-width: 0; max-width: 100%; }
+.subject .key { font-family: var(--f-mono); font-size: 12px; color: var(--spruce); font-weight: 500; white-space: nowrap; }
+.subject .ttl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.proto-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.mini { font: 600 12.5px/1 var(--f-body); padding: 7px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; white-space: nowrap; }
+.mini:hover { border-color: var(--spruce); }
+.mini[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.mini.primary { background: var(--spruce); color: var(--on-spruce); border-color: var(--spruce); }
+.mini[disabled] { opacity: .45; cursor: not-allowed; }
+
+.stage { position: relative; aspect-ratio: 16 / 9; min-height: 340px; max-height: 620px; width: 100%; background: radial-gradient(ellipse at 50% 45%, var(--surface-2), var(--bg) 72%); }
+.table { position: absolute; left: 17%; right: 17%; top: 18%; bottom: 18%; border-radius: 999px; background: radial-gradient(ellipse at 50% 30%, color-mix(in srgb, var(--table) 82%, #ffffff 18%), var(--table) 62%); box-shadow: inset 0 0 0 7px var(--table-rim), inset 0 0 0 8px color-mix(in srgb, var(--table-ink) 16%, transparent), 0 18px 40px rgba(0,0,0,.2); }
+.seat { position: absolute; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 3px; width: 90px; text-align: center; }
+.avatar { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font: 700 14px/1 var(--f-display); color: #ffffff; box-shadow: 0 0 0 2px var(--surface); position: relative; transition: transform .25s; }
+.seat.voted .avatar::after { content: "\2713"; position: absolute; right: -4px; bottom: -4px; width: 17px; height: 17px; border-radius: 50%; background: var(--good); color: #ffffff; font-size: 10px; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--surface); animation: pop .3s cubic-bezier(.2,.9,.3,1.4); }
+@keyframes pop { from { transform: scale(0); } }
+.seat .name { font-size: 12px; font-weight: 600; color: var(--ink); max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seat .role { font: 500 9.5px/1 var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--brass-ink); background: var(--brass-soft); padding: 2px 4px; border-radius: 3px; }
+.seat.away { opacity: .5; }
+
+.slot { position: absolute; width: 36px; height: 50px; transform: translate(-50%, -50%); perspective: 600px; border-radius: 5px; }
+.slot.empty { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--table-ink) 30%, transparent); }
+.pcard { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .65s cubic-bezier(.2,.8,.2,1); }
+.slot.revealed .pcard { transform: rotateY(180deg); }
+.face { position: absolute; inset: 0; border-radius: 5px; backface-visibility: hidden; -webkit-backface-visibility: hidden; display: grid; place-items: center; }
+.face.back { background: repeating-linear-gradient(45deg, var(--brass) 0 3px, color-mix(in srgb, var(--brass) 62%, #0D3631) 3px 6px); border: 2px solid var(--card-face); box-shadow: 0 2px 6px rgba(0,0,0,.32); }
+.face.front { background: var(--card-face); color: var(--card-ink); transform: rotateY(180deg); font: 800 17px/1 var(--f-display); font-stretch: 110%; border: 1px solid var(--card-edge); box-shadow: 0 2px 6px rgba(0,0,0,.28); }
+.slot.drop .pcard { animation: drop .38s cubic-bezier(.2,.8,.2,1); }
+@keyframes drop { from { transform: translateY(-16px) scale(1.18); opacity: 0; } }
+.slot.collected { transition: opacity .35s, transform .35s; opacity: 0; transform: translate(-50%, -50%) scale(.6); }
+
+.center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(30%, 300px); display: grid; justify-items: center; gap: 6px; color: var(--table-ink); text-align: center; pointer-events: none; }
+.center .big { font: 800 36px/1 var(--f-display); font-stretch: 116%; font-variant-numeric: tabular-nums; }
+.center .small { font-size: 12.5px; opacity: .88; }
+.ring { width: 58px; height: 58px; }
+.ring circle { fill: none; stroke-width: 5; }
+.ring .track { stroke: color-mix(in srgb, var(--table-ink) 22%, transparent); }
+.ring .bar { stroke: var(--brass); stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset 1s linear; }
+.ring text { fill: var(--table-ink); font: 700 16px var(--f-display); }
+.consensus { font: 700 11px/1 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--card-ink); background: var(--brass); padding: 5px 9px; border-radius: 99px; animation: pop .4s cubic-bezier(.2,.9,.3,1.4); }
+
+.results { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--line); background: var(--bg); min-height: 68px; }
+.stats { display: flex; gap: 18px; flex-wrap: wrap; }
+.stat b { display: block; font: 800 22px/1 var(--f-display); font-stretch: 112%; font-variant-numeric: tabular-nums; }
+.stat span { font: 500 10.5px/1.3 var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+.dist { display: flex; gap: 6px; align-items: flex-end; min-height: 52px; min-width: 0; overflow-x: auto; }
+.dcol { display: grid; justify-items: center; align-content: end; gap: 3px; flex: none; width: 32px; }
+.dcol i { display: block; width: 18px; border-radius: 3px 3px 0 0; background: var(--brass); transform-origin: bottom; animation: rise .5s cubic-bezier(.2,.8,.2,1) both; }
+.dcol span { font: 600 11px/1 var(--f-mono); color: var(--ink); }
+.dcol em { font: 400 10px/1 var(--f-mono); color: var(--ink-2); font-style: normal; }
+@keyframes rise { from { transform: scaleY(0); } }
+.spread { display: flex; gap: 5px; flex-wrap: wrap; }
+.mcard { width: 28px; height: 39px; border-radius: 4px; background: var(--card-face); color: var(--card-ink); display: grid; place-items: center; font: 800 13px/1 var(--f-display); border: 1px solid var(--card-edge); animation: deal .45s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes deal { from { transform: translateY(12px) rotate(-10deg); opacity: 0; } }
+.results .hint { color: var(--ink-2); font-size: 13.5px; }
+
+.hand { display: flex; gap: 8px; justify-content: center; padding: 16px 12px 18px; border-top: 1px solid var(--line); overflow-x: auto; background: var(--surface); }
+.hcard { flex: none; width: 50px; height: 72px; border-radius: 7px; border: 1px solid var(--card-edge); background: var(--card-face); color: var(--card-ink); font: 800 20px/1 var(--f-display); font-stretch: 110%; cursor: pointer; position: relative; transition: transform .2s cubic-bezier(.2,.8,.2,1), box-shadow .2s; box-shadow: 0 1px 2px rgba(0,0,0,.14); display: grid; place-items: center; padding: 0; }
+.hcard::before, .hcard::after { content: attr(data-v); position: absolute; font: 700 9px/1 var(--f-display); }
+.hcard::before { top: 5px; left: 5px; }
+.hcard::after { bottom: 5px; right: 5px; transform: rotate(180deg); }
+.hcard:hover:not([disabled]) { transform: translateY(-6px); box-shadow: 0 8px 16px rgba(0,0,0,.18); }
+.hcard[aria-pressed="true"] { transform: translateY(-12px); box-shadow: 0 0 0 2px var(--brass), 0 10px 18px rgba(0,0,0,.2); }
+.hcard[disabled] { opacity: .4; cursor: default; }
+.fly { position: fixed; z-index: 40; border-radius: 7px; background: var(--card-face); color: var(--card-ink); border: 1px solid var(--card-edge); display: grid; place-items: center; font: 800 20px/1 var(--f-display); box-shadow: 0 14px 26px rgba(0,0,0,.3); pointer-events: none; margin: 0; }
+.proto-foot { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-2); }
+
+@media (max-width: 640px) {
+  .stage { aspect-ratio: 4 / 5.4; min-height: 0; }
+  .table { left: 24%; right: 24%; top: 14%; bottom: 14%; }
+  .seat { width: 66px; }
+  .avatar { width: 32px; height: 32px; font-size: 12px; }
+  .seat .name { font-size: 11px; max-width: 66px; }
+  .seat .role { display: none; }
+  .slot { width: 27px; height: 38px; }
+  .face.front { font-size: 13px; }
+  .center { width: 30%; }
+  .center .big { font-size: 24px; }
+  .center .small { font-size: 11px; }
+  .ring { width: 46px; height: 46px; }
+  .results { grid-template-columns: 1fr; gap: 10px; }
+  .hand { justify-content: flex-start; }
+  .hcard { width: 44px; height: 64px; font-size: 18px; }
+}
+</style>
+<style>
+.dg text { fill: currentColor; font: 12.5px var(--f-body); }
+.dg .t-lane { font: 700 15px var(--f-display); font-stretch: 108%; }
+.dg .t-sub { fill: var(--ink-2); font-size: 11.5px; }
+.dg .t-arrow { fill: var(--ink-2); font: 11px var(--f-mono); }
+.dg .t-state { font: 700 14px var(--f-display); font-stretch: 106%; }
+.dg .box { fill: var(--bg); stroke: var(--ink-2); stroke-width: 1.2; }
+.dg .box-app { fill: color-mix(in srgb, var(--spruce) 13%, var(--surface)); stroke: var(--spruce); stroke-width: 1.6; }
+.dg .box-hl { fill: var(--brass-soft); stroke: var(--brass); stroke-width: 1.6; }
+.dg .box-dash { fill: none; stroke: var(--ink-2); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.dg .ln { stroke: var(--ink-2); stroke-width: 1.3; fill: none; }
+.dg .ln-hl { stroke: var(--brass); stroke-width: 1.6; fill: none; }
+.dg .lane-bg { fill: var(--surface-2); }
+.dg .arrowhead { fill: var(--ink-2); }
+.dg .arrowhead-hl { fill: var(--brass); }
+</style>
+
+<div class="topbar">
+  <div class="wrap">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>Poker Planning</span><small>Round 1 &middot; design &amp; architecture</small></div>
+    <span class="spacer"></span>
+    <span class="progress" id="tally">15 decisions</span>
+    <span class="sync" id="sync" data-state="idle">Connecting&hellip;</span>
+    <button class="btn" id="copy-btn" type="button">Copy summary</button>
+    <a class="btn primary" href="#validate">Validate</a>
+  </div>
+</div>
+
+<header class="hero wrap">
+  <div class="eyebrow"><span class="pill brass">Round 1 &middot; for validation</span><span class="pill">26 Oct 2026</span><span class="pill">15 decisions &middot; 8 waves</span></div>
+  <h1>Decide the table, the stack and the waves</h1>
+  <p class="lede">Self-hosted planning poker for rooms of up to 16 people, usable <strong>without an account</strong>, deployable on <strong>Coolify, Azure or Vercel</strong>. Every decision below has my recommendation selected. Change what you disagree with, leave notes, answer the open questions and press <strong>Validate</strong>. Your choices save to this page; I read them back before writing the docs and the GitHub issues.</p>
+  <div class="howto">
+    <div><b>Try the table</b>Vote, reveal and switch modes in the prototype. It previews the visual direction.</div>
+    <div><b>Review 15 decisions</b>Keep the recommendation or pick another option. Notes are welcome anywhere.</div>
+    <div><b>Validate the waves</b>Approve or comment the 8 waves, answer the open questions, then press Validate.</div>
+  </div>
+  <div class="stack" aria-label="Proposed stack">
+    <span class="chip">React 19 + Vite</span><span class="chip">Tailwind CSS v4</span><span class="chip">shadcn/ui</span><span class="chip">Motion</span><span class="chip">Hono on Node 24</span><span class="chip">Socket.IO</span><span class="chip">Drizzle ORM</span><span class="chip">PostgreSQL</span><span class="chip dashed">Redis when scaled out</span><span class="chip">Better Auth</span><span class="chip">pnpm monorepo</span><span class="chip">Vitest + Playwright</span><span class="chip">Docker image</span>
+  </div>
+</header>
+
+<main class="wrap">
+<section class="block" id="table" aria-labelledby="table-h">
+  <div class="sec-head">
+    <span class="label">Prototype &middot; previews D5</span>
+    <h2 id="table-h">The room is a table</h2>
+    <p>Pick a card from your hand. Seven simulated teammates vote on their own. Reveal as the product owner, or start the timer and let it reveal for you. Switch to anonymous mode or T-shirt sizes to see how the results change.</p>
+  </div>
+  <div class="proto" id="proto">
+    <div class="proto-bar">
+      <span class="room-name">Sprint 42 refinement</span>
+      <span class="subject"><span class="key">PAY-482</span><span class="ttl">Split invoices by currency</span></span>
+      <div class="proto-controls">
+        <button class="mini" id="p-deck" type="button">Deck: Fibonacci</button>
+        <button class="mini" id="p-anon" type="button" aria-pressed="false">Anonymous</button>
+        <button class="mini" id="p-timer" type="button">Timer 20 s</button>
+        <button class="mini primary" id="p-reveal" type="button">Reveal</button>
+        <button class="mini" id="p-next" type="button">Next round</button>
+      </div>
+    </div>
+    <div class="stage" id="stage" role="img" aria-label="Estimation table with eight seats">
+      <div class="table"></div>
+      <div class="center" id="center" aria-live="polite"></div>
+    </div>
+    <div class="results" id="results" aria-live="polite"></div>
+    <div class="hand" id="hand" role="group" aria-label="Your cards"></div>
+    <div class="proto-foot"><span>Teammates are simulated in this page</span><span>In the product, a vote never leaves the server before reveal</span><span>Reduced-motion settings are respected</span></div>
+  </div>
+</section>
+
+<section class="block" id="deploy" aria-labelledby="deploy-h">
+  <div class="sec-head">
+    <span class="label">The crux &middot; D1 to D4</span>
+    <h2 id="deploy-h">One build, three places to run it</h2>
+    <p>Coolify and Azure keep a container alive for days. Vercel runs functions: since 22 June 2026 they accept WebSockets (public beta), but each socket stays pinned to the instance that took it and is closed after 300 s on Hobby or 800 s on Pro. Two people in the same room can land on different instances. The design keeps room state in Postgres and makes the event bus swappable, so the same code runs in all three places.</p>
+  </div>
+  <figure>
+    <div class="fig-scroll">
+      <svg class="dg" viewBox="0 0 960 400" role="img" aria-label="Three deployment lanes share the same app. Coolify runs one container with Postgres and an in-process bus. Azure Container Apps runs one or more replicas with Postgres Flexible Server and Redis once there is more than one replica. Vercel serves the SPA from its CDN and runs the server as a function with Neon Postgres and Upstash Redis.">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="ahh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead-hl" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <rect class="lane-bg" x="0" y="0" width="300" height="400" rx="10"/>
+        <rect class="lane-bg" x="330" y="0" width="300" height="400" rx="10"/>
+        <rect class="lane-bg" x="660" y="0" width="300" height="400" rx="10"/>
+        <text class="t-lane" x="150" y="28" text-anchor="middle">Coolify / any Docker host</text>
+        <text class="t-lane" x="480" y="28" text-anchor="middle">Azure Container Apps</text>
+        <text class="t-lane" x="810" y="28" text-anchor="middle">Vercel</text>
+
+        <rect class="box" x="40" y="46" width="220" height="34" rx="6"/><text x="150" y="68" text-anchor="middle">Browser</text>
+        <rect class="box" x="370" y="46" width="220" height="34" rx="6"/><text x="480" y="68" text-anchor="middle">Browser</text>
+        <rect class="box" x="700" y="46" width="220" height="34" rx="6"/><text x="810" y="68" text-anchor="middle">Browser</text>
+
+        <line class="ln" x1="150" y1="80" x2="150" y2="112" marker-end="url(#ah)"/><text class="t-arrow" x="158" y="100">HTTPS + WSS</text>
+        <line class="ln" x1="480" y1="80" x2="480" y2="112" marker-end="url(#ah)"/><text class="t-arrow" x="488" y="100">HTTPS + WSS</text>
+        <line class="ln" x1="810" y1="80" x2="810" y2="112" marker-end="url(#ah)"/><text class="t-arrow" x="818" y="100">HTTPS + WSS</text>
+
+        <rect class="box" x="40" y="114" width="220" height="34" rx="6"/><text x="150" y="136" text-anchor="middle">Traefik proxy (Coolify)</text>
+        <rect class="box" x="370" y="114" width="220" height="34" rx="6"/><text x="480" y="136" text-anchor="middle">Container Apps ingress</text>
+        <rect class="box" x="700" y="114" width="220" height="34" rx="6"/><text x="810" y="136" text-anchor="middle">Edge &middot; SPA served from CDN</text>
+
+        <line class="ln" x1="150" y1="148" x2="150" y2="180" marker-end="url(#ah)"/>
+        <line class="ln" x1="480" y1="148" x2="480" y2="180" marker-end="url(#ah)"/>
+        <line class="ln" x1="810" y1="148" x2="810" y2="180" marker-end="url(#ah)"/><text class="t-arrow" x="818" y="168">/api + /socket</text>
+
+        <rect class="box-app" x="30" y="182" width="240" height="58" rx="8"/><text x="150" y="206" text-anchor="middle">app container &times; 1</text><text class="t-sub" x="150" y="226" text-anchor="middle">SPA + API + Socket.IO</text>
+        <rect class="box-app" x="360" y="182" width="240" height="58" rx="8"/><text x="480" y="206" text-anchor="middle">app container &times; 1..n</text><text class="t-sub" x="480" y="226" text-anchor="middle">same image as Coolify</text>
+        <rect class="box-app" x="690" y="182" width="240" height="58" rx="8"/><text x="810" y="206" text-anchor="middle">Function on Fluid compute</text><text class="t-sub" x="810" y="226" text-anchor="middle">socket pinned, closes at 300&ndash;800 s</text>
+
+        <line class="ln" x1="95" y1="240" x2="95" y2="292" marker-end="url(#ah)"/><text class="t-arrow" x="101" y="262">state</text><text class="t-arrow" x="101" y="276">+ version</text>
+        <line class="ln" x1="205" y1="240" x2="205" y2="292" marker-end="url(#ah)"/><text class="t-arrow" x="211" y="270">events</text>
+        <line class="ln" x1="425" y1="240" x2="425" y2="292" marker-end="url(#ah)"/><text class="t-arrow" x="431" y="262">state</text><text class="t-arrow" x="431" y="276">+ version</text>
+        <line class="ln-hl" x1="535" y1="240" x2="535" y2="292" marker-end="url(#ahh)"/><text class="t-arrow" x="541" y="270">fan-out</text>
+        <line class="ln" x1="755" y1="240" x2="755" y2="292" marker-end="url(#ah)"/><text class="t-arrow" x="761" y="262">state</text><text class="t-arrow" x="761" y="276">+ version</text>
+        <line class="ln-hl" x1="865" y1="240" x2="865" y2="292" marker-end="url(#ahh)"/><text class="t-arrow" x="871" y="270">fan-out</text>
+
+        <rect class="box" x="30" y="294" width="130" height="40" rx="6"/><text x="95" y="319" text-anchor="middle">PostgreSQL</text>
+        <rect class="box-dash" x="170" y="294" width="100" height="40" rx="6"/><text x="220" y="313" text-anchor="middle">bus</text><text class="t-sub" x="220" y="327" text-anchor="middle">in-process</text>
+        <rect class="box" x="360" y="294" width="130" height="40" rx="6"/><text x="425" y="313" text-anchor="middle">PostgreSQL</text><text class="t-sub" x="425" y="327" text-anchor="middle">Flexible Server</text>
+        <rect class="box-hl" x="500" y="294" width="100" height="40" rx="6"/><text x="550" y="313" text-anchor="middle">Redis</text><text class="t-sub" x="550" y="327" text-anchor="middle">only if n &gt; 1</text>
+        <rect class="box" x="690" y="294" width="130" height="40" rx="6"/><text x="755" y="313" text-anchor="middle">Neon Postgres</text><text class="t-sub" x="755" y="327" text-anchor="middle">Marketplace</text>
+        <rect class="box-hl" x="830" y="294" width="100" height="40" rx="6"/><text x="880" y="313" text-anchor="middle">Upstash Redis</text><text class="t-sub" x="880" y="327" text-anchor="middle">required</text>
+
+        <text class="t-sub" x="150" y="372" text-anchor="middle">docker compose up, or a Coolify stack</text>
+        <text class="t-sub" x="480" y="372" text-anchor="middle">azd up (Bicep templates)</text>
+        <text class="t-sub" x="810" y="372" text-anchor="middle">Deploy button + Marketplace stores</text>
+      </svg>
+    </div>
+    <figcaption>The only part that changes between lanes is the bus, drawn in brass. One container needs no Redis: events fan out in memory. As soon as two instances can hold sockets for the same room (Azure with more than one replica, or any Vercel deployment), Socket.IO&rsquo;s Redis adapter relays events between them. Room state lives in Postgres with a version number, so a command that lands on any instance applies cleanly.</figcaption>
+  </figure>
+  <div class="targets">
+    <div class="target"><h4>Coolify</h4><ul><li>One image, one Postgres resource</li><li>Auto-deploy from <code>main</code></li><li>Your own instance first (like Popote)</li></ul></div>
+    <div class="target"><h4>Azure</h4><ul><li>Container Apps, scale 1 by default</li><li>Postgres Flexible Server, Burstable tier</li><li>SQLite avoided: Azure Files locking</li></ul></div>
+    <div class="target"><h4>Vercel</h4><ul><li>Rides the WebSocket beta: proven by a spike in W0</li><li>Hobby plan is non-commercial; companies need Pro</li><li>Clients reconnect at the time limit and resync</li></ul></div>
+  </div>
+</section>
+
+<section class="block" id="round" aria-labelledby="round-h">
+  <div class="sec-head">
+    <span class="label">How a round works &middot; D10 and D11</span>
+    <h2 id="round-h">The server owns the round</h2>
+    <p>Every command goes through one pure function, <code>apply(state, command)</code>, that returns the new state and the events to send. Server, tests and the client&rsquo;s optimistic UI share it. Before reveal, other people only learn <em>that</em> someone voted, never the value.</p>
+  </div>
+  <figure>
+    <div class="fig-scroll">
+      <svg class="dg" viewBox="0 0 960 252" role="img" aria-label="Round state machine. Lobby goes to Voting when the PO starts a round. Voting goes to Revealed when the PO forces it, when the timer deadline passes, or when everyone voted, the last two only if the room allows it. Revealed returns to Voting on next round, which clears votes, and saves the round to History.">
+        <defs>
+          <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <rect class="box" x="10" y="90" width="140" height="56" rx="8"/>
+        <text class="t-state" x="80" y="114" text-anchor="middle">Lobby</text>
+        <text class="t-sub" x="80" y="133" text-anchor="middle">people join</text>
+        <rect class="box-app" x="260" y="90" width="180" height="56" rx="8"/>
+        <text class="t-state" x="350" y="114" text-anchor="middle">Voting</text>
+        <text class="t-sub" x="350" y="133" text-anchor="middle">values stay on the server</text>
+        <rect class="box-app" x="620" y="90" width="180" height="56" rx="8"/>
+        <text class="t-state" x="710" y="114" text-anchor="middle">Revealed</text>
+        <text class="t-sub" x="710" y="133" text-anchor="middle">named or anonymous</text>
+        <rect class="box-dash" x="840" y="90" width="110" height="56" rx="8"/>
+        <text class="t-state" x="895" y="114" text-anchor="middle">History</text>
+        <text class="t-sub" x="895" y="133" text-anchor="middle">final estimate</text>
+
+        <line class="ln" x1="150" y1="118" x2="258" y2="118" marker-end="url(#ah2)"/>
+        <text class="t-arrow" x="205" y="108" text-anchor="middle">PO starts round</text>
+        <line class="ln" x1="440" y1="118" x2="618" y2="118" marker-end="url(#ah2)"/>
+        <text class="t-arrow" x="530" y="80" text-anchor="middle">PO reveals (force)</text>
+        <text class="t-arrow" x="530" y="94" text-anchor="middle">timer deadline*</text>
+        <text class="t-arrow" x="530" y="108" text-anchor="middle">everyone voted*</text>
+        <line class="ln" x1="800" y1="118" x2="838" y2="118" marker-end="url(#ah2)"/>
+        <text class="t-arrow" x="820" y="136" text-anchor="middle">saved</text>
+        <path class="ln" d="M 700 90 C 700 30, 350 30, 350 88" marker-end="url(#ah2)"/>
+        <text class="t-arrow" x="525" y="36" text-anchor="middle">next round: votes cleared</text>
+        <path class="ln" d="M 325 146 C 325 196, 375 196, 375 148" marker-end="url(#ah2)"/>
+        <text class="t-arrow" x="350" y="214" text-anchor="middle">vote, change, join, leave</text>
+        <path class="ln" d="M 685 146 C 685 196, 735 196, 735 148" marker-end="url(#ah2)"/>
+        <text class="t-arrow" x="710" y="214" text-anchor="middle">edit vote*, pick final</text>
+        <text class="t-sub" x="10" y="244">* only when the room settings allow it</text>
+      </svg>
+    </div>
+    <figcaption>Timers are deadlines, not server sleeps: the round stores <code>deadlineAt</code>, every client counts down locally, and the first command after the deadline (or a client&rsquo;s &ldquo;time is up&rdquo; ping) triggers the reveal. That works the same on a long-lived container and on a Vercel function that may have restarted.</figcaption>
+  </figure>
+</section>
+
+<section class="block" id="decisions" aria-labelledby="dec-h">
+  <div class="sec-head">
+    <span class="label">Become ADR-001 to ADR-015 once validated</span>
+    <h2 id="dec-h">Fifteen decisions</h2>
+    <p>Grouped by layer. The brass badge marks my recommendation; it is selected by default. A decision you change shows as <em>changed</em>.</p>
+  </div>
+  <nav class="group-nav" id="group-nav" aria-label="Decision groups"></nav>
+  <div id="decision-groups"></div>
+</section>
+
+<section class="block" id="waves" aria-labelledby="waves-h">
+  <div class="sec-head">
+    <span class="label">Preview &middot; issues come after validation</span>
+    <h2 id="waves-h">Eight waves</h2>
+    <p>Each wave becomes a GitHub milestone, built one issue at a time like Popote. Accounts, Jira/ADO import and branding stay late, as <code>input.md</code> asks. Issue counts are estimates.</p>
+  </div>
+  <div class="waves" id="wave-list"></div>
+</section>
+
+<section class="block" id="questions" aria-labelledby="q-h">
+  <div class="sec-head">
+    <span class="label">Your input</span>
+    <h2 id="q-h">Open questions</h2>
+    <p>Short answers are enough. A blank answer means &ldquo;use the default in brackets&rdquo;.</p>
+  </div>
+  <div class="questions" id="question-list"></div>
+</section>
+
+<section class="validate" id="validate" aria-labelledby="val-h">
+  <h2 id="val-h">Validate round 1</h2>
+  <p class="status-line" id="val-status">Not validated yet.</p>
+  <div class="note-row"><label for="val-note">Anything else before I write the docs and the issues?</label><textarea id="val-note" rows="3"></textarea></div>
+  <div class="row">
+    <button class="btn primary" id="val-ok" type="button">Validate with my choices</button>
+    <button class="btn" id="val-changes" type="button">Ask for another round</button>
+    <button class="btn ghost" id="copy-btn-2" type="button">Copy summary</button>
+  </div>
+  <textarea class="copy-fallback" id="copy-fallback" hidden readonly aria-label="Summary text to copy"></textarea>
+  <p class="status-line">After validation I write the product brief, architecture, design brief and ADRs into the repo, create the labels and one milestone per wave, then open the issues.</p>
+</section>
+</main>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const GROUPS = [
+  { id: "platform", name: "Platform" },
+  { id: "experience", name: "Experience" },
+  { id: "product", name: "Product rules" },
+  { id: "project", name: "Project" }
+];
+
+const DECISIONS = [
+  {
+    id: "d1", group: "platform", title: "Where it runs",
+    q: "Which hosts are first-class, and how does one codebase reach all three?",
+    ctx: "input.md asks for Vercel, Coolify or Azure, quickly. Containers keep sockets for days. Vercel functions accept WebSockets since June 2026 (public beta), but pin each socket to one instance and close it after 300 s on Hobby or 800 s on Pro (1,800 s in beta).",
+    rec: "a",
+    why: "A keeps the simple path simple (one container) and turns Vercel into an adapter instead of an architecture. A spike in W0 proves the Vercel path before anything depends on it.",
+    options: [
+      { k: "a", t: "One container image, Vercel through adapters", d: "The default install is one container plus Postgres (Coolify, Azure, any Docker host). Setting REDIS_URL moves the event bus to Redis, which unlocks Vercel and multi-replica Azure. Deploy kits for all three.",
+        pro: ["No third-party service on Coolify or a VM", "Vercel and scale-out reuse one code path", "One image to test and ship"],
+        con: ["The Vercel path rides a beta feature", "The Redis adapter needs its own CI job", "On Vercel, clients reconnect every 5 to 30 minutes"] },
+      { k: "b", t: "Containers only", d: "Coolify, Azure and any Docker host. Vercel is dropped.",
+        pro: ["Simplest runtime: one process, in-memory bus", "No Redis anywhere"],
+        con: ["Drops a target named in input.md"] },
+      { k: "c", t: "Serverless first", d: "Design around Vercel Functions, with managed Postgres and Redis everywhere. Containers run the same way.",
+        pro: ["Vercel is the native path"],
+        con: ["Every self-host needs three services", "A beta feature sits at the core of every install"] },
+      { k: "d", t: "Split hosting", d: "Static frontend on Vercel or Azure Static Web Apps, backend container somewhere else.",
+        pro: ["Each half on its best host"],
+        con: ["Two deployables, cross-site cookies and CORS", "No one-click install anywhere"] }
+    ]
+  },
+  {
+    id: "d2", group: "platform", title: "Backend approach",
+    q: "Do we write the backend in TypeScript, or build on PocketBase or a backend-as-a-service?",
+    ctx: "input.md suggests PocketBase for live updates. The hard parts of planning poker are hidden votes, reveal rules, timers and the PO’s powers, and all of them need logic on the server.",
+    rec: "a",
+    why: "A room behaves more like a small multiplayer game than a CRUD app. A server we own keeps those rules in one tested place and runs on every target. PocketBase remains a good fit for simpler apps.",
+    options: [
+      { k: "a", t: "Custom TypeScript server", d: "Hono for HTTP, Socket.IO for realtime, Drizzle for Postgres, Better Auth for identity. The room logic is a pure state machine shared with the tests.",
+        pro: ["Vote secrecy and reveal rules enforced in one place", "One language from database to animation", "Runs on every target in D1"],
+        con: ["We wire auth and the realtime protocol ourselves", "More code than a BaaS on day one"] },
+      { k: "b", t: "PocketBase", d: "A Go binary with SQLite, realtime subscriptions over SSE, built-in Google and Microsoft OAuth and an admin UI.",
+        pro: ["Tiny, one-click on Coolify", "Auth and admin UI included"],
+        con: ["Still pre-1.0 (v0.39 in 2026), with breaking upgrades", "Hidden votes, timers and PO powers turn into API rules plus JS hooks without npm", "SQLite on Azure Files locks; Vercel can host only the frontend"] },
+      { k: "c", t: "Backend-as-a-service", d: "Convex or Supabase: realtime, auth and database managed for us.",
+        pro: ["Fastest start on Vercel", "Presence and scheduled functions built in"],
+        con: ["Platform lock-in", "Self-hosted Supabase is about ten containers, and Azure has no managed offer", "Secrecy rules spread across RLS policies or functions"] }
+    ]
+  },
+  {
+    id: "d3", group: "platform", title: "Realtime transport",
+    q: "How do browsers and the server exchange room events?",
+    ctx: "Corporate proxies sometimes break WebSockets. Vercel accepts Socket.IO only with its websocket transport.",
+    rec: "a",
+    why: "Socket.IO covers the two risks that matter here, corporate proxies and multi-instance fan-out, without custom plumbing. Every message is validated with zod and carries the room version; a gap or a reconnect triggers a full snapshot.",
+    options: [
+      { k: "a", t: "Socket.IO", d: "Typed events, rooms, acknowledgements, automatic reconnect, HTTP long-polling fallback on containers and an official Redis adapter for fan-out.",
+        pro: ["Survives proxies that block WebSockets (container installs)", "Rooms and fan-out already solved", "Typed events on both ends"],
+        con: ["Own wire protocol, about 15 KB on the client", "No polling fallback on Vercel"] },
+      { k: "b", t: "Plain WebSocket (ws)", d: "The standard protocol, with our own rooms, reconnect and acknowledgements.",
+        pro: ["Smallest client", "Standard protocol"],
+        con: ["We rebuild rooms, reconnect, acks and fan-out", "No fallback when a proxy blocks WebSockets"] },
+      { k: "c", t: "Server-Sent Events + POST", d: "Events stream down over SSE; commands go up as HTTP requests.",
+        pro: ["Proxy friendly, plain HTTP"],
+        con: ["Two channels to keep consistent", "Fan-out still needs a bus, with the same Vercel limits"] }
+    ]
+  },
+  {
+    id: "d4", group: "platform", title: "Data and live state",
+    q: "Which database, and where does the state of a live round live?",
+    ctx: "Rooms are small, at most 16 people, but a round must survive a redeploy and work when two instances serve the same room.",
+    rec: "a",
+    why: "Keeping the live round in Postgres removes a class of bugs: state lost on deploy, instances that disagree. The load is tiny, a few commands per second in a busy room.",
+    options: [
+      { k: "a", t: "Postgres for everything", d: "Drizzle ORM, one dialect. The live round is a JSON column with a version number, and each command is a compare-and-set. Coolify Postgres, Azure Flexible Server, Neon on Vercel.",
+        pro: ["A redeploy loses nothing, not even unrevealed votes", "Any instance can apply any command", "Same stack as Popote"],
+        con: ["A database service even for the smallest install"] },
+      { k: "b", t: "SQLite by default", d: "One file in the container; libSQL or Turso for serverless.",
+        pro: ["Zero setup with docker run"],
+        con: ["Azure Files locking: Container Apps would need Turso or a VM", "Vercel needs Turso", "Several instances need a remote database anyway"] },
+      { k: "c", t: "Both dialects", d: "SQLite by default, Postgres when DATABASE_URL points to one.",
+        pro: ["Best experience for tiny installs"],
+        con: ["Two schemas and two migration sets to keep in step"] }
+    ]
+  },
+  {
+    id: "d5", group: "experience", title: "Visual direction",
+    q: "What does the room look like?",
+    ctx: "input.md: efficient and professional, probably around a table, top-notch card animations, light and dark, works on mobile. The prototype at the top shows option A.",
+    rec: "a",
+    why: "The table is the product’s identity and the stage the animations need. A spruce table, warm card faces and brass card backs keep it calm; paid branding later swaps exactly these tokens.",
+    options: [
+      { k: "a", t: "The boardroom table", d: "A calm table in the middle, seats around it for up to 16 people, your hand of cards along the bottom. Reveal flips the cards in sequence; results sit under the table. On a phone the table turns tall and the hand scrolls.",
+        pro: ["Everyone sees who is still thinking", "Gives the card motion somewhere to travel", "Recognisable without feeling like a casino"],
+        con: ["Sixteen seats are tight on a phone, so seats get compact"] },
+      { k: "b", t: "Focus grid", d: "No table. People are tiles in a grid, with their card inside the tile.",
+        pro: ["Dense and simple on every screen"],
+        con: ["Feels like a dashboard, with less presence", "Card motion has nowhere to travel"] },
+      { k: "c", t: "Poker felt", d: "Green felt, chips and casino cues.",
+        pro: ["Playful and familiar"],
+        con: ["Reads as a game more than a work tool", "Harder to brand for companies later"] }
+    ]
+  },
+  {
+    id: "d6", group: "experience", title: "Frontend framework",
+    q: "Which framework builds the web app?",
+    ctx: "Rooms are private links and fully live, so server-side rendering buys little. Animation quality and realtime state matter most.",
+    rec: "a",
+    why: "A single-page app plus our own server is the least surprising setup for a realtime room, and it deploys the same way on every target.",
+    options: [
+      { k: "a", t: "React 19 + Vite (SPA)", d: "A single-page app served by our server in containers and by the CDN on Vercel. TanStack Router for typed routes, Zustand for the room store.",
+        pro: ["Simplest model for a live app", "Motion for React is the strongest animation library", "You know React from Popote"],
+        con: ["No SSR for the landing page (prerender it if it matters)"] },
+      { k: "b", t: "Next.js", d: "App Router, as in Popote.",
+        pro: ["Familiar", "SSR for the landing page"],
+        con: ["WebSockets need a custom server on containers and an experimental helper on Vercel: two code paths", "Server components add complexity a live room does not use"] },
+      { k: "c", t: "SvelteKit", d: "Svelte 5 with built-in transitions.",
+        pro: ["Small bundles, elegant transitions"],
+        con: ["A new stack for you and the agents", "Smaller ecosystem of accessible components"] }
+    ]
+  },
+  {
+    id: "d7", group: "experience", title: "UI kit and theming",
+    q: "How do we build components and themes?",
+    ctx: "The settings need accessible dialogs, menus and popovers. Light and dark now; paid branding later means swapping colours, logo and card art.",
+    rec: "a",
+    why: "Design tokens are the seam for dark mode today and for the paid branding in W7.",
+    options: [
+      { k: "a", t: "Tailwind CSS v4 + shadcn/ui + tokens", d: "Accessible primitives copied into the repo, every colour a CSS variable. Dark mode and branding are token overrides.",
+        pro: ["Accessible components without lock-in", "Branding becomes a token file", "Fast to build with agents"],
+        con: ["Long class lists", "We own the copied components"] },
+      { k: "b", t: "CSS Modules + Radix primitives", d: "Plain CSS per component, Radix for behaviour.",
+        pro: ["No utility classes"],
+        con: ["Slower to build, more CSS to maintain"] },
+      { k: "c", t: "Component library (Mantine)", d: "A batteries-included kit.",
+        pro: ["Fastest settings forms"],
+        con: ["Generic look; theming fights the table design"] }
+    ]
+  },
+  {
+    id: "d8", group: "experience", title: "Animation",
+    q: "What drives the card animations?",
+    ctx: "input.md asks for top-notch animations. The key moments: dealing the hand, a card travelling from hand to seat, the staggered flip, results rising, a consensus moment.",
+    rec: "a",
+    why: "Motion follows React’s model and makes the hand-to-seat travel a few lines. A motion spec in the design brief keeps it restrained and fast.",
+    options: [
+      { k: "a", t: "Motion for React", d: "Springs, layout animations (a card moving from your hand to your seat), enter and exit, drag gestures on mobile. CSS 3D for the flip itself.",
+        pro: ["Shared-layout travel in a few lines", "Respects reduced motion", "Interruptible springs feel physical"],
+        con: ["Roughly 30 to 40 KB with layout features"] },
+      { k: "b", t: "GSAP", d: "Timeline animation, free since 2025 including its plugins.",
+        pro: ["Precise timelines, Flip plugin"],
+        con: ["Imperative style inside React", "Own licence, not open source"] },
+      { k: "c", t: "CSS + Web Animations API only", d: "No library.",
+        pro: ["Zero dependencies"],
+        con: ["Hand-written FLIP and gestures: more code for the same polish"] }
+    ]
+  }
+];
+</script>
+
+<script>
+DECISIONS.push(
+  {
+    id: "d9", group: "product", title: "Identity and accounts",
+    q: "How do people get an identity, with and without an account?",
+    ctx: "The tool must work without any account from the start, with Google and Microsoft sign-in in a late wave. The PO role and a refreshed tab must recognise the same person.",
+    rec: "a",
+    why: "Treating guests as real rows makes the PO role, reconnects and later account linking one mechanism instead of three.",
+    options: [
+      { k: "a", t: "Guest-first with Better Auth", d: "Every visitor gets an anonymous session (Better Auth’s anonymous plugin): a real user row without personal data. In W5, Google and Microsoft Entra ID sign-in link that guest, so rooms and history carry over.",
+        pro: ["One identity model from day one, no migration later", "Self-hosted, no per-user fees"],
+        con: ["Better Auth moves fast (v1.x)", "Entra linking needs testing: email_verified quirks are reported"] },
+      { k: "b", t: "Guest token now, auth later", d: "A random id in a cookie until accounts arrive.",
+        pro: ["Least work in W1"],
+        con: ["Two identity models and a data migration in W5"] },
+      { k: "c", t: "Hosted identity", d: "Clerk, Auth0 or Entra External ID handles accounts.",
+        pro: ["Little auth code"],
+        con: ["An external dependency and per-user pricing in a self-hosted product", "Awkward for anonymous use"] }
+    ]
+  },
+  {
+    id: "d10", group: "product", title: "Room access and roles",
+    q: "How are rooms protected, and who can do what?",
+    ctx: "A room is a dedicated link, optionally protected by a password, for up to 16 people, with a product owner as admin.",
+    rec: "a",
+    why: "A meets input.md now. C becomes an extra option in W5: restrict a room to an email domain or a Microsoft tenant.",
+    options: [
+      { k: "a", t: "Secret link, optional password, three roles", d: "A 10-character random room code in the URL; an optional password (argon2id hash, rate-limited attempts). Roles: product owner, voter, observer. The PO can hand the role over; if the PO is away for 2 minutes, someone in the room can claim it.",
+        pro: ["Fast to join: open the link, type a name", "Observers let stakeholders watch without voting"],
+        con: ["A password pasted in chat is only as safe as the chat"] },
+      { k: "b", t: "Secret link only", d: "No passwords.",
+        pro: ["Simplest"],
+        con: ["Misses the password requirement"] },
+      { k: "c", t: "Accounts for protected rooms", d: "Replace passwords with sign-in and an allow list, for example your company’s Microsoft tenant.",
+        pro: ["Strong access control"],
+        con: ["No protected room until accounts exist (W5)"] }
+    ]
+  },
+  {
+    id: "d11", group: "product", title: "Room defaults", type: "settings",
+    q: "What does a new room start with? The PO can change every one of these inside the room.",
+    ctx: "These defaults become the settings panel of W2. A round’s subject is optional: leave it empty for “Round 7”, type a title, or paste a link (Jira and Azure DevOps keys are detected).",
+    fields: [
+      { id: "deck", label: "Default deck", help: "Presets, plus a custom deck and a range generator (start, end, step) for increments.", kind: "seg",
+        choices: [["fib", "Fibonacci"], ["mfib", "Modified Fibonacci"], ["tshirt", "T-shirt"], ["pow2", "Powers of 2"], ["seq", "1 to 10"]], def: "fib" },
+      { id: "specials", label: "Special cards", help: "They never count in the average.", kind: "multi",
+        choices: [["q", "? unsure"], ["coffee", "☕ break"], ["inf", "∞ too big"]], def: ["q", "coffee"] },
+      { id: "reveal", label: "Who can reveal", help: "The PO can always force a reveal.", kind: "seg",
+        choices: [["po", "PO only"], ["anyone", "Anyone"]], def: "po" },
+      { id: "names", label: "After reveal, show", help: "Anonymous shows the values and the spread, never who voted what.", kind: "seg",
+        choices: [["named", "Who voted what"], ["anon", "Values only"]], def: "named" },
+      { id: "timer", label: "Timer", help: "The PO starts it per round; the duration is editable.", kind: "seg",
+        choices: [["off", "Off"], ["30", "30 s"], ["60", "60 s"], ["120", "2 min"]], def: "off" },
+      { id: "timerReveal", label: "Reveal when the timer ends", kind: "switch", def: true },
+      { id: "autoAll", label: "Reveal when everyone has voted", kind: "switch", def: false },
+      { id: "editAfter", label: "Allow changing a vote after reveal", help: "Changed votes are marked in the results.", kind: "switch", def: false },
+      { id: "poVotes", label: "The PO votes too", kind: "switch", def: true },
+      { id: "observersCount", label: "Observers count toward the 16", kind: "switch", def: true }
+    ]
+  },
+  {
+    id: "d12", group: "product", title: "Languages",
+    q: "Which languages does the interface ship with?",
+    ctx: "Popote is in French; team tools in Swiss companies often run in English.",
+    rec: "a",
+    why: "With message catalogs from day one, adding French or German is a small issue in any later wave.",
+    options: [
+      { k: "a", t: "English, translation-ready", d: "All copy in message catalogs from W0; English only until someone needs more.",
+        pro: ["Fastest", "A new language is one catalog file"],
+        con: ["French-speaking teams wait"] },
+      { k: "b", t: "English and French", d: "Both at launch, switchable per person.",
+        pro: ["Fits your context"],
+        con: ["Every copy change twice"] },
+      { k: "c", t: "English, French and German", d: "Swiss coverage.",
+        pro: ["Ready for Swiss companies"],
+        con: ["Three catalogs to maintain from day one"] }
+    ]
+  },
+  {
+    id: "d13", group: "project", title: "Repo, tooling and delivery",
+    q: "How is the repository organised, and how do we work in it?",
+    ctx: "The repo is public on GitHub, so Actions minutes are free. Popote’s loop (one issue, one agent, review, merge) works well.",
+    rec: "a",
+    why: "packages/domain is the heart of the product and deserves its own package and test suite. Node 26 becomes LTS on 28 October 2026; we move once our dependencies follow.",
+    options: [
+      { k: "a", t: "pnpm monorepo with Popote’s loop", d: "apps/web, apps/server, packages/domain (state machine, decks, statistics) and packages/protocol (zod schemas). TypeScript strict, Biome, Vitest, Playwright with several browsers per test, Actions on pull requests, a multi-stage Docker image, Node 24 LTS. Issues keyed PP-NNN with epic, priority, type and size labels; one milestone per wave.",
+        pro: ["Server and client share the rules", "End-to-end tests play a real multi-person round", "Same habits as Popote"],
+        con: ["More configuration than one package"] },
+      { k: "b", t: "Single package", d: "One app folder, shared code by convention.",
+        pro: ["Less configuration"],
+        con: ["Easier to leak server code into the client", "Harder to test the domain on its own"] }
+    ]
+  },
+  {
+    id: "d14", group: "project", title: "Data retention and privacy",
+    q: "How long do rooms and their history live?",
+    ctx: "Guests leave no email, but names, votes and ticket titles are still company data. Each install can override the period with ROOM_TTL_DAYS.",
+    rec: "b",
+    why: "90 days fits sprint and quarter rhythms. No analytics or tracking by default; Umami and Sentry are opt-in through environment variables.",
+    options: [
+      { k: "a", t: "30 idle days", d: "Room, history and guest identities are deleted after 30 days without activity.",
+        pro: ["Minimal data"],
+        con: ["A monthly room can disappear"] },
+      { k: "b", t: "90 idle days", d: "The same rule at 90 days. Signed-in owners (W5) keep rooms as long as they like.",
+        pro: ["Covers quarterly planning", "Small database"],
+        con: ["Older history needs an export"] },
+      { k: "c", t: "One year", d: "Long-lived rooms.",
+        pro: ["Rarely surprises anyone"],
+        con: ["More personal data kept"] },
+      { k: "d", t: "Until deleted", d: "The PO deletes rooms by hand.",
+        pro: ["Nothing is ever lost"],
+        con: ["Data piles up on shared instances"] }
+    ]
+  },
+  {
+    id: "d15", group: "project", title: "Paid branding and licence",
+    q: "How will branding be sold when the base product is free?",
+    ctx: "The repo is MIT today. Under MIT, anyone can remove a paywall from the code.",
+    rec: "a",
+    why: "Branding is W7. Choosing a licence model now adds legal and code weight before anyone uses the product.",
+    options: [
+      { k: "a", t: "Decide in W7, build the seams now", d: "Everything stays MIT until then. Branding is built as theme tokens, asset slots and an entitlements check, so either model below plugs in later.",
+        pro: ["No licence work before there is a product", "Keeps both doors open"],
+        con: ["The question comes back in W7"] },
+      { k: "b", t: "Open core", d: "Core under MIT; branding in an ee/ folder under a commercial licence, unlocked by a signed licence key that works offline.",
+        pro: ["Self-hosting companies can pay"],
+        con: ["Two licences in one repo", "Key checks to build and support"] },
+      { k: "c", t: "Paid hosted edition", d: "Self-hosting stays complete and free; branding is sold on an official hosted instance with Stripe.",
+        pro: ["No licence enforcement"],
+        con: ["You run a hosted service with uptime duties"] }
+    ]
+  }
+);
+
+const WAVES = [
+  { id: "w0", n: "W0", name: "Foundations", goal: "A walking skeleton, live on Coolify", issues: "~9", items: [
+    "Monorepo, TypeScript strict, Biome, Vitest, CI on pull requests",
+    "packages/domain: round state machine, decks, statistics, fully unit-tested",
+    "packages/protocol: zod commands and events with a room version",
+    "Server: Hono, Socket.IO, Drizzle and Postgres, /api/health, structured logs",
+    "Web: Vite, React, Tailwind, shadcn/ui, Motion, tokens for light and dark",
+    "Docker image and compose file; Coolify deploys from main",
+    "Spike: Vercel WebSocket beta with Neon and Upstash, go or no-go",
+    "Design brief: table layout for 1 to 16 seats, card system, motion spec" ] },
+  { id: "w1", n: "W1", name: "Play a round", goal: "A team estimates a real story, no account needed", issues: "~10", items: [
+    "Create a room, get the link, become PO",
+    "Join with a name (guest session) and take a seat",
+    "Pick and change a card; ? and coffee cards",
+    "PO reveals: staggered flip and results (average, median, agreement, spread)",
+    "Next round with an optional subject: title or link",
+    "Observers and the 16-person limit",
+    "Presence, reconnect and resync",
+    "Mobile layout: tall table, scrolling hand",
+    "Playwright: a four-person round end to end" ] },
+  { id: "w2", n: "W2", name: "Facilitate", goal: "The PO runs the session their way", issues: "~9", items: [
+    "Settings panel with the D11 defaults",
+    "Deck presets, custom deck, range generator for increments",
+    "Timer with an optional reveal at the deadline",
+    "Named or anonymous reveal, who can reveal, reveal when all voted",
+    "Change a vote after reveal, marked in the results",
+    "Hand over the PO role, claim it when the PO is away, remove someone",
+    "Room password",
+    "Final estimate picked from the results" ] },
+  { id: "w3", n: "W3", name: "Record and run anywhere", goal: "History, exports and the three deploy kits", issues: "~8", items: [
+    "Round history per room and a session summary",
+    "Export CSV and Markdown; copy for Jira or Azure DevOps",
+    "Retention job (D14)",
+    "Redis bus for several instances, Azure azd template, Vercel Deploy button",
+    "Hardening: rate limits, CSP, accessibility audit",
+    "Self-hosting guide in the README" ] },
+  { id: "w4", n: "W4", name: "Delight", goal: "The top-notch feel", issues: "~6", items: [
+    "Animated SVG avatars to choose from",
+    "Motion polish: deal-in, hand-to-seat travel, consensus moment, timer ring",
+    "Sound effects, muted by default",
+    "Background music while waiting, opt-in and royalty-free",
+    "Installable PWA, haptics on Android" ] },
+  { id: "w5", n: "W5", name: "Accounts", goal: "Sign in with Google or Microsoft", issues: "~5", items: [
+    "Google and Microsoft Entra ID sign-in",
+    "Link a guest to an account; rooms and history follow",
+    "My rooms",
+    "Restrict a room to a domain or a tenant",
+    "Delete my account and data" ] },
+  { id: "w6", n: "W6", name: "Backlog import", goal: "Fill the queue from Jira or Azure DevOps", issues: "~5", items: [
+    "Paste keys, links or a copied table into a backlog queue",
+    "Advance to the next item automatically",
+    "Jira Cloud: import with JQL, write story points back",
+    "Azure DevOps: import with a query, write the estimate back",
+    "Encrypted storage for connector tokens" ] },
+  { id: "w7", n: "W7", name: "Branding", goal: "A company’s look, as a paid option", issues: "~4", items: [
+    "Brand settings: name, logo, accent colour, card back",
+    "Custom card faces",
+    "Entitlements and the licence model chosen in D15",
+    "Billing, if the hosted edition is chosen" ] }
+];
+
+const QUESTIONS = [
+  { id: "q1", q: "Your own instance: which domain?", def: "poker.borden.ch on your Coolify" },
+  { id: "q2", q: "Product name: keep “Poker Planning” or give it a name? It appears in the header, the browser tab and later in branding.", def: "Poker Planning" },
+  { id: "q3", q: "Vercel: will company use run on a Pro plan? Hobby is for non-commercial use and closes sockets every 5 minutes.", def: "Pro for company use; Hobby for demos" },
+  { id: "q4", q: "Azure: Container Apps, App Service, or a VM with Docker?", def: "Container Apps" },
+  { id: "q5", q: "Issues: open all of them now, or W0 and W1 in detail and later waves when we reach them?", def: "W0 and W1 in detail now, one epic issue per later wave" },
+  { id: "q6", q: "Who can see a room’s history: everyone in the room, or only the PO?", def: "Everyone in the room" },
+  { id: "q7", q: "Music in W4: ship a few royalty-free loops, or keep only sound effects?", def: "A few CC0 loops, off by default" }
+];
+</script>
+
+<script>
+(function () {
+  const $ = (s, r = document) => r.querySelector(s);
+  const el = (tag, attrs = {}, html) => {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === "class") n.className = v; else if (k === "text") n.textContent = v; else n.setAttribute(k, v);
+    }
+    if (html !== undefined) n.innerHTML = html;
+    return n;
+  };
+  const KEYS = "ABCDEFGH";
+  const LS_KEY = "pp-round1-v1";
+
+  // ---------- state ----------
+  const state = { picks: {}, waves: {}, answers: {}, review: {} };
+  const settingsDecision = DECISIONS.find(d => d.type === "settings");
+  function defaultSettings() {
+    const v = {};
+    for (const f of settingsDecision.fields) v[f.id] = Array.isArray(f.def) ? f.def.slice() : f.def;
+    return v;
+  }
+  function pickOf(d) {
+    const p = state.picks[d.id] || {};
+    if (d.type === "settings") return { values: Object.assign(defaultSettings(), p.values || {}), note: p.note || "" };
+    return { choice: p.choice || d.rec, note: p.note || "" };
+  }
+  function waveOf(w) { const s = state.waves[w.id] || {}; return { ok: s.ok !== false, note: s.note || "" }; }
+  function answerOf(q) { return (state.answers[q.id] || {}).answer || ""; }
+
+  // ---------- persistence ----------
+  let dbRef = null, readOnly = false;
+  const pending = new Map(), inflight = new Map();
+  function lsSave() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {} }
+  function lsLoad() { try { const s = JSON.parse(localStorage.getItem(LS_KEY) || "null"); if (s) Object.assign(state, s); } catch (e) {} }
+  function setSync(mode, text) { const s = $("#sync"); s.dataset.state = mode; s.textContent = text; }
+  function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2600); }
+  function queueWrite(path, data, delay = 650) {
+    lsSave();
+    if (!dbRef || readOnly) return;
+    const p = pending.get(path); if (p) clearTimeout(p.timer);
+    pending.set(path, { data, timer: setTimeout(() => flush(path), delay) });
+    setSync("idle", "Saving…");
+  }
+  function flush(path, retried) {
+    const p = pending.get(path); if (!p) return inflight.get(path) || Promise.resolve();
+    clearTimeout(p.timer); pending.delete(path);
+    const body = Object.assign({}, p.data, { updatedAt: new Date().toISOString() });
+    const prev = inflight.get(path) || Promise.resolve();
+    const next = prev.then(() => dbRef.doc(path).set(body)).then(() => {
+      if (!pending.size) setSync("live", "Synced");
+    }).catch(err => {
+      const code = err && err.code;
+      if (code === "invalid_argument") { setReadOnly(); }
+      else if (code === "quota_exceeded") { toast("This page’s storage is full. Use Copy summary instead."); setSync("local", "Not saved"); }
+      else if (!retried && (code === "unavailable" || !code)) { pending.set(path, { data: p.data, timer: setTimeout(() => flush(path, true), 400 + Math.random() * 800) }); }
+      else { setSync("local", "Not saved"); }
+    });
+    inflight.set(path, next);
+    return next;
+  }
+  function flushAll() { return Promise.all([...pending.keys()].map(k => flush(k))); }
+  function setReadOnly() {
+    readOnly = true;
+    document.querySelectorAll("#decision-groups input, #decision-groups textarea, #wave-list input, #question-list input, #val-note, #val-ok, #val-changes")
+      .forEach(n => { n.disabled = true; });
+    setSync("local", "View only");
+    const note = $("#val-status"); note.textContent = "You can view this page but not change it. Use Copy summary to send feedback.";
+  }
+
+  // ---------- render: decisions ----------
+  function optionHTML(d, o) {
+    const pros = (o.pro || []).map(t => `<li class="pro">${t}</li>`).join("");
+    const cons = (o.con || []).map(t => `<li class="con">${t}</li>`).join("");
+    return `<input type="radio" name="${d.id}" id="${d.id}-${o.k}" value="${o.k}">
+      <div class="opt-head"><span class="opt-key" aria-hidden="true">${o.k.toUpperCase()}</span><span class="opt-title">${o.t}</span>${o.k === d.rec ? '<span class="rec">Recommended</span>' : ""}</div>
+      <p>${o.d}</p><ul class="tradeoffs">${pros}${cons}</ul>`;
+  }
+  function settingsHTML(d) {
+    return `<div class="settings">${d.fields.map(f => {
+      if (f.kind === "switch") return `<div class="setting"><label class="switch" for="${d.id}-${f.id}"><input type="checkbox" id="${d.id}-${f.id}" data-field="${f.id}">${f.label}</label>${f.help ? `<span class="s-help">${f.help}</span>` : ""}</div>`;
+      const type = f.kind === "multi" ? "checkbox" : "radio";
+      const opts = f.choices.map(([v, l]) => `<label for="${d.id}-${f.id}-${v}"><input type="${type}" name="${d.id}-${f.id}" id="${d.id}-${f.id}-${v}" value="${v}" data-field="${f.id}" data-kind="${f.kind}">${l}</label>`).join("");
+      return `<div class="setting"><span class="s-label" id="${d.id}-${f.id}-l">${f.label}</span><div class="seg" role="${type === "radio" ? "radiogroup" : "group"}" aria-labelledby="${d.id}-${f.id}-l">${opts}</div>${f.help ? `<span class="s-help">${f.help}</span>` : ""}</div>`;
+    }).join("")}</div>`;
+  }
+  function renderDecisions() {
+    const host = $("#decision-groups"), nav = $("#group-nav");
+    host.innerHTML = ""; nav.innerHTML = "";
+    for (const g of GROUPS) {
+      const ds = DECISIONS.filter(d => d.group === g.id);
+      const a = el("a", { href: "#g-" + g.id }); a.textContent = g.name; a.appendChild(el("span", { text: ds.length + "" })); nav.appendChild(a);
+      const wrap = el("div", { class: "group", id: "g-" + g.id });
+      wrap.appendChild(el("span", { class: "label", text: g.name }));
+      for (const d of ds) {
+        const num = d.id.slice(1);
+        const art = el("article", { class: "decision", id: d.id, "aria-labelledby": d.id + "-h" });
+        const body = d.type === "settings" ? settingsHTML(d)
+          : `<div class="options" role="radiogroup" aria-labelledby="${d.id}-h">${d.options.map(o => `<label class="opt" for="${d.id}-${o.k}">${optionHTML(d, o)}</label>`).join("")}</div>
+             <p class="why"><b>Why ${d.rec.toUpperCase()}:</b> ${d.why}</p>`;
+        art.innerHTML = `<header><span class="did">D${num}</span><h3 id="${d.id}-h">${d.title}</h3><span class="state" id="${d.id}-state"></span></header>
+          <p class="q">${d.q}</p><p class="ctx">${d.ctx}</p>${body}
+          <div class="note-row"><label for="${d.id}-note">Note on D${num}</label><textarea id="${d.id}-note" rows="1" placeholder="Optional"></textarea></div>`;
+        wrap.appendChild(art);
+      }
+      host.appendChild(wrap);
+    }
+    host.addEventListener("change", onDecisionChange);
+    host.addEventListener("input", e => { if (e.target.matches("textarea")) onNoteInput(e.target); });
+  }
+  function applyDecisionUI(d) {
+    const p = pickOf(d);
+    const note = document.getElementById(d.id + "-note");
+    if (note && document.activeElement !== note && note.value !== p.note) note.value = p.note;
+    const chip = document.getElementById(d.id + "-state");
+    if (d.type === "settings") {
+      for (const f of d.fields) {
+        const v = p.values[f.id];
+        if (f.kind === "switch") { const i = document.getElementById(`${d.id}-${f.id}`); if (i) i.checked = !!v; }
+        else for (const [val] of f.choices) {
+          const i = document.getElementById(`${d.id}-${f.id}-${val}`);
+          if (i) i.checked = f.kind === "multi" ? (v || []).includes(val) : v === val;
+        }
+      }
+      const changed = JSON.stringify(p.values) !== JSON.stringify(defaultSettings());
+      chip.dataset.s = changed ? "changed" : "rec"; chip.textContent = changed ? "Adjusted" : "Defaults";
+    } else {
+      const i = document.getElementById(`${d.id}-${p.choice}`); if (i) i.checked = true;
+      const changed = p.choice !== d.rec;
+      chip.dataset.s = changed ? "changed" : "rec";
+      chip.textContent = changed ? "Changed to " + p.choice.toUpperCase() : "Recommended";
+    }
+  }
+  function onDecisionChange(e) {
+    const t = e.target; if (readOnly) return;
+    const art = t.closest(".decision"); if (!art) return;
+    const d = DECISIONS.find(x => x.id === art.id);
+    if (t.matches("textarea")) return;
+    const cur = pickOf(d);
+    if (d.type === "settings") {
+      const f = d.fields.find(x => x.id === t.dataset.field); if (!f) return;
+      if (f.kind === "switch") cur.values[f.id] = t.checked;
+      else if (f.kind === "multi") cur.values[f.id] = f.choices.map(c => c[0]).filter(v => document.getElementById(`${d.id}-${f.id}-${v}`).checked);
+      else cur.values[f.id] = t.value;
+      state.picks[d.id] = { values: cur.values, note: cur.note };
+    } else {
+      state.picks[d.id] = { choice: t.value, note: cur.note };
+    }
+    applyDecisionUI(d); updateTally();
+    queueWrite("picks/" + d.id, state.picks[d.id]);
+  }
+  function onNoteInput(ta) {
+    if (readOnly) return;
+    const id = ta.id.replace(/-note$/, ""); const d = DECISIONS.find(x => x.id === id); if (!d) return;
+    const cur = pickOf(d);
+    state.picks[id] = d.type === "settings" ? { values: cur.values, note: ta.value } : { choice: cur.choice, note: ta.value };
+    updateTally();
+    queueWrite("picks/" + id, state.picks[id], 900);
+  }
+
+  // ---------- render: waves & questions ----------
+  function renderWaves() {
+    const host = $("#wave-list");
+    host.innerHTML = WAVES.map(w => `<article class="wave" id="${w.id}" aria-labelledby="${w.id}-h">
+      <div class="wave-id">${w.n}<small>${w.issues} issues</small></div>
+      <div class="wave-body"><h3 id="${w.id}-h">${w.name}</h3><p class="goal">${w.goal}</p>
+        <ul>${w.items.map(i => `<li>${i}</li>`).join("")}</ul>
+        <div class="wave-foot"><label class="switch" for="${w.id}-ok"><input type="checkbox" id="${w.id}-ok">Scope OK</label>
+        <input type="text" id="${w.id}-note" placeholder="Move, add or drop something" aria-label="Note on ${w.n}"></div></div></article>`).join("");
+    host.addEventListener("change", e => { if (e.target.matches("input[type=checkbox]")) saveWave(e.target.id.split("-")[0]); });
+    host.addEventListener("input", e => { if (e.target.matches("input[type=text]")) saveWave(e.target.id.split("-")[0], 900); });
+  }
+  function saveWave(id, delay) {
+    if (readOnly) return;
+    state.waves[id] = { ok: document.getElementById(id + "-ok").checked, note: document.getElementById(id + "-note").value };
+    updateTally(); queueWrite("waves/" + id, state.waves[id], delay);
+  }
+  function applyWaveUI(w) {
+    const s = waveOf(w), ok = document.getElementById(w.id + "-ok"), note = document.getElementById(w.id + "-note");
+    ok.checked = s.ok; if (document.activeElement !== note && note.value !== s.note) note.value = s.note;
+  }
+  function renderQuestions() {
+    const host = $("#question-list");
+    host.innerHTML = QUESTIONS.map((q, i) => `<div class="question"><label for="${q.id}-a"><b>Q${i + 1}.</b> ${q.q}</label>
+      <input type="text" id="${q.id}-a" placeholder="[${q.def}]"></div>`).join("");
+    host.addEventListener("input", e => {
+      if (readOnly || !e.target.matches("input")) return;
+      const id = e.target.id.replace(/-a$/, ""); state.answers[id] = { answer: e.target.value };
+      updateTally(); queueWrite("answers/" + id, state.answers[id], 900);
+    });
+  }
+  function applyQuestionUI(q) { const i = document.getElementById(q.id + "-a"); const v = answerOf(q); if (document.activeElement !== i && i.value !== v) i.value = v; }
+
+  function applyAll() {
+    DECISIONS.forEach(applyDecisionUI); WAVES.forEach(applyWaveUI); QUESTIONS.forEach(applyQuestionUI);
+    const r = state.review || {}, vn = $("#val-note");
+    if (document.activeElement !== vn && (r.note || "") !== vn.value) vn.value = r.note || "";
+    const st = $("#val-status");
+    if (r.status === "validated") st.textContent = "Validated on " + new Date(r.at).toLocaleString() + ". I will read your choices from this page.";
+    else if (r.status === "changes") st.textContent = "Another round requested on " + new Date(r.at).toLocaleString() + ". Notes above tell me what to change.";
+    else if (!readOnly) st.textContent = "Not validated yet.";
+    updateTally();
+  }
+  function updateTally() {
+    const changed = DECISIONS.filter(d => document.getElementById(d.id + "-state").dataset.s === "changed").length;
+    const notes = DECISIONS.filter(d => pickOf(d).note.trim()).length + WAVES.filter(w => waveOf(w).note.trim()).length;
+    $("#tally").textContent = `15 decisions · ${changed} changed · ${notes} note${notes === 1 ? "" : "s"}`;
+  }
+
+  // ---------- summary & validation ----------
+  function summaryText() {
+    const lines = ["Poker Planning — round 1 choices", ""];
+    for (const d of DECISIONS) {
+      const p = pickOf(d), n = d.id.slice(1);
+      if (d.type === "settings") {
+        const parts = d.fields.map(f => {
+          const v = p.values[f.id];
+          if (f.kind === "switch") return `${f.label}: ${v ? "yes" : "no"}`;
+          if (f.kind === "multi") return `${f.label}: ${f.choices.filter(c => (v || []).includes(c[0])).map(c => c[1]).join(", ") || "none"}`;
+          return `${f.label}: ${(f.choices.find(c => c[0] === v) || [v, v])[1]}`;
+        });
+        lines.push(`D${n} ${d.title}: ${parts.join("; ")}`);
+      } else {
+        const o = d.options.find(x => x.k === p.choice);
+        lines.push(`D${n} ${d.title}: ${p.choice.toUpperCase()}. ${o.t}${p.choice === d.rec ? " (recommended)" : " (changed from " + d.rec.toUpperCase() + ")"}`);
+      }
+      if (p.note.trim()) lines.push(`   Note: ${p.note.trim()}`);
+    }
+    lines.push("", "Waves:");
+    for (const w of WAVES) { const s = waveOf(w); lines.push(`${w.n} ${w.name}: ${s.ok ? "scope OK" : "scope NOT OK"}${s.note.trim() ? " — " + s.note.trim() : ""}`); }
+    lines.push("", "Open questions:");
+    QUESTIONS.forEach((q, i) => lines.push(`Q${i + 1}. ${q.q.replace(/\s+/g, " ")}\n   ${answerOf(q).trim() || "[default] " + q.def}`));
+    const vn = $("#val-note").value.trim(); if (vn) lines.push("", "Final note: " + vn);
+    return lines.join("\n");
+  }
+  async function copySummary() {
+    const text = summaryText();
+    try { await navigator.clipboard.writeText(text); toast("Summary copied"); }
+    catch (e) { const ta = $("#copy-fallback"); ta.hidden = false; ta.value = text; ta.focus(); ta.select(); toast("Select the text below and copy it"); }
+  }
+  async function review(status) {
+    if (readOnly) return;
+    const picks = {};
+    for (const d of DECISIONS) picks[d.id] = pickOf(d);
+    state.review = { status, note: $("#val-note").value, at: new Date().toISOString() };
+    applyAll();
+    if (!dbRef) { lsSave(); toast("Saved in this browser only. Copy the summary and paste it in the chat."); return; }
+    await flushAll();
+    queueWrite("review/status", Object.assign({}, state.review, { picks, waves: WAVES.map(waveOf), answers: QUESTIONS.map(q => ({ id: q.id, answer: answerOf(q) })), summary: summaryText() }), 0);
+    await flush("review/status");
+    toast(status === "validated" ? "Validated. Tell me in the chat and I will start." : "Noted. Tell me in the chat and I will prepare round 2.");
+  }
+
+  // ---------- boot ----------
+  renderDecisions(); renderWaves(); renderQuestions();
+  $("#copy-btn").addEventListener("click", copySummary);
+  $("#copy-btn-2").addEventListener("click", copySummary);
+  $("#val-ok").addEventListener("click", () => review("validated"));
+  $("#val-changes").addEventListener("click", () => review("changes"));
+  $("#val-note").addEventListener("input", e => { if (readOnly) return; state.review = Object.assign({}, state.review, { note: e.target.value }); lsSave(); });
+  applyAll();
+
+  async function connect() {
+    let db = null;
+    try { db = window.claude && window.claude.use ? await window.claude.use("db") : null; } catch (e) { db = null; }
+    if (!db) { lsLoad(); applyAll(); setSync("local", "Saved in this browser"); return; }
+    dbRef = db;
+    try {
+      const user = await window.claude.use("user");
+      if (user && (await user.can("data.write")) === false) setReadOnly();
+    } catch (e) {}
+    const onErr = () => setSync("local", "Offline");
+    // Remote docs win, except one this view is still about to write.
+    const follow = name => db.collection(name).onSnapshot(s => {
+      s.docs.forEach(doc => { if (!pending.has(name + "/" + doc.id)) state[name][doc.id] = doc.data(); });
+      applyAll();
+    }, onErr);
+    follow("picks"); follow("waves"); follow("answers");
+    db.doc("review/status").onSnapshot(doc => {
+      if (doc.exists && !pending.has("review/status")) { const r = doc.data(); state.review = { status: r.status, note: r.note, at: r.at }; applyAll(); }
+    }, onErr);
+    if (!readOnly) setSync("live", "Synced");
+  }
+  connect();
+})();
+</script>
+
+<style>
+.dist-wrap { display: flex; gap: 18px; align-items: flex-end; flex-wrap: wrap; min-width: 0; }
+.mcard.spec, .hcard.spec { font-size: 18px; }
+</style>
+<script>
+(function () {
+  const stage = document.getElementById("stage"), center = document.getElementById("center");
+  const results = document.getElementById("results"), hand = document.getElementById("hand");
+  const btnDeck = document.getElementById("p-deck"), btnAnon = document.getElementById("p-anon");
+  const btnTimer = document.getElementById("p-timer"), btnReveal = document.getElementById("p-reveal"), btnNext = document.getElementById("p-next");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)"), mobile = matchMedia("(max-width: 640px)");
+  const SPECIAL = ["?", "☕"];
+  const DECKS = {
+    fib: { name: "Fibonacci", cards: ["0", "1", "2", "3", "5", "8", "13", "21", "?", "☕"], numeric: true, centers: [4, 3, 5, 4] },
+    tshirt: { name: "T-shirt", cards: ["XS", "S", "M", "L", "XL", "XXL", "?", "☕"], numeric: false, centers: [2, 1, 3, 2] }
+  };
+  const PEOPLE = [
+    { id: "you", name: "You", ini: "YO", color: "var(--av8)", po: true },
+    { id: "ana", name: "Ana", ini: "AN", color: "var(--av1)" },
+    { id: "ben", name: "Ben", ini: "BE", color: "var(--av2)" },
+    { id: "chloe", name: "Chloé", ini: "CH", color: "var(--av3)" },
+    { id: "dev", name: "Dev", ini: "DE", color: "var(--av4)" },
+    { id: "elif", name: "Elif", ini: "EL", color: "var(--av5)" },
+    { id: "femi", name: "Femi", ini: "FE", color: "var(--av6)" },
+    { id: "greta", name: "Greta", ini: "GR", color: "var(--av7)" }
+  ];
+  const SUBJECTS = [["PAY-482", "Split invoices by currency"], ["PAY-517", "Retry failed card payments"], ["AUTH-88", "Remember this device for 30 days"], ["UX-203", "Empty state for search results"]];
+  const TIMER_S = 20;
+  let deckKey = "fib", anon = false, revealed = false, votes = {}, botTimers = [], round = 0, deadline = 0, tickId = null;
+
+  const deck = () => DECKS[deckKey];
+  const isSpecial = v => SPECIAL.includes(v);
+
+  // ---------- layout ----------
+  function layout() { return mobile.matches ? { sx: 40, sy: 43, cx: 17, cy: 28 } : { sx: 44, sy: 42, cx: 25, cy: 23 }; }
+  function renderSeats() {
+    stage.querySelectorAll(".seat, .slot").forEach(n => n.remove());
+    const L = layout(), n = PEOPLE.length;
+    PEOPLE.forEach((p, i) => {
+      const a = Math.PI / 2 + (i * 2 * Math.PI) / n, cos = Math.cos(a), sin = Math.sin(a);
+      const slot = document.createElement("div");
+      slot.className = "slot empty"; slot.id = "slot-" + p.id;
+      slot.style.left = (50 + L.cx * cos) + "%"; slot.style.top = (50 + L.cy * sin) + "%";
+      slot.innerHTML = '<div class="pcard"><div class="face back"></div><div class="face front"></div></div>';
+      const seat = document.createElement("div");
+      seat.className = "seat"; seat.id = "seat-" + p.id;
+      seat.style.left = (50 + L.sx * cos) + "%"; seat.style.top = (50 + L.sy * sin) + "%";
+      seat.innerHTML = `<span class="avatar" style="background:${p.color}">${p.ini}</span><span class="name">${p.name}</span>${p.po ? '<span class="role">PO</span>' : ""}`;
+      stage.appendChild(slot); stage.appendChild(seat);
+    });
+    PEOPLE.forEach(p => setSlot(p, false));
+    if (revealed) applyReveal(false);
+  }
+  function setSlot(p, animate) {
+    const slot = document.getElementById("slot-" + p.id), seat = document.getElementById("seat-" + p.id);
+    const v = votes[p.id], has = v !== undefined;
+    slot.classList.toggle("empty", !has);
+    seat.classList.toggle("voted", has);
+    slot.querySelector(".pcard").style.visibility = has ? "visible" : "hidden";
+    slot.querySelector(".front").textContent = has ? v : "";
+    if (animate && has && !reduce.matches) { slot.classList.remove("drop"); void slot.offsetWidth; slot.classList.add("drop"); }
+  }
+
+  // ---------- hand ----------
+  function renderHand() {
+    hand.innerHTML = deck().cards.map(c => `<button type="button" class="hcard${isSpecial(c) ? " spec" : ""}" data-v="${c}" aria-pressed="false" aria-label="Vote ${c === "☕" ? "coffee break" : c === "?" ? "unsure" : c}">${c}</button>`).join("");
+    syncHand();
+  }
+  function syncHand() {
+    hand.querySelectorAll(".hcard").forEach(b => {
+      b.setAttribute("aria-pressed", String(votes.you === b.dataset.v));
+      b.disabled = revealed;
+    });
+  }
+  hand.addEventListener("click", e => {
+    const b = e.target.closest(".hcard"); if (!b || revealed) return;
+    const v = b.dataset.v, me = PEOPLE[0];
+    if (votes.you === v) { delete votes.you; setSlot(me, false); syncHand(); renderStatus(); return; }
+    const first = votes.you === undefined;
+    votes.you = v; syncHand();
+    const target = document.getElementById("slot-you");
+    fly(b, target, v, () => { setSlot(me, first); renderStatus(); });
+  });
+  function fly(from, to, label, done) {
+    if (reduce.matches || !from.animate) { done(); return; }
+    const a = from.getBoundingClientRect(), b = to.getBoundingClientRect();
+    const f = document.createElement("div");
+    f.className = "fly"; f.textContent = label;
+    Object.assign(f.style, { left: a.left + "px", top: a.top + "px", width: a.width + "px", height: a.height + "px" });
+    document.body.appendChild(f);
+    const dx = b.left + b.width / 2 - (a.left + a.width / 2), dy = b.top + b.height / 2 - (a.top + a.height / 2), s = b.width / a.width;
+    const anim = f.animate([
+      { transform: "translate(0, 0) rotate(0deg) scale(1)" },
+      { transform: `translate(${dx * 0.5}px, ${dy * 0.5 - 36}px) rotate(-9deg) scale(${(1 + s) / 2})`, offset: 0.5 },
+      { transform: `translate(${dx}px, ${dy}px) rotate(0deg) scale(${s})` }
+    ], { duration: 520, easing: "cubic-bezier(.2,.8,.2,1)" });
+    anim.onfinish = () => { f.remove(); done(); };
+  }
+
+  // ---------- bots ----------
+  function botVote() {
+    const d = deck(), r = Math.random();
+    if (r < 0.07) return "?";
+    if (r < 0.1) return "☕";
+    const core = d.cards.filter(c => !isSpecial(c)), c0 = d.centers[round % d.centers.length], j = Math.random();
+    const off = j < 0.2 ? -1 : j < 0.72 ? 0 : j < 0.95 ? 1 : 2;
+    return core[Math.max(0, Math.min(core.length - 1, c0 + off))];
+  }
+  function scheduleBots(preseed) {
+    botTimers.forEach(clearTimeout); botTimers = [];
+    PEOPLE.slice(1).forEach((p, i) => {
+      if (preseed && i < 4) { votes[p.id] = botVote(); return; }
+      const wait = (p.id === "greta" ? 9000 : 1200) + Math.random() * 5200;
+      botTimers.push(setTimeout(() => { if (revealed) return; votes[p.id] = botVote(); setSlot(p, true); renderStatus(); }, wait));
+    });
+  }
+
+  // ---------- status, timer, reveal ----------
+  function renderStatus() {
+    if (revealed) return;
+    const n = Object.keys(votes).length, all = n === PEOPLE.length;
+    if (!deadline) center.innerHTML = `<div class="big">${n}/${PEOPLE.length}</div><div class="small">${all ? "everyone voted" : "voted so far"}</div>`;
+    results.innerHTML = `<p class="hint">${votes.you === undefined ? "Pick a card from your hand. " : "Your card is face down on the table. "}${all ? "Everyone has voted: reveal when ready." : "Others see that you voted, never the value."}</p>`;
+  }
+  function startTimer() {
+    if (revealed) return;
+    if (deadline) { stopTimer(); renderStatus(); return; }
+    deadline = Date.now() + TIMER_S * 1000;
+    btnTimer.textContent = "Stop timer"; btnTimer.setAttribute("aria-pressed", "true");
+    const C = 2 * Math.PI * 24;
+    center.innerHTML = `<svg class="ring" viewBox="0 0 58 58" aria-hidden="true"><circle class="track" cx="29" cy="29" r="24"/><circle class="bar" cx="29" cy="29" r="24" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="0"/><text x="29" y="35" text-anchor="middle" id="ring-t">${TIMER_S}</text></svg><div class="small">auto-reveal at zero</div>`;
+    const bar = center.querySelector(".bar"), txt = center.querySelector("#ring-t");
+    const tick = () => {
+      const left = Math.max(0, deadline - Date.now());
+      bar.style.strokeDashoffset = (C * (1 - left / (TIMER_S * 1000))).toFixed(1);
+      txt.textContent = Math.ceil(left / 1000);
+      if (left <= 0) { stopTimer(); reveal(); }
+    };
+    tick(); tickId = setInterval(tick, 250);
+  }
+  function stopTimer() {
+    clearInterval(tickId); tickId = null; deadline = 0;
+    btnTimer.textContent = `Timer ${TIMER_S} s`; btnTimer.setAttribute("aria-pressed", "false");
+  }
+  function stats() {
+    const d = deck(), vals = PEOPLE.map(p => votes[p.id]).filter(v => v !== undefined);
+    const core = vals.filter(v => !isSpecial(v)), counts = {};
+    vals.forEach(v => { counts[v] = (counts[v] || 0) + 1; });
+    let mode = null, modeN = 0;
+    d.cards.forEach(c => { if (!isSpecial(c) && (counts[c] || 0) > modeN) { mode = c; modeN = counts[c]; } });
+    const idx = core.map(v => d.cards.indexOf(v)).sort((a, b) => a - b);
+    const out = { vals, core, counts, mode, agreement: core.length ? Math.round((100 * modeN) / core.length) : 0,
+      spread: idx.length ? [d.cards[idx[0]], d.cards[idx[idx.length - 1]]] : null, consensus: core.length >= 3 && modeN === core.length, suggested: mode };
+    if (d.numeric && core.length) {
+      const nums = core.map(Number).sort((a, b) => a - b), m = nums.length;
+      out.avg = nums.reduce((a, b) => a + b, 0) / m;
+      out.median = m % 2 ? nums[(m - 1) / 2] : (nums[m / 2 - 1] + nums[m / 2]) / 2;
+      const cards = d.cards.filter(c => !isSpecial(c)).map(Number);
+      out.suggested = String(cards.reduce((best, c) => (Math.abs(c - out.avg) < Math.abs(best - out.avg) ? c : best), cards[0]));
+    }
+    return out;
+  }
+  const fmt = n => (n === undefined ? "–" : Number.isInteger(n) ? String(n) : n.toFixed(1));
+  const stat = (label, v) => `<div class="stat"><b>${v}</b><span>${label}</span></div>`;
+  function reveal() {
+    if (revealed) return;
+    stopTimer(); botTimers.forEach(clearTimeout); botTimers = [];
+    revealed = true; syncHand();
+    btnReveal.disabled = true; btnTimer.disabled = true;
+    applyReveal(true);
+  }
+  function applyReveal(animate) {
+    const order = PEOPLE.filter(p => votes[p.id] !== undefined);
+    PEOPLE.forEach(p => {
+      const slot = document.getElementById("slot-" + p.id);
+      slot.querySelector(".pcard").style.transitionDelay = animate ? order.indexOf(p) * 90 + "ms" : "0ms";
+      slot.classList.toggle("revealed", !anon && votes[p.id] !== undefined);
+      slot.classList.toggle("collected", anon && votes[p.id] !== undefined);
+    });
+    const delay = animate && !reduce.matches ? order.length * 90 + 450 : 0;
+    setTimeout(() => renderResults(animate), delay);
+  }
+  function renderResults() {
+    const d = deck(), s = stats();
+    if (!s.vals.length) { center.innerHTML = '<div class="small">No votes this round</div>'; results.innerHTML = '<p class="hint">Nobody voted. Start the next round.</p>'; return; }
+    center.innerHTML = `<div class="big">${s.suggested || "–"}</div><div class="small">${d.numeric ? "nearest card to the average" : "most voted size"}</div>` +
+      (s.consensus ? '<span class="consensus">Consensus</span>' : `<div class="small">${s.agreement}% agree</div>`);
+    const statsHTML = d.numeric
+      ? stat("Average", fmt(s.avg)) + stat("Median", fmt(s.median)) + stat("Agreement", s.agreement + "%") + stat("Spread", s.spread ? s.spread.join("–") : "–")
+      : stat("Most voted", s.mode || "–") + stat("Agreement", s.agreement + "%") + stat("Spread", s.spread ? s.spread.join("–") : "–");
+    const maxN = Math.max(...Object.values(s.counts));
+    const dist = d.cards.filter(c => s.counts[c]).map((c, i) =>
+      `<div class="dcol"><i style="height:${Math.round((40 * s.counts[c]) / maxN)}px;animation-delay:${i * 60}ms"></i><span>${c}</span><em>×${s.counts[c]}</em></div>`).join("");
+    const sorted = s.vals.slice().sort((a, b) => d.cards.indexOf(a) - d.cards.indexOf(b));
+    const spread = anon ? `<div class="spread" aria-label="Cards, without names">${sorted.map((v, i) => `<span class="mcard${isSpecial(v) ? " spec" : ""}" style="animation-delay:${i * 70}ms">${v}</span>`).join("")}</div>` : "";
+    results.innerHTML = `<div class="stats">${statsHTML}</div><div class="dist-wrap">${spread}<div class="dist" aria-label="Distribution">${dist}</div></div>`;
+  }
+
+  // ---------- rounds & controls ----------
+  function newRound(preseed) {
+    stopTimer(); botTimers.forEach(clearTimeout);
+    revealed = false; votes = {};
+    btnReveal.disabled = false; btnTimer.disabled = false;
+    const [key, title] = SUBJECTS[round % SUBJECTS.length];
+    document.querySelector("#proto .subject .key").textContent = key;
+    document.querySelector("#proto .subject .ttl").textContent = title;
+    PEOPLE.forEach(p => { const slot = document.getElementById("slot-" + p.id); slot.classList.remove("revealed", "collected", "drop"); });
+    scheduleBots(preseed);
+    PEOPLE.forEach(p => setSlot(p, false));
+    renderHand(); renderStatus();
+  }
+  btnReveal.addEventListener("click", reveal);
+  btnTimer.addEventListener("click", startTimer);
+  btnNext.addEventListener("click", () => { round++; newRound(false); });
+  btnDeck.addEventListener("click", () => {
+    deckKey = deckKey === "fib" ? "tshirt" : "fib";
+    btnDeck.textContent = "Deck: " + deck().name; newRound(false);
+  });
+  btnAnon.addEventListener("click", () => {
+    anon = !anon; btnAnon.setAttribute("aria-pressed", String(anon));
+    if (revealed) applyReveal(false);
+  });
+  const themeBtn = document.createElement("button");
+  themeBtn.type = "button"; themeBtn.className = "mini";
+  const isDark = () => { const t = document.documentElement.dataset.theme; return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; };
+  const syncThemeBtn = () => { themeBtn.textContent = isDark() ? "Light mode" : "Dark mode"; };
+  themeBtn.addEventListener("click", () => { document.documentElement.dataset.theme = isDark() ? "light" : "dark"; syncThemeBtn(); });
+  document.querySelector("#proto .proto-controls").prepend(themeBtn); syncThemeBtn();
+  mobile.addEventListener("change", renderSeats);
+
+  renderSeats(); newRound(true);
+})();
+</script>
+</body></html>

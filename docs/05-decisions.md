@@ -1,0 +1,138 @@
+# Decisions
+
+Architecture decision records. All accepted on 2026-10-26 in round 1, after Sven
+reviewed the options in the round-1 decisions page (`docs/prototype/round-1-decisions.html`).
+To change one, add a new ADR that supersedes it; do not rewrite history.
+
+## ADR-001: Containers only
+
+**Context.** `input.md` asks for deployment on Vercel, Coolify or Azure. Coolify and
+Azure keep a container alive for days. Vercel Functions accept WebSockets only since
+22 June 2026 (public beta): each socket is pinned to one instance and closed after
+300 s (Hobby) or 800 s (Pro), so rooms need Redis for fan-out and clients must
+reconnect regularly. Nobody needs Vercel today.
+
+**Decision.** Ship one Docker image for Coolify, Azure and any Docker host. Drop Vercel.
+
+**Consequences.** One process, in-memory fan-out, no Redis by default. Socket.IO's
+long-polling fallback works. Because state lives in Postgres with a version (ADR-004),
+scale-out or serverless can come back later behind `REDIS_URL` (#39).
+
+**Alternatives.** Container plus Vercel through adapters (recommended in round 1,
+rejected as unneeded); serverless first; split frontend and backend hosting.
+
+## ADR-002: Custom TypeScript backend
+
+**Context.** The hard parts of planning poker are hidden votes, reveal rules, timers
+and the PO's powers, which need server logic. `input.md` suggested PocketBase.
+
+**Decision.** Our own server: Hono (HTTP), Socket.IO (realtime), Drizzle (Postgres),
+Better Auth (identity). Room logic is a pure state machine in `packages/domain`.
+
+**Consequences.** One language end to end; rules tested in one place. We wire auth
+and the protocol ourselves. **Alternatives.** PocketBase (pre-1.0 in 2026; rules would
+become API rules and JS hooks; SQLite locking on Azure Files); Convex or Supabase
+(lock-in, heavy self-hosting).
+
+## ADR-003: Socket.IO for realtime
+
+**Decision.** Socket.IO with typed event maps and zod validation. Commands are
+acknowledged; the server answers every change with a per-viewer snapshot (see the
+architecture, section 5).
+
+**Why.** Rooms, acknowledgements and reconnect come built in, and the HTTP
+long-polling fallback survives corporate proxies that break WebSockets.
+**Alternatives.** Plain `ws` (rebuild rooms, reconnect, fan-out); SSE plus POST.
+
+## ADR-004: Postgres for everything, live state included
+
+**Decision.** PostgreSQL via Drizzle. The live room is a JSON column with a version;
+every command is a compare-and-set. History rows in their own table.
+
+**Consequences.** A redeploy mid-round loses nothing; several instances stay correct;
+a database is needed even for tiny installs (compose ships one). **Alternatives.**
+SQLite by default (locks on Azure Files); both dialects (two migration sets).
+
+## ADR-005: The boardroom table
+
+**Decision.** A calm table in the middle with up to 16 seats, the hand along the
+bottom, staggered flips on reveal, results under the table; tall table and scrolling
+hand on phones. Spruce table, warm card faces, brass card backs. Details:
+`docs/03-design-brief.md`. **Alternatives.** Focus grid (less presence); poker felt
+(reads as a game, hard to brand).
+
+## ADR-006: React 19 and Vite, as a single-page app
+
+**Decision.** A React SPA built by Vite, served by our server. TanStack Router,
+Zustand for the room store.
+
+**Why.** Live rooms gain nothing from server rendering, and Next.js would need a
+custom server for sockets. **Alternatives.** Next.js; SvelteKit.
+
+## ADR-007: Tailwind CSS v4, shadcn/ui and design tokens
+
+**Decision.** Tailwind v4 with every colour a CSS variable; accessible primitives from
+shadcn/ui (Radix) copied into the repo. Dark mode and branding are token overrides.
+**Alternatives.** CSS Modules with Radix; Mantine.
+
+## ADR-008: Motion for React
+
+**Decision.** Motion (motion.dev) for springs, layout travel (hand to seat), enter
+and exit, gestures; CSS 3D for the flip. The motion spec in the design brief bounds it.
+**Alternatives.** GSAP (imperative, own licence); CSS and WAAPI only (more code).
+
+## ADR-009: Guest-first identity with Better Auth
+
+**Decision.** Every visitor gets an anonymous Better Auth session: a real user row
+without personal data. In W5, Google and Microsoft Entra ID sign-in link the guest so
+rooms, PO ownership and history carry over.
+
+**Consequences.** One identity model from day one; no migration when accounts land.
+Entra linking needs a test (OQ-6). **Alternatives.** A cookie token now and auth later
+(two models); hosted identity (external dependency, per-user pricing).
+
+## ADR-010: Room access and roles
+
+**Decision.** A random 10-character code in the URL; an optional password (argon2id,
+rate-limited). Roles: product owner, voter, observer. The PO can hand over the role;
+when the PO has been away for 2 minutes, anyone in the room can claim it. W5 adds
+restricting a room to an email domain or Microsoft tenant.
+
+## ADR-011: Room defaults
+
+**Decision.** New rooms start with: Fibonacci deck; `?` and `☕` cards (`∞` off); PO
+only reveals; named results; **reveal when everyone has voted: on**; timer off with
+reveal at its end on; no vote changes after reveal; the PO votes; observers count
+toward the 16. The PO can change each setting in the room. A round's subject is
+optional: nothing, a title, or a link (Jira and Azure DevOps keys detected).
+
+## ADR-012: English, French and German at launch
+
+**Decision.** Every user-facing string exists in `en`, `fr` and `de` from the first
+UI issue. react-i18next with typed keys; CI fails on a missing key; the server sends
+codes, never sentences. Tone per language decided in #41 (OQ-2).
+
+**Consequences.** Every UI issue carries its French and German copy.
+**Alternatives.** English only, translation-ready (recommended in round 1); English and French.
+
+## ADR-013: pnpm monorepo and the serial issue loop
+
+**Decision.** `apps/web`, `apps/server`, `packages/domain`, `packages/protocol`;
+TypeScript strict, Biome, Vitest, Playwright, Node 24 LTS, Docker multi-stage image,
+GitHub Actions on pull requests. Work follows `CLAUDE.md`: one issue at a time,
+issues keyed `PP-NNN` with `epic:*`, `P0–P3`, `type:*` and `size:*` labels, one
+milestone per wave. **Alternatives.** A single package.
+
+## ADR-014: Retention of 90 idle days
+
+**Decision.** Rooms, their history and orphan guest users are deleted after 90 days
+without activity (`ROOM_TTL_DAYS`). Rooms owned by signed-in users stay until deleted
+(W5). No analytics or tracking by default; Sentry and Umami are opt-in.
+
+## ADR-015: Paid branding decided in W7
+
+**Context.** The repo is MIT; under MIT anyone can remove a paywall from the code.
+
+**Decision.** Everything stays MIT until W7. Branding is built as theme tokens,
+asset slots and an entitlements check, so either open core (commercial `ee/` folder
+and signed licence keys) or a paid hosted edition plugs in. Decided in #56 (OQ-3).
