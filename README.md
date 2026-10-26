@@ -47,6 +47,10 @@ Other scripts: `pnpm test` (unit tests), `pnpm test:db` (integration tests again
 Postgres, one file at a time because they share one database), `pnpm lint`, `pnpm format`, `pnpm typecheck`, `pnpm build`. The layout and
 the rules of each package are in `apps/*/README.md` and `packages/*/README.md`.
 
+CI (`.github/workflows/ci.yml`) runs on pull requests only: job `check` runs `pnpm gate`,
+job `db-tests` runs `pnpm test:db` against a Postgres 17 service; docs-only changes run
+no job.
+
 Workspace conventions:
 
 - TypeScript strict from `tsconfig.base.json`; `pnpm typecheck` runs `tsc --build` over
