@@ -6,12 +6,16 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## Live
 
-- Nothing is built yet. Round 1 (design and architecture) was validated on 2026-10-26;
-  the decisions are in `docs/05-decisions.md`.
+- Nothing is deployed yet; Coolify comes with #12.
+- `main` has the monorepo scaffold from #1: pnpm 12.15.0, Node 24, TypeScript 7,
+  Biome, Vitest, Vite and tsdown. `pnpm gate` is green.
+- The decisions are in `docs/05-decisions.md`.
 
 ## Next
 
-- **#1 (PP-001)** Scaffold the pnpm monorepo, then the rest of W0 in order.
+- **#2 (PP-002)** CI on pull requests, then the rest of W0 in order.
+- **#12** waits for Sven's go on Coolify and DNS (see Owner items). #13 does not
+  depend on #12, so it can go first.
 
 ## Order
 
