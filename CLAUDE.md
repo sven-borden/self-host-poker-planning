@@ -57,7 +57,8 @@ Code conventions live next to the code (package READMEs); do not duplicate them 
 - Every brief says: commit after every working step; pnpm only, Node 24; never read,
   print, log or commit `.env` or any secret; never open ports or connect to the
   database at module load; commit messages are plain descriptive sentences ending with
-  the `Co-Authored-By` line; the PR body carries `Handoff for the fixer` and ends with
+  the `Co-Authored-By` line, written to a uniquely named file (a reused file once
+  mislabelled a commit); the PR body carries `Handoff for the fixer` and ends with
   `Closes #N`; batch independent reads; stop every server and browser it started (a
   leftover process locks the worktree); done is "PR open".
 

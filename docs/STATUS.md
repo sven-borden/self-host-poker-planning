@@ -9,11 +9,13 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 - Nothing is deployed yet; Coolify comes with #12.
 - `main` has the monorepo scaffold from #1: pnpm 12.15.0, Node 24, TypeScript 7,
   Biome, Vitest, Vite and tsdown. `pnpm gate` is green.
-- CI from #2 runs on every pull request: `check` runs `pnpm gate`, and `db-tests`
-  runs `pnpm test:db` against Postgres 17.
+- CI from #2 runs on every pull request: `check` runs `pnpm gate`, `db-tests` runs
+  `pnpm test:db` against Postgres 17, and `web-e2e` (from #13) runs Playwright.
 - The web shell from #8: routes `/` and `/r/$code`, design tokens with light, dark and
   system themes, shadcn/ui, Motion, fonts, and en/fr/de copy. The room route loads
-  138.5 kB of JS against a 200 kB budget.
+  140.0 kB of JS against a 200 kB budget.
+- The table from #13: a pure layout engine with a pixel geometry proof for 1 to 16
+  people, the seat and card components, and a `/dev/table` bench.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -24,14 +26,14 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#13 (PP-013)** the table layout engine and card components: PR #69 in review,
-  CI green.
-- **#6 (PP-006)** the server skeleton, in worktree `../pp-wt-06`.
+- **#6 (PP-006)** the server skeleton: PR #70, review fixes in progress.
+- **#9 (PP-009)** i18n with react-i18next, in worktree `../pp-wt-09`.
 
 ## Next
 
 - Server chain: #7 after #6, then #10, then #11 (Docker needs #6, #7 and #8).
-- Web chain: #9 (i18n) after #13. It translates the error codes from `@pp/protocol`.
+- Web chain: #9 is the last W0 web issue. W1 web work (#16 onward) needs the server
+  chain first.
 - **W1 starts without a new go** once the W0 issues other than #12 are merged (Sven,
   2026-10-26). No W1 issue depends on #11 or #12.
 - **#12** waits for Sven's go on Coolify and DNS (see Owner items). It is asked for
@@ -66,5 +68,5 @@ issues are merged.
 
 ## Merge gate
 
-`pnpm gate` (lint, typecheck, unit, build) green locally, then both CI jobs green on
-the pull request. From #2 on, CI is the gate.
+`pnpm gate` (lint, typecheck, unit, build) green locally, then every CI job green on
+the pull request (`check`, `db-tests`, `web-e2e`). From #2 on, CI is the gate.
