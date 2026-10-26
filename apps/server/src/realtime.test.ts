@@ -218,6 +218,34 @@ describe("Socket.IO", () => {
     expect(conns[0]).toMatch(/^[\w-]{8}$/);
   });
 
+  it("refuses with internal, logs one line and keeps running when a middleware throws or rejects", async () => {
+    // The first handshake meets a rejecting async middleware, the second a throwing one.
+    let handshakes = 0;
+    const { client, logs } = await start({
+      socketMiddleware: [
+        async (_socket, next) => {
+          handshakes += 1;
+          if (handshakes === 1) throw new Error("db down");
+          next();
+        },
+        (_socket, next) => {
+          if (handshakes === 2) throw new Error("bug");
+          next();
+        },
+      ],
+    });
+    for (const failure of ["rejects", "throws"]) {
+      await expect(connected(client()), failure).rejects.toThrow("internal");
+    }
+    const failed = logs.lines.filter((line) => line.msg === "socket middleware failed");
+    expect(failed).toHaveLength(2);
+    expect(failed[0]).toMatchObject({ level: 50, err: { message: "db down" } });
+    expect(failed[0]?.conn).toMatch(/^[\w-]{8}$/);
+    const ok = client();
+    await connected(ok);
+    expect(await ok.emitWithAck("enter", ENTER)).toEqual({ ok: false, code: "room_not_found" });
+  });
+
   it("drops a connection whose message exceeds the payload cap", async () => {
     const { client } = await start();
     const socket = client();

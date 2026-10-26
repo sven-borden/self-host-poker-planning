@@ -1,8 +1,9 @@
+import { EventEmitter } from "node:events";
 import { createServer as createNetServer, type Server } from "node:net";
 import { PROTOCOL_VERSION } from "@pp/protocol";
 import { io as connect } from "socket.io-client";
 import { afterEach, describe, expect, it } from "vitest";
-import { run, type Signal } from "./run.ts";
+import { type Crash, processHooks, run, type Signal } from "./run.ts";
 import type { PokerServer } from "./server.ts";
 import { collectLogs, SECRET, VALID_ENV } from "./test-support.ts";
 
@@ -15,6 +16,7 @@ function hooks(extra: { shutdownTimeoutMs?: number } = {}) {
   const logs = collectLogs();
   const exits: number[] = [];
   let signal: ((signal: Signal) => void) | undefined;
+  let crash: ((crash: Crash, error: unknown) => void) | undefined;
   let exited: (code: number) => void = () => {};
   const exitCode = new Promise<number>((resolve) => {
     exited = resolve;
@@ -24,6 +26,7 @@ function hooks(extra: { shutdownTimeoutMs?: number } = {}) {
     exits,
     exitCode,
     send: (name: Signal) => signal?.(name),
+    crash: (name: Crash, error: unknown) => crash?.(name, error),
     hooks: {
       destination: logs.destination,
       exit: (code: number) => {
@@ -32,6 +35,9 @@ function hooks(extra: { shutdownTimeoutMs?: number } = {}) {
       },
       onSignal: (handler: (signal: Signal) => void) => {
         signal = handler;
+      },
+      onCrash: (handler: (crash: Crash, error: unknown) => void) => {
+        crash = handler;
       },
       ...extra,
     },
@@ -144,5 +150,42 @@ describe("run", () => {
     expect(await h.exitCode).toBe(0);
     expect(await hanging).toBe("cut");
     expect(h.logs.messages()).toContain("shutdown: closing the remaining connections");
+  });
+
+  it("logs one fatal line and exits 1 on an uncaught exception or an unhandled rejection", async () => {
+    for (const crash of ["uncaughtException", "unhandledRejection"] as const) {
+      const h = hooks();
+      const server = await run({ ...VALID_ENV, PORT: "0" }, h.hooks);
+      if (!server) throw new Error("server did not start");
+      started.push(server);
+      h.crash(crash, new Error(`boom ${crash}`));
+      expect(h.exits).toEqual([1]);
+      const fatal = h.logs.lines.filter((line) => line.level === 60);
+      expect(fatal).toHaveLength(1);
+      expect(fatal[0]).toMatchObject({ msg: "crashed", crash, err: { message: `boom ${crash}` } });
+    }
+  });
+});
+
+describe("processHooks", () => {
+  it("wires exit, both signals and both crash events to the process", () => {
+    const exits: number[] = [];
+    const proc = Object.assign(new EventEmitter(), { exit: (code: number) => exits.push(code) });
+    const hooks = processHooks(proc);
+    const seen: unknown[] = [];
+    hooks.onSignal((signal) => seen.push(signal));
+    hooks.onCrash((crash, error) => seen.push([crash, error]));
+    proc.emit("SIGTERM");
+    proc.emit("SIGINT");
+    proc.emit("uncaughtException", "e1");
+    proc.emit("unhandledRejection", "r1");
+    hooks.exit(3);
+    expect(seen).toEqual([
+      "SIGTERM",
+      "SIGINT",
+      ["uncaughtException", "e1"],
+      ["unhandledRejection", "r1"],
+    ]);
+    expect(exits).toEqual([3]);
   });
 });

@@ -11,11 +11,14 @@ import { createLogger } from "./logger.ts";
 import { createServer, type PokerServer, type ServerDeps } from "./server.ts";
 
 export type Signal = "SIGTERM" | "SIGINT";
+export type Crash = "uncaughtException" | "unhandledRejection";
 
 export interface ProcessHooks {
   exit(code: number): void;
   /** Registers a handler for both signals. */
   onSignal(handler: (signal: Signal) => void): void;
+  /** Registers a handler for an uncaught exception and an unhandled rejection. */
+  onCrash(handler: (crash: Crash, error: unknown) => void): void;
   /** Log output; stdout when left out. */
   destination?: DestinationStream;
   /** Hard limit for a shutdown; default 10 s. Open connections are cut 2 s before. */
@@ -47,6 +50,12 @@ export async function run(
   }
 
   const logger = createLogger(config.logLevel, hooks.destination);
+  // A bug that escapes every handler: one fatal line, then exit 1 for the orchestrator to
+  // restart the container. Continuing would run on an unknown state.
+  hooks.onCrash((crash, error) => {
+    logger.fatal({ err: error, crash }, "crashed");
+    hooks.exit(1);
+  });
   const staticDir = config.staticDir ? resolve(config.staticDir) : DEFAULT_STATIC_DIR;
   if (!existsSync(join(staticDir, "index.html"))) {
     logger.warn({ staticDir }, "web app not built: serving the API only");
@@ -103,4 +112,27 @@ export async function run(
     );
   });
   return server;
+}
+
+/** The part of `process` that `processHooks` uses; tests pass an EventEmitter. */
+export interface NodeProcess {
+  exit(code: number): void;
+  on(event: string, listener: (value: unknown) => void): unknown;
+}
+
+/** Wires `run()` to the real process: exit, SIGTERM/SIGINT and the two crash events. */
+export function processHooks(proc: NodeProcess): ProcessHooks {
+  return {
+    exit: (code) => proc.exit(code),
+    onSignal: (handler) => {
+      for (const signal of ["SIGTERM", "SIGINT"] satisfies Signal[]) {
+        proc.on(signal, () => handler(signal));
+      }
+    },
+    onCrash: (handler) => {
+      for (const crash of ["uncaughtException", "unhandledRejection"] satisfies Crash[]) {
+        proc.on(crash, (error) => handler(crash, error));
+      }
+    },
+  };
 }

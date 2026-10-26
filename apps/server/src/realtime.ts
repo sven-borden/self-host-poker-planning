@@ -39,10 +39,14 @@ export type RealtimeSocket = Socket<
   InterServerEvents,
   SocketData
 >;
+/**
+ * A handshake middleware. It may be async: a throw or a rejection refuses the handshake
+ * with `internal` and logs one error line, instead of becoming an unhandled rejection.
+ */
 export type SocketMiddleware = (
   socket: RealtimeSocket,
   next: (err?: ExtendedError) => void,
-) => void;
+) => void | Promise<void>;
 
 /** What the server does with a parsed message. W1 replaces the stubs. */
 export interface RealtimeHandlers {
@@ -88,7 +92,7 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     socket.data.conn = randomBytes(6).toString("base64url");
     next();
   });
-  for (const fn of middleware) io.use(fn);
+  for (const fn of middleware) io.use(guard(fn, logger));
 
   io.on("connection", (socket) => {
     const log = logger.child({ conn: socket.data.conn });
@@ -108,6 +112,32 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
   });
 
   return io;
+}
+
+/**
+ * Runs a middleware so that it cannot crash the process: a synchronous throw or a
+ * rejected promise logs one error line and refuses the handshake with `internal` (the
+ * client sees `connect_error`). `next` is passed on at most once.
+ */
+function guard(fn: SocketMiddleware, logger: Logger): SocketMiddleware {
+  return (socket, next) => {
+    let done = false;
+    const once = (err?: ExtendedError) => {
+      if (done) return;
+      done = true;
+      next(err);
+    };
+    const fail = (error: unknown) => {
+      logger.error({ conn: socket.data.conn, err: error }, "socket middleware failed");
+      once(new Error("internal"));
+    };
+    try {
+      const result = fn(socket, once);
+      if (result instanceof Promise) result.catch(fail);
+    } catch (error) {
+      fail(error);
+    }
+  };
 }
 
 /**
