@@ -87,6 +87,13 @@ export function cardLength(label: string): number {
   return seg ? Array.from(seg.segment(label)).length : Array.from(label).length;
 }
 
+/**
+ * A text limited to n user-perceived characters also holds at most 16 × n UTF-16 code
+ * units: one character can carry any number of combining marks, and the stored state
+ * must stay small.
+ */
+export const UNITS_PER_CHARACTER = 16;
+
 export type CustomDeckErrorCode =
   | "deck_empty"
   | "deck_too_many_cards"
@@ -105,8 +112,8 @@ const EMOJI_JOINER =
 /**
  * Validates the labels of a custom deck. On success the cards are trimmed and
  * NFC-normalised, in the given order. Specials are refused (also with a variation
- * selector, "☕️"): they are a room setting. Labels with control or format characters are
- * refused, except a zero-width joiner inside an emoji sequence.
+ * selector, "☕️"): they are a room setting. Labels with control or format characters or
+ * a lone surrogate are refused, except a zero-width joiner inside an emoji sequence.
  */
 export function validateCustomDeck(
   cards: readonly string[],
@@ -117,9 +124,13 @@ export function validateCustomDeck(
   for (const raw of cards) {
     const card = raw.trim().normalize("NFC");
     if (card === "") return { ok: false, code: "card_empty" };
-    if (INVISIBLE.test(card.replace(EMOJI_JOINER, "$1")))
+    // A lone surrogate is not text, and Postgres jsonb would refuse it.
+    if (!card.isWellFormed() || INVISIBLE.test(card.replace(EMOJI_JOINER, "$1"))) {
       return { ok: false, code: "card_invalid" };
-    if (cardLength(card) > MAX_CARD_LENGTH) return { ok: false, code: "card_too_long" };
+    }
+    if (card.length > MAX_CARD_LENGTH * UNITS_PER_CHARACTER || cardLength(card) > MAX_CARD_LENGTH) {
+      return { ok: false, code: "card_too_long" };
+    }
     if (isSpecial(card.replace(/[\uFE0E\uFE0F]/gu, ""))) return { ok: false, code: "card_special" };
     if (out.includes(card)) return { ok: false, code: "card_duplicate" };
     // Equal numeric values (1 and 1.0, ½ and 0.5, -0 and 0) would split the votes.

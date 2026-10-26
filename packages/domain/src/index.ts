@@ -1,6 +1,12 @@
-/** A room holds at most this many people, observers included unless the room says otherwise. */
-export const MAX_PARTICIPANTS = 16;
-
+export { apply } from "./apply.ts";
+export type {
+  ApplyContext,
+  ApplyResult,
+  Cause,
+  Command,
+  CommandType,
+  ErrorCode,
+} from "./commands.ts";
 export {
   baseCards,
   type Card,
@@ -22,3 +28,28 @@ export {
 } from "./decks.ts";
 export { generateRange, type RangeErrorCode } from "./range.ts";
 export { computeResults, type Results } from "./results.ts";
+export {
+  createRoom,
+  DEFAULT_SETTINGS,
+  MAX_LINK_LENGTH,
+  MAX_MEMBERS,
+  MAX_NAME_LENGTH,
+  MAX_PARTICIPANTS,
+  MAX_TIMER_SECONDS,
+  MAX_TITLE_LENGTH,
+  MIN_TIMER_SECONDS,
+  OWNER_CLAIM_AFTER_MS,
+  type Participant,
+  ROLES,
+  type Role,
+  type RoomSettings,
+  type RoomState,
+  type Round,
+  type SettingsPatch,
+  type Subject,
+  type TimerSettings,
+  type UserId,
+  type Vote,
+  WHO_CAN_REVEAL,
+  type WhoCanReveal,
+} from "./room.ts";
