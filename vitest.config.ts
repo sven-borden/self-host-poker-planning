@@ -15,6 +15,17 @@ const unit = (name: string, root: string) => ({
 
 export default defineConfig({
   test: {
+    // `pnpm test:coverage` (run by `pnpm gate`, hence CI): the round state machine is
+    // covered completely, every branch included. Only listed files are measured.
+    coverage: {
+      provider: "v8",
+      // Globs resolve against each project root, not this file: `src/apply*.ts` is
+      // packages/domain/src/apply*.ts. A glob matching nothing passes silently (0/0).
+      include: ["src/apply*.ts"],
+      exclude: ["**/*.test.ts"],
+      reporter: [["text", { skipFull: true }], "text-summary"],
+      thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 },
+    },
     projects: [
       unit("domain", "./packages/domain"),
       unit("protocol", "./packages/protocol"),
