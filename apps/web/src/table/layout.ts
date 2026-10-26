@@ -66,7 +66,7 @@ export interface VariantGeometry {
 export const GEOMETRY: Record<TableVariant, VariantGeometry> = {
   desktop: {
     aspect: 16 / 9,
-    minStageHeight: 500,
+    minStageHeight: 540,
     table: { x: 17, y: 19 },
     centre: { width: 140, height: 96 },
     denseAbove: 12,
@@ -78,28 +78,28 @@ export const GEOMETRY: Record<TableVariant, VariantGeometry> = {
     },
     dense: {
       seats: { rx: 42, ry: 42 },
-      slots: { rx: 26, ry: 23 },
+      slots: { rx: 25, ry: 23 },
       seat: { avatar: 40, label: { width: 90, height: 16, gap: 4 }, target: 0 },
-      slot: { width: 32, height: 44 },
+      slot: { width: 30, height: 42 },
     },
   },
   phone: {
     aspect: 4 / 5.4,
     minStageHeight: 0,
-    table: { x: 24, y: 16 },
+    table: { x: 23, y: 18 },
     centre: { width: 68, height: 60 },
     denseAbove: 10,
     normal: {
       seats: { rx: 40, ry: 42 },
-      slots: { rx: 17, ry: 27 },
+      slots: { rx: 17, ry: 25 },
       seat: { avatar: 32, label: { width: 64, height: 14, gap: 3 }, target: 0 },
       slot: { width: 27, height: 38 },
     },
     dense: {
       seats: { rx: 42, ry: 42 },
-      slots: { rx: 20, ry: 27 },
+      slots: { rx: 21, ry: 25 },
       seat: { avatar: 32, label: null, target: 44 },
-      slot: { width: 21, height: 30 },
+      slot: { width: 20, height: 28 },
     },
   },
 };

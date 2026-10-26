@@ -127,8 +127,8 @@ describe("stageSize", () => {
     expect(stageSize(360)).toMatchObject({ variant: "phone", width: 328, height: 442.8 });
   });
 
-  it("keeps the desktop stage at least 500 px tall and 992 px wide at most", () => {
-    expect(stageSize(768)).toMatchObject({ width: 736, height: 500 });
+  it("keeps the desktop stage at least 540 px tall and 992 px wide at most", () => {
+    expect(stageSize(768)).toMatchObject({ width: 736, height: 540 });
     expect(stageSize(1440)).toMatchObject({ width: 992, height: 558 });
   });
 });

@@ -34,9 +34,14 @@ export function rectAround(centre: { x: number; y: number }, size: Size): Rect {
   };
 }
 
-/** True when the two rectangles share area (touching edges do not count). */
-export function rectsOverlap(a: Rect, b: Rect): boolean {
-  return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+/** True when the rectangles come closer than `gap` pixels (0: share area; edges may touch). */
+export function rectsOverlap(a: Rect, b: Rect, gap = 0): boolean {
+  return (
+    a.left < b.right + gap &&
+    b.left < a.right + gap &&
+    a.top < b.bottom + gap &&
+    b.top < a.bottom + gap
+  );
 }
 
 /** The stadium as a segment (its spine) plus a radius: every point within it is inside. */
@@ -70,9 +75,9 @@ function distanceToSpine(rect: Rect, stadium: Stadium): number {
   return Math.hypot(dx, dy);
 }
 
-/** True when the rectangle covers part of the stadium, rounded ends included. */
-export function rectTouchesStadium(rect: Rect, stadium: Stadium): boolean {
-  return distanceToSpine(rect, stadium) < stadiumSpine(stadium).radius;
+/** True when the rectangle comes within `gap` pixels of the stadium, rounded ends included. */
+export function rectTouchesStadium(rect: Rect, stadium: Stadium, gap = 0): boolean {
+  return distanceToSpine(rect, stadium) < stadiumSpine(stadium).radius + gap;
 }
 
 /** True when the whole rectangle lies on the stadium, at least `margin` from its edge. */
@@ -129,6 +134,8 @@ export interface PixelLayout {
   centre: Rect;
   /** Each seat's painted parts. */
   seats: Rect[][];
+  /** False for initials-only seats, measured by their tap targets. */
+  named: boolean;
   slots: Rect[];
 }
 
@@ -148,6 +155,7 @@ export function toPixels(layout: TableLayout, stage: Size): PixelLayout {
       bottom: stage.height - (layout.table.y / 100) * stage.height,
     },
     seats: layout.seats.map((place) => seatParts(px(place), layout.seat, place.label)),
+    named: layout.seat.label !== null,
     slots: layout.slots.map((point) => rectAround(px(point), layout.slot)),
   };
 }
@@ -157,6 +165,16 @@ export const RIM_WIDTH = 7;
 
 /** Clear space kept between a slot and the status box, in pixels. */
 export const CENTRE_GAP = 4;
+
+/**
+ * Clear space kept between two cards, two named seats, or a named seat and the table, in
+ * pixels. Initials-only seats are measured by their 44 px tap targets, which may touch:
+ * the 32 px avatars inside them are then 12 px apart.
+ */
+export const CLEARANCE = 4;
+
+/** Clear space kept between two cards on the table, in pixels. */
+export const SLOT_CLEARANCE = 2;
 
 export interface GeometryProblem {
   kind:
@@ -174,14 +192,15 @@ export interface GeometryProblem {
 export function geometryProblems(pixels: PixelLayout): GeometryProblem[] {
   const problems: GeometryProblem[] = [];
   const { seats, slots, table, stage } = pixels;
+  const seatGap = pixels.named ? CLEARANCE : 0;
   seats.forEach((parts, a) => {
     for (let b = a + 1; b < seats.length; b++) {
       const other = seats[b] ?? [];
-      if (parts.some((part) => other.some((rect) => rectsOverlap(part, rect)))) {
+      if (parts.some((part) => other.some((rect) => rectsOverlap(part, rect, seatGap)))) {
         problems.push({ kind: "seat-seat", a, b });
       }
     }
-    if (parts.some((part) => rectTouchesStadium(part, table))) {
+    if (parts.some((part) => rectTouchesStadium(part, table, seatGap))) {
       problems.push({ kind: "seat-table", a });
     }
     const off = (part: Rect) =>
@@ -193,7 +212,7 @@ export function geometryProblems(pixels: PixelLayout): GeometryProblem[] {
   slots.forEach((slot, a) => {
     for (let b = a + 1; b < slots.length; b++) {
       const other = slots[b];
-      if (other && rectsOverlap(slot, other)) {
+      if (other && rectsOverlap(slot, other, SLOT_CLEARANCE)) {
         problems.push({ kind: "slot-slot", a, b });
       }
     }

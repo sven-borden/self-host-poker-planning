@@ -22,6 +22,13 @@ server sends and never decides the outcome of a round.
   it, `i18n.ts` holds a minimal `t()` until #9 brings react-i18next.
 - `src/motion/`: `AppMotionConfig` (reduced motion), `MotionFeatures` (lazy Motion
   features) and small wrappers.
+- `src/table/`: the table (#13). `layout.ts` is the pure layout engine
+  (`layoutTable(count, variant)` gives seat and slot centres as stage percentages, plus
+  whole-pixel sizes; `GEOMETRY` holds the design brief's numbers), `geometry.ts` the
+  pixel checks (stadium shape, clearances) shared by the unit test and Playwright.
+  `TableStage`, `Seat`, `Avatar`, `HandCard`, `SlotCard` and `MiniCard` are
+  presentational: props in, no store. `/dev/table` (`src/routes/dev/table.tsx`, lazy,
+  noindex) shows them: `?n=1..16&state=lobby|voting|revealed&observers=0..4`.
 - `src/stores/`: Zustand stores. `src/realtime/`: the typed Socket.IO client.
 
 ## Rules
@@ -58,6 +65,12 @@ server sends and never decides the outcome of a round.
 - Browser code only: `tsconfig.app.json` covers `src/` with DOM types and no Node types;
   `tsconfig.node.json` covers `vite.config.ts` and `scripts/`, which run under Node 24's
   type stripping.
+- `phone:` is a Tailwind variant for 640 px and below, the tall table's breakpoint
+  (`useTableVariant()` is its JavaScript twin).
+- End-to-end: `pnpm --filter @pp/web test:e2e` runs Playwright (`e2e/`) against
+  `vite preview`. Locally it builds first and uses the installed Microsoft Edge; in CI
+  (`web-e2e` job) it uses Chromium on the build from the step before. Screenshots go to
+  `tmp/screenshots/` (gitignored). Not part of `pnpm gate`.
 - Tests: the `web` Vitest project extends `vite.config.ts` and runs in jsdom
   (`src/test-setup.ts` stubs `matchMedia`).
 
