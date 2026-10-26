@@ -414,6 +414,24 @@ describe("refusals", () => {
       PO,
       "deck_empty",
     ],
+    ...(
+      [
+        ["21 custom cards", Array.from({ length: 21 }, (_, i) => String(i)), "deck_too_many_cards"],
+        ["a blank custom card", ["1", "  "], "card_empty"],
+        ["a custom card with a zero-width space", ["1​"], "card_invalid"],
+        ["a 5-character custom card", ["12345"], "card_too_long"],
+        ["a special as custom card", ["1", "?"], "card_special"],
+      ] as const
+    ).map(
+      ([label, cards, code]) =>
+        [
+          label,
+          room,
+          { type: "updateSettings", patch: { deck: { kind: "custom", cards } } },
+          PO,
+          code,
+        ] as [string, () => RoomState, unknown, string, ErrorCode],
+    ),
     [
       "a custom card with a lone surrogate",
       room,
