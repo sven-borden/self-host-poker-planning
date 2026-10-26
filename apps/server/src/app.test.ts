@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type AppDeps, createApp } from "./app.ts";
+import { type AppDeps, createApp, DB_CHECK_TIMEOUT_MS } from "./app.ts";
 import { collectLogs, SECRET, testConfig } from "./test-support.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -52,6 +52,14 @@ describe("GET /api/health", () => {
     expect(thrown.status).toBe(503);
     expect(await thrown.json()).toMatchObject({ db: "error" });
   });
+
+  it("gives up on a hung database check and answers 503", async () => {
+    const hung = app({ checkDb: () => new Promise(() => {}), dbCheckTimeoutMs: 30 });
+    const response = await hung.app.request("/api/health");
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ status: "error", db: "error" });
+    expect(DB_CHECK_TIMEOUT_MS).toBe(2000);
+  });
 });
 
 describe("request ids and logs", () => {
@@ -93,6 +101,7 @@ describe("request ids and logs", () => {
     });
     const response = await a.request("/api/explode");
     expect(response.status).toBe(500);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(await response.json()).toEqual({ code: "internal" });
     expect(logs.messages()).toEqual(["unhandled error", "request failed"]);
   });
@@ -110,6 +119,7 @@ describe("/api routing", () => {
       const response = await a.request(path, { method });
       expect(response.status, `${method} ${path}`).toBe(404);
       expect(response.headers.get("content-type")).toMatch(/^application\/json/);
+      expect(response.headers.get("cache-control")).toBe("no-store");
       expect(await response.json()).toEqual({ code: "not_found" });
     }
   });
@@ -186,6 +196,7 @@ describe("the built web app", () => {
     for (const path of ["/assets/index-0ld0ld00.js", "/missing.png", "/.vite/manifest.json"]) {
       const response = await get(path);
       expect(response.status, path).toBe(404);
+      expect(response.headers.get("cache-control"), path).toBe("no-store");
       expect(await response.json()).toEqual({ code: "not_found" });
     }
   });

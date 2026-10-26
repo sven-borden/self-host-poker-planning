@@ -38,7 +38,12 @@ export interface AppDeps {
   staticDir?: string;
   /** Seconds since start, for `/api/health`. Defaults to `process.uptime`. */
   uptime?: () => number;
+  /** How long `/api/health` waits for `checkDb` before it reports `"error"`. */
+  dbCheckTimeoutMs?: number;
 }
+
+/** A hung pool must not hang the Docker HEALTHCHECK: the check gives up after this. */
+export const DB_CHECK_TIMEOUT_MS = 2000;
 
 /** An incoming `x-request-id` is kept only when it is short and harmless in a log line. */
 const SAFE_REQUEST_ID = /^[\w.:-]{1,64}$/;
@@ -74,14 +79,22 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
     else log.debug(line, "request");
   });
 
+  // Error answers are never cached: a CDN must not keep a 404 for an asset that a deploy
+  // in progress is about to serve.
   app.onError((error, c) => {
     c.var.log.error({ err: error }, "unhandled error");
+    c.header("Cache-Control", "no-store");
     return c.json({ code: "internal" }, 500);
   });
-  app.notFound((c) => c.json({ code: "not_found" }, 404));
+  app.notFound((c) => {
+    c.header("Cache-Control", "no-store");
+    return c.json({ code: "not_found" }, 404);
+  });
 
+  const checkDb = deps.checkDb;
+  const dbCheckTimeoutMs = deps.dbCheckTimeoutMs ?? DB_CHECK_TIMEOUT_MS;
   app.get("/api/health", async (c) => {
-    const db = deps.checkDb ? await deps.checkDb().catch((): DbStatus => "error") : "unchecked";
+    const db = checkDb ? await withTimeout(checkDb, dbCheckTimeoutMs) : "unchecked";
     c.header("Cache-Control", "no-store");
     return c.json(
       {
@@ -105,6 +118,19 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
     mountWebApp(app, deps.staticDir);
   }
   return app;
+}
+
+/** Runs the database check; a rejection or no answer within `ms` counts as `"error"`. */
+async function withTimeout(check: () => Promise<DbStatus>, ms: number): Promise<DbStatus> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<DbStatus>((resolve) => {
+    timer = setTimeout(() => resolve("error"), ms);
+  });
+  try {
+    return await Promise.race([check().catch((): DbStatus => "error"), timedOut]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
