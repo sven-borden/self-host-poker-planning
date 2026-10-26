@@ -1,0 +1,19 @@
+{
+  "name": "@pp/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@pp/domain": "workspace:*",
+    "@pp/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "vite": "8.3.5"
+  }
+}

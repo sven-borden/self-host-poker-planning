@@ -1,0 +1,14 @@
+packages:
+  - apps/*
+  - packages/*
+
+# pnpm 10+ reads its settings from this file, not from .npmrc.
+
+# Refuse to install when the running Node does not satisfy `engines` (Node 24 only).
+engineStrict: true
+
+# Dependency build scripts stay blocked (pnpm's default) and an unreviewed one fails the
+# install. Allow only what really needs one:
+# - esbuild (used by tsx) runs a postinstall that checks and links its native binary.
+allowBuilds:
+  esbuild: true

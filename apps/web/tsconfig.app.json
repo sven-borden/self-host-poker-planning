@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./.tsbuild/app",
+    "lib": ["es2024", "dom", "dom.iterable"],
+    "types": ["vite/client"]
+  },
+  "include": ["src"],
+  "references": [{ "path": "../../packages/domain" }, { "path": "../../packages/protocol" }]
+}

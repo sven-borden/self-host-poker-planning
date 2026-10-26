@@ -1,0 +1,20 @@
+{
+  "name": "@pp/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsdown",
+    "start": "node dist/main.mjs"
+  },
+  "dependencies": {
+    "@pp/domain": "workspace:*",
+    "@pp/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "tsdown": "0.23.2",
+    "tsx": "4.23.15"
+  }
+}
