@@ -20,9 +20,17 @@ Code conventions live next to the code (package READMEs); do not duplicate them 
 
 ## Build process
 
-- Strictly serial: one GitHub issue at a time, one subagent per issue, the main
-  session orchestrates. Order: milestones `W0` to `W7`, then issue number inside a
-  wave. Issue keys `PP-NNN` equal issue numbers. Order and blockers: `docs/STATUS.md`.
+- Two issues may be in flight at once (Sven, 2026-10-26), when both have their "Depends
+  on" issues merged and they touch different parts of the repo. Otherwise one at a time.
+  One implementer agent per issue; the main session orchestrates.
+- Each implementer works in its own git worktree in a short sibling folder
+  (`../pp-wt-NN`; pnpm 12 fails on long Windows paths), never in the main checkout. The
+  main checkout stays on `main` for merges and the build log.
+- When two PRs are open, the one that merges second first merges `main` into its
+  branch. It regenerates `pnpm-lock.yaml` with `pnpm install` (never by hand) and is
+  green again before merging.
+- Order: milestones `W0` to `W7`, then issue number inside a wave. Issue keys `PP-NNN`
+  equal issue numbers. Order and blockers: `docs/STATUS.md`.
 - Per issue: read the issue and the "Handoff for the fixer" sections of the PRs it
   depends on; brief the agent with PO defaults; the agent works on a branch
   (`feat/pp-NNN-…`, `fix/…`, `chore/…`), commits after every working step, opens the
