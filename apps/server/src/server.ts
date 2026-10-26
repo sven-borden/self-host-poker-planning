@@ -41,6 +41,7 @@ export function createServer(config: Config, deps: ServerDeps): PokerServer {
   const httpServer = createAdaptorServer({ fetch: app.fetch }) as HttpServer;
   const io = createRealtime(httpServer, {
     logger,
+    allowedOrigin: config.baseUrl,
     ...(deps.handlers && { handlers: deps.handlers }),
     ...(deps.socketMiddleware && { middleware: deps.socketMiddleware }),
   });

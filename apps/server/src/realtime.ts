@@ -57,6 +57,14 @@ export const noRoomHandlers: RealtimeHandlers = {
 
 export interface RealtimeOptions {
   logger: Logger;
+  /**
+   * The only browser origin allowed to open a socket: `config.baseUrl`. A handshake with
+   * another `Origin` is refused on both transports, so a page on another site (even a
+   * same-site one such as another `*.example.com` app, which SameSite=Lax lets through)
+   * cannot ride a visitor's session cookie. A handshake without `Origin` is a non-browser
+   * client, which carries no visitor's cookie, and is accepted.
+   */
+  allowedOrigin: string;
   handlers?: RealtimeHandlers;
   /** Run in order on every handshake after the connection id is set (#10: session). */
   middleware?: readonly SocketMiddleware[];
@@ -66,10 +74,14 @@ export interface RealtimeOptions {
 export const MAX_PAYLOAD_BYTES = 16 * 1024;
 
 export function createRealtime(httpServer: HttpServer, options: RealtimeOptions): RealtimeServer {
-  const { logger, handlers = noRoomHandlers, middleware = [] } = options;
+  const { logger, allowedOrigin, handlers = noRoomHandlers, middleware = [] } = options;
   const io: RealtimeServer = new Server(httpServer, {
     maxHttpBufferSize: MAX_PAYLOAD_BYTES,
     serveClient: false,
+    allowRequest: (request, callback) => {
+      const origin = request.headers.origin;
+      callback(null, origin === undefined || origin === allowedOrigin);
+    },
   });
 
   io.use((socket, next) => {

@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+import { request as httpRequest } from "node:http";
 import {
   type ClientToServerEvents,
   cmdAckSchema,
@@ -27,24 +29,67 @@ afterEach(async () => {
   }
 });
 
-async function start(
-  deps: Partial<ServerDeps> = {},
-): Promise<{ server: PokerServer; logs: LogCollector; client: (transports?: string[]) => Client }> {
+async function start(deps: Partial<ServerDeps> = {}): Promise<{
+  server: PokerServer;
+  logs: LogCollector;
+  port: number;
+  client: (transports?: string[], extraHeaders?: Record<string, string>) => Client;
+}> {
   const logs = collectLogs();
   const server = createServer(testConfig(), { logger: logs.logger, ...deps });
   const { port } = await server.listen();
   const entry = { server, clients: [] as Client[] };
   open.push(entry);
-  const client = (transports = ["websocket"]) => {
+  const client = (transports = ["websocket"], extraHeaders: Record<string, string> = {}) => {
     const socket: Client = connect(`http://localhost:${port}`, {
       transports,
       reconnection: false,
       forceNew: true,
+      extraHeaders,
     });
     entry.clients.push(socket);
     return socket;
   };
-  return { server, logs, client };
+  return { server, logs, port, client };
+}
+
+/**
+ * Sends a bare Engine.IO handshake, as a hostile page's browser would, and resolves with
+ * the HTTP status: 101 for an accepted WebSocket upgrade, 200 for an accepted poll.
+ */
+function handshake(
+  port: number,
+  transport: "polling" | "websocket",
+  origin: string | undefined,
+): Promise<number> {
+  const headers: Record<string, string> = origin === undefined ? {} : { origin };
+  if (transport === "websocket") {
+    Object.assign(headers, {
+      connection: "Upgrade",
+      upgrade: "websocket",
+      "sec-websocket-version": "13",
+      "sec-websocket-key": randomBytes(16).toString("base64"),
+    });
+  }
+  return new Promise((resolve, reject) => {
+    const request = httpRequest({
+      host: "localhost",
+      port,
+      path: `/socket.io/?EIO=4&transport=${transport}`,
+      headers,
+      agent: false,
+    });
+    request.once("upgrade", (response, socket) => {
+      socket.destroy();
+      resolve(response.statusCode ?? 0);
+    });
+    request.once("response", (response) => {
+      response.resume();
+      response.once("end", () => resolve(response.statusCode ?? 0));
+    });
+    request.once("error", reject);
+    request.end();
+  });
 }
 
 function connected(socket: Client): Promise<void> {
@@ -180,6 +225,39 @@ describe("Socket.IO", () => {
     const closed = new Promise<string>((resolve) => socket.once("disconnect", resolve));
     raw(socket).emit("enter", { code: "x".repeat(MAX_PAYLOAD_BYTES), protocol: PROTOCOL_VERSION });
     expect(await closed).toBe("transport close");
+  });
+});
+
+describe("the Origin check", () => {
+  // testConfig() sets BASE_URL=http://localhost:3000; the server listens elsewhere, which
+  // does not matter: the rule compares the Origin header with BASE_URL's origin.
+  const SAME = "http://localhost:3000";
+
+  it("refuses a foreign Origin on both transports", async () => {
+    const { port } = await start();
+    for (const transport of ["websocket", "polling"] as const) {
+      for (const origin of ["https://evil.example", "http://localhost:3001", "null"]) {
+        const status = await handshake(port, transport, origin);
+        expect(status, `${transport} ${origin}`).toBeGreaterThanOrEqual(400);
+      }
+    }
+  });
+
+  it("accepts BASE_URL's origin and a handshake without Origin on both transports", async () => {
+    const { port } = await start();
+    expect(await handshake(port, "websocket", SAME)).toBe(101);
+    expect(await handshake(port, "polling", SAME)).toBe(200);
+    expect(await handshake(port, "websocket", undefined)).toBe(101);
+    expect(await handshake(port, "polling", undefined)).toBe(200);
+  });
+
+  it("lets a same-origin client through to an ack and stops a foreign one", async () => {
+    const { client } = await start();
+    const same = client(["websocket"], { origin: SAME });
+    await connected(same);
+    expect(await same.emitWithAck("enter", ENTER)).toEqual({ ok: false, code: "room_not_found" });
+    const foreign = client(["websocket"], { origin: "https://evil.example" });
+    await expect(connected(foreign)).rejects.toThrow();
   });
 });
 

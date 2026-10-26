@@ -29,6 +29,10 @@ every round and, in production, serves the built web app.
 - Socket payloads are `unknown` at runtime: `parseEnter` and `toDomainCommand` run on
   every message, junk answers `bad_payload`, a missing ack callback is fine, a throwing
   handler answers `internal`. Messages are capped at 16 KB.
+- Socket.IO accepts a handshake only without an `Origin` header (a non-browser client) or
+  with `Origin` equal to `BASE_URL`'s origin, on both transports (`allowRequest`). So
+  `pnpm dev` needs `BASE_URL=http://localhost:5173` (Vite forwards the Origin unchanged);
+  the built server on its own needs `BASE_URL=http://localhost:3000`.
 - `pnpm dev` runs `tsx watch` with `--env-file-if-exists=../../.env` (copy the root
   `.env.example`). Without a database the server still starts until #7.
 - `pnpm build` bundles `src/main.ts` with tsdown into `dist/main.mjs`. The `@pp/*`
