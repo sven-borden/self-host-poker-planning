@@ -1,12 +1,14 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 // One Vitest run over every package. Each project is named after its package; `pnpm test`
-// runs every project except `db`.
+// runs every project except `db`. Unit projects pick up `*.test.ts` and `*.test.tsx` but
+// never `*.db.test.ts`, which belong to the `db` project alone.
 const unit = (name: string, root: string) => ({
   test: {
     name,
     root,
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
+    exclude: [...configDefaults.exclude, "**/*.db.test.ts"],
     environment: "node" as const,
   },
 });
