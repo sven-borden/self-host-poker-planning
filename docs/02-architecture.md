@@ -134,6 +134,14 @@ Every `apply` runs three steps:
    eligible voters are not empty and all of them have voted. Eligible: role `voter`, not
    away (`awaySince` unset), not the PO when `poVotes` is off. So a leave, kick, role
    change, settings change or owner transfer can complete a round, not only a vote.
+   `timeUp` succeeds as a no-op command, so it runs this settle step too: the server's
+   own timeout settles the round like any other command.
+
+TODO (presence, #17): `awaySince` changes the eligible voters, so presence must change
+it through `apply` with a server-only command (for example
+`presence { who, connected, awaySince }`, refused from a client), never by writing the
+state directly. Otherwise someone going away after everyone else voted leaves the round
+in Voting until the next command arrives. Not built in #3.
 
 | Command | Who | Rule (error codes) |
 |---|---|---|
@@ -151,7 +159,7 @@ Every `apply` runs three steps:
 | `startTimer {seconds}` | PO | Voting only; integer 5–3600 (`bad_seconds`); restarts a running timer; no change when the deadline stays the same |
 | `stopTimer` | PO | no-op without a timer |
 | `extendTimer {seconds}` | PO | running timer only (`no_timer`); 5–3600 |
-| `timeUp` | anyone, also non-participants | nothing beyond step 1 (the server's own timeout sends it) |
+| `timeUp` | anyone, also non-participants | nothing beyond steps 1 and 3 (the server's own timeout sends it) |
 | `updateSettings {patch}` | PO | shallow merge, `timer` one level deep; unknown keys and bad values give `bad_settings` or the custom-deck code; turning `observersCount` on past 16 gives `room_full`; a deck or specials change during Voting restarts the round (votes cleared, same subject and number); anonymity applies from the next round; a running timer ignores `timer.seconds` |
 | `transferOwner {to}` | PO | target present (participant, not away) and not the PO (`target_not_present`) |
 | `claimOwner` | participant | not the PO (`already_owner`); only when the PO is not in the room or away for 120 s (`owner_present`) |
