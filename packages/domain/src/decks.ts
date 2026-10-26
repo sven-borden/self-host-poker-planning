@@ -117,7 +117,8 @@ export function validateCustomDeck(
   for (const raw of cards) {
     const card = raw.trim().normalize("NFC");
     if (card === "") return { ok: false, code: "card_empty" };
-    if (INVISIBLE.test(card.replace(EMOJI_JOINER, "$1"))) return { ok: false, code: "card_invalid" };
+    if (INVISIBLE.test(card.replace(EMOJI_JOINER, "$1")))
+      return { ok: false, code: "card_invalid" };
     if (cardLength(card) > MAX_CARD_LENGTH) return { ok: false, code: "card_too_long" };
     if (isSpecial(card.replace(/[\uFE0E\uFE0F]/gu, ""))) return { ok: false, code: "card_special" };
     if (out.includes(card)) return { ok: false, code: "card_duplicate" };
