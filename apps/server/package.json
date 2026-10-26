@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
     "build": "tsdown",
-    "start": "node --enable-source-maps dist/main.mjs"
+    "start": "node --enable-source-maps dist/main.mjs",
+    "test": "vitest run --root ../.. --project=server"
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",

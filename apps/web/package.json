@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build && node scripts/check-budget.ts",
     "preview": "vite preview",
+    "test": "vitest run --root ../.. --project=web",
     "test:e2e": "playwright test"
   },
   "dependencies": {
