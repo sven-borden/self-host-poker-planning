@@ -37,7 +37,7 @@ canonical: `.` is the decimal mark and the domain never localises (the UI may sh
 - **Results** (`computeResults(votes, deck)`), plain and unrounded, after the round-1
   prototype's `stats()`:
   - `distribution`: the count of every voted card, specials included, in display
-    order; a vote outside the deck comes last and counts in no statistic.
+    order; votes outside the deck come last, sorted by code point, and count in no statistic.
   - `core`: the non-special votes, sorted by deck order. Specials count in no statistic.
   - `mode`: the core card with the highest count; a tie goes to the earlier deck card.
   - `agreement`: mode count / core count, 0 to 1; 0 without core votes.

@@ -31,10 +31,21 @@ export type Results = {
 /** Distances closer than this are a tie, so binary noise never breaks one. */
 const EPSILON = 1e-9;
 
+/** Orders labels by Unicode code point (not by UTF-16 unit), the same on every engine. */
+function byCodePoint(a: string, b: string): number {
+  const x = Array.from(a);
+  const y = Array.from(b);
+  for (let i = 0; i < Math.min(x.length, y.length); i++) {
+    const d = (x[i]?.codePointAt(0) ?? 0) - (y[i]?.codePointAt(0) ?? 0);
+    if (d !== 0) return d;
+  }
+  return x.length - y.length;
+}
+
 /**
  * The results of a revealed round, plain and unrounded (the UI rounds and formats).
  * `votes` holds one card per vote, in any order. A vote for a card outside the deck
- * shows in the distribution, after the deck's cards, but counts in no statistic.
+ * shows in the distribution, after the deck's cards and sorted by code point, but counts in no statistic.
  */
 export function computeResults(votes: readonly Card[], deck: DeckSpec): Results {
   // A Set keeps the first occurrence, so a duplicate label in a custom deck counts once.
@@ -42,9 +53,13 @@ export function computeResults(votes: readonly Card[], deck: DeckSpec): Results 
   const counts = new Map<Card, number>();
   for (const v of votes) counts.set(v, (counts.get(v) ?? 0) + 1);
 
-  // Display order: the deck's cards, the specials, then cards outside the deck as first seen.
-  const order = new Set([...cards, ...SPECIAL_CARDS, ...counts.keys()]);
-  const distribution = [...order]
+  // Display order: the deck's cards, the specials, then cards outside the deck by code
+  // point. Never input order: the state machine passes votes in the room's order, and
+  // in anonymous mode that order must not tie a value to a voter.
+  const known = new Set<Card>([...cards, ...SPECIAL_CARDS]);
+  const outside = [...counts.keys()].filter((card) => !known.has(card)).sort(byCodePoint);
+  const order = [...known, ...outside];
+  const distribution = order
     .filter((card) => counts.has(card))
     .map((card) => ({ card, count: counts.get(card) ?? 0 }));
 

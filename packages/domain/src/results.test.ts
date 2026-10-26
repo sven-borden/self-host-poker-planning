@@ -233,4 +233,41 @@ describe("computeResults", () => {
     expect(results.core).toEqual(["3", "3"]);
     expect(results.distribution).toEqual([{ card: "3", count: 2 }]);
   });
+
+  it("sorts cards outside the deck by code point, whatever the input order", () => {
+    const expected = [
+      { card: "4", count: 1 },
+      { card: "6", count: 1 },
+    ];
+    expect(computeResults(["4", "6"], fib).distribution).toEqual(expected);
+    expect(computeResults(["6", "4"], fib).distribution).toEqual(expected);
+    // Above the BMP and below U+FF61: code point order puts the emoji last.
+    const tail = computeResults(["👍", "｡", "a"], fib).distribution.map((d) => d.card);
+    expect(tail).toEqual(["a", "｡", "👍"]);
+  });
+
+  it.each<[string, DeckSpec, Card[]]>([
+    ["fib", fib, ["0", "1", "1", "3", "5", "5", "5", "13", "21", "?", "☕", "∞", "4", "6"]],
+    ["mfib", mfib, ["½", "½", "1", "2", "40", "100", "?", "?", "∞", "0.5", "7"]],
+    ["tshirt", tshirt, ["XS", "S", "S", "M", "L", "XL", "XXL", "☕", "XXXL", "huge"]],
+    ["custom", custom("8", "1", "3", "big"), ["8", "1", "1", "3", "big", "?", "2", "x", "4", "😀"]],
+  ])("shuffling the votes never changes the results on %s", (_, deck, votes) => {
+    const expected = computeResults(votes, deck);
+    // A small seeded generator keeps the shuffles reproducible.
+    let seed = 12345;
+    const random = (): number => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+    for (let run = 0; run < 50; run++) {
+      const shuffled = [...votes];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(random() * (i + 1));
+        const a = shuffled[i] as Card;
+        shuffled[i] = shuffled[j] as Card;
+        shuffled[j] = a;
+      }
+      expect(computeResults(shuffled, deck)).toEqual(expected);
+    }
+  });
 });
