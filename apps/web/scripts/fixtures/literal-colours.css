@@ -1,0 +1,6 @@
+/* A stylesheet that breaks the colour rule on purpose; bg-red-500 in a comment is fine. */
+.bad {
+  color: tomato;
+  border-color: #b0453b;
+  background: rgb(0 0 0 / 0.5);
+}

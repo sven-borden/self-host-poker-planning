@@ -13,6 +13,7 @@
       "!**/.tsbuild",
       "!docs/prototype",
       "!pnpm-lock.yaml",
+      "!**/routeTree.gen.ts",
       "!**/*.md"
     ]
   },
@@ -26,6 +27,11 @@
   "javascript": {
     "formatter": {
       "quoteStyle": "double"
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
     }
   },
   "markdown": {
@@ -65,6 +71,26 @@
                     "message": "Shared packages are pure TypeScript: no Node APIs."
                   }
                 ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/web/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "motion/react": {
+                    "importNames": ["motion"],
+                    "message": "Use m.* inside <MotionFeatures> (src/motion/motion.tsx): motion.* pulls the whole Motion bundle into the chunk."
+                  }
+                }
               }
             }
           }
