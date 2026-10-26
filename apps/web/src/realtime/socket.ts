@@ -39,10 +39,10 @@ export function trackConnection<ServerToClient extends EventsMap, ClientToServer
   onStatus: (status: ConnectionStatus) => void,
 ): () => void {
   const onConnect = () => onStatus("connected");
-  const onDisconnect = (reason: Socket.DisconnectReason) => {
-    // A disconnect the client asked for is final; any other one is retried by Socket.IO.
-    onStatus(reason === "io client disconnect" ? "offline" : "reconnecting");
-  };
+  // Socket.IO retries a lost connection on its own while the socket stays active. It does
+  // not after a disconnect the client asked for (`io client disconnect`) or one the server
+  // forced (`io server disconnect`): then `active` is false and the status is final.
+  const onDisconnect = () => onStatus(socket.active ? "reconnecting" : "offline");
   const onConnectError = () => onStatus(socket.active ? "reconnecting" : "offline");
   const onReconnectAttempt = () => onStatus("reconnecting");
 
