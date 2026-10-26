@@ -3,7 +3,9 @@
   "compilerOptions": {
     "outDir": "./.tsbuild/app",
     "lib": ["es2024", "dom", "dom.iterable"],
-    "types": ["vite/client"]
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src"],
   "references": [{ "path": "../../packages/domain" }, { "path": "../../packages/protocol" }]

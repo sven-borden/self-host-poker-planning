@@ -11,6 +11,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   Biome, Vitest, Vite and tsdown. `pnpm gate` is green.
 - CI from #2 runs on every pull request: `check` runs `pnpm gate`, and `db-tests`
   runs `pnpm test:db` against Postgres 17.
+- The web shell from #8: routes `/` and `/r/$code`, design tokens with light, dark and
+  system themes, shadcn/ui, Motion, fonts, and en/fr/de copy. The room route loads
+  138.5 kB of JS against a 200 kB budget.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -18,13 +21,14 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#5 (PP-005)** the protocol and per-viewer snapshots, in worktree `../pp-wt-05`.
-- **#8 (PP-008)** the web shell: PR #67, review fixes under way in `../pp-wt-08`.
+- **#5 (PP-005)** the protocol and per-viewer snapshots: PR #68 in review.
+- **#13 (PP-013)** the table layout engine and card components, in worktree
+  `../pp-wt-13`.
 
 ## Next
 
 - Domain and server chain: #6 after #5, then #7 and #10.
-- Web chain: #9 and #13 after #8.
+- Web chain: #9 (i18n) after #5. It translates the error codes from `@pp/protocol`.
 - #11 (Docker) needs #6, #7 and #8.
 - **#12** waits for Sven's go on Coolify and DNS (see Owner items). #13 does not
   depend on #12, so it can go first.
