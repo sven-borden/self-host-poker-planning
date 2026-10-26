@@ -11,15 +11,17 @@
     "dev": "node scripts/check-node.mjs && pnpm --parallel --filter @pp/web --filter @pp/server run dev",
     "build": "pnpm --recursive run build",
     "test": "vitest run --project=!db",
+    "test:coverage": "vitest run --project=!db --coverage",
     "test:db": "vitest run --project=db --no-file-parallelism",
     "lint": "biome check . && node apps/web/scripts/check-colours.ts",
     "format": "biome check --write .",
     "typecheck": "tsc --build",
-    "gate": "node scripts/check-node.mjs && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "gate": "node scripts/check-node.mjs && pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.3",
     "@types/node": "24.19.2",
+    "@vitest/coverage-v8": "5.0.5",
     "typescript": "7.0.2",
     "vitest": "5.0.5"
   }

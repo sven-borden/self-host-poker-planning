@@ -15,7 +15,7 @@ Reverse proxy (Traefik on Coolify, Container Apps ingress on Azure, nginx…)
 app container (Node 24)
    ├─ Hono: /api/*, Better Auth (/api/auth/*), static SPA with history fallback
    ├─ Socket.IO: room channel, commands in, per-viewer snapshots out
-   └─ packages/domain: apply(state, command, now)
+   └─ packages/domain: apply(state, command, { actor, now })
    ▼
 PostgreSQL 17: rooms (live state + version), round history, auth tables
 ```
@@ -54,7 +54,7 @@ type Card = string;                 // "0" "1" "½" "13" "XL" "?" "☕" "∞" or
 type RoomSettings = {
   deck: { kind: "preset"; id: "fib" | "mfib" | "tshirt" | "pow2" | "seq" }
       | { kind: "custom"; cards: Card[] };          // max 20 cards, max 4 characters each
-  specials: Array<"?" | "☕" | "∞">;                 // default ["?", "☕"]
+  specials: Array<"?" | "☕" | "∞">;                 // default ["?", "☕"]; stored in that order
   whoCanReveal: "po" | "anyone";                     // default "po"
   revealNames: boolean;                              // default true (false = anonymous)
   revealWhenAllVoted: boolean;                       // default true
@@ -75,9 +75,12 @@ type Participant = {
 
 type Round = {
   number: number;
-  subject: { kind: "none" } | { kind: "title"; text: string }
-         | { kind: "link"; url: string; key?: string };  // key: "ABC-123" or ADO work item id
+  subject: { kind: "none" } | { kind: "title"; text: string }      // title: 1–200 characters
+         | { kind: "link"; url: string; key?: string };  // http(s), ≤ 2000; key: "ABC-123" or ADO id, server-detected
   phase: "voting" | "revealed";
+  deck: RoomSettings["deck"];       // captured at the round's start: votes are checked
+  specials: RoomSettings["specials"]; //   against deckCards(deck, specials)
+  anonymous: boolean;               // !settings.revealNames at the start; a change applies next round
   votes: Record<UserId, { card: Card; changedAfterReveal?: true }>;
   startedAt: number;
   revealedAt?: number;
@@ -93,33 +96,73 @@ type RoomState = {
 };
 ```
 
+`createRoom({ ownerId })` gives the ADR-011 defaults (`DEFAULT_SETTINGS`), no participants
+and `round: null`; the PO enters through `join` like everyone else. Character counts are
+user-perceived characters (`cardLength`). Capacity: at most 16 counted people (voters,
+plus observers when `observersCount`) and at most 32 participants in all.
+
 ## 4. The round state machine
 
-`apply(state, command, ctx) → { state, cause } | { error }` in `packages/domain`,
-where `ctx = { actor: UserId, now: number }`. Pure, synchronous, exhaustively tested.
+`apply(state, command, ctx)` in `packages/domain` (`apply.ts`), where
+`ctx = { actor: UserId, now: number }` (epoch ms). Pure, synchronous, never mutates its
+input, 100 % branch coverage enforced by the gate. Commands are a flat union
+(`{ type: "castVote", card }`). It returns `{ ok: true, state, causes, ended? }` or
+`{ ok: false, error, state, causes }`; when nothing changed, `state` is the input object
+itself (`===`), so the server can skip the write. Error codes are one snake_case union
+(`ErrorCode`); causes never carry a card value except the public `finalSet`.
 
 States: **Lobby** (`round === null`) → **Voting** → **Revealed** → next round →
 **Voting**. A finished round is written to history when the next round starts, when
 the final estimate is set, or when the room goes idle.
 
-| Command | Who | Rule |
-|---|---|---|
-| `join {name, role}` | anyone admitted | refuses when the room is full (16; observers count if the setting says so) |
-| `leave`, `rename {name}`, `setRole {role}` | self | — |
-| `startRound {subject}` | PO | from Lobby or Revealed; clears votes |
-| `castVote {card}` / `retractVote` | voter | card must be in the deck; in Revealed only if `allowChangeAfterReveal` (marks `changedAfterReveal`) |
-| `reveal` | PO, or anyone if `whoCanReveal = "anyone"` | Voting → Revealed |
-| (auto) everyone voted | server | after `castVote`, if `revealWhenAllVoted` and every voter (and the PO if `poVotes`) voted |
-| `startTimer {seconds}` / `stopTimer` / `extendTimer` | PO | sets or clears `deadlineAt` |
-| `timeUp` | anyone | no-op unless `now ≥ deadlineAt`; then reveal if `timer.revealAtEnd` |
-| `setFinal {card}` / `revote` | PO | Revealed only; `revote` restarts the same subject |
-| `updateSettings {patch}` | PO | validated; a deck change during Voting restarts the round |
-| `transferOwner {to}` | PO | target must be present |
-| `claimOwner` | any participant | only when the PO has been away for 120 s |
-| `kick {who}` | PO | not self |
+`ended` is the round an `apply` replaced or abandoned (`startRound`, `revote`, or a deck
+or specials change that restarts a voting round), in its final form after step 1. The
+input state is not enough: when a timer has elapsed, `startRound` first reveals the old
+round and then replaces it in the same call, so only `ended` holds that revealed round.
+The server writes `ended` to history only when `ended.phase === "revealed"`; an
+abandoned or restarted voting round is not history.
 
-Lazy deadlines: before applying any command, `apply` first resolves an elapsed
-deadline. So a reveal at the deadline happens exactly once, whoever arrives first.
+Every `apply` runs three steps:
+1. **Resolve an elapsed deadline**: if Voting and `deadlineAt <= now`, reveal (by
+   `"timer"`, `revealedAt = deadlineAt`) when `timer.revealAtEnd`, otherwise clear the
+   deadline and emit `timeUp`. The deadline is cleared either way, so this happens once,
+   whoever arrives first, and it stands even when the command is then refused.
+2. **Run the command.** Every command except `join` and `timeUp` needs the actor to be a
+   participant (`not_participant`); PO-only commands answer `not_owner`.
+3. **Settle** (on success, while Voting): drop the votes of people who are no longer
+   voters, each with a `voteRetracted { who }` cause, then reveal (by `"everyoneVoted"`) when `revealWhenAllVoted` is on, the
+   eligible voters are not empty and all of them have voted. Eligible: role `voter`, not
+   away (`awaySince` unset), not the PO when `poVotes` is off. So a leave, kick, role
+   change, settings change or owner transfer can complete a round, not only a vote.
+   `timeUp` succeeds as a no-op command, so it runs this settle step too: the server's
+   own timeout settles the round like any other command.
+
+TODO (presence, #17): `awaySince` changes the eligible voters, so presence must change
+it through `apply` with a server-only command (for example
+`presence { who, connected, awaySince }`, refused from a client), never by writing the
+state directly. Otherwise someone going away after everyone else voted leaves the round
+in Voting until the next command arrives. Not built in #3.
+
+| Command | Who | Rule (error codes) |
+|---|---|---|
+| `join {name, role}` | anyone admitted | name with whitespace runs (tabs, line breaks) collapsed to one space and trimmed, 1–32 chars and at most 512 code units, no lone surrogate (`bad_name`; titles follow the same rules with 200 chars); `already_joined`; `room_full` past 16 counted or 32 in all |
+| `leave` | self | removes the person (and their vote while Voting); a leaving PO keeps ownership |
+| `rename {name}` | self | as `join` |
+| `setRole {role}` | self | voter → observer drops the vote while Voting; observer → voter checks capacity when observers do not count |
+| `kick {who}` | PO | `cannot_kick_self`, `unknown_participant` |
+| `startRound {subject}` | PO | any phase; from Voting it abandons the round; number + 1; captures deck, specials, anonymity; starts `timer.seconds` (`bad_subject`) |
+| `castVote {card}` | voter | `no_round`, `not_voter` (observers; the PO when `poVotes` is off), `bad_card` (not in the round's cards); in Revealed only with `allowChangeAfterReveal`, marked `changedAfterReveal`, and never a first vote in an anonymous round (`round_revealed`); after an anonymous reveal the `voteCast` cause carries no `who` |
+| `retractVote` | self | Voting only (`not_voting`); no-op without a vote |
+| `reveal` | PO, or anyone if `whoCanReveal = "anyone"` | Voting only (`not_voting`, `not_allowed`); zero votes allowed; stops the timer |
+| `setFinal {card}` | PO | Revealed only (`not_revealed`); a non-special card of the round (`bad_card`) |
+| `revote` | PO | Revealed only; a new round with the same subject |
+| `startTimer {seconds}` | PO | Voting only; integer 5–3600 (`bad_seconds`); restarts a running timer; no change when the deadline stays the same |
+| `stopTimer` | PO | no-op without a timer |
+| `extendTimer {seconds}` | PO | running timer only (`no_timer`); 5–3600 |
+| `timeUp` | anyone, also non-participants | nothing beyond steps 1 and 3 (the server's own timeout sends it) |
+| `updateSettings {patch}` | PO | shallow merge, `timer` one level deep; unknown keys and bad values give `bad_settings` or the custom-deck code; turning `observersCount` on past 16 gives `room_full`; a deck or specials change during Voting restarts the round (votes cleared, same subject and number); anonymity applies from the next round; a running timer ignores `timer.seconds` |
+| `transferOwner {to}` | PO | target present (participant, not away) and not the PO (`target_not_present`) |
+| `claimOwner` | participant | not the PO (`already_owner`); only when the PO is not in the room or away for 120 s (`owner_present`) |
 
 ## 5. Sync protocol
 
@@ -130,11 +173,14 @@ with zod on both ends.
   `{ ok: true, version } | { ok: false, code }`. Codes are stable strings
   (`room_full`, `not_owner`, `bad_card`, `rate_limited`, …) that the web app translates.
 - **Snapshots** (server → client): after every change the server sends each socket
-  its own projection: `snapshot { protocol, version, serverNow, room, cause }`.
+  its own projection: `snapshot { protocol, version, serverNow, room, causes }`.
   Rooms are small (≤ 16 people), so a full snapshot is a few kilobytes; there is no
   event replay and no gap handling. Clients drop any snapshot older than the one they hold.
-- `cause` (for example `{ type: "voteCast", who }`) drives animations and screen
-  reader announcements; it never carries a hidden value.
+- `causes` is an array, the causes of one `apply` in order (one command can give
+  several: a timer reveal, then `roundStarted`). Each one (for example
+  `{ type: "voteCast", who }`) drives animations and screen reader announcements and
+  never carries a hidden value. Causes are projected per viewer like the room (#5): in
+  an anonymous round after reveal no vote cause carries `who`.
 - **Projection rules** (`toSnapshot(state, viewer)`):
   - Voting: `voted: UserId[]`; the viewer's own card only for the viewer.
   - Revealed, named: `votes: { who, card, changedAfterReveal }[]`.
