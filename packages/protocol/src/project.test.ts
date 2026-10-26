@@ -1,6 +1,7 @@
 import { apply, type Cause, type Command, createRoom, type RoomState } from "@pp/domain";
 import { describe, expect, it } from "vitest";
 import { projectCauses, toSnapshot } from "./project.ts";
+import type { Snapshot } from "./schemas.ts";
 import { PROTOCOL_VERSION } from "./version.ts";
 
 const T = 1_700_000_000_000;
@@ -146,14 +147,92 @@ describe("toSnapshot", () => {
     expect(round).toMatchObject({ voted: ["po", "c", "b"], cards: ["3", "8", "?"] });
   });
 
-  it("hides who changed a vote after an anonymous reveal", () => {
-    const { state, causes } = run([...votingRoomSteps(true), reveal, vote("c", "13")]);
-    const snapshot = toSnapshot(state, "o", { ...META, causes });
-    expect(snapshot.causes).toStrictEqual([{ type: "voteCast" }]);
-    expect(snapshot.room.round).toMatchObject({ cards: ["8", "13", "?"] });
-    expect(JSON.stringify(snapshot)).not.toContain("changedAfterReveal");
+  it("keeps the cards of an anonymous round fixed after reveal: a change is refused", () => {
+    const frames = watch([...votingRoomSteps(true), reveal, vote("c", "13")]);
+    const change = frames.at(-1);
+    expect(change?.error).toBe("round_revealed");
+    expect(change?.causes).toStrictEqual([]);
+    expect(cardsOf(change)).toStrictEqual(["3", "8", "?"]);
   });
 });
+
+/**
+ * The review of #68: when changes after an anonymous reveal were allowed, the set of
+ * people who could still change shrank as voters left or the PO stopped voting, and the
+ * next change tied the changer to both cards. Both scenarios, as the observer `o` sees them.
+ */
+describe("an anonymous round locks its votes at reveal", () => {
+  const anonymousWithChanges = {
+    revealNames: false,
+    allowChangeAfterReveal: true,
+    revealWhenAllVoted: false,
+  };
+
+  it("a voter leaving after the reveal lets nobody change a card", () => {
+    const frames = watch([
+      join("po"),
+      join("a"),
+      join("b"),
+      join("o", "observer"),
+      settings({ ...anonymousWithChanges, poVotes: false }),
+      start,
+      vote("a", "3"),
+      vote("b", "8"),
+      reveal,
+      ["a", { type: "leave" }],
+      vote("b", "13"),
+    ]);
+    const [revealed, left, change] = frames.slice(-3);
+    expect(frames.slice(0, -1).map((f) => f.error)).toStrictEqual(
+      frames.slice(0, -1).map(() => undefined),
+    );
+    expect(change?.error).toBe("round_revealed");
+    expect(change?.causes).toStrictEqual([]);
+    for (const frame of [revealed, left, change]) expect(cardsOf(frame)).toStrictEqual(["3", "8"]);
+  });
+
+  it("the PO turning poVotes off after the reveal lets nobody change a card", () => {
+    const frames = watch([
+      join("po"),
+      join("b"),
+      join("o", "observer"),
+      settings(anonymousWithChanges),
+      start,
+      vote("po", "3"),
+      vote("b", "8"),
+      reveal,
+      settings({ poVotes: false }),
+      vote("b", "13"),
+    ]);
+    const [revealed, poOut, change] = frames.slice(-3);
+    expect(frames.slice(0, -1).map((f) => f.error)).toStrictEqual(
+      frames.slice(0, -1).map(() => undefined),
+    );
+    expect(change?.error).toBe("round_revealed");
+    expect(change?.causes).toStrictEqual([]);
+    for (const frame of [revealed, poOut, change]) expect(cardsOf(frame)).toStrictEqual(["3", "8"]);
+  });
+});
+
+type Seen = {
+  error: string | undefined;
+  round: Snapshot["room"]["round"];
+  causes: Snapshot["causes"];
+};
+
+/** Runs the steps like `run` but past refusals, keeping what `viewer` sees after each one. */
+function watch(steps: ReadonlyArray<[string, Command]>, viewer = "o"): Seen[] {
+  let state = createRoom({ ownerId: "po" });
+  return steps.map(([actor, command], i) => {
+    const result = apply(state, command, { actor, now: T + i });
+    state = result.state;
+    const { room, causes } = toSnapshot(state, viewer, { ...META, causes: result.causes });
+    return { error: result.ok ? undefined : result.error, round: room.round, causes };
+  });
+}
+
+const cardsOf = (seen: Seen | undefined) =>
+  seen?.round && "cards" in seen.round ? seen.round.cards : undefined;
 
 /** Four people joined (`c` before `b`); `b`, `po` and `c` voted, in that order. */
 function votingRoomSteps(anonymous: boolean): Array<[string, Command]> {
