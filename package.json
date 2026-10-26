@@ -12,7 +12,7 @@
     "build": "pnpm --recursive run build",
     "test": "vitest run --project=!db",
     "test:db": "vitest run --project=db --no-file-parallelism",
-    "lint": "biome check .",
+    "lint": "biome check . && node apps/web/scripts/check-colours.ts",
     "format": "biome check --write .",
     "typecheck": "tsc --build",
     "gate": "node scripts/check-node.mjs && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
