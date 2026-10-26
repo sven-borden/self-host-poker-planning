@@ -285,9 +285,21 @@ is missing in any catalog. The server sends codes, never sentences.
 
 ## 11. Observability
 
-- pino JSON logs (request id, room code, no secrets, no vote values).
+- pino JSON logs on stdout (request id, connection id, room code, no secrets, no vote
+  values). Each HTTP request gets an id (an incoming `x-request-id` is kept when it is at
+  most 64 safe characters) echoed in `x-request-id`; each socket gets a random connection
+  id. Never logged: bodies, cookies, auth headers, query strings, config values.
+  `/api/*` requests log at `info`; `/api/health` and static files at `debug`; 5xx at
+  `error`.
 - `GET /api/health` → `{ status, version, commit, db, uptime }`; used by the Docker
-  `HEALTHCHECK` and by the merge loop to confirm a deploy.
+  `HEALTHCHECK` and by the merge loop to confirm a deploy. `version` and `commit` come
+  from `APP_VERSION` and `GIT_COMMIT` (`dev` and `unknown` when unset), `uptime` is whole
+  seconds. `db` is `unchecked` until #7 adds a ping, then `ok` (200) or `error` (503,
+  `status: "error"`). Sent with `Cache-Control: no-store`.
+- A bad config stops the server with one log line naming the variables (never their
+  values) and exit code 1. `SIGTERM`/`SIGINT` stop accepting connections, close
+  Socket.IO, wait for open requests (cut after 8 s) and exit 0 within 10 s, one log line
+  per phase.
 - Optional Sentry (`SENTRY_DSN`) and Umami (`UMAMI_URL`, `UMAMI_WEBSITE_ID`); nothing
   external loads when they are unset.
 
@@ -305,9 +317,12 @@ is missing in any catalog. The server sends codes, never sentences.
 | `DATABASE_URL` | yes | Postgres connection |
 | `BETTER_AUTH_SECRET` | yes | session signing |
 | `BASE_URL` | yes | public URL, cookies and OAuth callbacks |
+| `PORT` | no (3000) | HTTP and Socket.IO port |
 | `ROOM_TTL_DAYS` | no (90) | retention |
-| `LOG_LEVEL` | no (info) | logging |
+| `LOG_LEVEL` | no (info) | logging: `fatal` … `trace`, `silent` |
 | `TRUST_PROXY` | no (true) | client IPs behind the proxy |
+| `STATIC_DIR` | no (`apps/web/dist`) | built web app; the image sets its own path |
+| `GIT_COMMIT`, `APP_VERSION` | no | reported by `/api/health`; set at image build |
 | `REDIS_URL` | no | scale-out only (#39) |
 | `SENTRY_DSN`, `UMAMI_URL`, `UMAMI_WEBSITE_ID` | no | opt-in observability |
 | Google / Microsoft keys | no (W5) | social sign-in |
