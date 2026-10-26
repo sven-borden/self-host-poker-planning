@@ -13,18 +13,26 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   runs `pnpm test:db` against Postgres 17.
 - The decisions are in `docs/05-decisions.md`.
 
+- `packages/domain` has decks, custom-deck validation, the range generator and
+  results statistics from #4.
+
+## In flight (two at once when independent; see `CLAUDE.md`)
+
+- **#3 (PP-003)** the round state machine, in worktree `../pp-wt-03`.
+- **#8 (PP-008)** the web shell, in worktree `../pp-wt-08`.
+
 ## Next
 
-- **#4 (PP-004)** decks and statistics. It is taken before #3 because the state
-  machine validates against the decks.
-- Then #3, #5, #6, #7, #8, #9, #10, #11, #13.
+- Domain and server chain: #5 after #3, then #6, #7 and #10.
+- Web chain: #9 and #13 after #8.
+- #11 (Docker) needs #6, #7 and #8.
 - **#12** waits for Sven's go on Coolify and DNS (see Owner items). #13 does not
   depend on #12, so it can go first.
 
 ## Order
 
-Strictly serial, one issue at a time, in this order. Issue keys `PP-NNN` equal
-issue numbers.
+This is the order. Two independent issues may run at once (see `CLAUDE.md`). Issue
+keys `PP-NNN` equal issue numbers.
 
 | Wave (milestone) | Issues | Goal |
 |---|---|---|
