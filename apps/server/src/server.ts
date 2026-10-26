@@ -29,8 +29,9 @@ export interface PokerServer {
   /** Binds `config.port` (0 picks a free port) and resolves with the bound address. */
   listen(): Promise<AddressInfo>;
   /**
-   * Stops accepting connections, disconnects every socket, then waits for open HTTP
-   * requests to finish. Idempotent. Resolves once the HTTP server has closed.
+   * Stops accepting connections, drops every socket at once, then waits for open HTTP
+   * requests to finish. Idempotent. Resolves once the HTTP server has closed. Each log
+   * line is written when its phase has happened.
    */
   close(): Promise<void>;
 }
@@ -64,10 +65,14 @@ export function createServer(config: Config, deps: ServerDeps): PokerServer {
         const httpClosed = new Promise<void>((resolve) => httpServer.close(() => resolve()));
         logger.info("shutdown: stopped accepting connections");
         const sockets = io.of("/").sockets.size;
-        // io.close() closes the HTTP server too; it is already closing, which it ignores.
-        await io.close();
-        logger.info({ sockets }, "shutdown: socket.io closed");
-        await httpClosed;
+        // Closing the engine drops every connection now, without a disconnect packet, so
+        // clients see "transport close" and reconnect on their own. io.close() then frees
+        // the adapters; its promise waits for the HTTP server like `httpClosed` does,
+        // which can take until the last open request ends.
+        io.engine.close();
+        const ioClosed = io.close();
+        logger.info({ sockets }, "shutdown: sockets disconnected");
+        await Promise.all([httpClosed, ioClosed]);
         logger.info("shutdown: http server closed");
       })();
       return closing;

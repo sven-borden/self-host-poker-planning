@@ -301,14 +301,52 @@ describe("shutdown", () => {
     expect(logs.messages()).toEqual(
       expect.arrayContaining([
         "shutdown: stopped accepting connections",
-        "shutdown: socket.io closed",
+        "shutdown: sockets disconnected",
         "shutdown: http server closed",
       ]),
     );
-    expect(logs.lines.find((line) => line.msg === "shutdown: socket.io closed")).toMatchObject({
+    expect(logs.lines.find((line) => line.msg === "shutdown: sockets disconnected")).toMatchObject({
       sockets: 1,
     });
     // close() is idempotent: afterEach calls it again.
     await server.close();
+  });
+
+  it("logs each phase when it happens, while a request is still open", async () => {
+    let reached: () => void = () => {};
+    const arrived = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    let release: () => void = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { server, port, client, logs } = await start({
+      registerApi: (api) =>
+        api.get("/api/stall", async (c) => {
+          reached();
+          await released;
+          return c.text("done");
+        }),
+    });
+    const socket = client();
+    await connected(socket);
+    const disconnected = new Promise<string>((resolve) => socket.once("disconnect", resolve));
+    const stalled = fetch(`http://localhost:${port}/api/stall`).then((r) => r.text());
+    await arrived;
+
+    const closed = server.close();
+    expect(await disconnected).toBe("transport close");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const phases = () => logs.messages().filter((msg) => msg.startsWith("shutdown:"));
+    expect(phases()).toEqual([
+      "shutdown: stopped accepting connections",
+      "shutdown: sockets disconnected",
+    ]);
+
+    release();
+    expect(await stalled).toBe("done");
+    await closed;
+    expect(phases().at(-1)).toBe("shutdown: http server closed");
   });
 });
