@@ -116,6 +116,20 @@ describe("cardLength", () => {
   ])("%j counts %i user-perceived characters", (label, expected) => {
     expect(cardLength(label)).toBe(expected);
   });
+
+  it("falls back to code points when Intl.Segmenter is missing", () => {
+    const intl = Intl as { Segmenter?: unknown };
+    const original = intl.Segmenter;
+    intl.Segmenter = undefined;
+    try {
+      expect(cardLength("XXL")).toBe(3);
+      expect(cardLength("☕")).toBe(1);
+      expect(cardLength("👍🏽")).toBe(2);
+    } finally {
+      intl.Segmenter = original;
+    }
+    expect(cardLength("👍🏽")).toBe(1);
+  });
 });
 
 describe("validateCustomDeck", () => {

@@ -62,11 +62,29 @@ export function isNumericDeck(deck: DeckSpec): boolean {
   return baseCards(deck).every((c) => cardValue(c) !== null);
 }
 
-const graphemes = new Intl.Segmenter("en", { granularity: "grapheme" });
+type SegmenterCtor = typeof Intl.Segmenter;
+let segmenter: { ctor: SegmenterCtor | undefined; instance: Intl.Segmenter | null } | undefined;
 
-/** The length of a label in user-perceived characters ("☕" and "👍🏽" count as 1). */
+/**
+ * The grapheme segmenter, created on first use (never at module load, so a browser
+ * without `Intl.Segmenter`, such as Firefox before 125, can still load the app) and
+ * cached. `null` when the engine has none.
+ */
+function graphemeSegmenter(): Intl.Segmenter | null {
+  const ctor = (Intl as { Segmenter?: SegmenterCtor }).Segmenter;
+  if (segmenter && segmenter.ctor === ctor) return segmenter.instance;
+  const instance = ctor ? new ctor("en", { granularity: "grapheme" }) : null;
+  segmenter = { ctor, instance };
+  return instance;
+}
+
+/**
+ * The length of a label in user-perceived characters ("☕" and "👍🏽" count as 1). Without
+ * `Intl.Segmenter` it falls back to code points, which only over-counts emoji sequences.
+ */
 export function cardLength(label: string): number {
-  return Array.from(graphemes.segment(label)).length;
+  const seg = graphemeSegmenter();
+  return seg ? Array.from(seg.segment(label)).length : Array.from(label).length;
 }
 
 export type CustomDeckErrorCode =
