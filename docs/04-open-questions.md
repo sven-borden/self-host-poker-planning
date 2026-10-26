@@ -21,3 +21,5 @@ Close an entry by recording the answer here (and an ADR when it changes the desi
 - Issues: all waves opened at once (#1–#59).
 - Room history: visible to everyone in the room.
 - Music: original loops composed in code by Claude, no third-party licensing (#45).
+
+<!-- CI probe for #2: a docs-only change must run no job. -->
