@@ -135,6 +135,7 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       if (round?.phase !== "voting") return refuse("not_voting");
       if (!isTimerSeconds(command.seconds)) return refuse("bad_seconds");
       const deadlineAt = now + command.seconds * 1000;
+      if (round.deadlineAt === deadlineAt) return done(state);
       return done(withRound(state, { ...round, deadlineAt }), { type: "timerStarted" });
     }
     case "stopTimer": {

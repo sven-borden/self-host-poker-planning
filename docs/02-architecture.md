@@ -148,7 +148,7 @@ Every `apply` runs three steps:
 | `reveal` | PO, or anyone if `whoCanReveal = "anyone"` | Voting only (`not_voting`, `not_allowed`); zero votes allowed; stops the timer |
 | `setFinal {card}` | PO | Revealed only (`not_revealed`); a non-special card of the round (`bad_card`) |
 | `revote` | PO | Revealed only; a new round with the same subject |
-| `startTimer {seconds}` | PO | Voting only; integer 5–3600 (`bad_seconds`); restarts a running timer |
+| `startTimer {seconds}` | PO | Voting only; integer 5–3600 (`bad_seconds`); restarts a running timer; no change when the deadline stays the same |
 | `stopTimer` | PO | no-op without a timer |
 | `extendTimer {seconds}` | PO | running timer only (`no_timer`); 5–3600 |
 | `timeUp` | anyone, also non-participants | nothing beyond step 1 (the server's own timeout sends it) |

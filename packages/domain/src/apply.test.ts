@@ -892,6 +892,18 @@ describe("timer", () => {
     expect(send(lobby, { type: "stopTimer" }).state).toBe(lobby);
   });
 
+  it("treats a timer start that keeps the same deadline as no change", () => {
+    const started = ok(
+      send(room({ settings: { timer: { seconds: 30, revealAtEnd: true } } }), {
+        type: "startRound",
+        subject: { kind: "none" },
+      }),
+    );
+    const again = send(started, { type: "startTimer", seconds: 30 });
+    expect(again).toEqual({ ok: true, state: started, causes: [] });
+    expect(again.state).toBe(started);
+  });
+
   it("leaves a running timer alone when the timer setting changes", () => {
     const before = room({ round: voting({ deadlineAt: T0 + 10_000 }) });
     const result = send(before, { type: "updateSettings", patch: { timer: { seconds: 90 } } });
