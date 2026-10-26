@@ -28,12 +28,13 @@ overrides a subset of these tokens.
 | `--surface-2` | `#E9EFED` | `#1A2624` | chips, subtle fills |
 | `--ink` | `#13201E` | `#E4EDEA` | text |
 | `--ink-2` | `#4B5B58` | `#9BAEAA` | secondary text |
-| `--line` | `#D3DCD9` | `#283836` | borders |
+| `--line` | `#D3DCD9` | `#283836` | dividers and panel edges (decorative) |
+| `--line-strong` | `#7A8A87` | `#647976` | control borders: inputs, switches, outline buttons |
 | `--spruce` | `#1E5A53` | `#4A9B8F` | primary actions, focus of state |
 | `--on-spruce` | `#F1F7F5` | `#0B1A18` | text on spruce |
 | `--brass` | `#A87A22` | `#D8A744` | accent: card backs, highlights, timer, focus ring |
 | `--brass-soft` | `#F4E8CC` | `#3A2E14` | badges |
-| `--brass-ink` | `#5C410C` | `#F1D9A0` | text on brass-soft |
+| `--brass-ink` | `#5C410C` | `#F1D9A0` | brass-coloured text, on brass-soft, bg and surface |
 | `--table` | `#22524C` | `#183B37` | table surface |
 | `--table-rim` | `#173E39` | `#0F2926` | table rim |
 | `--table-ink` | `#E7F1EE` | `#DCEBE7` | text on the table |
@@ -41,6 +42,18 @@ overrides a subset of these tokens.
 | `--card-ink` | `#13201E` | `#13201E` | card numerals |
 | `--card-edge` | `#D9D3C3` | `#CFC8B5` | card border |
 | `--good` / `--warn` / `--bad` | `#2F7A4D` / `#A86A12` / `#B0453B` | `#5BBE83` / `#E0A040` / `#E37468` | semantic only |
+| `--warn-ink` | `#935A0C` | `#E0A040` | warning text |
+
+Contrast rules (WCAG 2.2 AA, both themes, on `--bg` and `--surface`):
+
+- `--brass` and `--warn` are for fills, accents and graphics (card backs, the timer
+  ring, the focus ring, icons), never body text: in the light theme they reach only
+  3.5:1 and 4.0:1. Text in those hues uses `--brass-ink` (8.7:1 or more) or `--warn-ink`
+  (5.2:1 or more).
+- Borders that show where a control is (inputs, switches, outline buttons) use
+  `--line-strong` (3.3:1 or more, WCAG 1.4.11). `--line` (1.3 to 1.5:1) only
+  separates content that is identifiable without it.
+- `apps/web/src/theme/tokens.test.ts` checks these ratios from this table.
 
 Avatar placeholders (until W4): initials on one of eight colours (`--av1` … `--av8`)
 derived from the user id, white text, readable in both themes.

@@ -38,6 +38,7 @@
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-spruce: var(--spruce);
   --color-on-spruce: var(--on-spruce);
   --color-brass: var(--brass);
@@ -51,6 +52,7 @@
   --color-card-edge: var(--card-edge);
   --color-good: var(--good);
   --color-warn: var(--warn);
+  --color-warn-ink: var(--warn-ink);
   --color-bad: var(--bad);
   --color-on-bad: var(--on-bad);
   --color-av1: var(--av1);
@@ -117,7 +119,7 @@
   --destructive: var(--bad);
   --destructive-foreground: var(--on-bad);
   --border: var(--line);
-  --input: var(--line);
+  --input: var(--line-strong);
   --ring: var(--brass);
   --radius: 10px;
 

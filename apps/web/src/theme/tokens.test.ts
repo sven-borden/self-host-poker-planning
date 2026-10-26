@@ -77,3 +77,44 @@ describe("design tokens", () => {
     }
   });
 });
+
+/** WCAG 2.2 relative luminance of a #rrggbb colour. */
+function luminance(hex: string): number {
+  const channels = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255);
+  const [r = 0, g = 0, b = 0] = channels.map((c) =>
+    c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4,
+  );
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG contrast ratio between two #rrggbb colours, from 1 to 21. */
+function contrast(a: string, b: string): number {
+  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return ((light ?? 0) + 0.05) / ((dark ?? 0) + 0.05);
+}
+
+describe("token contrast (WCAG 2.2 AA, docs/03-design-brief.md)", () => {
+  const brief = briefTokens();
+  const cases = [
+    // Text: 4.5:1.
+    ["--ink", 4.5],
+    ["--ink-2", 4.5],
+    ["--brass-ink", 4.5],
+    ["--warn-ink", 4.5],
+    // Control borders (WCAG 1.4.11): 3:1.
+    ["--line-strong", 3],
+  ] as const;
+
+  for (const theme of ["light", "dark"] as const) {
+    for (const [token, minimum] of cases) {
+      for (const background of ["--bg", "--surface"]) {
+        it(`${token} on ${background} reaches ${minimum}:1 in the ${theme} theme`, () => {
+          const ratio = contrast(brief[theme].get(token) ?? "", brief[theme].get(background) ?? "");
+          expect(ratio, `${token} on ${background}: ${ratio.toFixed(2)}`).toBeGreaterThanOrEqual(
+            minimum,
+          );
+        });
+      }
+    }
+  }
+});
