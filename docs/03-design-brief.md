@@ -73,7 +73,7 @@ Seats sit on an ellipse; the viewer is always at the bottom, the others clockwis
 Positions are percentages of the stage, so one formula serves every width:
 `left = 50 + rx·cos(θ)`, `top = 50 + ry·sin(θ)`, `θ = 90° + i·360°/n`.
 
-| | Desktop (stage 16:9, at least 540 px tall) | Phone ≤ 640 px (stage 4:5.4, at most 480 px wide) |
+| | Desktop (stage 16:9, at least 540 px tall, at most 992 px wide) | Phone: 608 px of room or less, a 640 px viewport in the shell (stage 4:5.4, at most 480 px wide) |
 |---|---|---|
 | Table insets (left/right, top/bottom) | 17 %, 19 % — wide stadium | 23 %, 18 % — tall stadium |
 | Seat radii (rx, ry) | 42 %, 42 % | 40 %, 42 % (dense: 42 %, 42 %) |
@@ -88,9 +88,13 @@ Positions are percentages of the stage, so one formula serves every width:
 - The centre of the table shows the status (`5/8 voted so far`), the timer ring, or
   after reveal the suggested card with agreement or a **Consensus** pill.
 - Observers sit off the table (a small row under it) so voters keep the seats.
-- With more than 10 people on a phone, seats show initials only; names on tap.
-- #13 proves the geometry for 1–16 people at every width from 360 px to 1440 px
-  (`apps/web/src/table/layout.test.ts`, and Playwright on the real page): no seat within
+- With more than 10 people on a phone, seats show initials only; names on tap. A name
+  cut off at its width opens the same way.
+- The table picks its variant from the width its container gives it, not from the
+  viewport, so any page can host it.
+- #13 proves the geometry for 1–16 people in every room from 328 px (a 360 px phone)
+  to 1600 px (`apps/web/src/table/layout.test.ts`, and Playwright on the real page with
+  the same rules): no seat within
   4 px of another seat or of the table's stadium shape, no two cards within 2 px, every
   card on the felt inside the 7 px rim and clear of the status box. The first numbers
   (round 1) failed it: names dipped into the rounded table ends, and 16 slots touched on
