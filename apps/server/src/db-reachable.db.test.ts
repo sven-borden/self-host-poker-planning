@@ -31,7 +31,8 @@ function canConnect(host: string, port: number, timeoutMs: number): Promise<true
     });
     socket.once("error", (error) => {
       socket.destroy();
-      reject(new Error(`Cannot reach Postgres at ${host}:${port}: ${error.message}`));
+      const reason = error.message || (error as NodeJS.ErrnoException).code;
+      reject(new Error(`Cannot reach Postgres at ${host}:${port}: ${reason}`));
     });
   });
 }
