@@ -22,6 +22,13 @@
 }
 
 /*
+ * Phones: 640 px and below (the hand of cards, page chrome). The table picks its own
+ * variant from the room its container gives it (src/table/layout.ts); in the shell's
+ * column that switches at the same viewport width, which e2e/table.spec.ts checks.
+ */
+@custom-variant phone (@media (max-width: 640px));
+
+/*
  * Tailwind's palette is switched off: only the design tokens exist as colours, so
  * `bg-red-500` or `text-white` generate nothing. `transparent`, `current` and `inherit`
  * are built in and stay available.
