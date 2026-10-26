@@ -32,12 +32,18 @@ server sends and never decides the outcome of a round.
   a history fallback, so `base` stays `/`.
 - Every user-facing string exists in `en`, `fr` and `de`; TypeScript fails when `fr` or
   `de` misses or adds a key. French uses vous, German uses Sie.
-- No literal colour in `src/**/*.{ts,tsx}`: use token utilities (`bg-surface`,
+- No literal colour in `src/**/*.{ts,tsx,css}`: use token utilities (`bg-surface`,
   `text-ink-2`, `border-line`, `bg-primary`, …). `pnpm lint` runs
-  `scripts/check-colours.ts`, which rejects hex values, `rgb()`/`hsl()`/`oklch()` and
-  Tailwind palette classes. Tailwind's own palette is switched off in `styles.css`, so
-  `bg-red-500` would generate nothing anyway. A new token goes in `tokens.css` (both
-  themes) and in the `@theme inline` block of `styles.css`.
+  `scripts/check-colours.ts`, which rejects hex values, colour functions (`rgb()`,
+  `color-mix()`, … in any case), Tailwind palette classes and CSS named colours in
+  arbitrary values, style objects and stylesheets. Only `tokens.css` is exempt.
+  Tailwind's own palette is switched off in `styles.css`, so `bg-red-500` would generate
+  nothing anyway, and Tailwind does not scan `scripts/` (its fixtures break the rule on
+  purpose). A new token goes in `tokens.css` (both themes), in the `@theme inline` block
+  of `styles.css` and in the design brief's table.
+- Contrast: `--brass` and `--warn` are fills and accents, never text (use `--brass-ink`,
+  `--warn-ink`); control borders use `--line-strong` (via shadcn's `border-input`), not
+  `--line`.
 - Motion: page entrances are CSS (`RiseIn`, tw-animate-css), so content never waits for
   JavaScript. An animated component wraps its `m.div` elements in `<MotionFeatures>`
   (`<MotionFeatures layout>` when it needs layout animations): the features chunk
@@ -54,3 +60,14 @@ server sends and never decides the outcome of a round.
   type stripping.
 - Tests: the `web` Vitest project extends `vite.config.ts` and runs in jsdom
   (`src/test-setup.ts` stubs `matchMedia`).
+
+## CSP notes for #36
+
+- `style-src` needs `'unsafe-inline'` or a nonce: sonner injects a `<style>` element when
+  it loads, and react-remove-scroll (under Radix Dialog, Sheet and DropdownMenu) injects
+  one each time a menu or dialog opens. React's `style={…}` props go through the CSSOM
+  and are not affected.
+- `script-src 'self'` is enough: there is no inline script. `public/theme-init.js` runs
+  before first paint as an external file.
+- `theme-init.js` has no content hash in its name, so it must be served with
+  `Cache-Control: no-cache` (hashed files under `assets/` can be immutable).
