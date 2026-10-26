@@ -145,7 +145,7 @@ in Voting until the next command arrives. Not built in #3.
 
 | Command | Who | Rule (error codes) |
 |---|---|---|
-| `join {name, role}` | anyone admitted | name trimmed, 1–32 chars (`bad_name`); `already_joined`; `room_full` past 16 counted or 32 in all |
+| `join {name, role}` | anyone admitted | name with whitespace runs (tabs, line breaks) collapsed to one space and trimmed, 1–32 chars and at most 512 code units, no lone surrogate (`bad_name`; titles follow the same rules with 200 chars); `already_joined`; `room_full` past 16 counted or 32 in all |
 | `leave` | self | removes the person (and their vote while Voting); a leaving PO keeps ownership |
 | `rename {name}` | self | as `join` |
 | `setRole {role}` | self | voter → observer drops the vote while Voting; observer → voter checks capacity when observers do not count |

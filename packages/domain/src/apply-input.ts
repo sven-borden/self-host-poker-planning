@@ -35,16 +35,19 @@ export function isRecord(value: unknown): value is UnknownRecord {
 const UNSAFE_TEXT = /[\p{Cc}‪-‮⁦-⁩]/u;
 /** Whitespace and invisible format characters: text made only of these looks empty. */
 const BLANK = /[\s\p{Cf}]/gu;
+/** A run of whitespace, tabs and line breaks included. */
+const WHITESPACE_RUN = /\s+/gu;
 
 /**
- * Trimmed, NFC-normalised text of 1 to `max` user-perceived characters and at most
- * `max × UNITS_PER_CHARACTER` code units, without control characters or bidi overrides
- * and not made of invisible characters only; else `null`. A lone surrogate refuses the
- * text: Postgres jsonb would refuse it at write time.
+ * Text with every whitespace run (tabs and line breaks too, as in a pasted ticket title)
+ * collapsed into one space, trimmed and NFC-normalised, of 1 to `max` user-perceived
+ * characters and at most `max × UNITS_PER_CHARACTER` code units, without control
+ * characters or bidi overrides and not made of invisible characters only; else `null`.
+ * A lone surrogate refuses the text: Postgres jsonb would refuse it at write time.
  */
 function cleanText(raw: unknown, max: number): string | null {
   if (typeof raw !== "string" || !raw.isWellFormed()) return null;
-  const text = raw.trim().normalize("NFC");
+  const text = raw.replace(WHITESPACE_RUN, " ").trim().normalize("NFC");
   if (text.length > max * UNITS_PER_CHARACTER) return null;
   if (text.replace(BLANK, "") === "" || UNSAFE_TEXT.test(text)) return null;
   return cardLength(text) <= max ? text : null;

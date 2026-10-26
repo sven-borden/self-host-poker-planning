@@ -145,7 +145,8 @@ describe("refusals", () => {
     "",
     "   ",
     "x".repeat(33),
-    "Al\nice",
+    "Al\u0007ice",
+    "\n\t\r",
     "‮ecila",
     "​​",
     "Al\uD800ice",
@@ -472,6 +473,17 @@ describe("membership", () => {
       role: "observer",
       joinedAt: T0,
       connected: true,
+    });
+  });
+
+  it("collapses whitespace runs in names and titles, line breaks included", () => {
+    expect(
+      ok(send(room(), { type: "rename", name: "\tAlice \n  Smith " }, A)).participants[A]?.name,
+    ).toBe("Alice Smith");
+    const subject = { kind: "title", text: "PROJ-12\r\nFix the\tlogin   page\n" };
+    expect(ok(send(room(), { type: "startRound", subject })).round?.subject).toEqual({
+      kind: "title",
+      text: "PROJ-12 Fix the login page",
     });
   });
 
