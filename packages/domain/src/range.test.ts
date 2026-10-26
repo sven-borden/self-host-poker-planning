@@ -38,6 +38,9 @@ describe("generateRange", () => {
     ["range_label_too_long", { start: 0, end: 1, step: 1 / 3 }],
     ["range_label_too_long", { start: 0.12345, end: 1, step: 0.5 }],
     ["range_label_too_long", { start: 1e30, end: 1e30, step: 1 }],
+    ["range_label_too_long", { start: 1e306, end: 1e306, step: 0.001 }],
+    ["range_label_too_long", { start: 1.7e308, end: 1.7e308, step: 0.1 }],
+    ["range_label_too_long", { start: -1.7e308, end: 0, step: 0.1 }],
   ])("refuses with %s: %j", (code, spec) => {
     expect(generateRange(spec)).toEqual({ ok: false, code });
   });

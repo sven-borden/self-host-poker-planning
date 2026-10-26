@@ -59,9 +59,15 @@ export function generateRange({
   const scale = 10 ** digits;
   const first = Math.round(start * scale);
   const stride = Math.round(step * scale);
+  // A start or step this large overflows the scaling (or loses integer precision), and
+  // its label is far longer than 4 characters anyway.
+  if (!Number.isSafeInteger(first) || !Number.isSafeInteger(stride)) {
+    return { ok: false, code: "range_label_too_long" };
+  }
   // The tolerance absorbs binary noise in `end * scale` (0.29 * 100 = 28.999…).
   const count = Math.floor((end * scale - first) / stride + 1e-9) + 1;
-  if (count > MAX_DECK_CARDS) return { ok: false, code: "range_too_many_cards" };
+  // `!(…)` also catches a NaN count, which no comparison would.
+  if (!(count >= 1 && count <= MAX_DECK_CARDS)) return { ok: false, code: "range_too_many_cards" };
   const cards: Card[] = [];
   for (let i = 0; i < count; i++) {
     const card = label(first + i * stride, digits);
