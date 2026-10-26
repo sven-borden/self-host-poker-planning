@@ -59,7 +59,7 @@ type RoomSettings = {
   revealNames: boolean;                              // default true (false = anonymous)
   revealWhenAllVoted: boolean;                       // default true
   timer: { seconds: number | null; revealAtEnd: boolean }; // default { null, true }
-  allowChangeAfterReveal: boolean;                   // default false
+  allowChangeAfterReveal: boolean;                   // default false; named rounds only
   poVotes: boolean;                                  // default true
   observersCount: boolean;                           // default true
 };
@@ -151,7 +151,7 @@ in Voting until the next command arrives. Not built in #3.
 | `setRole {role}` | self | voter → observer drops the vote while Voting; observer → voter checks capacity when observers do not count |
 | `kick {who}` | PO | `cannot_kick_self`, `unknown_participant` |
 | `startRound {subject}` | PO | any phase; from Voting it abandons the round; number + 1; captures deck, specials, anonymity; starts `timer.seconds` (`bad_subject`) |
-| `castVote {card}` | voter | `no_round`, `not_voter` (observers; the PO when `poVotes` is off), `bad_card` (not in the round's cards); in Revealed only with `allowChangeAfterReveal`, marked `changedAfterReveal`, and never a first vote in an anonymous round (`round_revealed`); after an anonymous reveal the `voteCast` cause carries no `who` |
+| `castVote {card}` | voter | `no_round`, `not_voter` (observers; the PO when `poVotes` is off), `bad_card` (not in the round's cards); in Revealed only in a named round with `allowChangeAfterReveal` (a change or a first vote, marked `changedAfterReveal`); an anonymous round locks its votes at reveal, whatever the setting, decided by the round's own `anonymous` flag (`round_revealed`), because the people who could still change shrink as voters leave and a change would then point at someone; the `voteCast` cause always carries `who` |
 | `retractVote` | self | Voting only (`not_voting`); no-op without a vote |
 | `reveal` | PO, or anyone if `whoCanReveal = "anyone"` | Voting only (`not_voting`, `not_allowed`); zero votes allowed; stops the timer |
 | `setFinal {card}` | PO | Revealed only (`not_revealed`); a non-special card of the round (`bad_card`) |
