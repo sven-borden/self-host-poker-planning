@@ -39,7 +39,7 @@ Source: `input.md`. Decisions: `docs/05-decisions.md`.
 | R14 | The PO can force the reveal | Yes, always | W1 |
 | R15 | Reveal who voted what, or only the cards | Named or anonymous mode | W2 |
 | R16 | A summary of what is proposed | Average, median, agreement, spread, suggested card | W1 |
-| R17 | Optionally edit a vote after reveal | Setting, off by default; changed votes are marked | W2 |
+| R17 | Optionally edit a vote after reveal | Setting, off by default; changed votes are marked; named rounds only | W2 |
 | R18 | Efficient, professional design around a table | The boardroom table (ADR-005) | W0–W1 |
 | R19 | Jira / Azure DevOps paste or connector, later | Paste first, then connectors | W6 |
 | R20 | Top-notch card animations | Motion for React and a motion spec (ADR-008) | W1, W4 |
@@ -65,6 +65,10 @@ Validated on 2026-10-26; the PO can change each one inside the room (ADR-011).
 | Change a vote after reveal | Off |
 | The PO votes too | On |
 | Observers count toward the 16 | On |
+
+"Change a vote after reveal" applies to named rounds only: an anonymous round locks its
+votes at reveal, because a change after an anonymous reveal could tie a person to a
+card. The W2 settings UI says so next to the setting.
 
 ## Success criteria
 

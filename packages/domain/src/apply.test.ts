@@ -330,14 +330,14 @@ describe("refusals", () => {
     ],
     ["a vote after reveal", afterReveal, { type: "castVote", card: "5" }, A, "round_revealed"],
     [
-      "a first vote after an anonymous reveal",
+      "a change after an anonymous reveal, even with changes allowed",
       () =>
         room({
           settings: { allowChangeAfterReveal: true },
           round: revealed({ anonymous: true, votes: { [A]: { card: "3" } } }),
         }),
       { type: "castVote", card: "5" },
-      B,
+      A,
       "round_revealed",
     ],
     ["a reveal in the lobby", lobby, { type: "reveal" }, PO, "not_voting"],
@@ -701,23 +701,31 @@ describe("rounds", () => {
       card: "8",
       changedAfterReveal: true,
     });
-    // Anonymous round: changing an existing vote is fine.
-    const anonymous = room({
-      settings: { allowChangeAfterReveal: true },
-      round: revealed({ anonymous: true, votes: { [A]: { card: "3" } } }),
-    });
-    ok(send(anonymous, { type: "castVote", card: "5" }, A));
   });
 
-  it("names nobody when a vote changes after an anonymous reveal", () => {
+  it("locks the votes of an anonymous round at reveal, even when changes are allowed", () => {
+    // Who may still change shrinks as people leave, so a change would point at someone.
     const anonymous = room({
-      settings: { allowChangeAfterReveal: true },
+      settings: { allowChangeAfterReveal: true, revealNames: false },
       round: revealed({ anonymous: true, votes: { [A]: { card: "3" }, [B]: { card: "8" } } }),
     });
-    const changed = send(anonymous, { type: "castVote", card: "5" }, A);
-    expect(changed.causes).toStrictEqual([{ type: "voteCast" }]);
-    expect(JSON.stringify(changed.causes)).not.toContain(A);
-    // While Voting, an anonymous round still says who voted, never what.
+    const change = send(anonymous, { type: "castVote", card: "5" }, A);
+    expect(change).toMatchObject({ ok: false, error: "round_revealed", causes: [] });
+    expect(change.state).toBe(anonymous);
+    const first = send(anonymous, { type: "castVote", card: "5" }, PO);
+    expect(first).toMatchObject({ ok: false, error: "round_revealed", causes: [] });
+    expect(first.state).toBe(anonymous);
+    // The round's own flag decides: turning names back on does not unlock it.
+    const namesOn = room({
+      settings: { allowChangeAfterReveal: true, revealNames: true },
+      round: revealed({ anonymous: true, votes: { [A]: { card: "3" } } }),
+    });
+    const late = send(namesOn, { type: "castVote", card: "5" }, A);
+    expect(late).toMatchObject({ ok: false, error: "round_revealed" });
+    expect(late.state).toBe(namesOn);
+  });
+
+  it("names the voter in every vote cause; while Voting, an anonymous round says who voted, never what", () => {
     const votingRound = room({ round: voting({ anonymous: true }) });
     expect(send(votingRound, { type: "castVote", card: "5" }, A).causes).toStrictEqual([
       { type: "voteCast", who: A },

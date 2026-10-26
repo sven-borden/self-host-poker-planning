@@ -254,43 +254,43 @@ function startRound(state: RoomState, subject: Subject, now: number): Step {
   return step;
 }
 
+/**
+ * A vote, or a change of vote. Vote causes (here, in `retractVote` and in `settle`)
+ * always name the voter: a vote changes only while Voting, when others learn who voted
+ * but never what, or after a named reveal. The protocol still strips `who` from vote
+ * causes after an anonymous reveal, as defence in depth.
+ */
 function castVote(state: RoomState, actor: UserId, card: unknown): Step {
   const round = state.round;
   if (!round) return refuse("no_round");
   if (!isVoter(state, actor)) return refuse("not_voter");
   const previous = ownVote(round, actor);
-  if (round.phase === "revealed") {
-    if (!state.settings.allowChangeAfterReveal) return refuse("round_revealed");
-    // A first vote after an anonymous reveal would tie this person to the new card.
-    if (round.anonymous && !previous) return refuse("round_revealed");
+  // `allowChangeAfterReveal` applies to named rounds only: an anonymous round locks its
+  // votes at reveal. Who may still change shrinks as people leave, become observers or
+  // the PO stops voting, so any change to the public card list would point at someone.
+  // The round's own `anonymous` flag decides, not the current setting.
+  if (round.phase === "revealed" && (!state.settings.allowChangeAfterReveal || round.anonymous)) {
+    return refuse("round_revealed");
   }
   if (typeof card !== "string" || !deckCards(round.deck, round.specials).includes(card)) {
     return refuse("bad_card");
   }
   if (previous?.card === card) return done(state);
   const vote: Vote = round.phase === "revealed" ? { card, changedAfterReveal: true } : { card };
-  return done(
-    withRound(state, { ...round, votes: { ...round.votes, [actor]: vote } }),
-    voteCause("voteCast", round, actor),
-  );
-}
-
-/**
- * A vote cause. In an anonymous round after reveal it leaves `who` out: the public card
- * list changes at the same moment, so naming the person would tie them to both cards.
- */
-function voteCause(type: "voteCast" | "voteRetracted", round: Round, who: UserId): Cause {
-  return round.anonymous && round.phase === "revealed" ? { type } : { type, who };
+  return done(withRound(state, { ...round, votes: { ...round.votes, [actor]: vote } }), {
+    type: "voteCast",
+    who: actor,
+  });
 }
 
 function retractVote(state: RoomState, actor: UserId): Step {
   const round = state.round;
   if (round?.phase !== "voting") return refuse("not_voting");
   if (!ownVote(round, actor)) return done(state);
-  return done(
-    withRound(state, { ...round, votes: omit(round.votes, actor) }),
-    voteCause("voteRetracted", round, actor),
-  );
+  return done(withRound(state, { ...round, votes: omit(round.votes, actor) }), {
+    type: "voteRetracted",
+    who: actor,
+  });
 }
 
 function setFinal(state: RoomState, card: unknown): Step {
@@ -361,7 +361,7 @@ function settle(state: RoomState, now: number): { state: RoomState; causes: Caus
           ),
         };
   // Each dropped vote is announced, so its owner sees why their card left the table.
-  const causes = pruned.map((who) => voteCause("voteRetracted", round, who));
+  const causes = pruned.map((who): Cause => ({ type: "voteRetracted", who }));
   const eligible = Object.keys(state.participants).filter(
     (id) => isVoter(state, id) && isPresent(state.participants[id]),
   );

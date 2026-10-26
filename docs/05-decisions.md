@@ -105,6 +105,8 @@ only reveals; named results; **reveal when everyone has voted: on**; timer off w
 reveal at its end on; no vote changes after reveal; the PO votes; observers count
 toward the 16. The PO can change each setting in the room. A round's subject is
 optional: nothing, a title, or a link (Jira and Azure DevOps keys detected).
+Changing a vote after reveal, when allowed, applies to named rounds only: an anonymous
+round locks its votes at reveal (review of #68), and the W2 settings UI says so.
 
 ## ADR-012: English, French and German at launch
 
