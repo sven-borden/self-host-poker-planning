@@ -82,7 +82,9 @@ async function measure(page: Page): Promise<Measured> {
     bottom: r.bottom + by,
   });
   const seats = rest.named
-    ? rest.seats.map(([avatar, ...others]) => (avatar ? [grow(avatar, AVATAR_HALO), ...others] : []))
+    ? rest.seats.map(([avatar, ...others]) =>
+        avatar ? [grow(avatar, AVATAR_HALO), ...others] : [],
+      )
     : rest.seats;
   return { layout: { ...rest, seats }, halos: avatars };
 }

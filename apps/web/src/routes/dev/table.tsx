@@ -1,11 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useT } from "../../i18n/i18n-context.tsx";
 import { cardLabel, HandCard, MiniCard } from "../../table/cards.tsx";
 import type { TablePerson } from "../../table/seat.tsx";
 import { TableStage } from "../../table/table-stage.tsx";
 
 // A test bench for the table (#13), not linked from the UI and not indexed. The route is
-// split into its own chunk, so nothing here weighs on the room route's budget.
+// split into its own chunk, so nothing here weighs on the room route's budget; the search
+// is parsed in the component for that reason (a validateSearch would ship in the entry).
 // /dev/table?n=1..16&state=lobby|voting|revealed&observers=0..4
 
 const STATES = ["lobby", "voting", "revealed"] as const;
@@ -17,13 +18,17 @@ function wholeNumber(value: unknown, min: number, max: number, fallback: number)
 }
 
 export const Route = createFileRoute("/dev/table")({
-  validateSearch: (search: Record<string, unknown>) => ({
+  component: DevTable,
+});
+
+function useBenchSearch() {
+  const search: Record<string, unknown> = useSearch({ strict: false });
+  return {
     n: wholeNumber(search.n, 1, 16, 8),
     state: STATES.find((state) => state === search.state) ?? ("voting" as DevState),
     observers: wholeNumber(search.observers, 0, 4, 0),
-  }),
-  component: DevTable,
-});
+  };
+}
 
 // Names of every length, with accents, so truncation and initials get exercised.
 const NAMES = [
@@ -88,7 +93,7 @@ const DECK = [
 
 function DevTable() {
   const t = useT();
-  const { n, state, observers } = Route.useSearch();
+  const { n, state, observers } = useBenchSearch();
   // Every third person is still thinking (or did not vote, after reveal).
   const voted = (i: number) => i % 3 !== 2;
   const people: TablePerson[] = NAMES.slice(0, n).map((name, i) => ({
