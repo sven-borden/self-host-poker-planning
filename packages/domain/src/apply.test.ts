@@ -900,6 +900,53 @@ describe("timer", () => {
   });
 });
 
+describe("ended", () => {
+  it("reports the round a timer revealed when the next round replaces it in the same apply", () => {
+    const voted = ok(send(room(), { type: "castVote", card: "3" }, A));
+    const timed = ok(send(voted, { type: "startTimer", seconds: 30 }));
+    const next = send(timed, { type: "startRound", subject: { kind: "none" } }, PO, T0 + 60_000);
+    expect(next.causes).toEqual([
+      { type: "revealed", by: "timer" },
+      { type: "roundStarted", number: 2 },
+    ]);
+    expect(ok(next).round?.number).toBe(2);
+    expect(next).toMatchObject({
+      ended: {
+        number: 1,
+        phase: "revealed",
+        revealedAt: T0 + 30_000,
+        votes: { [A]: { card: "3" } },
+      },
+    });
+  });
+
+  it("reports a revoted round and an abandoned voting round as they were", () => {
+    const shown = room({ round: revealed({ votes: { [A]: { card: "3" } } }) });
+    expect(send(shown, { type: "revote" })).toMatchObject({ ok: true, ended: shown.round });
+    const abandoned = room({ round: voting({ votes: { [A]: { card: "3" } } }) });
+    const result = send(abandoned, { type: "startRound", subject: { kind: "none" } });
+    expect(result).toMatchObject({ ok: true, ended: abandoned.round });
+    expect(result.ok && result.ended?.phase).toBe("voting");
+  });
+
+  it("reports the voting round a deck change restarts", () => {
+    const before = room({ round: voting({ votes: { [A]: { card: "3" } } }) });
+    const result = send(before, {
+      type: "updateSettings",
+      patch: { deck: { kind: "preset", id: "seq" } },
+    });
+    expect(result).toMatchObject({ ok: true, ended: before.round });
+  });
+
+  it("is absent when no round ended", () => {
+    const fromLobby = send(room({ round: null }), { type: "startRound", subject: { kind: "none" } });
+    expect(ok(fromLobby).round?.number).toBe(1);
+    expect("ended" in fromLobby).toBe(false);
+    expect("ended" in send(room(), { type: "castVote", card: "3" }, A)).toBe(false);
+    expect("ended" in send(room(), { type: "revote" })).toBe(false);
+  });
+});
+
 describe("owner", () => {
   it("hands the PO role to a present participant", () => {
     const result = send(room(), { type: "transferOwner", to: A });

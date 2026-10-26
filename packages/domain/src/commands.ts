@@ -2,7 +2,7 @@
  * What `apply` takes and returns: commands, causes and error codes (architecture, section 4).
  */
 import type { Card, CustomDeckErrorCode } from "./decks.ts";
-import type { Role, RoomState, SettingsPatch, Subject, UserId } from "./room.ts";
+import type { Role, RoomState, Round, SettingsPatch, Subject, UserId } from "./room.ts";
 
 /** Every change to a room. A flat union discriminated by `type`. */
 export type Command =
@@ -85,7 +85,13 @@ export type ErrorCode =
  * The outcome of `apply`. A refusal still carries `state` and `causes`: an elapsed
  * deadline is resolved before the command and that resolution stands. When nothing
  * changed, `state` is the input object itself, so the caller can skip the write.
+ *
+ * `ended` is the round this `apply` replaced or abandoned (`startRound`, `revote`, or a
+ * deck or specials change that restarts a voting round), in its final form: after an
+ * elapsed deadline was resolved, so a round the timer revealed comes back revealed even
+ * though the input still held it Voting. The server writes it to history only when
+ * `ended.phase === "revealed"`.
  */
 export type ApplyResult =
-  | { ok: true; state: RoomState; causes: Cause[] }
+  | { ok: true; state: RoomState; causes: Cause[]; ended?: Round }
   | { ok: false; error: ErrorCode; state: RoomState; causes: Cause[] };

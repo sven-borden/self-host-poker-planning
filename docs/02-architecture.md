@@ -106,7 +106,7 @@ plus observers when `observersCount`) and at most 32 participants in all.
 `apply(state, command, ctx)` in `packages/domain` (`apply.ts`), where
 `ctx = { actor: UserId, now: number }` (epoch ms). Pure, synchronous, never mutates its
 input, 100 % branch coverage enforced by the gate. Commands are a flat union
-(`{ type: "castVote", card }`). It returns `{ ok: true, state, causes }` or
+(`{ type: "castVote", card }`). It returns `{ ok: true, state, causes, ended? }` or
 `{ ok: false, error, state, causes }`; when nothing changed, `state` is the input object
 itself (`===`), so the server can skip the write. Error codes are one snake_case union
 (`ErrorCode`); causes never carry a card value except the public `finalSet`.
@@ -114,6 +114,13 @@ itself (`===`), so the server can skip the write. Error codes are one snake_case
 States: **Lobby** (`round === null`) → **Voting** → **Revealed** → next round →
 **Voting**. A finished round is written to history when the next round starts, when
 the final estimate is set, or when the room goes idle.
+
+`ended` is the round an `apply` replaced or abandoned (`startRound`, `revote`, or a deck
+or specials change that restarts a voting round), in its final form after step 1. The
+input state is not enough: when a timer has elapsed, `startRound` first reveals the old
+round and then replaces it in the same call, so only `ended` holds that revealed round.
+The server writes `ended` to history only when `ended.phase === "revealed"`; an
+abandoned or restarted voting round is not history.
 
 Every `apply` runs three steps:
 1. **Resolve an elapsed deadline**: if Voting and `deadlineAt <= now`, reveal (by

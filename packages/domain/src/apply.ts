@@ -42,9 +42,11 @@ import {
   type Vote,
 } from "./room.ts";
 
-type Step = { state: RoomState; causes: Cause[] } | { error: ErrorCode };
+/** A success; `ended` is the round this command replaced or abandoned, if any. */
+type Done = { state: RoomState; causes: Cause[]; ended?: Round };
+type Step = Done | { error: ErrorCode };
 
-const done = (state: RoomState, ...causes: Cause[]): Step => ({ state, causes });
+const done = (state: RoomState, ...causes: Cause[]): Done => ({ state, causes });
 const refuse = (error: ErrorCode): Step => ({ error });
 
 /** Commands only the PO may send. */
@@ -70,11 +72,10 @@ export function apply(state: RoomState, command: Command, ctx: ApplyContext): Ap
     return { ok: false, error: step.error, state: resolved.state, causes: resolved.causes };
   }
   const settled = settle(step.state, ctx.now);
-  return {
-    ok: true,
-    state: settled.state,
-    causes: [...resolved.causes, ...step.causes, ...settled.causes],
-  };
+  const causes = [...resolved.causes, ...step.causes, ...settled.causes];
+  return step.ended
+    ? { ok: true, state: settled.state, causes, ended: step.ended }
+    : { ok: true, state: settled.state, causes };
 
   function resolveDeadline(s: RoomState): { state: RoomState; causes: Cause[] } {
     const round = s.round;
@@ -226,7 +227,10 @@ function claimOwner(state: RoomState, actor: UserId, now: number): Step {
 
 // ---------------------------------------------------------------------------------- rounds
 
-/** A new round: the next number, the current deck, specials and anonymity, no votes. */
+/**
+ * A new round: the next number, the current deck, specials and anonymity, no votes. The
+ * round it replaces (as the deadline left it) is reported as `ended`.
+ */
 function startRound(state: RoomState, subject: Subject, now: number): Step {
   const { settings } = state;
   const number = (state.round?.number ?? 0) + 1;
@@ -241,7 +245,9 @@ function startRound(state: RoomState, subject: Subject, now: number): Step {
     startedAt: now,
   };
   if (settings.timer.seconds !== null) round.deadlineAt = now + settings.timer.seconds * 1000;
-  return done(withRound(state, round), { type: "roundStarted", number });
+  const step = done(withRound(state, round), { type: "roundStarted", number });
+  if (state.round) step.ended = state.round;
+  return step;
 }
 
 function castVote(state: RoomState, actor: UserId, card: unknown): Step {
@@ -320,11 +326,14 @@ function updateSettings(state: RoomState, patch: unknown, now: number): Step {
     votes: {},
     startedAt: now,
   };
-  return done(
-    withRound(next, restarted),
-    { type: "settingsUpdated" },
-    { type: "roundStarted", number: round.number, restarted: true },
-  );
+  return {
+    ...done(
+      withRound(next, restarted),
+      { type: "settingsUpdated" },
+      { type: "roundStarted", number: round.number, restarted: true },
+    ),
+    ended: round,
+  };
 }
 
 /**

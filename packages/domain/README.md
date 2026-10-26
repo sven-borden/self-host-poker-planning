@@ -60,6 +60,10 @@ canonical: `.` is the decimal mark and the domain never localises (the UI may sh
 are in `docs/02-architecture.md`, section 4.
 
 - Never mutate the input; return the input object itself when nothing changed.
+- A success carries `ended` when the command replaced or abandoned a round
+  (`startRound`, `revote`, a deck or specials restart): that round as step 1 left it,
+  so a round an elapsed timer revealed comes back revealed. The server records history
+  from `ended` only when `ended.phase === "revealed"`, never from the input state.
 - Look ids up with `Object.hasOwn`: an id such as `constructor` must never reach the
   prototype.
 - Every `switch` is exhaustive (`never` check).
