@@ -200,6 +200,12 @@ describe("refusals", () => {
 
   const rows: Array<[string, () => RoomState, unknown, string, ErrorCode]> = [
     ["an unknown command", room, { type: "dance" }, PO, "bad_command"],
+    ["a null command", room, null, PO, "bad_command"],
+    ["a null command from outside", room, null, OUT, "bad_command"],
+    ["an undefined command", room, undefined, PO, "bad_command"],
+    ["a string command", room, "castVote", A, "bad_command"],
+    ["a number command", room, 42, A, "bad_command"],
+    ["an array command", room, [{ type: "leave" }], A, "bad_command"],
     ["a vote from outside", room, { type: "castVote", card: "3" }, OUT, "not_participant"],
     ["a leave from outside", room, { type: "leave" }, OUT, "not_participant"],
     ["a prototype key as actor", room, { type: "leave" }, "__proto__", "not_participant"],

@@ -14,6 +14,7 @@ import {
   canonicalSettings,
   cleanName,
   cleanSubject,
+  isRecord,
   isTimerSeconds,
   patchSettings,
   sameJson,
@@ -93,6 +94,8 @@ export function apply(state: RoomState, command: Command, ctx: ApplyContext): Ap
 }
 
 function run(state: RoomState, command: Command, { actor, now }: ApplyContext): Step {
+  // Commands come off the network: anything but an object is refused, never thrown on.
+  if (!isRecord(command)) return refuse("bad_command");
   if (!OPEN.has(command.type) && !participant(state, actor)) return refuse("not_participant");
   if (OWNER_ONLY.has(command.type) && actor !== state.ownerId) return refuse("not_owner");
 
