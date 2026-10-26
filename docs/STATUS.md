@@ -9,11 +9,15 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 - Nothing is deployed yet; Coolify comes with #12.
 - `main` has the monorepo scaffold from #1: pnpm 12.15.0, Node 24, TypeScript 7,
   Biome, Vitest, Vite and tsdown. `pnpm gate` is green.
+- CI from #2 runs on every pull request: `check` runs `pnpm gate`, and `db-tests`
+  runs `pnpm test:db` against Postgres 17.
 - The decisions are in `docs/05-decisions.md`.
 
 ## Next
 
-- **#2 (PP-002)** CI on pull requests, then the rest of W0 in order.
+- **#4 (PP-004)** decks and statistics. It is taken before #3 because the state
+  machine validates against the decks.
+- Then #3, #5, #6, #7, #8, #9, #10, #11, #13.
 - **#12** waits for Sven's go on Coolify and DNS (see Owner items). #13 does not
   depend on #12, so it can go first.
 

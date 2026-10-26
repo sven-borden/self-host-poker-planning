@@ -41,7 +41,9 @@ Code conventions live next to the code (package READMEs); do not duplicate them 
 
 - Implementation and fixer agents: `subagent_type: "implementer"` with `effort: "high"`;
   reviewers: `general-purpose`. Polling (CI, deploys, health) goes to a Haiku agent
-  (`model: "haiku"`); no Opus agent sits in a wait loop. Always pass `model` explicitly.
+  (`model: "haiku"`) or to a background shell command such as `gh pr checks <N>
+  --watch`, which costs no model tokens. No Opus agent sits in a wait loop. Always
+  pass `model` explicitly. Sonnet is fine for mechanical fixer briefs.
 - A spend or session limit can kill an agent mid-run: resume it from the branch state
   with SendMessage instead of relaunching from scratch.
 - Every brief says: commit after every working step; pnpm only, Node 24; never read,
