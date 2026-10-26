@@ -1,4 +1,5 @@
 import { CheckIcon } from "lucide-react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover.tsx";
 import type { TFunction } from "../i18n/i18n.ts";
 import { useT } from "../i18n/i18n-context.tsx";
@@ -66,6 +67,49 @@ function VotedBadge({ size }: { size: number }) {
   );
 }
 
+/** The name and state in a popover, for seats that cannot show the whole name. */
+function SeatPopover({ person, side }: { person: TablePerson; side: SeatPlace["label"] }) {
+  const t = useT();
+  const state = statusText(t, person.status);
+  return (
+    <PopoverContent
+      side={side === "above" ? "top" : "bottom"}
+      className="w-auto max-w-60 px-3 py-2 text-sm"
+    >
+      <p className="m-0 font-semibold break-words">{person.name}</p>
+      {state ? <p className="m-0 text-xs text-ink-2">{state}</p> : null}
+    </PopoverContent>
+  );
+}
+
+/**
+ * True when the element's text is cut off. Measured before paint and again once the web
+ * fonts have loaded, since they change the text's width.
+ */
+function useTruncated(name: string, width: number) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [truncated, setTruncated] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: measure again when the name, the width or the element (a button once truncated) changes.
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) {
+      return;
+    }
+    let live = true;
+    const check = () => {
+      if (live) {
+        setTruncated(element.scrollWidth > element.clientWidth);
+      }
+    };
+    check();
+    document.fonts?.ready.then(check);
+    return () => {
+      live = false;
+    };
+  }, [name, width, truncated]);
+  return [ref, truncated] as const;
+}
+
 interface SeatProps {
   person: TablePerson;
   place: SeatPlace;
@@ -75,7 +119,8 @@ interface SeatProps {
 /**
  * One person at the table: avatar plus name, the name on the side away from the table.
  * Initials-only seats (more than 10 people on a phone) are 44 px buttons that show the
- * name in a popover on tap. The list item carries the full label for screen readers.
+ * name in a popover on tap; so is a seat whose name is cut off, as a button the size of
+ * the seat. Otherwise the list item carries the full label for screen readers.
  */
 export function Seat({ person, place, geometry }: SeatProps) {
   const t = useT();
@@ -83,10 +128,10 @@ export function Seat({ person, place, geometry }: SeatProps) {
   const voted = person.status.kind === "voted";
   const avatar = geometry.avatar;
   const badge = avatar >= 40 ? 17 : 15;
+  const [nameRef, truncated] = useTruncated(person.name, geometry.label?.width ?? 0);
 
   if (!geometry.label) {
     const size = geometry.target;
-    const state = statusText(t, person.status);
     return (
       <li
         data-seat
@@ -112,13 +157,7 @@ export function Seat({ person, place, geometry }: SeatProps) {
               </span>
             </button>
           </PopoverTrigger>
-          <PopoverContent
-            side={place.label === "above" ? "top" : "bottom"}
-            className="w-auto max-w-60 px-3 py-2 text-sm"
-          >
-            <p className="m-0 font-semibold break-words">{person.name}</p>
-            {state ? <p className="m-0 text-xs text-ink-2">{state}</p> : null}
-          </PopoverContent>
+          <SeatPopover person={person} side={place.label} />
         </Popover>
       </li>
     );
@@ -126,28 +165,16 @@ export function Seat({ person, place, geometry }: SeatProps) {
 
   const { width, height: labelHeight, gap } = geometry.label;
   const above = place.label === "above";
-  return (
-    <li
-      data-seat
-      className="absolute flex items-center"
-      style={{
-        flexDirection: above ? "column-reverse" : "column",
-        gap,
-        width,
-        left: `calc(${place.x}% - ${width / 2}px)`,
-        // The avatar's centre sits on the seat's point; the name hangs off the far side.
-        top: `calc(${place.y}% - ${above ? avatar / 2 + gap + labelHeight : avatar / 2}px)`,
-      }}
-    >
-      <span className="sr-only">{label}</span>
+  const parts = (
+    <>
       <span data-seat-part="avatar" aria-hidden="true" className="relative">
         <Avatar id={person.id} name={person.name} size={avatar} />
         {voted ? <VotedBadge size={badge} /> : null}
       </span>
       <span
+        ref={nameRef}
         data-seat-part="name"
         aria-hidden="true"
-        title={person.name}
         className="block w-full truncate text-center font-semibold text-ink"
         style={{
           height: labelHeight,
@@ -157,6 +184,42 @@ export function Seat({ person, place, geometry }: SeatProps) {
       >
         {person.name}
       </span>
+    </>
+  );
+  const column = "flex items-center";
+  const direction = { flexDirection: above ? "column-reverse" : "column", gap } as const;
+  return (
+    <li
+      data-seat
+      className="absolute"
+      style={{
+        width,
+        left: `calc(${place.x}% - ${width / 2}px)`,
+        // The avatar's centre sits on the seat's point; the name hangs off the far side.
+        top: `calc(${place.y}% - ${above ? avatar / 2 + gap + labelHeight : avatar / 2}px)`,
+      }}
+    >
+      {truncated ? (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label={label}
+              data-seat-trigger
+              className={`${column} w-full cursor-pointer rounded-md p-0`}
+              style={direction}
+            >
+              {parts}
+            </button>
+          </PopoverTrigger>
+          <SeatPopover person={person} side={place.label} />
+        </Popover>
+      ) : (
+        <div className={column} style={direction}>
+          <span className="sr-only">{label}</span>
+          {parts}
+        </div>
+      )}
     </li>
   );
 }

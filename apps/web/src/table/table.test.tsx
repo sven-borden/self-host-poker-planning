@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createT } from "../i18n/i18n.ts";
 import { I18nProvider } from "../i18n/i18n-context.tsx";
 import { Avatar, avatarColour, initials } from "./avatar.tsx";
-import { cardLabel, HandCard, MiniCard, SlotCard } from "./cards.tsx";
+import { cardLabel, HandCard, labelEms, labelScale, MiniCard, SlotCard } from "./cards.tsx";
 import type { TablePerson } from "./seat.tsx";
 import { TableStage } from "./table-stage.tsx";
 
@@ -114,6 +114,43 @@ describe("TableStage", () => {
     expect(popover.textContent).toBe("Person 3Voted");
   });
 
+  it("makes a seat whose name is cut off a button that shows the whole name", async () => {
+    // jsdom does no layout: names longer than 12 characters overflow their 90 px.
+    const sizes = {
+      scrollWidth: function (this: HTMLElement) {
+        return (this.textContent?.length ?? 0) > 12 ? 140 : 60;
+      },
+      clientWidth: () => 90,
+    };
+    for (const [key, get] of Object.entries(sizes)) {
+      Object.defineProperty(HTMLElement.prototype, key, { configurable: true, get });
+    }
+    try {
+      render(
+        <TableStage
+          variant="desktop"
+          people={[
+            person("a", "Ana", { kind: "voted" }),
+            person("m", "Maximilian Oberhuber-Schwarz", { kind: "thinking" }),
+          ]}
+        />,
+      );
+      expect(screen.getAllByRole("button")).toHaveLength(1);
+      const seat = screen.getByRole("button", { name: "Maximilian Oberhuber-Schwarz, thinking" });
+      // Ana's name fits: no button, the list item speaks.
+      expect(screen.getByText("Ana, voted").className).toContain("sr-only");
+      await act(async () => {
+        fireEvent.click(seat);
+      });
+      const popover = await screen.findByRole("dialog");
+      expect(popover.textContent).toBe("Maximilian Oberhuber-SchwarzThinking");
+    } finally {
+      for (const key of Object.keys(sizes)) {
+        Reflect.deleteProperty(HTMLElement.prototype, key);
+      }
+    }
+  });
+
   it("keeps names with up to 10 people on a phone", () => {
     const ten = Array.from({ length: 10 }, (_, i) => person(`p${i}`, `P${i}`, { kind: "present" }));
     render(<TableStage people={ten} variant="phone" />);
@@ -172,6 +209,26 @@ describe("cards", () => {
       screen.getByRole("button", { name: "needs a break" }).querySelectorAll("svg"),
     ).toHaveLength(3);
     expect(document.body.textContent).not.toMatch(/[☕∞]/);
+  });
+
+  it("shrinks a label by its graphemes so that it fits on one line", () => {
+    expect(labelEms("8")).toBe(0.72);
+    expect(labelEms("100")).toBeCloseTo(2.16);
+    expect(labelEms("XXL")).toBe(3);
+    expect(labelEms("WWWW")).toBe(4);
+    // A skin-toned thumb is one grapheme of two code points.
+    expect(labelEms("👍🏽👍")).toBeCloseTo(2.6);
+    expect(labelScale("13", 1.88)).toBe(1);
+    expect(labelScale("WWWW", 1.88)).toBe(0.47);
+    for (const value of ["1", "13", "100", "1000", "XXL", "WWWW", "MMMM", "👍🏽👍", "½"]) {
+      for (const room of [1.69, 1.88, 1.4]) {
+        expect(labelScale(value, room) * labelEms(value)).toBeLessThanOrEqual(room);
+      }
+    }
+    render(<MiniCard value="XXXL" />);
+    const value = document.querySelector<HTMLElement>("[data-card-value]");
+    expect(value?.className).toContain("whitespace-nowrap");
+    expect(value?.style.fontSize).toBe("0.423em");
   });
 
   it("sizes slot cards in whole pixels from the layout", () => {
