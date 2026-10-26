@@ -3,7 +3,7 @@
  * (server.ts) mounts the app on a Node HTTP server next to Socket.IO.
  */
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join, sep } from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { type Context, Hono } from "hono";
@@ -134,11 +134,37 @@ async function withTimeout(check: () => Promise<DbStatus>, ms: number): Promise<
 }
 
 /**
- * Serves the built web app. Files under `assets/` carry a content hash in their name and
- * are cached for a year; everything else (`index.html`, `theme-init.js`, the favicon) is
- * revalidated on every load. A GET for a path whose last segment has no dot gets
- * `index.html` (history fallback, so `/r/:code` works on reload); a missing file with an
- * extension is a 404, so a stale asset URL never receives HTML.
+ * Every plain file under `root`, as the URL path that serves it (`/assets/index-x.js`).
+ * Entries whose name starts with a dot are skipped with everything below them (Vite
+ * writes its manifest to `.vite/`); so are symbolic links.
+ */
+export function listStaticFiles(root: string): Set<string> {
+  const files = new Set<string>();
+  const walk = (dir: string, prefix: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith(".")) continue;
+      const path = `${prefix}/${entry.name}`;
+      if (entry.isDirectory()) walk(join(dir, entry.name), path);
+      else if (entry.isFile()) files.add(path);
+    }
+  };
+  walk(root, "");
+  return files;
+}
+
+/**
+ * Serves the built web app. The folder is listed once, here: a request is served from
+ * disk only when its path is exactly one of the listed files. Any other spelling of a
+ * file (another case, a Windows 8.3 short name such as `/VITE~1/manifest.json`, a
+ * trailing dot, an alternate data stream) and any file added later is never served. The
+ * folder is immutable in the image; in development, restart the server after rebuilding
+ * `apps/web/dist`.
+ *
+ * Files under `assets/` carry a content hash in their name and are cached for a year;
+ * everything else (`index.html`, `theme-init.js`, the favicon) is revalidated on every
+ * load. A GET for a path whose last segment has no dot gets `index.html` (history
+ * fallback, so `/r/:code` works on reload); a missing file with an extension is a 404,
+ * so a stale asset URL never receives HTML.
  */
 function mountWebApp(app: Hono<AppEnv>, root: string): void {
   const assets = join(root, "assets") + sep;
@@ -150,9 +176,9 @@ function mountWebApp(app: Hono<AppEnv>, root: string): void {
     if (file) c.header("Cache-Control", file.startsWith(assets) ? IMMUTABLE : REVALIDATE);
   });
   const remember = (path: string, c: Context<AppEnv>) => c.set("staticFile", path);
-  // Dot-folders stay private: Vite writes its manifest to `.vite/`.
+  const allowed = listStaticFiles(root);
   const files = serveStatic<AppEnv>({ root, onFound: remember });
-  app.use("*", (c, next) => (c.req.path.includes("/.") ? next() : files(c, next)));
+  app.use("*", (c, next) => (allowed.has(c.req.path) ? files(c, next) : next()));
   const index = serveStatic<AppEnv>({ root, path: "index.html", onFound: remember });
   app.use("*", (c, next) => {
     const last = c.req.path.slice(c.req.path.lastIndexOf("/") + 1);

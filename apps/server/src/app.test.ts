@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type AppDeps, createApp, DB_CHECK_TIMEOUT_MS } from "./app.ts";
+import { type AppDeps, createApp, DB_CHECK_TIMEOUT_MS, listStaticFiles } from "./app.ts";
 import { collectLogs, SECRET, testConfig } from "./test-support.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -155,6 +155,7 @@ describe("the built web app", () => {
     writeFileSync(join(root, "theme-init.js"), "/* theme */");
     writeFileSync(join(root, "favicon.svg"), "<svg/>");
     writeFileSync(join(root, "assets", "index-C0ffee12.js"), "export {};");
+    writeFileSync(join(root, "assets", ".hidden.js"), "SENTINEL");
   });
   afterAll(() => rmSync(parent, { recursive: true, force: true }));
 
@@ -198,6 +199,45 @@ describe("the built web app", () => {
       expect(response.status, path).toBe(404);
       expect(response.headers.get("cache-control"), path).toBe("no-store");
       expect(await response.json()).toEqual({ code: "not_found" });
+    }
+  });
+
+  it("lists the plain files once, without dot entries", () => {
+    expect([...listStaticFiles(root)].sort()).toEqual([
+      "/assets/index-C0ffee12.js",
+      "/favicon.svg",
+      "/index.html",
+      "/theme-init.js",
+    ]);
+  });
+
+  it("serves only the exact spelling of a listed file", async () => {
+    for (const path of [
+      "/.vite/manifest.json",
+      "/.VITE/manifest.json",
+      "/VITE~1/manifest.json",
+      "/assets/.hidden.js",
+      "/INDEX.HTML",
+      "/Favicon.svg",
+      "/assets/INDEX-C0FFEE12.JS",
+      "/favicon.svg.",
+      "/favicon.svg::$DATA",
+      "/assets//index-C0ffee12.js",
+    ]) {
+      const response = await get(path);
+      expect(response.status, path).toBe(404);
+      expect(await response.text(), path).not.toContain("SENTINEL");
+    }
+  });
+
+  it("never serves a file added after start", async () => {
+    const { app: a } = app({ staticDir: root });
+    const late = join(root, "late.js");
+    writeFileSync(late, "SENTINEL");
+    try {
+      expect((await a.request("/late.js")).status).toBe(404);
+    } finally {
+      unlinkSync(late);
     }
   });
 
