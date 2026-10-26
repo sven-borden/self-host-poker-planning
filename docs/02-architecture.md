@@ -165,11 +165,14 @@ with zod on both ends.
   `{ ok: true, version } | { ok: false, code }`. Codes are stable strings
   (`room_full`, `not_owner`, `bad_card`, `rate_limited`, …) that the web app translates.
 - **Snapshots** (server → client): after every change the server sends each socket
-  its own projection: `snapshot { protocol, version, serverNow, room, cause }`.
+  its own projection: `snapshot { protocol, version, serverNow, room, causes }`.
   Rooms are small (≤ 16 people), so a full snapshot is a few kilobytes; there is no
   event replay and no gap handling. Clients drop any snapshot older than the one they hold.
-- `cause` (for example `{ type: "voteCast", who }`) drives animations and screen
-  reader announcements; it never carries a hidden value.
+- `causes` is an array, the causes of one `apply` in order (one command can give
+  several: a timer reveal, then `roundStarted`). Each one (for example
+  `{ type: "voteCast", who }`) drives animations and screen reader announcements and
+  never carries a hidden value. Causes are projected per viewer like the room (#5): in
+  an anonymous round after reveal no vote cause carries `who`.
 - **Projection rules** (`toSnapshot(state, viewer)`):
   - Voting: `voted: UserId[]`; the viewer's own card only for the viewer.
   - Revealed, named: `votes: { who, card, changedAfterReveal }[]`.
