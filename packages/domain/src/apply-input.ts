@@ -11,6 +11,7 @@ import {
   PRESET_DECK_IDS,
   SPECIAL_CARDS,
   type SpecialCard,
+  UNITS_PER_CHARACTER,
   validateCustomDeck,
 } from "./decks.ts";
 import {
@@ -36,12 +37,14 @@ const UNSAFE_TEXT = /[\p{Cc}‪-‮⁦-⁩]/u;
 const BLANK = /[\s\p{Cf}]/gu;
 
 /**
- * Trimmed, NFC-normalised text of 1 to `max` user-perceived characters, without control
- * characters or bidi overrides and not made of invisible characters only; else `null`.
+ * Trimmed, NFC-normalised text of 1 to `max` user-perceived characters and at most
+ * `max × UNITS_PER_CHARACTER` code units, without control characters or bidi overrides
+ * and not made of invisible characters only; else `null`.
  */
 function cleanText(raw: unknown, max: number): string | null {
   if (typeof raw !== "string") return null;
   const text = raw.trim().normalize("NFC");
+  if (text.length > max * UNITS_PER_CHARACTER) return null;
   if (text.replace(BLANK, "") === "" || UNSAFE_TEXT.test(text)) return null;
   return cardLength(text) <= max ? text : null;
 }

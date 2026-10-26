@@ -212,6 +212,27 @@ describe("refusals", () => {
         ],
     ),
     ["an empty rename", room, { type: "rename", name: " " }, A, "bad_name"],
+    [
+      "a 2-character name of 100 002 code units",
+      room,
+      join(`a${"́".repeat(50_000)}`.repeat(2)),
+      OUT,
+      "bad_name",
+    ],
+    [
+      "a 1-character name of 513 code units",
+      room,
+      { type: "rename", name: `a${"́".repeat(513)}` },
+      A,
+      "bad_name",
+    ],
+    [
+      "a 1-character title of 200 001 code units",
+      room,
+      { type: "startRound", subject: { kind: "title", text: `a${"́".repeat(200_000)}` } },
+      PO,
+      "bad_subject",
+    ],
     ["joining as PO", room, join("Xavier", "po"), OUT, "bad_role"],
     ["an unknown role", room, { type: "setRole", role: "admin" }, A, "bad_role"],
     [
@@ -415,6 +436,13 @@ describe("membership", () => {
     expect(
       ok(send(room(), { type: "join", name, role: "voter" }, OUT)).participants[OUT]?.name,
     ).toBe(name);
+  });
+
+  it("accepts a name of up to 16 code units per character", () => {
+    // "a" plus 512 combining acute accents: NFC folds the first into "á", 512 units left.
+    const name = ok(send(room(), { type: "rename", name: `a${"́".repeat(512)}` }, A))
+      .participants[A]?.name;
+    expect(name).toHaveLength(512);
   });
 
   it("seats the 16th person and, with observers not counting, the 32nd member", () => {

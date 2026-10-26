@@ -173,6 +173,8 @@ describe("validateCustomDeck", () => {
     ["card_special", ["?️"]],
     ["card_too_long", ["12345"]],
     ["card_too_long", ["👍🏽👍🏽👍🏽👍🏽👍🏽"]],
+    // One user-perceived character, 65 code units after NFC.
+    ["card_too_long", [`a${"́".repeat(65)}`]],
     ["card_duplicate", ["1", " 1"]],
     ["card_duplicate", ["1", "1.0"]],
     ["card_duplicate", ["1", "2", "01"]],

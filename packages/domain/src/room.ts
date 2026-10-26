@@ -40,7 +40,7 @@ export type SettingsPatch = Partial<Omit<RoomSettings, "timer">> & {
 };
 
 export type Participant = {
-  /** 1 to 32 user-perceived characters, trimmed. */
+  /** 1 to 32 user-perceived characters (at most 512 code units), trimmed. */
   name: string;
   role: Role;
   /** Avatar id (W4). */

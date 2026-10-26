@@ -87,6 +87,13 @@ export function cardLength(label: string): number {
   return seg ? Array.from(seg.segment(label)).length : Array.from(label).length;
 }
 
+/**
+ * A text limited to n user-perceived characters also holds at most 16 × n UTF-16 code
+ * units: one character can carry any number of combining marks, and the stored state
+ * must stay small.
+ */
+export const UNITS_PER_CHARACTER = 16;
+
 export type CustomDeckErrorCode =
   | "deck_empty"
   | "deck_too_many_cards"
@@ -119,7 +126,9 @@ export function validateCustomDeck(
     if (card === "") return { ok: false, code: "card_empty" };
     if (INVISIBLE.test(card.replace(EMOJI_JOINER, "$1")))
       return { ok: false, code: "card_invalid" };
-    if (cardLength(card) > MAX_CARD_LENGTH) return { ok: false, code: "card_too_long" };
+    if (card.length > MAX_CARD_LENGTH * UNITS_PER_CHARACTER || cardLength(card) > MAX_CARD_LENGTH) {
+      return { ok: false, code: "card_too_long" };
+    }
     if (isSpecial(card.replace(/[\uFE0E\uFE0F]/gu, ""))) return { ok: false, code: "card_special" };
     if (out.includes(card)) return { ok: false, code: "card_duplicate" };
     // Equal numeric values (1 and 1.0, ½ and 0.5, -0 and 0) would split the votes.
