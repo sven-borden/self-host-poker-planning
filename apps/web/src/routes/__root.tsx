@@ -32,7 +32,7 @@ function RootLayout() {
           <ThemeToggle />
         </div>
       </header>
-      <main id="main" tabIndex={-1} className="mx-auto max-w-5xl px-4 py-12 outline-none sm:py-20">
+      <main id="main" tabIndex={-1} className="mx-auto max-w-5xl px-4 py-12 outline-hidden sm:py-20">
         <Outlet />
       </main>
       <Toaster />
