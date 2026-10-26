@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "build": "tsdown",
-    "start": "node dist/main.mjs"
+    "start": "node --enable-source-maps dist/main.mjs"
   },
   "dependencies": {
     "@pp/domain": "workspace:*",

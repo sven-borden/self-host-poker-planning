@@ -12,5 +12,6 @@ Drizzle from #6 on. It owns every round and, in production, serves the built web
 - `pnpm build` bundles `src/main.ts` with tsdown into `dist/main.mjs`. The `@pp/*`
   workspace packages are bundled in (they ship TypeScript source); npm dependencies stay
   external, so the Docker image installs production dependencies next to `dist/`.
-  `pnpm start` runs the bundle with plain Node 24.
+  `pnpm start` runs the bundle with plain Node 24 and `--enable-source-maps`, so stack
+  traces point at the TypeScript source.
 - Import siblings with their `.ts` extension.
