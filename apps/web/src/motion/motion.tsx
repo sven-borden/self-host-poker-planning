@@ -1,5 +1,6 @@
-import { type HTMLMotionProps, LazyMotion, MotionConfig, m, useReducedMotion } from "motion/react";
-import type { ReactNode } from "react";
+import { LazyMotion, MotionConfig, useReducedMotion } from "motion/react";
+import type { ComponentProps, CSSProperties, ReactNode } from "react";
+import { cn } from "../lib/utils.ts";
 
 // Motion with a job (docs/03-design-brief.md, "Motion spec"): short, interruptible, and
 // replaced by 120 ms cross-fades when the person asks for reduced motion.
@@ -31,26 +32,29 @@ export function usePrefersReducedMotion(): boolean {
   return useReducedMotion() ?? false;
 }
 
-type RiseInProps = Omit<HTMLMotionProps<"div">, "initial" | "animate" | "transition"> & {
+type RiseInProps = ComponentProps<"div"> & {
   /** Delay before the element appears, in seconds (for staggering). */
   delay?: number;
 };
 
 /**
  * Rises 12 px and fades in over 260 ms, like the hand dealing in. Under reduced motion it
- * only cross-fades for 120 ms, with no travel.
+ * only cross-fades for 120 ms, with no travel (styles.css shortens every animation).
+ *
+ * Pure CSS (tw-animate-css), not Motion: page content must never wait for a JavaScript
+ * chunk to become visible. Without the animation the element simply shows.
  */
-export function RiseIn({ delay = 0, ...props }: RiseInProps) {
-  const reduced = usePrefersReducedMotion();
+export function RiseIn({ delay = 0, className, style, ...props }: RiseInProps) {
+  const delayStyle: CSSProperties | undefined =
+    delay > 0 ? { animationDelay: `${delay}s`, ...style } : style;
   return (
-    <m.div
-      initial={reduced ? { opacity: 0 } : { opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={
-        reduced
-          ? { duration: REDUCED_FADE_SECONDS }
-          : { duration: 0.26, ease: EASE_STANDARD, delay }
-      }
+    <div
+      className={cn(
+        "animate-in fade-in slide-in-from-bottom-3 ease-standard animation-duration-260 fill-mode-backwards",
+        "motion-reduce:[--tw-enter-translate-y:0]",
+        className,
+      )}
+      style={delayStyle}
       {...props}
     />
   );
