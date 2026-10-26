@@ -54,6 +54,7 @@ export function Avatar({ id, name, size, className }: AvatarProps) {
   return (
     <span
       aria-hidden="true"
+      data-avatar
       className={cn(
         "grid shrink-0 place-items-center rounded-full font-display leading-none font-bold text-on-avatar ring-2 ring-surface select-none",
         AVATAR_BACKGROUNDS[avatarColour(id) - 1],

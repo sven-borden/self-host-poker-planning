@@ -84,11 +84,14 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # The browser download is cached per lockfile; system packages install every time.
+      # The browser download is cached per Playwright version; system packages install
+      # every time.
+      - id: playwright
+        run: echo "version=$(pnpm --filter @pp/web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - run: pnpm --filter @pp/web exec playwright install --with-deps chromium
       - run: pnpm --filter @pp/web build
       - run: pnpm --filter @pp/web test:e2e

@@ -13,8 +13,9 @@ export default defineConfig({
   outputDir: "./test-results",
   fullyParallel: true,
   forbidOnly: ci,
-  // One retry: Edge occasionally refuses a screenshot under parallel load.
-  retries: 1,
+  // One retry in CI, for a screenshot the browser refuses under parallel load; locally a
+  // failure shows at once.
+  retries: ci ? 1 : 0,
   workers: ci ? 2 : undefined,
   reporter: ci ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
