@@ -21,6 +21,9 @@
   }
 }
 
+/* Phones: 640 px and below, the breakpoint of the tall table (src/table/layout.ts). */
+@custom-variant phone (@media (max-width: 640px));
+
 /*
  * Tailwind's palette is switched off: only the design tokens exist as colours, so
  * `bg-red-500` or `text-white` generate nothing. `transparent`, `current` and `inherit`

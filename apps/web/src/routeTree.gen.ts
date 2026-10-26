@@ -10,11 +10,17 @@
 
 import { Route as rootRouteImport } from "./routes/__root";
 import { Route as IndexRouteImport } from "./routes/index";
+import { Route as DevTableRouteImport } from "./routes/dev/table";
 import { Route as RCodeRouteImport } from "./routes/r/$code";
 
 const IndexRoute = IndexRouteImport.update({
   id: "/",
   path: "/",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const DevTableRoute = DevTableRouteImport.update({
+  id: "/dev/table",
+  path: "/dev/table",
   getParentRoute: () => rootRouteImport,
 } as any);
 const RCodeRoute = RCodeRouteImport.update({
@@ -25,27 +31,31 @@ const RCodeRoute = RCodeRouteImport.update({
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
+  "/dev/table": typeof DevTableRoute;
   "/r/$code": typeof RCodeRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
+  "/dev/table": typeof DevTableRoute;
   "/r/$code": typeof RCodeRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof IndexRoute;
+  "/dev/table": typeof DevTableRoute;
   "/r/$code": typeof RCodeRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: "/" | "/r/$code";
+  fullPaths: "/" | "/dev/table" | "/r/$code";
   fileRoutesByTo: FileRoutesByTo;
-  to: "/" | "/r/$code";
-  id: "__root__" | "/" | "/r/$code";
+  to: "/" | "/dev/table" | "/r/$code";
+  id: "__root__" | "/" | "/dev/table" | "/r/$code";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
+  DevTableRoute: typeof DevTableRoute;
   RCodeRoute: typeof RCodeRoute;
 }
 
@@ -56,6 +66,13 @@ declare module "@tanstack/react-router" {
       path: "/";
       fullPath: "/";
       preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/dev/table": {
+      id: "/dev/table";
+      path: "/dev/table";
+      fullPath: "/dev/table";
+      preLoaderRoute: typeof DevTableRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/r/$code": {
@@ -70,6 +87,7 @@ declare module "@tanstack/react-router" {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DevTableRoute: DevTableRoute,
   RCodeRoute: RCodeRoute,
 };
 export const routeTree = rootRouteImport

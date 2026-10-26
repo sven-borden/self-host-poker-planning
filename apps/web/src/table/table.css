@@ -1,0 +1,53 @@
+/*
+ * The table's surfaces (docs/03-design-brief.md, "The table" and "Cards"). Colours come
+ * from tokens only; tints are drawn with opacity on a pseudo-element instead of mixing
+ * colours, so the colour check stays strict.
+ */
+
+/* The stage: a soft pool of light under the table. */
+.pp-stage {
+  background: radial-gradient(ellipse at 50% 45%, var(--surface-2), var(--bg) 72%);
+}
+
+/* The table: spruce felt inside a 7 px rim (RIM_WIDTH in geometry.ts). */
+.pp-felt {
+  background: var(--table);
+  box-shadow:
+    inset 0 0 0 7px var(--table-rim),
+    var(--shadow);
+}
+
+/* Light from above, brightest towards the top of the felt. */
+.pp-felt::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at 50% 30%, var(--table-ink), transparent 62%);
+  opacity: 0.1;
+}
+
+/* A hairline where the rim meets the felt. */
+.pp-felt::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 1px var(--table-ink);
+  opacity: 0.16;
+}
+
+/* Card back: brass with darker diagonal stripes, framed by the face colour. */
+.pp-card-back {
+  position: relative;
+  overflow: hidden;
+  background: var(--brass);
+}
+
+.pp-card-back::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(45deg, transparent 0 3px, var(--table-rim) 3px 6px);
+  opacity: 0.38;
+}

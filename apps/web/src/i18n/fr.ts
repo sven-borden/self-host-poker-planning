@@ -27,6 +27,32 @@ export const fr: Messages = {
       "Cette salle n’est pas encore ouverte : la table arrive dans une prochaine version.",
     backHome: "Retour à l’accueil",
   },
+  table: {
+    seats: "Personnes à la table",
+    observers: "Observateurs",
+    thinking: "Réfléchit",
+    voted: "A voté",
+    noVote: "Pas de vote",
+    seatThinking: "{{name}}, réfléchit",
+    seatVoted: "{{name}}, a voté",
+    seatNoVote: "{{name}}, pas de vote",
+    seatCard: "{{name}}, carte {{card}}",
+    seatCardWord: "{{name}}, {{card}}",
+    votedSoFar: "{{count}}/{{total}} ont voté pour l’instant",
+  },
+  cards: {
+    yourCards: "Vos cartes",
+    unsure: "incertain",
+    coffee: "besoin d’une pause",
+    infinite: "trop gros pour être estimé",
+  },
+  dev: {
+    tableTitle: "Disposition de la table",
+    tableLede:
+      "Un banc d’essai pour la table. Paramètres de l’adresse : n de 1 à 16, state lobby, voting ou revealed, observers de 0 à 4.",
+    hand: "Main",
+    miniCards: "Mini-cartes",
+  },
   notFound: {
     title: "Page introuvable",
     body: "Cette adresse ne mène nulle part. Vérifiez le lien ou repartez de l’accueil.",

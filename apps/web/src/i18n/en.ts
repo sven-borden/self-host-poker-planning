@@ -25,6 +25,32 @@ export const en = {
     notOpenYet: "This room is not open yet: the table arrives in a later version.",
     backHome: "Back to the home page",
   },
+  table: {
+    seats: "People at the table",
+    observers: "Observers",
+    thinking: "Thinking",
+    voted: "Voted",
+    noVote: "No vote",
+    seatThinking: "{{name}}, thinking",
+    seatVoted: "{{name}}, voted",
+    seatNoVote: "{{name}}, no vote",
+    seatCard: "{{name}}, card {{card}}",
+    seatCardWord: "{{name}}, {{card}}",
+    votedSoFar: "{{count}}/{{total}} voted so far",
+  },
+  cards: {
+    yourCards: "Your cards",
+    unsure: "unsure",
+    coffee: "needs a break",
+    infinite: "too big to estimate",
+  },
+  dev: {
+    tableTitle: "Table layout",
+    tableLede:
+      "A test bench for the table. Address parameters: n from 1 to 16, state lobby, voting or revealed, observers from 0 to 4.",
+    hand: "Hand",
+    miniCards: "Mini cards",
+  },
   notFound: {
     title: "Page not found",
     body: "This address leads nowhere. Check the link or start again from the home page.",
