@@ -166,27 +166,62 @@ in Voting until the next command arrives. Not built in #3.
 
 ## 5. Sync protocol
 
-Socket.IO with typed event maps from `packages/protocol`; every payload is validated
-with zod on both ends.
+Socket.IO with typed event maps from `packages/protocol` (`ClientToServerEvents`,
+`ServerToClientEvents`); every payload is validated with zod on both ends.
+`PROTOCOL_VERSION` is 1.
 
-- **Commands** (client → server): `cmd { id, type, payload }`, acknowledged with
-  `{ ok: true, version } | { ok: false, code }`. Codes are stable strings
-  (`room_full`, `not_owner`, `bad_card`, `rate_limited`, …) that the web app translates.
+| Event | Direction | Payload | Ack |
+|---|---|---|---|
+| `enter` | client → server | `{ code, protocol }`: subscribe to a room's snapshots | `{ ok: true, snapshot }` or `{ ok: false, code }` |
+| `cmd` | client → server | `{ id, type, payload }`: one domain command | `{ ok: true, version }` or `{ ok: false, code }` |
+| `snapshot` | server → client | the viewer's projection | none |
+| `kicked` | server → client | none; the server disconnects the socket next | none |
+
+- **Commands**: one zod schema per domain command, a discriminated union on `type`;
+  `id` is the client's correlation string; `payload` may be left out on commands without
+  fields. `toDomainCommand(input)` parses and returns `{ ok: true, id, command }` with the
+  flat domain `Command`, or `{ ok: false, code: "bad_payload" }`. zod checks the shape and
+  caps strings and arrays well above the domain's limits (`WIRE_LIMITS`), and strips
+  unknown fields (a link's `key` too: the server detects it). The domain stays the judge
+  of the exact rules (grapheme counts, deck rules, ranges), so its codes reach the user.
+- **Ack codes** (`AckErrorCode`, listed in `ACK_ERROR_CODES`): the domain's `ErrorCode` plus
+  `bad_payload`, `protocol_mismatch`, `room_not_found`, `password_required`,
+  `unauthenticated`, `rate_limited`, `internal`. snake_case strings the web app translates.
+- **Enter**: `parseEnter(input)` answers `protocol_mismatch` to any other `protocol` number
+  before it looks at the rest (an old client must learn to reload), else `bad_payload`
+  or the payload.
 - **Snapshots** (server → client): after every change the server sends each socket
-  its own projection: `snapshot { protocol, version, serverNow, room, causes }`.
-  Rooms are small (≤ 16 people), so a full snapshot is a few kilobytes; there is no
-  event replay and no gap handling. Clients drop any snapshot older than the one they hold.
+  its own projection, `toSnapshot(state, viewer, { code, version, now, causes })`:
+  `{ protocol, version, serverNow, room, causes }`, where `room` is
+  `{ code, ownerId, settings, participants, you, round }`. `participants` is sorted by
+  `joinedAt`, then id (never by vote order), each `{ id, name, role, avatar?, connected,
+  away, isOwner }`; `you` is the viewer's id once joined, else `null`; `round` is `null`
+  in the lobby. Rooms are small (≤ 16 people), so a full snapshot is a few kilobytes;
+  there is no event replay and no gap handling. Clients drop any snapshot older than the
+  one they hold.
 - `causes` is an array, the causes of one `apply` in order (one command can give
   several: a timer reveal, then `roundStarted`). Each one (for example
   `{ type: "voteCast", who }`) drives animations and screen reader announcements and
-  never carries a hidden value. Causes are projected per viewer like the room (#5): in
-  an anonymous round after reveal no vote cause carries `who`.
-- **Projection rules** (`toSnapshot(state, viewer)`):
-  - Voting: `voted: UserId[]`; the viewer's own card only for the viewer.
-  - Revealed, named: `votes: { who, card, changedAfterReveal }[]`.
-  - Revealed, anonymous: `cards: Card[]` sorted by deck order plus `voted: UserId[]`;
-    no mapping between the two, ever.
+  never carries a hidden value. `projectCauses` copies each cause field by field (an
+  unknown cause is dropped); only `finalSet` carries a card; in an anonymous round after
+  reveal no vote cause carries `who`, even one the domain sent with it (defence in depth).
+- **Projection rules** (the round view, built field by field from an allow-list):
+  - Every phase: `number`, `subject`, `startedAt`, `deadlineAt?`, `deck`, `specials`,
+    `anonymous`, `voted` (user ids in participant order) and `yourVote?` (the viewer's
+    own card, only for the viewer).
+  - Voting: no other card anywhere.
+  - Revealed: plus `revealedAt`, `final?` and `results` (`computeResults`).
+  - Revealed, named: plus `votes: { who, card, changedAfterReveal }[]` in participant order.
+  - Revealed, anonymous: plus `cards: Card[]` in deck order (deck cards, specials, then
+    unknown labels by code point); no mapping between `voted` and `cards`, ever, and
+    nothing per person (no `changedAfterReveal`).
+  - Votes of people who left after the reveal stay (the domain keeps them), listed after
+    the participants by id: dropping a card when its owner leaves would name the owner.
   - Never: password hashes, session data, other people's private fields.
+  - Tested as fast-check properties over rooms built from random command sequences:
+    while Voting no string in a snapshot equals a card label outside the decks and
+    `yourVote`, and changing the others' cards changes nothing; in an anonymous round,
+    swapping votes between people or reordering how they were cast changes nothing.
 - **Reconnect**: Socket.IO reconnects automatically; on every (re)join the server
   sends a fresh snapshot. `protocol` mismatch → the client reloads.
 
