@@ -146,6 +146,11 @@ describe("validateCustomDeck", () => {
       ["👍🏽👍🏽👍🏽👍🏽", "abcd"],
     ],
     [["é"], ["é"]],
+    // Zero-width joiners inside emoji sequences: a family, and a woman technologist.
+    [
+      ["\u{1F468}‍\u{1F469}‍\u{1F467}", "\u{1F469}\u{1F3FD}‍\u{1F4BB}"],
+      ["\u{1F468}‍\u{1F469}‍\u{1F467}", "\u{1F469}\u{1F3FD}‍\u{1F4BB}"],
+    ],
   ])("accepts %j", (cards, expected) => {
     expect(validateCustomDeck(cards)).toEqual({ ok: true, cards: expected });
   });
@@ -155,6 +160,17 @@ describe("validateCustomDeck", () => {
     ["deck_too_many_cards", [...twenty, "20"]],
     ["card_empty", ["1", "  "]],
     ["card_empty", [""]],
+    ["card_invalid", ["\u0000"]],
+    ["card_invalid", ["1", "a\tb"]],
+    ["card_invalid", ["​"]],
+    ["card_invalid", ["1​"]],
+    ["card_invalid", ["a‍b"]],
+    ["card_invalid", ["‍"]],
+    ["card_invalid", ["\u{1F44D}‍"]],
+    ["card_invalid", ["‍\u{1F44D}"]],
+    ["card_special", ["☕️"]],
+    ["card_special", ["☕︎"]],
+    ["card_special", ["?️"]],
     ["card_too_long", ["12345"]],
     ["card_too_long", ["👍🏽👍🏽👍🏽👍🏽👍🏽"]],
     ["card_duplicate", ["1", " 1"]],

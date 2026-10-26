@@ -30,7 +30,10 @@ canonical: `.` is the decimal mark and the domain never localises (the UI may sh
   non-special card has a value.
 - **Custom deck** (`validateCustomDeck`): 1 to 20 labels, trimmed and NFC-normalised,
   each 1 to 4 user-perceived characters (`Intl.Segmenter`: `☕` and `👍🏽` are 1), no
-  duplicates, no specials. Codes: `CustomDeckErrorCode`.
+  duplicates, no specials (`☕` plus a variation selector is still the special). Labels
+  with control or format characters (zero-width space, joiners, tag characters) are
+  `card_invalid`; the one exception is a zero-width joiner between two emoji. Codes:
+  `CustomDeckErrorCode`.
 - **Range** (`generateRange`): `start` to `end` by `step`, `end` included when reached.
   Integer arithmetic scaled by the decimals of `start` and `step`, so 0 to 1 by 0.1
   is exactly `0`, `0.1` … `1`. Labels drop trailing zeros. Codes: `RangeErrorCode`.

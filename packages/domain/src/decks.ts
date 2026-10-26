@@ -91,13 +91,22 @@ export type CustomDeckErrorCode =
   | "deck_empty"
   | "deck_too_many_cards"
   | "card_empty"
+  | "card_invalid"
   | "card_too_long"
   | "card_duplicate"
   | "card_special";
 
+/** Control and format characters (zero-width space, joiners, tag characters …) are invisible. */
+const INVISIBLE = /[\p{Cc}\p{Cf}]/u;
+/** A zero-width joiner between two pictographs, as in "👨‍👩‍👧"; `$1` keeps what precedes it. */
+const EMOJI_JOINER =
+  /(\p{Extended_Pictographic}[\uFE0E\uFE0F\u{1F3FB}-\u{1F3FF}]*)\u200D(?=\p{Extended_Pictographic})/gu;
+
 /**
  * Validates the labels of a custom deck. On success the cards are trimmed and
- * NFC-normalised, in the given order. Specials are refused: they are a room setting.
+ * NFC-normalised, in the given order. Specials are refused (also with a variation
+ * selector, "☕️"): they are a room setting. Labels with control or format characters are
+ * refused, except a zero-width joiner inside an emoji sequence.
  */
 export function validateCustomDeck(
   cards: readonly string[],
@@ -108,8 +117,9 @@ export function validateCustomDeck(
   for (const raw of cards) {
     const card = raw.trim().normalize("NFC");
     if (card === "") return { ok: false, code: "card_empty" };
+    if (INVISIBLE.test(card.replace(EMOJI_JOINER, "$1"))) return { ok: false, code: "card_invalid" };
     if (cardLength(card) > MAX_CARD_LENGTH) return { ok: false, code: "card_too_long" };
-    if (isSpecial(card)) return { ok: false, code: "card_special" };
+    if (isSpecial(card.replace(/[\uFE0E\uFE0F]/gu, ""))) return { ok: false, code: "card_special" };
     if (out.includes(card)) return { ok: false, code: "card_duplicate" };
     out.push(card);
   }
