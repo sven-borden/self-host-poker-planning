@@ -21,6 +21,12 @@ const REDACT = [
   "*.authorization",
   "headers.cookie",
   "headers.authorization",
+  'headers["set-cookie"]',
+  // A Socket.IO handshake or a Node request logged whole: its headers and its auth payload.
+  "*.headers.cookie",
+  "*.headers.authorization",
+  '*.headers["set-cookie"]',
+  "*.auth",
 ];
 
 /**
