@@ -31,6 +31,40 @@ English, French and German.
 Coming with the first wave: `docker compose up` will start the app and its Postgres
 database.
 
+## Run locally
+
+Prerequisites: Node 24 (see `.nvmrc`; any other major is refused) and pnpm. The exact
+pnpm version is pinned in `packageManager` (pnpm 12): an installed pnpm 9.7 or later
+downloads and runs that version by itself, otherwise use corepack (`corepack enable`).
+
+```sh
+pnpm install   # install the workspace
+pnpm dev       # server on http://localhost:3000, web app on http://localhost:5173
+pnpm gate      # Node check, lint, typecheck, unit tests and build: run before every PR
+```
+
+Other scripts: `pnpm test` (unit tests), `pnpm test:db` (integration tests against
+Postgres, one file at a time because they share one database), `pnpm lint`, `pnpm format`, `pnpm typecheck`, `pnpm build`. The layout and
+the rules of each package are in `apps/*/README.md` and `packages/*/README.md`.
+
+Workspace conventions:
+
+- TypeScript strict from `tsconfig.base.json`; `pnpm typecheck` runs `tsc --build` over
+  the project references in `tsconfig.json` (declarations go to gitignored `.tsbuild/`).
+- `moduleResolution: "bundler"`: Vite, tsx, Vitest and the server bundle resolve our
+  imports, never bare Node. Relative imports carry their `.ts` extension (Biome checks).
+- `@pp/domain` and `@pp/protocol` export TypeScript source; nothing to build first.
+- Tests sit next to the code: `*.test.ts` are unit tests (`pnpm test`), `*.db.test.ts`
+  need Postgres (`pnpm test:db`). Each package is a Vitest project in `vitest.config.ts`.
+- Biome formats and lints everything except Markdown formatting; `pnpm format` fixes.
+- pnpm settings live in `pnpm-workspace.yaml`. Dependency build scripts are blocked
+  unless listed under `allowBuilds` there.
+- Scripts must run on Windows and Linux: no `rm -rf`, no `VAR=value cmd`.
+- On Windows, keep the clone path short (under about 130 characters). pnpm 12 writes
+  `pnpm -r run` state to `node_modules/.pnpm-task-run-state-v1/<hash>.<run>.jsonl`, and
+  past 260 characters in total `pnpm build` fails with "The system cannot find the path
+  specified".
+
 ## License
 
 [MIT](LICENSE)
