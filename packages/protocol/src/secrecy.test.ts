@@ -163,6 +163,43 @@ describe("in an anonymous round", () => {
     );
   });
 
+  it("once revealed, the cards, results and who voted never change until the next round", () => {
+    // One snapshot at a time cannot see this: a change between two snapshots, by someone
+    // the viewer can pick out, ties that person to a card.
+    let compared = 0;
+    fc.assert(
+      fc.property(scenarioArb, (steps) => {
+        const frames = play(steps);
+        for (const viewer of VIEWERS) {
+          let locked: { round: string; view: string } | undefined;
+          for (const frame of frames) {
+            const round = toSnapshot(frame.state, viewer, meta(frame)).room.round;
+            if (round?.phase !== "revealed" || !round.anonymous) {
+              locked = undefined;
+              continue;
+            }
+            const key = `${round.number}@${round.startedAt}`;
+            // `voted` as a set: a voter who leaves moves to the end of the list, by design.
+            const view = JSON.stringify({
+              cards: round.cards,
+              results: round.results,
+              voted: [...round.voted].sort(),
+            });
+            if (locked?.round === key) {
+              expect(view).toBe(locked.view);
+              compared++;
+            } else {
+              locked = { round: key, view };
+            }
+          }
+        }
+      }),
+      RUNS,
+    );
+    // The generator must reach later snapshots of anonymous reveals, or this proves nothing.
+    expect(compared).toBeGreaterThan(300);
+  });
+
   it("the order the votes were cast in never shows", () => {
     fc.assert(
       fc.property(scenarioArb, (steps) => {
