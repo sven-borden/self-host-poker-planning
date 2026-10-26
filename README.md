@@ -33,8 +33,9 @@ database.
 
 ## Run locally
 
-Prerequisites: Node 24 (see `.nvmrc`; any other major is refused) and pnpm through
-corepack (`corepack enable`; the exact version comes from `packageManager`).
+Prerequisites: Node 24 (see `.nvmrc`; any other major is refused) and pnpm. The exact
+pnpm version is pinned in `packageManager` (pnpm 12): an installed pnpm 9.7 or later
+downloads and runs that version by itself, otherwise use corepack (`corepack enable`).
 
 ```sh
 pnpm install   # install the workspace
