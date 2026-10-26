@@ -2,6 +2,9 @@
 @import "tw-animate-css";
 @import "./tokens.css";
 
+/* The colour-check fixtures in scripts/ hold forbidden classes on purpose: never ship them. */
+@source not "../scripts";
+
 /*
  * Dark utilities follow the same rule as the tokens: an explicit data-theme wins,
  * otherwise the system preference decides. public/theme-init.js sets data-theme before
