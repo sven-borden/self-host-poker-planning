@@ -121,6 +121,11 @@ export function validateCustomDeck(
     if (cardLength(card) > MAX_CARD_LENGTH) return { ok: false, code: "card_too_long" };
     if (isSpecial(card.replace(/[\uFE0E\uFE0F]/gu, ""))) return { ok: false, code: "card_special" };
     if (out.includes(card)) return { ok: false, code: "card_duplicate" };
+    // Equal numeric values (1 and 1.0, ½ and 0.5, -0 and 0) would split the votes.
+    const value = cardValue(card);
+    if (value !== null && out.some((other) => cardValue(other) === value)) {
+      return { ok: false, code: "card_duplicate" };
+    }
     out.push(card);
   }
   return { ok: true, cards: out };

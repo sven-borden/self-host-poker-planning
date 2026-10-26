@@ -29,11 +29,12 @@ canonical: `.` is the decimal mark and the domain never localises (the UI may sh
   else (T-shirt sizes, specials, `1,5`) is `null`. A deck is numeric when every
   non-special card has a value.
 - **Custom deck** (`validateCustomDeck`): 1 to 20 labels, trimmed and NFC-normalised,
-  each 1 to 4 user-perceived characters (`Intl.Segmenter`: `☕` and `👍🏽` are 1), no
-  duplicates, no specials (`☕` plus a variation selector is still the special). Labels
-  with control or format characters (zero-width space, joiners, tag characters) are
-  `card_invalid`; the one exception is a zero-width joiner between two emoji. Codes:
-  `CustomDeckErrorCode`.
+  each 1 to 4 user-perceived characters (`Intl.Segmenter`, created on first use; code
+  points where the engine has none; `☕` and `👍🏽` are 1). No duplicates, and labels
+  with an equal numeric value (`1` and `1.0`, `½` and `0.5`, `-0` and `0`) count as
+  duplicates. No specials, also with a variation selector (`☕` plus U+FE0F). Control
+  and format characters (zero-width space, joiners, tag characters) give `card_invalid`;
+  the one exception is a zero-width joiner between two emoji. Codes: `CustomDeckErrorCode`.
 - **Range** (`generateRange`): `start` to `end` by `step`, `end` included when reached.
   Integer arithmetic scaled by the decimals of `start` and `step`, so 0 to 1 by 0.1
   is exactly `0`, `0.1` … `1`. Labels drop trailing zeros. Codes: `RangeErrorCode`.
