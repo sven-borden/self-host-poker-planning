@@ -17,21 +17,25 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
-  results statistics from #4, and the round state machine `apply` from #3.
+  results statistics from #4, and the round state machine `apply` from #3. An
+  anonymous round locks its votes at reveal (decided at the merge of #5).
+- `packages/protocol` from #5: wire schemas, strict inbound parsing, acks and error
+  codes, and `toSnapshot`, which builds each viewer's secret-safe snapshot.
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#5 (PP-005)** the protocol and per-viewer snapshots: PR #68 in review.
-- **#13 (PP-013)** the table layout engine and card components, in worktree
-  `../pp-wt-13`.
+- **#13 (PP-013)** the table layout engine and card components: PR #69 in review,
+  CI green.
+- **#6 (PP-006)** the server skeleton, in worktree `../pp-wt-06`.
 
 ## Next
 
-- Domain and server chain: #6 after #5, then #7 and #10.
-- Web chain: #9 (i18n) after #5. It translates the error codes from `@pp/protocol`.
-- #11 (Docker) needs #6, #7 and #8.
-- **#12** waits for Sven's go on Coolify and DNS (see Owner items). #13 does not
-  depend on #12, so it can go first.
+- Server chain: #7 after #6, then #10, then #11 (Docker needs #6, #7 and #8).
+- Web chain: #9 (i18n) after #13. It translates the error codes from `@pp/protocol`.
+- **W1 starts without a new go** once the W0 issues other than #12 are merged (Sven,
+  2026-10-26). No W1 issue depends on #11 or #12.
+- **#12** waits for Sven's go on Coolify and DNS (see Owner items). It is asked for
+  when #11 merges.
 
 ## Order
 
