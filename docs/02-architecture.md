@@ -227,21 +227,57 @@ Socket.IO with typed event maps from `packages/protocol` (`ClientToServerEvents`
 
 ## 6. Persistence
 
-Drizzle ORM on PostgreSQL 17. Migrations generated with drizzle-kit and applied at
-container start, before the server listens.
+Drizzle ORM (`drizzle-orm`, driver `postgres`) on PostgreSQL 17. The schema is
+`apps/server/src/db/schema.ts`; drizzle-kit generates the SQL migrations into
+`apps/server/drizzle/` (`pnpm --filter @pp/server db:generate --name <what_it_does>`),
+and they are committed.
 
 | Table | Content |
 |---|---|
-| `room` | `id` uuid, `code` unique, `name`, `owner_user_id`, `settings` jsonb, `live` jsonb (`RoomState`), `version` int, `password_hash` null, `created_at`, `last_active_at` |
-| `round_history` | `room_id` (cascade), `number`, `subject` jsonb, `deck` jsonb, `votes` jsonb (named: who/name/card; anonymous: cards only), `stats` jsonb, `final`, `started_at`, `revealed_at`, `finished_at` |
-| Better Auth | `user` (with `is_anonymous`), `session`, `account`, `verification` |
+| `room` | `id` uuid, `code` text unique, `name` text null, `owner_user_id` text (a copy of `live.ownerId`, written by every commit), `live` jsonb (`RoomState`: settings, people, the round), `version` int (starts at 1), `password_hash` text null, `created_at`, `last_active_at` (indexed, for the retention purge) |
+| `round_history` | `id` identity, `room_id` (cascade delete), `number`, unique `(room_id, number)`, `subject` jsonb, `deck` jsonb (`{ spec, specials }`), `votes` jsonb, `stats` jsonb (`computeResults`), `final` text null, `started_at`, `revealed_at`, `finished_at` |
+| Better Auth (#10) | `user` (with `is_anonymous`), `session`, `account`, `verification`, added by a later migration |
 | later | `backlog_item` (W6), `connector_token` (W6, encrypted), `brand` (W7) |
 
-**Write path for every command**: per-room in-process queue → load `live` + `version`
-→ `apply` → `UPDATE room SET live = $next, version = version + 1, last_active_at =
-now() WHERE id = $id AND version = $expected` → on zero rows, reload and retry (max 3)
-→ emit snapshots. The queue avoids needless conflicts on one instance; the version
-check keeps several instances correct.
+`live` is the single source of truth for the room's state, settings included; there is
+no separate `settings` column. The password hash stays in its own column and never
+enters `live`, so it can never reach a snapshot. Timestamps are `timestamptz`.
+
+**Start** (`apps/server/src/database.ts`, the `setup` hook of `run()`): wait for
+Postgres, retrying with backoff (0.5 s doubling to 5 s) for up to 30 s with one log line
+per failed attempt, or failing at once when Postgres refuses the login; then apply the
+migrations on a single connection holding the session advisory lock `7000007`, so
+instances starting together migrate one after the other; then open the pool (10
+connections). drizzle applies the pending migrations in one transaction, so a crash or a
+SIGTERM in the middle rolls them back and the lock dies with the connection; restarting
+applies nothing. The server listens only after all this, and `dispose` ends the pool on
+shutdown. Migrations are additive and safe on a live database mid-deploy: a new column
+is nullable or has a default, nothing is renamed or dropped while an older instance may
+still run. drizzle wraps them in a transaction, so `CREATE INDEX CONCURRENTLY` is not
+available. The migrations folder is `apps/server/drizzle`, found from `src/` and from the
+bundled `dist/main.mjs`; `MIGRATIONS_DIR` overrides it.
+
+**Write path for every command** (`createCommandRunner` in `db/runner.ts`): per-room
+in-process queue → `loadRoom(code)` → the step (`apply`) → when the step returned the
+loaded state itself, no write → `UPDATE room SET live = $next, owner_user_id,
+version = version + 1, last_active_at = now() WHERE id = $id AND version = $expected`
+→ on zero rows, reload and run the step again on the fresh state, up to 3 retries, then
+the error `conflict` → emit snapshots. The queue avoids needless conflicts on one
+instance; the version check keeps several instances correct.
+
+**History**: when the step's `ended` is a revealed round, its row is written in the same
+transaction as the commit, so a lost commit writes nothing. Writing the same round again
+(`room_id`, `number`) updates its row, so a retry or a later rewrite (for example by an
+idle job) never duplicates it. `votes` is `{ kind: "named", votes: [{ who, name, card,
+changedAfterReveal? }] }`, people still in the room by joining order, then those who
+left by id with `name: null` (the room no longer knows it), or `{ kind: "anonymous",
+cards }`, the cards alone in display order (expanded from `stats.distribution`): no user
+id, no name, no order that follows the people.
+
+**Errors**: every database call goes through `guard`, which rethrows a `DatabaseError`
+holding the step and the SQLSTATE or Node error code, without a message or a cause.
+Driver errors can carry connection details, and drizzle's query errors carry the
+parameters (a room's state, vote values, a password hash); neither may reach a log.
 
 ## 7. Identity
 
@@ -295,13 +331,14 @@ is missing in any catalog. The server sends codes, never sentences.
 - `GET /api/health` → `{ status, version, commit, db, uptime }`; used by the Docker
   `HEALTHCHECK` and by the merge loop to confirm a deploy. `version` and `commit` come
   from `APP_VERSION` and `GIT_COMMIT` (`dev` and `unknown` when unset), `uptime` is whole
-  seconds. `db` is `unchecked` until #7 adds a ping, then `ok` (200) or `error` (503,
+  seconds. `db` is the answer of a `select 1` on the pool: `ok` (200) or `error` (503,
   `status: "error"`; also when the ping has not answered within 2 s, so a hung pool
   cannot hang the `HEALTHCHECK`). Sent with `Cache-Control: no-store`, like every JSON
   404 and 500.
 - A bad config stops the server with one log line naming the variables (never their
-  values) and exit code 1; so do a failed startup step (#7's migrations run before the
-  server listens) and an uncaught exception or unhandled rejection. `SIGTERM`/`SIGINT`
+  values) and exit code 1; so do a failed startup step (the database unreachable for
+  30 s, a refused login or a failed migration, all before the server listens; section 6)
+  and an uncaught exception or unhandled rejection. `SIGTERM`/`SIGINT`
   stop accepting connections, drop every socket, wait for open requests (cut after 8 s),
   release the database pool and exit 0 within 10 s, one log line per phase.
 - Optional Sentry (`SENTRY_DSN`) and Umami (`UMAMI_URL`, `UMAMI_WEBSITE_ID`); nothing
@@ -326,6 +363,7 @@ is missing in any catalog. The server sends codes, never sentences.
 | `LOG_LEVEL` | no (info) | logging: `fatal` … `trace`, `silent` |
 | `TRUST_PROXY` | no (true) | client IPs for rate limits: the right-most `X-Forwarded-For` entry when true, the socket address when false |
 | `STATIC_DIR` | no (`apps/web/dist`) | built web app; the image sets its own path |
+| `MIGRATIONS_DIR` | no (`apps/server/drizzle`) | SQL migrations applied at start; the image copies the folder next to `dist/` or sets this |
 | `GIT_COMMIT`, `APP_VERSION` | no | reported by `/api/health`; set at image build |
 | `REDIS_URL` | no | scale-out only (#39) |
 | `SENTRY_DSN`, `UMAMI_URL`, `UMAMI_WEBSITE_ID` | no | opt-in observability |
