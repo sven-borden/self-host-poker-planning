@@ -8,7 +8,7 @@ export const fr: Messages = {
     skipToContent: "Aller au contenu",
   },
   theme: {
-    current: "Thème : {{mode}}",
+    current: "Thème : {{mode}}",
     label: "Thème",
     light: "Clair",
     dark: "Sombre",
@@ -24,7 +24,7 @@ export const fr: Messages = {
     title: "Salle {{code}}",
     codeLabel: "Code de la salle",
     notOpenYet:
-      "Cette salle n’est pas encore ouverte : la table arrive dans une prochaine version.",
+      "Cette salle n’est pas encore ouverte : la table arrive dans une prochaine version.",
     backHome: "Retour à l’accueil",
   },
   notFound: {

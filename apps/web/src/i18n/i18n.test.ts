@@ -13,6 +13,13 @@ function keysOf(value: unknown, prefix = ""): string[] {
 describe("catalogs", () => {
   const english = keysOf(catalogs.en).sort();
 
+  it("puts a narrow no-break space before French high punctuation, so it never wraps alone", () => {
+    for (const key of english) {
+      const text = createT("fr")(key as never);
+      expect(text, `fr: ${key}`).not.toMatch(/[  ][:;!?]/);
+    }
+  });
+
   it.each(LANGUAGES)(
     "%s has exactly the English keys, each with a non-empty string",
     (language) => {
