@@ -24,6 +24,8 @@ export interface Config {
   readonly appVersion: string | undefined;
   /** Folder of the built web app; `run()` falls back to `apps/web/dist`. */
   readonly staticDir: string | undefined;
+  /** Folder of the SQL migrations; `openDatabase` falls back to `apps/server/drizzle`. */
+  readonly migrationsDir: string | undefined;
 }
 
 /** Every variable `loadConfig` reads, with the reason shown when its value is invalid. */
@@ -38,6 +40,7 @@ const REASONS = {
   GIT_COMMIT: "must be 1 to 64 letters, digits, dots, dashes or underscores",
   APP_VERSION: "must be 1 to 64 letters, digits, dots, plus signs, dashes or underscores",
   STATIC_DIR: "must be a folder path",
+  MIGRATIONS_DIR: "must be a folder path",
 } as const;
 type Variable = keyof typeof REASONS;
 const VARIABLES = Object.keys(REASONS) as Variable[];
@@ -89,6 +92,7 @@ const schema = z.object({
     .regex(/^[\w.+-]{1,64}$/)
     .optional(),
   STATIC_DIR: z.string().min(1).optional(),
+  MIGRATIONS_DIR: z.string().min(1).optional(),
 });
 
 export class ConfigError extends Error {
@@ -134,5 +138,6 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
     gitCommit: v.GIT_COMMIT,
     appVersion: v.APP_VERSION,
     staticDir: v.STATIC_DIR,
+    migrationsDir: v.MIGRATIONS_DIR,
   });
 }

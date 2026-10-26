@@ -4,6 +4,6 @@
     "outDir": "./.tsbuild",
     "types": ["node"]
   },
-  "include": ["src", "tsdown.config.ts"],
+  "include": ["src", "tsdown.config.ts", "drizzle.config.ts"],
   "references": [{ "path": "../../packages/domain" }, { "path": "../../packages/protocol" }]
 }
