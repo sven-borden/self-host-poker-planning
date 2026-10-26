@@ -235,21 +235,21 @@ describe("refusals", () => {
     [
       "a 2-character name of 100 002 code units",
       room,
-      join(`a${"́".repeat(50_000)}`.repeat(2)),
+      join(`a${"\u0301".repeat(50_000)}`.repeat(2)),
       OUT,
       "bad_name",
     ],
     [
       "a 1-character name of 513 code units",
       room,
-      { type: "rename", name: `a${"́".repeat(513)}` },
+      { type: "rename", name: `a${"\u0301".repeat(513)}` },
       A,
       "bad_name",
     ],
     [
       "a 1-character title of 200 001 code units",
       room,
-      { type: "startRound", subject: { kind: "title", text: `a${"́".repeat(200_000)}` } },
+      { type: "startRound", subject: { kind: "title", text: `a${"\u0301".repeat(200_000)}` } },
       PO,
       "bad_subject",
     ],
@@ -496,7 +496,7 @@ describe("membership", () => {
 
   it("accepts a name of up to 16 code units per character", () => {
     // "a" plus 512 combining acute accents: NFC folds the first into "á", 512 units left.
-    const name = ok(send(room(), { type: "rename", name: `a${"́".repeat(512)}` }, A))
+    const name = ok(send(room(), { type: "rename", name: `a${"\u0301".repeat(512)}` }, A))
       .participants[A]?.name;
     expect(name).toHaveLength(512);
   });
@@ -1021,7 +1021,10 @@ describe("ended", () => {
   });
 
   it("is absent when no round ended", () => {
-    const fromLobby = send(room({ round: null }), { type: "startRound", subject: { kind: "none" } });
+    const fromLobby = send(room({ round: null }), {
+      type: "startRound",
+      subject: { kind: "none" },
+    });
     expect(ok(fromLobby).round?.number).toBe(1);
     expect("ended" in fromLobby).toBe(false);
     expect("ended" in send(room(), { type: "castVote", card: "3" }, A)).toBe(false);
