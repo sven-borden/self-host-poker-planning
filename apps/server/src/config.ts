@@ -30,7 +30,8 @@ export interface Config {
 const REASONS = {
   PORT: "must be an integer from 0 to 65535",
   DATABASE_URL: "must be a postgres:// or postgresql:// URL",
-  BASE_URL: "must be an http(s) origin without a path, such as https://poker.example.com",
+  BASE_URL:
+    "must be an http(s) origin without a path or credentials, such as https://poker.example.com",
   LOG_LEVEL: `must be one of ${LOG_LEVELS.join(", ")}`,
   TRUST_PROXY: "must be true, false, 1 or 0",
   ROOM_TTL_DAYS: "must be an integer from 1 to 3650",
@@ -63,7 +64,14 @@ const schema = z.object({
     .string()
     .refine((v) => {
       const url = parsesAsUrl(v, ["http:", "https:"]);
-      return url !== undefined && url.pathname === "/" && !url.search && !url.hash;
+      return (
+        url !== undefined &&
+        url.pathname === "/" &&
+        !url.search &&
+        !url.hash &&
+        !url.username &&
+        !url.password
+      );
     })
     .transform((v) => new URL(v).origin),
   LOG_LEVEL: z.enum(LOG_LEVELS).default("info"),

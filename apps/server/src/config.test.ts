@@ -112,6 +112,19 @@ describe("loadConfig", () => {
     }
   });
 
+  it("refuses a BASE_URL with a username or a password, without echoing it", () => {
+    for (const BASE_URL of [
+      `https://admin:${SECRET}@poker.example.com`,
+      `https://${SECRET}@poker.example.com`,
+      `https://:${SECRET}@poker.example.com`,
+    ]) {
+      const error = configError({ ...VALID_ENV, BASE_URL });
+      expect(error.variables).toEqual(["BASE_URL"]);
+      expect(error.message).toContain("BASE_URL must be an http(s) origin");
+      expect(error.message).not.toContain(SECRET);
+    }
+  });
+
   it("refuses a PORT or ROOM_TTL_DAYS that is not a plain integer", () => {
     for (const value of ["-1", "3.5", "1e3", " 80", "abc"]) {
       expect(configError({ ...VALID_ENV, PORT: value, ROOM_TTL_DAYS: value }).variables).toEqual([
