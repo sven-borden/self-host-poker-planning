@@ -21,7 +21,12 @@ const refused = () =>
 /** A clock that only moves when the code under test sleeps. */
 function fakeTime() {
   let t = 0;
-  return { now: () => t, sleep: async (ms: number) => void (t += ms) };
+  return {
+    now: () => t,
+    sleep: async (ms: number) => {
+      t += ms;
+    },
+  };
 }
 
 describe("retryDelay", () => {
@@ -137,7 +142,7 @@ describe("openDatabase", () => {
         onCrash: () => {},
         destination: logs.destination,
         setup: (config, logger) =>
-          openDatabase(config.databaseUrl, logger, { wait: { budgetMs: 1000 } }),
+          openDatabase(config.databaseUrl, logger, { wait: { budgetMs: 1000 } }).then(() => ({})),
       },
     );
     expect(server).toBeUndefined();
