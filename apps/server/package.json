@@ -4,16 +4,23 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
+    "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
     "build": "tsdown",
-    "start": "node --enable-source-maps dist/main.mjs"
+    "start": "node --enable-source-maps dist/main.mjs",
+    "test": "vitest run --root ../.. --project=server"
   },
   "dependencies": {
+    "@hono/node-server": "2.1.5",
     "@pp/domain": "workspace:*",
-    "@pp/protocol": "workspace:*"
+    "@pp/protocol": "workspace:*",
+    "hono": "4.13.14",
+    "pino": "10.4.0",
+    "socket.io": "4.8.4",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
+    "socket.io-client": "4.8.4",
     "tsdown": "0.23.2",
     "tsx": "4.23.15"
   }
