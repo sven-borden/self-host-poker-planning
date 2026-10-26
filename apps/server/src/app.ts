@@ -124,7 +124,9 @@ function mountWebApp(app: Hono<AppEnv>, root: string): void {
     if (file) c.header("Cache-Control", file.startsWith(assets) ? IMMUTABLE : REVALIDATE);
   });
   const remember = (path: string, c: Context<AppEnv>) => c.set("staticFile", path);
-  app.use("*", serveStatic<AppEnv>({ root, onFound: remember }));
+  // Dot-folders stay private: Vite writes its manifest to `.vite/`.
+  const files = serveStatic<AppEnv>({ root, onFound: remember });
+  app.use("*", (c, next) => (c.req.path.includes("/.") ? next() : files(c, next)));
   const index = serveStatic<AppEnv>({ root, path: "index.html", onFound: remember });
   app.use("*", (c, next) => {
     const last = c.req.path.slice(c.req.path.lastIndexOf("/") + 1);

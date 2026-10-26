@@ -139,6 +139,8 @@ describe("the built web app", () => {
     root = join(parent, "dist");
     mkdirSync(join(root, "assets"), { recursive: true });
     writeFileSync(join(parent, "outside.txt"), "SENTINEL");
+    mkdirSync(join(root, ".vite"));
+    writeFileSync(join(root, ".vite", "manifest.json"), "{}");
     writeFileSync(join(root, "index.html"), INDEX);
     writeFileSync(join(root, "theme-init.js"), "/* theme */");
     writeFileSync(join(root, "favicon.svg"), "<svg/>");
@@ -181,7 +183,7 @@ describe("the built web app", () => {
   });
 
   it("answers 404, not HTML, for a missing file with an extension", async () => {
-    for (const path of ["/assets/index-0ld0ld00.js", "/missing.png"]) {
+    for (const path of ["/assets/index-0ld0ld00.js", "/missing.png", "/.vite/manifest.json"]) {
       const response = await get(path);
       expect(response.status, path).toBe(404);
       expect(await response.json()).toEqual({ code: "not_found" });
