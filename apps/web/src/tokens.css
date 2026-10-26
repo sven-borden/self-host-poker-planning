@@ -1,0 +1,113 @@
+/*
+ * Design tokens: the only place where colour literals live (docs/03-design-brief.md,
+ * "Tokens"). Light and dark are tuned separately, never inverted. Branding (W7)
+ * overrides a subset of these variables.
+ *
+ * Theme rule: `data-theme="light"` or `"dark"` on <html> forces a theme; without it the
+ * system preference decides. The dark values are written twice on purpose: once for the
+ * system preference, once for the explicit choice.
+ *
+ * Extensions to the brief's table: `--on-bad` (text on --bad), `--on-avatar` (avatar
+ * initials, white in both themes), `--scrim` (dialog and sheet backdrop) and `--shadow`
+ * (panel shadow, from the prototype).
+ */
+
+:root {
+  color-scheme: light;
+
+  --bg: #f3f5f4;
+  --surface: #ffffff;
+  --surface-2: #e9efed;
+  --ink: #13201e;
+  --ink-2: #4b5b58;
+  --line: #d3dcd9;
+  --spruce: #1e5a53;
+  --on-spruce: #f1f7f5;
+  --brass: #a87a22;
+  --brass-soft: #f4e8cc;
+  --brass-ink: #5c410c;
+  --table: #22524c;
+  --table-rim: #173e39;
+  --table-ink: #e7f1ee;
+  --card-face: #fffdf7;
+  --card-ink: #13201e;
+  --card-edge: #d9d3c3;
+  --good: #2f7a4d;
+  --warn: #a86a12;
+  --bad: #b0453b;
+  --on-bad: #ffffff;
+
+  /* Avatar placeholders: the same eight colours in both themes, white initials. */
+  --av1: #2f6f8f;
+  --av2: #8a4f9e;
+  --av3: #b0553a;
+  --av4: #3d7f4f;
+  --av5: #9a6a1e;
+  --av6: #5a5fb0;
+  --av7: #a0476b;
+  --av8: #1e5a53;
+  --on-avatar: #ffffff;
+
+  --scrim: rgb(13 20 19 / 0.5);
+  --shadow: 0 1px 2px rgb(16 32 30 / 0.06), 0 4px 16px rgb(16 32 30 / 0.07);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --bg: #0d1413;
+    --surface: #141d1c;
+    --surface-2: #1a2624;
+    --ink: #e4edea;
+    --ink-2: #9baeaa;
+    --line: #283836;
+    --spruce: #4a9b8f;
+    --on-spruce: #0b1a18;
+    --brass: #d8a744;
+    --brass-soft: #3a2e14;
+    --brass-ink: #f1d9a0;
+    --table: #183b37;
+    --table-rim: #0f2926;
+    --table-ink: #dcebe7;
+    --card-face: #f5f1e6;
+    --card-ink: #13201e;
+    --card-edge: #cfc8b5;
+    --good: #5bbe83;
+    --warn: #e0a040;
+    --bad: #e37468;
+    --on-bad: #0b1a18;
+
+    --scrim: rgb(0 0 0 / 0.6);
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 20px rgb(0 0 0 / 0.35);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0d1413;
+  --surface: #141d1c;
+  --surface-2: #1a2624;
+  --ink: #e4edea;
+  --ink-2: #9baeaa;
+  --line: #283836;
+  --spruce: #4a9b8f;
+  --on-spruce: #0b1a18;
+  --brass: #d8a744;
+  --brass-soft: #3a2e14;
+  --brass-ink: #f1d9a0;
+  --table: #183b37;
+  --table-rim: #0f2926;
+  --table-ink: #dcebe7;
+  --card-face: #f5f1e6;
+  --card-ink: #13201e;
+  --card-edge: #cfc8b5;
+  --good: #5bbe83;
+  --warn: #e0a040;
+  --bad: #e37468;
+  --on-bad: #0b1a18;
+
+  --scrim: rgb(0 0 0 / 0.6);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 20px rgb(0 0 0 / 0.35);
+}

@@ -1,0 +1,167 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./tokens.css";
+
+/*
+ * Dark utilities follow the same rule as the tokens: an explicit data-theme wins,
+ * otherwise the system preference decides. public/theme-init.js sets data-theme before
+ * first paint when the person picked light or dark; "system" leaves it unset.
+ */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
+
+/*
+ * Tailwind's palette is switched off: only the design tokens exist as colours, so
+ * `bg-red-500` or `text-white` generate nothing. `transparent`, `current` and `inherit`
+ * are built in and stay available.
+ */
+@theme {
+  --color-*: initial;
+}
+
+@theme inline {
+  /* Design tokens (docs/03-design-brief.md), usable as bg-surface, text-ink-2, … */
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-line: var(--line);
+  --color-spruce: var(--spruce);
+  --color-on-spruce: var(--on-spruce);
+  --color-brass: var(--brass);
+  --color-brass-soft: var(--brass-soft);
+  --color-brass-ink: var(--brass-ink);
+  --color-table: var(--table);
+  --color-table-rim: var(--table-rim);
+  --color-table-ink: var(--table-ink);
+  --color-card-face: var(--card-face);
+  --color-card-ink: var(--card-ink);
+  --color-card-edge: var(--card-edge);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-on-bad: var(--on-bad);
+  --color-av1: var(--av1);
+  --color-av2: var(--av2);
+  --color-av3: var(--av3);
+  --color-av4: var(--av4);
+  --color-av5: var(--av5);
+  --color-av6: var(--av6);
+  --color-av7: var(--av7);
+  --color-av8: var(--av8);
+  --color-on-avatar: var(--on-avatar);
+  --color-scrim: var(--scrim);
+
+  /* shadcn/ui names, each an alias of a design token (see :root below). */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--f-body);
+  --font-display: var(--f-display);
+  --font-mono: var(--f-mono);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-panel: var(--shadow);
+  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* shadcn/ui variables point at the design tokens, so both themes follow automatically. */
+:root {
+  --background: var(--bg);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --primary: var(--spruce);
+  --primary-foreground: var(--on-spruce);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--ink);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--ink-2);
+  --accent: var(--surface-2);
+  --accent-foreground: var(--ink);
+  --destructive: var(--bad);
+  --destructive-foreground: var(--on-bad);
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--brass);
+  --radius: 10px;
+
+  --f-display: "Archivo Variable", "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+
+@layer base {
+  *,
+  ::after,
+  ::before {
+    border-color: var(--line);
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px / 1.6 var(--f-body);
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--f-display);
+    line-height: 1.12;
+    text-wrap: balance;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--brass);
+    outline-offset: 2px;
+  }
+
+  /* Reduced motion: no travel, only short cross-fades (design brief, motion spec). */
+  /* biome-ignore-start lint/complexity/noImportantStyles: reduced motion must beat every component's own durations. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::after,
+    ::before {
+      animation-duration: 120ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 120ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+  /* biome-ignore-end lint/complexity/noImportantStyles: end of the reduced-motion block. */
+}
