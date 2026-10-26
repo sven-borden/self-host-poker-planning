@@ -21,7 +21,11 @@
   }
 }
 
-/* Phones: 640 px and below, the breakpoint of the tall table (src/table/layout.ts). */
+/*
+ * Phones: 640 px and below (the hand of cards, page chrome). The table picks its own
+ * variant from the room its container gives it (src/table/layout.ts); in the shell's
+ * column that switches at the same viewport width, which e2e/table.spec.ts checks.
+ */
 @custom-variant phone (@media (max-width: 640px));
 
 /*

@@ -188,11 +188,14 @@ export interface GeometryProblem {
   b?: number;
 }
 
-/** Every rule the layout breaks on this stage; empty when the table reads cleanly. */
-export function geometryProblems(pixels: PixelLayout): GeometryProblem[] {
+/**
+ * Every rule the layout breaks on this stage; empty when the table reads cleanly.
+ * `tolerance` forgives sub-pixel rounding in measured layouts (Playwright passes 0.5).
+ */
+export function geometryProblems(pixels: PixelLayout, tolerance = 0): GeometryProblem[] {
   const problems: GeometryProblem[] = [];
   const { seats, slots, table, stage } = pixels;
-  const seatGap = pixels.named ? CLEARANCE : 0;
+  const seatGap = (pixels.named ? CLEARANCE : 0) - tolerance;
   seats.forEach((parts, a) => {
     for (let b = a + 1; b < seats.length; b++) {
       const other = seats[b] ?? [];
@@ -204,7 +207,10 @@ export function geometryProblems(pixels: PixelLayout): GeometryProblem[] {
       problems.push({ kind: "seat-table", a });
     }
     const off = (part: Rect) =>
-      part.left < 0 || part.top < 0 || part.right > stage.width || part.bottom > stage.height;
+      part.left < -tolerance ||
+      part.top < -tolerance ||
+      part.right > stage.width + tolerance ||
+      part.bottom > stage.height + tolerance;
     if (parts.some(off)) {
       problems.push({ kind: "seat-off-stage", a });
     }
@@ -212,19 +218,20 @@ export function geometryProblems(pixels: PixelLayout): GeometryProblem[] {
   slots.forEach((slot, a) => {
     for (let b = a + 1; b < slots.length; b++) {
       const other = slots[b];
-      if (other && rectsOverlap(slot, other, SLOT_CLEARANCE)) {
+      if (other && rectsOverlap(slot, other, SLOT_CLEARANCE - tolerance)) {
         problems.push({ kind: "slot-slot", a, b });
       }
     }
-    if (!rectInsideStadium(slot, table, RIM_WIDTH)) {
+    if (!rectInsideStadium(slot, table, RIM_WIDTH - tolerance)) {
       problems.push({ kind: "slot-off-table", a });
     }
     const centre = pixels.centre;
+    const pad = CENTRE_GAP - tolerance;
     const padded = {
-      left: centre.left - CENTRE_GAP,
-      top: centre.top - CENTRE_GAP,
-      right: centre.right + CENTRE_GAP,
-      bottom: centre.bottom + CENTRE_GAP,
+      left: centre.left - pad,
+      top: centre.top - pad,
+      right: centre.right + pad,
+      bottom: centre.bottom + pad,
     };
     if (centre.right > centre.left && rectsOverlap(slot, padded)) {
       problems.push({ kind: "slot-centre", a });
@@ -233,13 +240,13 @@ export function geometryProblems(pixels: PixelLayout): GeometryProblem[] {
   return problems;
 }
 
-/** Problems for `count` people on the stage of a viewport `viewportWidth` pixels wide. */
+/** Problems for `count` people on a stage with `room` pixels of width available. */
 export function problemsAt(
-  viewportWidth: number,
+  room: number,
   count: number,
   geometries: Record<TableVariant, VariantGeometry> = GEOMETRY,
 ): GeometryProblem[] {
-  const stage = stageSize(viewportWidth, geometries);
+  const stage = stageSize(room, geometries);
   const layout: TableLayout = layoutTable(count, stage.variant, geometries);
   return geometryProblems(toPixels(layout, stage));
 }

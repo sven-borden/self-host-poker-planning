@@ -3,9 +3,9 @@ import { useT } from "../i18n/i18n-context.tsx";
 import { cn } from "../lib/utils.ts";
 import { Avatar } from "./avatar.tsx";
 import { SlotCard, type SlotFace } from "./cards.tsx";
-import { layoutTable, type TableVariant } from "./layout.ts";
+import { layoutTable, type TableVariant, variantFor } from "./layout.ts";
 import { Seat, type SeatStatus, type TablePerson } from "./seat.tsx";
-import { useTableVariant } from "./use-table-variant.ts";
+import { useRoomWidth } from "./use-room-width.ts";
 import "./table.css";
 
 export interface Observer {
@@ -18,7 +18,10 @@ interface TableStageProps {
   people: TablePerson[];
   /** People watching: a row under the table, never a seat. */
   observers?: Observer[];
-  /** Forces a variant; by default it follows the viewport (phone at 640 px and below). */
+  /**
+   * Forces a variant; by default it follows the width the container gives the table
+   * (`variantFor` in layout.ts).
+   */
   variant?: TableVariant;
   /** The status in the middle of the table: count, timer or result. */
   children?: ReactNode;
@@ -51,21 +54,25 @@ export function TableStage({
   className,
 }: TableStageProps) {
   const t = useT();
-  const viewport = useTableVariant();
-  const layout = layoutTable(people.length, variant ?? viewport);
+  const [roomRef, room] = useRoomWidth<HTMLDivElement>();
+  const layout = layoutTable(
+    people.length,
+    variant ?? (room === null ? "desktop" : variantFor(room)),
+  );
   const seated = people.slice(0, layout.count);
   const observersId = useId();
 
   return (
-    <div className={cn("w-full", className)}>
+    <div ref={roomRef} className={cn("w-full", className)}>
       <div
         data-stage
         data-variant={layout.variant}
-        className={cn(
-          "pp-stage relative mx-auto w-full",
-          layout.variant === "phone" && "max-w-[480px]",
-        )}
-        style={{ aspectRatio: layout.aspect, minHeight: layout.minStageHeight || undefined }}
+        className="pp-stage relative mx-auto w-full"
+        style={{
+          aspectRatio: layout.aspect,
+          maxWidth: layout.maxWidth,
+          minHeight: layout.minStageHeight || undefined,
+        }}
       >
         <div
           data-table
@@ -101,7 +108,7 @@ export function TableStage({
         })}
         <div
           data-centre
-          className="absolute grid place-items-center text-center text-[12.5px] leading-snug text-balance text-table-ink phone:text-[11px]"
+          className="absolute grid place-items-center text-center text-[12.5px] leading-snug text-balance text-table-ink in-data-[variant=phone]:text-[11px]"
           style={{
             left: `calc(50% - ${layout.centre.width / 2}px)`,
             top: `calc(50% - ${layout.centre.height / 2}px)`,

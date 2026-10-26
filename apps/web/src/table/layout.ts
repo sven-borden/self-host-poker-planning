@@ -8,11 +8,18 @@
 // the name sits on the far side from the table (above the avatar in the top half, below
 // it elsewhere), so the narrow avatar faces the table. Sizes are whole pixels so cards
 // stay crisp. `layout.test.ts` proves that nothing overlaps for 1 to 16 people.
+//
+// The variant follows the room the stage gets from its container (`TableStage` measures
+// it), not the viewport, so any page can host the table.
 
 export type TableVariant = "desktop" | "phone";
 
-/** Viewports this wide or narrower get the tall phone table. */
-export const PHONE_MAX_WIDTH = 640;
+/**
+ * A stage with this much room or less gets the tall phone table. In the shell's
+ * `max-w-5xl px-4` column that is a 640 px viewport, where the `phone:` CSS variant
+ * (styles.css) starts too; e2e/table.spec.ts checks that the two agree.
+ */
+export const PHONE_MAX_ROOM = 608;
 
 /** A room holds at most 16 people (CLAUDE.md, product invariants). */
 export const MAX_SEATS = 16;
@@ -50,6 +57,8 @@ export interface DensityGeometry {
 export interface VariantGeometry {
   /** Stage width divided by stage height. */
   aspect: number;
+  /** The stage never gets wider than this, in pixels. */
+  maxWidth: number;
   /** The stage never gets shorter than this, in pixels (narrow tablets). */
   minStageHeight: number;
   /** Table insets, in percent: x of the stage width (each side), y of its height. */
@@ -66,6 +75,7 @@ export interface VariantGeometry {
 export const GEOMETRY: Record<TableVariant, VariantGeometry> = {
   desktop: {
     aspect: 16 / 9,
+    maxWidth: 992,
     minStageHeight: 540,
     table: { x: 17, y: 19 },
     centre: { width: 140, height: 96 },
@@ -85,6 +95,8 @@ export const GEOMETRY: Record<TableVariant, VariantGeometry> = {
   },
   phone: {
     aspect: 4 / 5.4,
+    // Wider, the tall table would only grow taller than the screen.
+    maxWidth: 480,
     minStageHeight: 0,
     table: { x: 23, y: 18 },
     centre: { width: 68, height: 60 },
@@ -123,6 +135,7 @@ export interface TableLayout {
   /** More people than the variant's threshold: the dense geometry applies. */
   dense: boolean;
   aspect: number;
+  maxWidth: number;
   minStageHeight: number;
   table: { x: number; y: number };
   centre: Size;
@@ -134,8 +147,9 @@ export interface TableLayout {
   slot: Size;
 }
 
-export function variantFor(viewportWidth: number): TableVariant {
-  return viewportWidth <= PHONE_MAX_WIDTH ? "phone" : "desktop";
+/** The variant for a stage with `room` pixels of width available to it. */
+export function variantFor(room: number): TableVariant {
+  return room <= PHONE_MAX_ROOM ? "phone" : "desktop";
 }
 
 /** Angle of seat `index` out of `count`, in radians: the viewer at 90° (bottom). */
@@ -165,6 +179,7 @@ export function layoutTable(
     count: n,
     dense,
     aspect: geometry.aspect,
+    maxWidth: geometry.maxWidth,
     minStageHeight: geometry.minStageHeight,
     table: geometry.table,
     centre: geometry.centre,
@@ -180,26 +195,14 @@ export function layoutTable(
   };
 }
 
-/** Horizontal page gutter around the stage (the shell's `px-4`), in pixels. */
-export const PAGE_GUTTER = 16;
-
-/** Widest stage: the shell's `max-w-5xl` content column minus its gutters. */
-export const MAX_STAGE_WIDTH = 1024 - 2 * PAGE_GUTTER;
-
-/** Widest phone stage: past this the tall table would only grow taller than the screen. */
-export const MAX_PHONE_STAGE_WIDTH = 480;
-
-/** The stage's pixel size in a viewport `viewportWidth` wide, as the shell lays it out. */
+/** The stage's pixel size with `room` pixels of width available, as `TableStage` sizes it. */
 export function stageSize(
-  viewportWidth: number,
+  room: number,
   geometries: Record<TableVariant, VariantGeometry> = GEOMETRY,
 ): Size & { variant: TableVariant } {
-  const variant = variantFor(viewportWidth);
+  const variant = variantFor(room);
   const geometry = geometries[variant];
-  const width = Math.min(
-    viewportWidth - 2 * PAGE_GUTTER,
-    variant === "phone" ? MAX_PHONE_STAGE_WIDTH : MAX_STAGE_WIDTH,
-  );
+  const width = Math.min(room, geometry.maxWidth);
   return {
     variant,
     width,

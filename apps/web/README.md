@@ -65,8 +65,9 @@ server sends and never decides the outcome of a round.
 - Browser code only: `tsconfig.app.json` covers `src/` with DOM types and no Node types;
   `tsconfig.node.json` covers `vite.config.ts` and `scripts/`, which run under Node 24's
   type stripping.
-- `phone:` is a Tailwind variant for 640 px and below, the tall table's breakpoint
-  (`useTableVariant()` is its JavaScript twin).
+- `phone:` is a Tailwind variant for 640 px and below. The table does not use it: it
+  measures the room its container gives it (`useRoomWidth()`) and picks its variant
+  with `variantFor()`; inside the stage, style by `in-data-[variant=phone]:`.
 - End-to-end: `pnpm --filter @pp/web test:e2e` runs Playwright (`e2e/`) against
   `vite preview`. Locally it builds first and uses the installed Microsoft Edge; in CI
   (`web-e2e` job) it uses Chromium on the build from the step before. Screenshots go to
