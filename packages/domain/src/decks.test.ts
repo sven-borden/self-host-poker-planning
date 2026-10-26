@@ -168,6 +168,8 @@ describe("validateCustomDeck", () => {
     ["card_invalid", ["‍"]],
     ["card_invalid", ["\u{1F44D}‍"]],
     ["card_invalid", ["‍\u{1F44D}"]],
+    ["card_invalid", ["1\uD800"]],
+    ["card_invalid", ["\uDFFF"]],
     ["card_special", ["☕️"]],
     ["card_special", ["☕︎"]],
     ["card_special", ["?️"]],

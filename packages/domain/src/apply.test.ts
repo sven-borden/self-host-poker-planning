@@ -141,7 +141,18 @@ describe("refusals", () => {
     { type: "updateSettings", patch: {} },
     { type: "transferOwner", to: B },
   ];
-  const badNames: unknown[] = ["", "   ", "x".repeat(33), "Al\nice", "‮ecila", "​​", 42, undefined];
+  const badNames: unknown[] = [
+    "",
+    "   ",
+    "x".repeat(33),
+    "Al\nice",
+    "‮ecila",
+    "​​",
+    "Al\uD800ice",
+    "\uDC00",
+    42,
+    undefined,
+  ];
   const badSubjects: unknown[] = [
     null,
     [],
@@ -150,6 +161,8 @@ describe("refusals", () => {
     { kind: "title", text: "x".repeat(201) },
     { kind: "title", text: 5 },
     { kind: "title", text: "a\u0000b" },
+    { kind: "title", text: "Login \uD83D page" },
+    { kind: "link", url: "https://example.com/\uD800" },
     { kind: "link", url: "ftp://example.com" },
     { kind: "link", url: "javascript:alert(1)" },
     { kind: "link", url: "https://" },
@@ -400,6 +413,13 @@ describe("refusals", () => {
       { type: "updateSettings", patch: { deck: { kind: "custom", cards: [] } } },
       PO,
       "deck_empty",
+    ],
+    [
+      "a custom card with a lone surrogate",
+      room,
+      { type: "updateSettings", patch: { deck: { kind: "custom", cards: ["1", "\uD800"] } } },
+      PO,
+      "card_invalid",
     ],
     [
       "a custom deck with 1 and 1.0",

@@ -39,10 +39,11 @@ const BLANK = /[\s\p{Cf}]/gu;
 /**
  * Trimmed, NFC-normalised text of 1 to `max` user-perceived characters and at most
  * `max × UNITS_PER_CHARACTER` code units, without control characters or bidi overrides
- * and not made of invisible characters only; else `null`.
+ * and not made of invisible characters only; else `null`. A lone surrogate refuses the
+ * text: Postgres jsonb would refuse it at write time.
  */
 function cleanText(raw: unknown, max: number): string | null {
-  if (typeof raw !== "string") return null;
+  if (typeof raw !== "string" || !raw.isWellFormed()) return null;
   const text = raw.trim().normalize("NFC");
   if (text.length > max * UNITS_PER_CHARACTER) return null;
   if (text.replace(BLANK, "") === "" || UNSAFE_TEXT.test(text)) return null;
@@ -71,7 +72,9 @@ export function cleanSubject(raw: unknown): Subject | null {
   }
   if (raw.kind === "link" && typeof raw.url === "string") {
     const url = raw.url.trim();
-    return url.length <= MAX_LINK_LENGTH && LINK.test(url) ? { kind: "link", url } : null;
+    return url.length <= MAX_LINK_LENGTH && url.isWellFormed() && LINK.test(url)
+      ? { kind: "link", url }
+      : null;
   }
   return null;
 }
