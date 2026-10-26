@@ -1,0 +1,75 @@
+/**
+ * One Node HTTP server carrying the Hono app and Socket.IO. `createServer` opens nothing;
+ * `listen()` binds the port and `close()` shuts down in phases.
+ */
+import type { Server as HttpServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { createAdaptorServer } from "@hono/node-server";
+import type { Hono } from "hono";
+import { type AppDeps, type AppEnv, createApp } from "./app.ts";
+import type { Config } from "./config.ts";
+import {
+  createRealtime,
+  type RealtimeHandlers,
+  type RealtimeServer,
+  type SocketMiddleware,
+} from "./realtime.ts";
+
+export interface ServerDeps extends AppDeps {
+  /** Socket.IO event handlers (W1); defaults answer `room_not_found`. */
+  handlers?: RealtimeHandlers;
+  /** Socket.IO handshake middleware (#10: resolve the session cookie). */
+  socketMiddleware?: readonly SocketMiddleware[];
+}
+
+export interface PokerServer {
+  readonly app: Hono<AppEnv>;
+  readonly httpServer: HttpServer;
+  readonly io: RealtimeServer;
+  /** Binds `config.port` (0 picks a free port) and resolves with the bound address. */
+  listen(): Promise<AddressInfo>;
+  /**
+   * Stops accepting connections, disconnects every socket, then waits for open HTTP
+   * requests to finish. Idempotent. Resolves once the HTTP server has closed.
+   */
+  close(): Promise<void>;
+}
+
+export function createServer(config: Config, deps: ServerDeps): PokerServer {
+  const { logger } = deps;
+  const app = createApp(config, deps);
+  const httpServer = createAdaptorServer({ fetch: app.fetch }) as HttpServer;
+  const io = createRealtime(httpServer, {
+    logger,
+    ...(deps.handlers && { handlers: deps.handlers }),
+    ...(deps.socketMiddleware && { middleware: deps.socketMiddleware }),
+  });
+  let closing: Promise<void> | undefined;
+
+  return {
+    app,
+    httpServer,
+    io,
+    listen: () =>
+      new Promise((resolve, reject) => {
+        httpServer.once("error", reject);
+        httpServer.listen(config.port, () => {
+          httpServer.off("error", reject);
+          resolve(httpServer.address() as AddressInfo);
+        });
+      }),
+    close: () => {
+      closing ??= (async () => {
+        const httpClosed = new Promise<void>((resolve) => httpServer.close(() => resolve()));
+        logger.info("shutdown: stopped accepting connections");
+        const sockets = io.of("/").sockets.size;
+        // io.close() closes the HTTP server too; it is already closing, which it ignores.
+        await io.close();
+        logger.info({ sockets }, "shutdown: socket.io closed");
+        await httpClosed;
+        logger.info("shutdown: http server closed");
+      })();
+      return closing;
+    },
+  };
+}

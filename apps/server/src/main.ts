@@ -1,8 +1,12 @@
-// The only start path: importing anything else under src/ must never open a port.
-import { createApp } from "./app.ts";
+// The only start path: importing anything else under src/ never opens a port, connects to
+// the database or reads the environment.
+import { run, type Signal } from "./run.ts";
 
-const port = Number(process.env.PORT ?? 3000);
-
-createApp().listen(port, () => {
-  console.log(`Poker Planning server listening on http://localhost:${port}`);
+await run(process.env, {
+  exit: (code) => process.exit(code),
+  onSignal: (handler) => {
+    for (const signal of ["SIGTERM", "SIGINT"] satisfies Signal[]) {
+      process.on(signal, () => handler(signal));
+    }
+  },
 });
