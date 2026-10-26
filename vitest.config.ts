@@ -19,7 +19,21 @@ export default defineConfig({
       unit("domain", "./packages/domain"),
       unit("protocol", "./packages/protocol"),
       unit("server", "./apps/server"),
-      unit("web", "./apps/web"),
+      // The web project reuses the app's Vite config (aliases, React, router plugin) and
+      // runs in a DOM. It also covers the colour check in apps/web/scripts.
+      {
+        extends: "./apps/web/vite.config.ts",
+        test: {
+          name: "web",
+          root: "./apps/web",
+          include: ["src/**/*.test.{ts,tsx}", "scripts/**/*.test.ts"],
+          exclude: [...configDefaults.exclude, "**/*.db.test.ts"],
+          environment: "jsdom",
+          setupFiles: ["./src/test-setup.ts"],
+          // Vitest empties CSS imports by default; the token test reads tokens.css raw.
+          css: { include: [/tokens\.css/] },
+        },
+      },
       {
         test: {
           name: "scripts",
