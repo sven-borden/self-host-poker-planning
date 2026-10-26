@@ -1,9 +1,10 @@
 import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
 import { lazy, Suspense } from "react";
 import { BrandMark } from "../components/shell/brand-mark.tsx";
+import { LanguageSwitcher } from "../components/shell/language-switcher.tsx";
 import { ThemeToggle } from "../components/shell/theme-toggle.tsx";
 import { buttonVariants } from "../components/ui/button.tsx";
-import { useT } from "../i18n/i18n-context.tsx";
+import { useT } from "../i18n/hooks.ts";
 
 // The toaster (sonner) loads after first render: no toast can come before the room has
 // connected, and it keeps about 10 kB gzipped out of the initial JavaScript.
@@ -35,7 +36,10 @@ function RootLayout() {
             <BrandMark />
             {t("app.name")}
           </Link>
-          <ThemeToggle />
+          <div className="flex items-center gap-1">
+            <LanguageSwitcher />
+            <ThemeToggle />
+          </div>
         </div>
       </header>
       <main

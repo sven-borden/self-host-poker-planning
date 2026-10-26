@@ -1,5 +1,5 @@
 import { type ReactNode, useId } from "react";
-import { useT } from "../i18n/i18n-context.tsx";
+import { useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
 import { Avatar } from "./avatar.tsx";
 import { SlotCard, type SlotFace } from "./cards.tsx";

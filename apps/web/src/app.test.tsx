@@ -2,20 +2,23 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "./app.tsx";
-import type { Language } from "./i18n/i18n.ts";
+import { changeLanguage } from "./i18n/i18n.ts";
+import type { Language } from "./i18n/language.ts";
 import { createAppRouter } from "./router.ts";
 
 async function renderAt(path: string, language: Language = "en") {
   const router = createAppRouter(createMemoryHistory({ initialEntries: [path] }));
   await act(async () => {
-    render(<App router={router} language={language} />);
+    await changeLanguage(language);
+    render(<App router={router} />);
     await router.load();
   });
   return router;
 }
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await act(() => changeLanguage("en"));
 });
 
 describe("app shell", () => {

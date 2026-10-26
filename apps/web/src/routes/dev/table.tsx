@@ -1,5 +1,6 @@
+import { cardValue } from "@pp/domain";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
-import { useT } from "../../i18n/i18n-context.tsx";
+import { useT } from "../../i18n/hooks.ts";
 import { cardLabel, HandCard, MiniCard } from "../../table/cards.tsx";
 import type { TablePerson } from "../../table/seat.tsx";
 import { TableStage } from "../../table/table-stage.tsx";
@@ -110,6 +111,14 @@ function DevTable() {
   const played = people.flatMap((person) =>
     person.status.kind === "revealed" && person.status.card ? [person.status.card] : [],
   );
+  // A sample of a computed number in the reader's language (5.5 reads 5,5 in French);
+  // the real results panel arrives with #20.
+  const numbers = played.flatMap((card) => {
+    const value = cardValue(card);
+    return value === null ? [] : [value];
+  });
+  const average =
+    numbers.length > 0 ? numbers.reduce((sum, value) => sum + value, 0) / numbers.length : null;
 
   return (
     <section>
@@ -125,6 +134,11 @@ function DevTable() {
           <p className="m-0">{t("table.votedSoFar", { count: votes, total: n })}</p>
         ) : null}
       </TableStage>
+      {average === null ? null : (
+        <p data-average className="mt-4 text-sm text-ink-2">
+          {t("dev.average", { value: average })}
+        </p>
+      )}
       <h2 className="mt-8 font-mono text-xs font-medium tracking-[0.08em] text-ink-2 uppercase">
         {t("dev.hand")}
       </h2>
