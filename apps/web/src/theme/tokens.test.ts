@@ -42,10 +42,15 @@ describe("design tokens", () => {
   const systemDark = cssBlock(':root:not([data-theme="light"])');
   const forcedDark = cssBlock(':root[data-theme="dark"]');
 
-  it("reads the whole table from the brief and the CSS", () => {
+  it("reads a #rrggbb value for every token of the brief, in both themes", () => {
     expect(tokensCss).toContain("--spruce");
-    expect(brief.light.size).toBe(20);
-    expect(brief.light.get("--spruce")).toMatch(/^#[0-9a-f]{6}$/);
+    expect(brief.light.has("--spruce")).toBe(true);
+    expect([...brief.dark.keys()]).toEqual([...brief.light.keys()]);
+    for (const theme of ["light", "dark"] as const) {
+      for (const [token, value] of brief[theme]) {
+        expect(value, `${token} (${theme})`).toMatch(/^#[0-9a-f]{6}$/);
+      }
+    }
   });
 
   it("matches the light column", () => {

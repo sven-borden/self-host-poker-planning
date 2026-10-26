@@ -1,12 +1,16 @@
 name: CI
 
 # Pull requests only (ADR-013 and CLAUDE.md): no push or scheduled runs. No branch filter,
-# so stacked PRs run too. Docs-only changes run no job.
+# so stacked PRs run too. Docs-only changes run no job, except the design brief: its
+# Tokens table is the colour contract that apps/web/src/theme/tokens.test.ts checks.
+# Order matters: later patterns override earlier ones, so the brief re-enters last.
 on:
   pull_request:
-    paths-ignore:
-      - "docs/**"
-      - "**/*.md"
+    paths:
+      - "**"
+      - "!docs/**"
+      - "!**/*.md"
+      - "docs/03-design-brief.md"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
