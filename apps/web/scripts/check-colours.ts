@@ -1,5 +1,6 @@
 // Fails when a component uses a literal colour instead of a design token.
 // Usage: node apps/web/scripts/check-colours.ts [directory]  (default: apps/web/src)
+// Scans .ts, .tsx and .css files; tokens.css, where the tokens are defined, is exempt.
 // Runs under Node 24's built-in type stripping, so it needs no build step and works the
 // same on Windows and Linux. Part of `pnpm lint`, hence of `pnpm gate`.
 import { readdirSync, readFileSync } from "node:fs";
@@ -26,7 +27,10 @@ export function checkDirectory(directory: string): ColourFinding[] {
     const file = relative(process.cwd(), path).replaceAll("\\", "/");
     findings.push(...findLiteralColours(readFileSync(path, "utf8"), file));
   }
-  return findings;
+  // readdir order differs between file systems: sort for a stable report.
+  return findings.sort(
+    (a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column,
+  );
 }
 
 const isMain =

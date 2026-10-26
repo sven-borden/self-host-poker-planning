@@ -7,3 +7,14 @@ export function BadBadge() {
     </span>
   );
 }
+
+// Named colours and case games, which once got past the check.
+export function NamedColours() {
+  return (
+    <div className="bg-[red] [color:crimson] fill-[navy] shadow-[0_0_0_2px_tomato]">
+      <span style={{ color: "red" }}>a</span>
+      <span style={{ background: "RGB(0 0 0)" }}>b</span>
+      <span style={{ outlineColor: "color-mix(in srgb, var(--ink) 50%, var(--bg))" }}>c</span>
+    </div>
+  );
+}
