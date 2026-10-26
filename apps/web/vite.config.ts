@@ -27,9 +27,11 @@ export default defineConfig({
     tailwindcss(),
   ],
   build: {
-    // The real budget is 200 KB of gzipped JavaScript on the room route
-    // (docs/02-architecture.md, "Budgets"); Vite's default warning counts raw bytes.
+    // The real budget is 200 kB of gzipped JavaScript on the room route
+    // (docs/02-architecture.md, "Budgets"), enforced by scripts/check-budget.ts from the
+    // manifest after every build; Vite's default warning counts raw bytes.
     chunkSizeWarningLimit: 600,
+    manifest: true,
   },
   resolve: {
     alias: { "@": src("") },

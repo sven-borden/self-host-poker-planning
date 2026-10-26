@@ -1,9 +1,15 @@
 import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
+import { lazy, Suspense } from "react";
 import { BrandMark } from "../components/shell/brand-mark.tsx";
 import { ThemeToggle } from "../components/shell/theme-toggle.tsx";
 import { buttonVariants } from "../components/ui/button.tsx";
-import { Toaster } from "../components/ui/sonner.tsx";
 import { useT } from "../i18n/i18n-context.tsx";
+
+// The toaster (sonner) loads after first render: no toast can come before the room has
+// connected, and it keeps about 10 kB gzipped out of the initial JavaScript.
+const Toaster = lazy(() =>
+  import("../components/ui/sonner.tsx").then((module) => ({ default: module.Toaster })),
+);
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -32,10 +38,16 @@ function RootLayout() {
           <ThemeToggle />
         </div>
       </header>
-      <main id="main" tabIndex={-1} className="mx-auto max-w-5xl px-4 py-12 outline-hidden sm:py-20">
+      <main
+        id="main"
+        tabIndex={-1}
+        className="mx-auto max-w-5xl px-4 py-12 outline-hidden sm:py-20"
+      >
         <Outlet />
       </main>
-      <Toaster />
+      <Suspense fallback={null}>
+        <Toaster />
+      </Suspense>
     </>
   );
 }

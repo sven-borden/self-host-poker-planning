@@ -11,18 +11,33 @@ export const EASE_STANDARD = [0.2, 0.8, 0.2, 1] as const;
 /** Duration of the cross-fade that replaces any travel under reduced motion, in seconds. */
 export const REDUCED_FADE_SECONDS = 0.12;
 
-const loadFeatures = () => import("./features.ts").then((module) => module.default);
+const loadAnimation = () => import("./features.ts").then((module) => module.default);
+const loadLayout = () => import("./features-max.ts").then((module) => module.default);
 
 /**
- * Wraps the app once. Every Motion component honours `prefers-reduced-motion` for
- * transforms and layout, and the animation features load lazily: use `m.div` (not
- * `motion.div`, which `strict` refuses) so the full Motion bundle stays out of the
- * initial chunk.
+ * Wraps the app once: every Motion component honours `prefers-reduced-motion` for
+ * transforms and layout. It loads no animation code by itself.
  */
 export function AppMotionConfig({ children }: { children: ReactNode }) {
+  return <MotionConfig reducedMotion="user">{children}</MotionConfig>;
+}
+
+/**
+ * Wrap the `m.*` elements of an animated component in this. Motion's features chunk is
+ * fetched when the first such component mounts, never at page load; `layout` asks for
+ * the larger set with layout animations. Use `m.div`, never `motion.div` (Biome refuses
+ * the import, and `strict` throws), so the full Motion bundle stays out of every chunk.
+ */
+export function MotionFeatures({
+  layout = false,
+  children,
+}: {
+  layout?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <LazyMotion features={loadFeatures} strict>
-      <MotionConfig reducedMotion="user">{children}</MotionConfig>
+    <LazyMotion features={layout ? loadLayout : loadAnimation} strict>
+      {children}
     </LazyMotion>
   );
 }

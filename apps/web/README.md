@@ -20,7 +20,8 @@ server sends and never decides the outcome of a round.
   before first paint (external script: the CSP forbids inline scripts).
 - `src/i18n/`: `en.ts` is the reference catalog, `fr.ts` and `de.ts` are typed against
   it, `i18n.ts` holds a minimal `t()` until #9 brings react-i18next.
-- `src/motion/`: `AppMotionConfig` (LazyMotion + reduced motion) and small wrappers.
+- `src/motion/`: `AppMotionConfig` (reduced motion), `MotionFeatures` (lazy Motion
+  features) and small wrappers.
 - `src/stores/`: Zustand stores. `src/realtime/`: the typed Socket.IO client.
 
 ## Rules
@@ -37,9 +38,16 @@ server sends and never decides the outcome of a round.
   Tailwind palette classes. Tailwind's own palette is switched off in `styles.css`, so
   `bg-red-500` would generate nothing anyway. A new token goes in `tokens.css` (both
   themes) and in the `@theme inline` block of `styles.css`.
-- Motion: inside `AppMotionConfig` use `m.div`, not `motion.div` (`LazyMotion strict`
-  throws on the latter); the features chunk loads after first render. Every animation
-  has a reduced-motion variant (120 ms cross-fade, no travel).
+- Motion: page entrances are CSS (`RiseIn`, tw-animate-css), so content never waits for
+  JavaScript. An animated component wraps its `m.div` elements in `<MotionFeatures>`
+  (`<MotionFeatures layout>` when it needs layout animations): the features chunk
+  (`domAnimation`, or `domMax` for layout) is fetched when the first one mounts, never at
+  page load. Biome refuses `import { motion } from "motion/react"`. Every animation has a
+  reduced-motion variant (120 ms cross-fade, no travel).
+- Budget: `pnpm build` ends with `scripts/check-budget.ts`, which reads the Vite manifest
+  and fails when the room route's initial JavaScript (entry, room route chunk and their
+  static imports) exceeds 200 kB gzipped. Lazy chunks (Motion features, the toaster)
+  do not count.
 - Nothing connects at module load: `createSocket()` returns an unconnected socket.
 - Browser code only: `tsconfig.app.json` covers `src/` with DOM types and no Node types;
   `tsconfig.node.json` covers `vite.config.ts` and `scripts/`, which run under Node 24's

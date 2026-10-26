@@ -76,6 +76,26 @@
           }
         }
       }
+    },
+    {
+      "includes": ["apps/web/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "motion/react": {
+                    "importNames": ["motion"],
+                    "message": "Use m.* inside <MotionFeatures> (src/motion/motion.tsx): motion.* pulls the whole Motion bundle into the chunk."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }
