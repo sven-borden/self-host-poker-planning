@@ -18,8 +18,7 @@ server sends and never decides the outcome of a round.
   shadcn names.
 - `src/theme/`: light, dark or system; `public/theme-init.js` applies the saved choice
   before first paint (external script: the CSP forbids inline scripts).
-- `src/i18n/`: `en.ts` is the reference catalog, `fr.ts` and `de.ts` are typed against
-  it, `i18n.ts` holds a minimal `t()` until #9 brings react-i18next.
+- `src/i18n/`: i18next and react-i18next (#9); see "i18n" below.
 - `src/motion/`: `AppMotionConfig` (reduced motion), `MotionFeatures` (lazy Motion
   features) and small wrappers.
 - `src/table/`: the table (#13). `layout.ts` is the pure layout engine
@@ -37,8 +36,8 @@ server sends and never decides the outcome of a round.
   the server on 3000.
 - `pnpm build` writes static files to `dist/`; the server serves them in production with
   a history fallback, so `base` stays `/`.
-- Every user-facing string exists in `en`, `fr` and `de`; TypeScript fails when `fr` or
-  `de` misses or adds a key. French uses vous, German uses Sie.
+- Every user-facing string exists in `en`, `fr` and `de` (see "i18n"). French uses
+  vous, German uses Sie.
 - No literal colour in `src/**/*.{ts,tsx,css}`: use token utilities (`bg-surface`,
   `text-ink-2`, `border-line`, `bg-primary`, …). `pnpm lint` runs
   `scripts/check-colours.ts`, which rejects hex values, colour functions (`rgb()`,
@@ -59,8 +58,8 @@ server sends and never decides the outcome of a round.
   reduced-motion variant (120 ms cross-fade, no travel).
 - Budget: `pnpm build` ends with `scripts/check-budget.ts`, which reads the Vite manifest
   and fails when the room route's initial JavaScript (entry, room route chunk and their
-  static imports) exceeds 200 kB gzipped. Lazy chunks (Motion features, the toaster)
-  do not count.
+  static imports) exceeds 200 kB gzipped. Lazy chunks (Motion features, the toaster, the
+  French and German catalogs) do not count.
 - Nothing connects at module load: `createSocket()` returns an unconnected socket.
 - Browser code only: `tsconfig.app.json` covers `src/` with DOM types and no Node types;
   `tsconfig.node.json` covers `vite.config.ts` and `scripts/`, which run under Node 24's
@@ -74,6 +73,54 @@ server sends and never decides the outcome of a round.
   `tmp/screenshots/` (gitignored). Not part of `pnpm gate`.
 - Tests: the `web` Vitest project extends `vite.config.ts` and runs in jsdom
   (`src/test-setup.ts` stubs `matchMedia`).
+
+## i18n
+
+The files in `src/i18n/`:
+
+- `en.ts`: the reference catalog (`as const`), nested like `table.votedSoFar`; also the
+  `Catalog` type that `fr.ts` and `de.ts` are declared with, so a missing or extra key
+  fails `tsc`. English is bundled; `fr.ts` and `de.ts` are lazy chunks.
+- `i18n.ts`: the i18next instance and its typed keys (`CustomTypeOptions`), plus
+  `changeLanguage`, `chooseLanguage` (also saves), `loadLanguage`, `startLanguage` and
+  `fixedT(language)` for code outside React and tests.
+- `language.ts`: `LANGUAGES`, `LANGUAGE_NAMES` (each in itself), `pickLanguage`, and
+  `detectLanguage` (the saved choice in `localStorage` `pp-language`, then
+  `navigator.languages`, then English; storage errors are swallowed).
+- `hooks.ts`: `useT()` (the typed `t`), `useLanguage()` (`[language, chooseLanguage]`)
+  and `useFormat()` (the helpers below, bound to the current language).
+- `format.ts`: `formatNumber`, `formatDate`, `formatTime`, `formatRelativeTime`, each
+  taking the language; `Intl` formatters are cached.
+- `errors.ts`: `errorMessage(t, code)` turns a server error code into a sentence, with
+  `errors.unknown` for a code this version does not know.
+
+`main.tsx` renders only once `startLanguage()` and `router.load()` have both settled, so
+the first paint is in the right language and a French or German start costs no extra
+round trip. `<html lang>` follows every change. The switcher
+(`components/shell/language-switcher.tsx`) prefetches the other catalogs when it opens.
+
+Adding copy:
+
+1. Add the key to `en.ts`, then to `fr.ts` and `de.ts` (`tsc` reminds you). Call it as
+   `t("section.key")` in a component that got `t` from `useT()`.
+2. Interpolate with `{{name}}`; `t("room.title", { code })` is type-checked against the
+   placeholders. Numbers use `{{count, number}}` (or `number(maximumFractionDigits: 1)`),
+   never a bare `{{count}}`, so they follow the language. In code, use `formatNumber` or
+   `useFormat().number`; never `toString()` or `toFixed()` a number the UI shows.
+3. Plurals: one key per form, `key_one` and `key_other` in English and German, plus
+   `key_many` in French (`Intl.PluralRules` gives "many" from 1 000 000; i18next would
+   fall back to English, not to `_other`, without it). Call `t("key", { count })`.
+4. French: a narrow no-break space (U+202F) before `:`, `;`, `!` and `?`, and ’ for
+   apostrophes.
+5. A new server error code goes in `@pp/protocol`'s `ACK_ERROR_CODES` and in the
+   `errors` section of all three catalogs; `en.ts` checks the codes with `satisfies`.
+
+`src/i18n/i18n.test.ts` checks the catalogs at run time, so the checks hold even for a
+catalog that skips the type check (a JSON import): the same keys in every language, the
+plural forms each language's `Intl.PluralRules` needs and no others, the same
+placeholders with the same formats, formatted number placeholders, French spacing, and
+a message for every code in `ACK_ERROR_CODES`. The French and German tone is reviewed in
+#41.
 
 ## CSP notes for #36
 

@@ -145,4 +145,20 @@ interruptible and disabled under `prefers-reduced-motion` (120 ms cross-fades in
 
 Plain, short, active voice, in English, French and German. Name things as people
 know them: room, round, card, reveal, product owner (PO). Errors say what happened and
-what to do. The tone per language (tu or vous, du or Sie) is decided in #41.
+what to do. The tone per language (tu or vous, du or Sie) is decided in #41; until
+then French uses vous and German uses Sie.
+
+- **Language switcher**: in the header, before the theme toggle. Each language is named
+  in itself (English, Français, Deutsch) and marked with its `lang`, so a reader finds
+  theirs whatever the page speaks. On phones the trigger is the icon alone. The choice
+  is saved; without one the browser's languages decide, then English.
+- **Numbers** the app computes or counts (averages, "6/8 voted so far", timers) follow
+  the language: 5.5 reads 5,5 in French and German, and 1 234 groups with a narrow
+  no-break space in French and a dot in German.
+- **Card faces** show the label exactly as the deck holds it, in every language. No
+  preset deck holds a decimal mark (the modified Fibonacci deck uses ½, which reads the
+  same everywhere), and custom labels, including those a range generates, stay as typed:
+  "0.5" is "0.5" on a French screen. A card is what the team agreed to play; localising
+  it would make the face, the deck editor and the vote disagree.
+- **French typography**: a narrow no-break space (U+202F) before `:`, `;`, `!` and `?`,
+  and typographic apostrophes (’). A unit test checks the first rule.

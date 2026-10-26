@@ -280,8 +280,14 @@ Better Auth with the anonymous plugin (ADR-009).
 ## 10. Internationalisation
 
 react-i18next with catalogs `en`, `fr`, `de` in `apps/web/src/i18n/`. Language from
-the saved choice, then the browser. `Intl` for numbers and dates. CI fails when a key
-is missing in any catalog. The server sends codes, never sentences.
+the saved choice (`localStorage` `pp-language`), then `navigator.languages`, then
+English. English is bundled; French and German are lazy chunks, fetched before the
+first render in parallel with the route's chunk (no flash of the wrong language) and
+prefetched when the switcher opens. `Intl` for numbers, dates and relative times;
+plurals follow `Intl.PluralRules` (French needs a `_many` form). CI fails when a key,
+a plural form or a placeholder is missing in any catalog. The server sends codes, never
+sentences; every code in `@pp/protocol`'s `ACK_ERROR_CODES` has a message in every
+language, and an unknown code gets a generic one.
 
 ## 11. Observability
 
