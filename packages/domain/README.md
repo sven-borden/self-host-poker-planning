@@ -8,7 +8,7 @@ projections each client is allowed to see. Both apps import it.
 - Pure TypeScript. No I/O, no Node APIs (`node:*`, `process`, `Buffer`), no DOM APIs.
   The tsconfig loads no ambient types and Biome refuses `node:*` imports here.
 - Time comes in as an argument (`now`); nothing here reads the clock or randomness.
-- Every state change goes through `apply(state, command, now)` (#3).
+- Every state change goes through `apply(state, command, { actor, now })` (#3).
 - Exported as TypeScript source (`exports` points at `src/index.ts`): Vite, tsx, Vitest
   and the server bundle compile it, so there is no build step. Import siblings with
   their `.ts` extension.
@@ -51,3 +51,17 @@ canonical: `.` is the decimal mark and the domain never localises (the UI may sh
     middles), and `suggested`, the deck card nearest the average, a tie to the lower
     value. Non-numeric decks: `average` and `median` are `null`, `suggested` is the mode.
   - No core votes: `mode`, `spread`, `average`, `median` and `suggested` are `null`.
+
+## The round state machine
+
+`room.ts` (model, `DEFAULT_SETTINGS`, `createRoom`, limits), `commands.ts` (`Command`,
+`Cause`, `ErrorCode`, `ApplyResult`), `apply.ts` (the machine) and `apply-input.ts`
+(runtime validation of names, subjects, seconds and settings patches) (#3). The rules
+are in `docs/02-architecture.md`, section 4.
+
+- Never mutate the input; return the input object itself when nothing changed.
+- Look ids up with `Object.hasOwn`: an id such as `constructor` must never reach the
+  prototype.
+- Every `switch` is exhaustive (`never` check).
+- `pnpm test:coverage` (part of `pnpm gate`) requires 100 % of statements, branches,
+  functions and lines in `src/apply*.ts`. Keep new rule code in an `apply*.ts` file.
