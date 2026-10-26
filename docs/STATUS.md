@@ -16,6 +16,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   140.0 kB of JS against a 200 kB budget.
 - The table from #13: a pure layout engine with a pixel geometry proof for 1 to 16
   people, the seat and card components, and a `/dev/table` bench.
+- The server skeleton from #6: Hono and Socket.IO on one port, `/api/health`, the
+  built web app from an allowlist, a socket Origin check, logs without secrets,
+  graceful shutdown, and a `setup`/`dispose` hook for the database and auth.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -26,12 +29,13 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#6 (PP-006)** the server skeleton: PR #70, review fixes in progress.
 - **#9 (PP-009)** i18n with react-i18next, in worktree `../pp-wt-09`.
+- **#7 (PP-007)** the database: Drizzle, migrations at start, the room repository
+  with compare-and-set, in worktree `../pp-wt-07`.
 
 ## Next
 
-- Server chain: #7 after #6, then #10, then #11 (Docker needs #6, #7 and #8).
+- Server chain: #10 (identity) after #7, then #11 (Docker needs #6, #7 and #8).
 - Web chain: #9 is the last W0 web issue. W1 web work (#16 onward) needs the server
   chain first.
 - **W1 starts without a new go** once the W0 issues other than #12 are merged (Sven,
