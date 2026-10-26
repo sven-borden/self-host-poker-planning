@@ -45,8 +45,46 @@ const NAMES = [
   "Zoë Stewart",
 ];
 const OBSERVERS = ["Olivia Chen", "Paul Meier", "Quentin Roy", "Rosa Bianchi"];
-const PLAYED = ["5", "8", "3", "5", "13", "?", "5", "8", "☕", "2", "5", "∞", "8", "3", "21", "5"];
-const DECK = ["0", "1", "2", "3", "5", "8", "13", "21", "34", "?", "☕", "∞"];
+// Cards as played, by seat. Every third person (index 2, 5, 8, …) does not vote, so the
+// specials and the long labels sit on voters' seats and show face up after reveal: the
+// specials from 6 people on, the long labels from 11.
+const PLAYED = [
+  "5",
+  "8",
+  "3",
+  "13",
+  "?",
+  "5",
+  "☕",
+  "100",
+  "2",
+  "∞",
+  "WWWW",
+  "8",
+  "XXL",
+  "👍🏽👍",
+  "3",
+  "21",
+];
+// Labels up to the domain's 4 graphemes, wide letters and emoji included.
+const DECK = [
+  "0",
+  "1",
+  "2",
+  "3",
+  "5",
+  "8",
+  "13",
+  "21",
+  "34",
+  "100",
+  "XXL",
+  "WWWW",
+  "👍🏽👍",
+  "?",
+  "☕",
+  "∞",
+];
 
 function DevTable() {
   const t = useT();

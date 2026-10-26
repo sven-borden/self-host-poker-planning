@@ -9,12 +9,14 @@
   background: radial-gradient(ellipse at 50% 45%, var(--surface-2), var(--bg) 72%);
 }
 
-/* The table: spruce felt inside a 7 px rim (RIM_WIDTH in geometry.ts). */
+/*
+ * The table: spruce felt inside a 7 px rim (RIM_WIDTH in geometry.ts). The rim is a
+ * border, not an inset shadow, so forced colours keep the table's outline.
+ */
 .pp-felt {
+  border: 7px solid var(--table-rim);
   background: var(--table);
-  box-shadow:
-    inset 0 0 0 7px var(--table-rim),
-    var(--shadow);
+  box-shadow: var(--shadow);
 }
 
 /* Light from above, brightest towards the top of the felt. */
@@ -31,7 +33,7 @@
 .pp-felt::after {
   content: "";
   position: absolute;
-  inset: 7px;
+  inset: 0;
   border-radius: inherit;
   box-shadow: 0 0 0 1px var(--table-ink);
   opacity: 0.16;
@@ -50,4 +52,25 @@
   inset: 0;
   background: repeating-linear-gradient(45deg, transparent 0 3px, var(--table-rim) 3px 6px);
   opacity: 0.38;
+}
+
+/*
+ * Forced colours (Windows contrast themes) drop backgrounds and shadows. The table keeps
+ * its border as an outline, and a played card keeps a striped back in system colours, so
+ * "voted" never looks like the empty, dashed slot.
+ */
+@media (forced-colors: active) {
+  .pp-felt {
+    border-width: 2px;
+  }
+
+  .pp-card-back {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+
+  .pp-card-back::before {
+    background: repeating-linear-gradient(45deg, transparent 0 3px, Canvas 3px 6px);
+    opacity: 1;
+  }
 }
