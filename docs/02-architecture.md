@@ -130,7 +130,7 @@ Every `apply` runs three steps:
 2. **Run the command.** Every command except `join` and `timeUp` needs the actor to be a
    participant (`not_participant`); PO-only commands answer `not_owner`.
 3. **Settle** (on success, while Voting): drop the votes of people who are no longer
-   voters, then reveal (by `"everyoneVoted"`) when `revealWhenAllVoted` is on, the
+   voters, each with a `voteRetracted { who }` cause, then reveal (by `"everyoneVoted"`) when `revealWhenAllVoted` is on, the
    eligible voters are not empty and all of them have voted. Eligible: role `voter`, not
    away (`awaySince` unset), not the PO when `poVotes` is off. So a leave, kick, role
    change, settings change or owner transfer can complete a round, not only a vote.

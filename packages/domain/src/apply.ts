@@ -342,17 +342,26 @@ function updateSettings(state: RoomState, patch: unknown, now: number): Step {
 
 /**
  * After a successful command, while Voting: drop the votes of people who are no longer
- * voters (they left, were kicked, became observers, or are a PO who no longer votes), then
+ * voters (they left, were kicked, became observers, or are a PO who no longer votes),
+ * each with a `voteRetracted` cause, then
  * reveal when `revealWhenAllVoted` is on and every eligible voter (a voter who is not
  * away) has voted. A leave, kick, role or settings change can complete a round too.
  */
 function settle(state: RoomState, now: number): { state: RoomState; causes: Cause[] } {
   const round = state.round;
   if (round?.phase !== "voting") return { state, causes: [] };
-  const votes = Object.entries(round.votes);
-  const kept = votes.filter(([id]) => isVoter(state, id));
+  const pruned = Object.keys(round.votes).filter((id) => !isVoter(state, id));
   const current =
-    kept.length === votes.length ? round : { ...round, votes: Object.fromEntries(kept) };
+    pruned.length === 0
+      ? round
+      : {
+          ...round,
+          votes: Object.fromEntries(
+            Object.entries(round.votes).filter(([id]) => !pruned.includes(id)),
+          ),
+        };
+  // Each dropped vote is announced, so its owner sees why their card left the table.
+  const causes = pruned.map((who) => voteCause("voteRetracted", round, who));
   const eligible = Object.keys(state.participants).filter(
     (id) => isVoter(state, id) && isPresent(state.participants[id]),
   );
@@ -363,10 +372,10 @@ function settle(state: RoomState, now: number): { state: RoomState; causes: Caus
   if (everyoneVoted) {
     return {
       state: withRound(state, reveal(current, now)),
-      causes: [{ type: "revealed", by: "everyoneVoted" }],
+      causes: [...causes, { type: "revealed", by: "everyoneVoted" }],
     };
   }
-  return { state: current === round ? state : withRound(state, current), causes: [] };
+  return { state: current === round ? state : withRound(state, current), causes };
 }
 
 // --------------------------------------------------------------------------------- helpers

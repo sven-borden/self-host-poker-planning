@@ -513,7 +513,10 @@ describe("membership", () => {
   it("removes a leaving person and their vote while Voting; the PO stays owner", () => {
     const before = room({ round: voting({ votes: { [A]: { card: "3" } } }) });
     const alice = send(before, { type: "leave" }, A);
-    expect(alice.causes).toEqual([{ type: "left", who: A }]);
+    expect(alice.causes).toEqual([
+      { type: "left", who: A },
+      { type: "voteRetracted", who: A },
+    ]);
     expect(ok(alice).participants[A]).toBeUndefined();
     expect(alice.state.round?.votes).toEqual({});
     const po = ok(send(before, { type: "leave" }, PO));
@@ -529,7 +532,10 @@ describe("membership", () => {
   it("kicks a participant and their vote", () => {
     const before = room({ round: voting({ votes: { [A]: { card: "3" } } }) });
     const result = send(before, { type: "kick", who: A });
-    expect(result.causes).toEqual([{ type: "kicked", who: A }]);
+    expect(result.causes).toEqual([
+      { type: "kicked", who: A },
+      { type: "voteRetracted", who: A },
+    ]);
     expect(ok(result).participants[A]).toBeUndefined();
     expect(result.state.round?.votes).toEqual({});
   });
@@ -547,7 +553,10 @@ describe("membership", () => {
   it("changes roles, dropping the vote of a voter who starts observing", () => {
     const before = room({ round: voting({ votes: { [A]: { card: "3" } } }) });
     const result = send(before, { type: "setRole", role: "observer" }, A);
-    expect(result.causes).toEqual([{ type: "roleChanged", who: A, role: "observer" }]);
+    expect(result.causes).toEqual([
+      { type: "roleChanged", who: A, role: "observer" },
+      { type: "voteRetracted", who: A },
+    ]);
     expect(ok(result).participants[A]?.role).toBe("observer");
     expect(result.state.round?.votes).toEqual({});
     expect(send(before, { type: "setRole", role: "voter" }, A).state).toBe(before);
@@ -831,8 +840,33 @@ describe("automatic reveal", () => {
   it("drops the PO's vote while Voting when the PO stops voting", () => {
     const before = room({ round: voting({ votes: { [PO]: { card: "3" } } }) });
     const result = send(before, { type: "updateSettings", patch: { poVotes: false } });
+    expect(result.causes).toEqual([
+      { type: "settingsUpdated" },
+      { type: "voteRetracted", who: PO },
+    ]);
     expect(ok(result).round?.votes).toEqual({});
     expect(result.state.round?.phase).toBe("voting");
+  });
+
+  it("announces a dropped vote before the reveal it completes", () => {
+    const before = room({
+      settings: { revealWhenAllVoted: false },
+      round: voting({ votes: { [PO]: { card: "3" }, [A]: { card: "5" }, [B]: { card: "8" } } }),
+    });
+    const result = send(before, {
+      type: "updateSettings",
+      patch: { revealWhenAllVoted: true, poVotes: false },
+    });
+    expect(result.causes).toEqual([
+      { type: "settingsUpdated" },
+      { type: "voteRetracted", who: PO },
+      { type: "revealed", by: "everyoneVoted" },
+    ]);
+    expect(ok(result).round).toMatchObject({
+      phase: "revealed",
+      votes: { [A]: { card: "5" }, [B]: { card: "8" } },
+    });
+    expect(result.state.round?.votes[PO]).toBeUndefined();
   });
 });
 
