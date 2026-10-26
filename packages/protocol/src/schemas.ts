@@ -172,8 +172,11 @@ export type CauseView = z.output<typeof causeSchema>;
 export type RoomView = z.output<typeof roomViewSchema>;
 export type Snapshot = z.output<typeof snapshotSchema>;
 
-/** `enter`: subscribe this socket to a room's snapshots. */
-export const enterPayloadSchema = z.object({
+/**
+ * `enter`: subscribe this socket to a room's snapshots. Strict like every inbound object;
+ * `parseEnter` checks `protocol` first, so a newer client still hears `protocol_mismatch`.
+ */
+export const enterPayloadSchema = z.strictObject({
   code: z.string().min(1).max(WIRE_LIMITS.roomCode),
   protocol: z.number().int(),
 });

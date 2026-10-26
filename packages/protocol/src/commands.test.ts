@@ -2,7 +2,7 @@ import type { Cause, Command, ErrorCode, Results, RoomSettings, Subject } from "
 import fc from "fast-check";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type { z } from "zod";
-import { toDomainCommand, WIRE_LIMITS, wireCommandSchema } from "./commands.ts";
+import { COMMAND_ID_PATTERN, toDomainCommand, WIRE_LIMITS, wireCommandSchema } from "./commands.ts";
 import { ACK_ERROR_CODES, type AckErrorCode, PROTOCOL_ERROR_CODES } from "./errors.ts";
 import { parseEnter } from "./events.ts";
 import { toSnapshot } from "./project.ts";
@@ -23,7 +23,7 @@ import { PROTOCOL_VERSION } from "./version.ts";
 const jsonRoundTrip = <T>(schema: z.ZodType<T>, value: T) =>
   schema.parse(JSON.parse(JSON.stringify(value)));
 
-const idArb = fc.string({ minLength: 1, maxLength: WIRE_LIMITS.commandId });
+const idArb = fc.stringMatching(COMMAND_ID_PATTERN);
 
 /** fast-check may build objects without a prototype; a JSON copy makes them plain. */
 const plain = <T>(value: T): T => JSON.parse(JSON.stringify(value));
@@ -76,30 +76,9 @@ describe("wire commands", () => {
     });
   });
 
-  it("strip unknown fields, a link's key included (the server detects it)", () => {
-    expect(
-      toDomainCommand({
-        id: "1",
-        type: "startRound",
-        extra: true,
-        payload: { subject: { kind: "link", url: "https://x.test", key: "AB-1" }, card: "5" },
-      }),
-    ).toStrictEqual({
-      ok: true,
-      id: "1",
-      command: { type: "startRound", subject: { kind: "link", url: "https://x.test" } },
-    });
-    expect(
-      toDomainCommand({
-        id: "2",
-        type: "updateSettings",
-        payload: { patch: { revealNames: false, password: "x", timer: { seconds: 30, x: 1 } } },
-      }),
-    ).toStrictEqual({
-      ok: true,
-      id: "2",
-      command: { type: "updateSettings", patch: { revealNames: false, timer: { seconds: 30 } } },
-    });
+  it("accept ids of letters, digits, dash and underscore, up to the cap", () => {
+    const id = `aZ09_-${"x".repeat(WIRE_LIMITS.commandId - 6)}`;
+    expect(toDomainCommand({ id, type: "reveal" })).toMatchObject({ ok: true, id });
   });
 
   it("leave the exact rules to the domain", () => {
@@ -122,6 +101,46 @@ describe("wire commands", () => {
     ["an empty id", { id: "", type: "reveal" }],
     ["a long id", { id: "x".repeat(WIRE_LIMITS.commandId + 1), type: "reveal" }],
     ["a numeric id", { id: 1, type: "reveal" }],
+    ["an id with a space", { id: "a b", type: "reveal" }],
+    ["an id with a dot", { id: "a.b", type: "reveal" }],
+    ["an id with an accent", { id: "café", type: "reveal" }],
+    ["an id with an emoji", { id: "\u{1F600}", type: "reveal" }],
+    ["an id with a lone surrogate", { id: "\ud800", type: "reveal" }],
+    ["an unknown field on the command", { id: "1", type: "reveal", extra: true }],
+    ["an unknown field in an empty payload", { id: "1", type: "reveal", payload: { x: 1 } }],
+    ["an unknown field in a payload", { id: "1", type: "castVote", payload: { card: "5", x: 1 } }],
+    [
+      "a misspelt settings key next to a valid one",
+      {
+        id: "1",
+        type: "updateSettings",
+        payload: { patch: { revealName: false, poVotes: false } },
+      },
+    ],
+    [
+      "an unknown timer key",
+      { id: "1", type: "updateSettings", payload: { patch: { timer: { seconds: 30, x: 1 } } } },
+    ],
+    [
+      "an unknown deck field",
+      {
+        id: "1",
+        type: "updateSettings",
+        payload: { patch: { deck: { kind: "preset", id: "fib", cards: ["1"] } } },
+      },
+    ],
+    [
+      "a link subject with a key (the server detects it)",
+      {
+        id: "1",
+        type: "startRound",
+        payload: { subject: { kind: "link", url: "https://x.test", key: "AB-1" } },
+      },
+    ],
+    [
+      "an unknown field on a title subject",
+      { id: "1", type: "startRound", payload: { subject: { kind: "title", text: "a", x: 1 } } },
+    ],
     ["an unknown type", { id: "1", type: "dropTable" }],
     ["a prototype key as type", { id: "1", type: "__proto__" }],
     ["an inherited key as type", { id: "1", type: "toString" }],
@@ -221,7 +240,7 @@ describe("enter", () => {
       ok: false,
       code: "protocol_mismatch",
     });
-    expect(parseEnter({ room: 42, protocol: 0 })).toStrictEqual({
+    expect(parseEnter({ room: 42, protocol: 0, extra: true })).toStrictEqual({
       ok: false,
       code: "protocol_mismatch",
     });
@@ -234,6 +253,7 @@ describe("enter", () => {
     ["no code", { protocol: PROTOCOL_VERSION }],
     ["an empty code", { code: "", protocol: PROTOCOL_VERSION }],
     ["a long code", { code: "c".repeat(WIRE_LIMITS.roomCode + 1), protocol: PROTOCOL_VERSION }],
+    ["an unknown field", { code: "roomcode", protocol: PROTOCOL_VERSION, password: "x" }],
   ])("answers bad_payload to %s", (_, input) => {
     expect(parseEnter(input)).toStrictEqual({ ok: false, code: "bad_payload" });
   });

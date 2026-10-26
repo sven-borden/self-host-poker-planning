@@ -1,4 +1,5 @@
 export {
+  COMMAND_ID_PATTERN,
   COMMAND_TYPES,
   cardSchema,
   deckSpecSchema,

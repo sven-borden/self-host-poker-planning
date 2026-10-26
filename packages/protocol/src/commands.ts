@@ -4,7 +4,8 @@
  * zod only rejects garbage early: it checks the shape and caps every string and array
  * well above the domain's own limits. The domain (`apply`) stays the judge of the exact
  * rules (grapheme counts, deck rules, ranges), so its specific error codes reach the user.
- * Unknown fields are stripped.
+ * Every object is strict: an unknown or misspelt field answers `bad_payload`, so a typo in
+ * a settings patch never half-applies.
  */
 import {
   type Command,
@@ -41,30 +42,46 @@ export const cardSchema = z.string().max(WIRE_LIMITS.card);
 export const roleSchema = z.enum(ROLES);
 export const specialCardSchema = z.enum(SPECIAL_CARDS);
 
+/** A deck as the server sends it (lenient, like every outbound schema). */
 export const deckSpecSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("preset"), id: z.enum(PRESET_DECK_IDS) }),
   z.object({ kind: z.literal("custom"), cards: z.array(cardSchema).max(WIRE_LIMITS.deckCards) }),
 ]);
 
+/** A deck as a client sends it. */
+const wireDeckSpecSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("preset"), id: z.enum(PRESET_DECK_IDS) }),
+  z.strictObject({
+    kind: z.literal("custom"),
+    cards: z.array(cardSchema).max(WIRE_LIMITS.deckCards),
+  }),
+]);
+
 const nameSchema = z.string().max(WIRE_LIMITS.name);
 const textSchema = z.string().max(WIRE_LIMITS.subject);
 
-/** A subject as a client sends it: a link never carries `key` (the server detects it). */
+/**
+ * A subject as a client sends it: a link never carries `key` (the server detects it), so
+ * a client must not echo a snapshot's subject back as it is.
+ */
 const wireSubjectSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("none") }),
-  z.object({ kind: z.literal("title"), text: textSchema }),
-  z.object({ kind: z.literal("link"), url: textSchema }),
+  z.strictObject({ kind: z.literal("none") }),
+  z.strictObject({ kind: z.literal("title"), text: textSchema }),
+  z.strictObject({ kind: z.literal("link"), url: textSchema }),
 ]);
 
 /** Any subset of the settings, `timer` one level deep (the domain's `SettingsPatch`). */
-export const settingsPatchSchema = z.object({
-  deck: deckSpecSchema.optional(),
+export const settingsPatchSchema = z.strictObject({
+  deck: wireDeckSpecSchema.optional(),
   specials: z.array(specialCardSchema).max(WIRE_LIMITS.specials).optional(),
   whoCanReveal: z.enum(WHO_CAN_REVEAL).optional(),
   revealNames: z.boolean().optional(),
   revealWhenAllVoted: z.boolean().optional(),
   timer: z
-    .object({ seconds: z.number().nullable().optional(), revealAtEnd: z.boolean().optional() })
+    .strictObject({
+      seconds: z.number().nullable().optional(),
+      revealAtEnd: z.boolean().optional(),
+    })
     .optional(),
   allowChangeAfterReveal: z.boolean().optional(),
   poVotes: z.boolean().optional(),
@@ -72,41 +89,43 @@ export const settingsPatchSchema = z.object({
 });
 
 /** A command without fields may omit `payload`. */
-const empty = z.object({}).default({});
+const empty = z.strictObject({}).default({});
 
 /**
  * The payload of every command: the domain command without `type`. The `satisfies`
  * keeps this map complete and each payload assignable to its domain command.
  */
 const payloads = {
-  join: z.object({ name: nameSchema, role: roleSchema }),
+  join: z.strictObject({ name: nameSchema, role: roleSchema }),
   leave: empty,
-  rename: z.object({ name: nameSchema }),
-  setRole: z.object({ role: roleSchema }),
-  kick: z.object({ who: userIdSchema }),
-  startRound: z.object({ subject: wireSubjectSchema }),
-  castVote: z.object({ card: cardSchema }),
+  rename: z.strictObject({ name: nameSchema }),
+  setRole: z.strictObject({ role: roleSchema }),
+  kick: z.strictObject({ who: userIdSchema }),
+  startRound: z.strictObject({ subject: wireSubjectSchema }),
+  castVote: z.strictObject({ card: cardSchema }),
   retractVote: empty,
   reveal: empty,
-  setFinal: z.object({ card: cardSchema }),
+  setFinal: z.strictObject({ card: cardSchema }),
   revote: empty,
   // zod's number refuses NaN and the infinities; the domain checks integer and range.
-  startTimer: z.object({ seconds: z.number() }),
+  startTimer: z.strictObject({ seconds: z.number() }),
   stopTimer: empty,
-  extendTimer: z.object({ seconds: z.number() }),
+  extendTimer: z.strictObject({ seconds: z.number() }),
   timeUp: empty,
-  updateSettings: z.object({ patch: settingsPatchSchema }),
-  transferOwner: z.object({ to: userIdSchema }),
+  updateSettings: z.strictObject({ patch: settingsPatchSchema }),
+  transferOwner: z.strictObject({ to: userIdSchema }),
   claimOwner: empty,
 } satisfies { [K in CommandType]: z.ZodType<Omit<Extract<Command, { type: K }>, "type">> };
 
 /** Every command type a client may send, in the domain's order. */
 export const COMMAND_TYPES = Object.keys(payloads) as CommandType[];
 
-const commandIdSchema = z.string().min(1).max(WIRE_LIMITS.commandId);
+/** The client's correlation id: plain ASCII, so it is safe to log and to echo. */
+export const COMMAND_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+const commandIdSchema = z.string().regex(COMMAND_ID_PATTERN);
 
 function wire<T extends CommandType, P extends (typeof payloads)[T]>(type: T, payload: P) {
-  return z.object({ id: commandIdSchema, type: z.literal(type), payload });
+  return z.strictObject({ id: commandIdSchema, type: z.literal(type), payload });
 }
 
 export const wireCommandSchema = z.discriminatedUnion("type", [
