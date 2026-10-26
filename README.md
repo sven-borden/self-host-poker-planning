@@ -60,6 +60,10 @@ Workspace conventions:
 - pnpm settings live in `pnpm-workspace.yaml`. Dependency build scripts are blocked
   unless listed under `allowBuilds` there.
 - Scripts must run on Windows and Linux: no `rm -rf`, no `VAR=value cmd`.
+- On Windows, keep the clone path short (under about 130 characters). pnpm 12 writes
+  `pnpm -r run` state to `node_modules/.pnpm-task-run-state-v1/<hash>.<run>.jsonl`, and
+  past 260 characters in total `pnpm build` fails with "The system cannot find the path
+  specified".
 
 ## License
 
