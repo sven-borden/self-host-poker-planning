@@ -37,6 +37,7 @@ export function ThemeToggle() {
       <DropdownMenuContent align="end" className="min-w-40">
         <DropdownMenuLabel>{t("theme.label")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
+          aria-label={t("theme.label")}
           value={mode}
           onValueChange={(value) => {
             if (isThemeMode(value)) {
