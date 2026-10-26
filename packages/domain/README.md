@@ -13,3 +13,37 @@ projections each client is allowed to see. Both apps import it.
   and the server bundle compile it, so there is no build step. Import siblings with
   their `.ts` extension.
 - Tests sit next to the code as `*.test.ts` and run in the `domain` Vitest project.
+
+## Decks and results
+
+`decks.ts`, `range.ts` and `results.ts` (#4). A card is a string and its label is
+canonical: `.` is the decimal mark and the domain never localises (the UI may show
+`0,5`, the card stays `0.5`).
+
+- **Presets** (`PRESET_DECKS`): `fib` 0 1 2 3 5 8 13 21; `mfib` 0 ½ 1 2 3 5 8 13 20 40
+  100; `tshirt` XS S M L XL XXL; `pow2` 0 1 2 4 8 16 32 64; `seq` 1 to 10.
+- **Specials** `?`, `☕`, `∞` (`SPECIAL_CARDS`, in display order) are a room setting,
+  never deck cards. `deckCards(deck, specials)` is the hand: the deck's cards, then the
+  enabled specials in `SPECIAL_CARDS` order.
+- **Values**: `cardValue` gives `"½"` 0.5 and parses `-?digits(.digits)?`; anything
+  else (T-shirt sizes, specials, `1,5`) is `null`. A deck is numeric when every
+  non-special card has a value.
+- **Custom deck** (`validateCustomDeck`): 1 to 20 labels, trimmed and NFC-normalised,
+  each 1 to 4 user-perceived characters (`Intl.Segmenter`: `☕` and `👍🏽` are 1), no
+  duplicates, no specials. Codes: `CustomDeckErrorCode`.
+- **Range** (`generateRange`): `start` to `end` by `step`, `end` included when reached.
+  Integer arithmetic scaled by the decimals of `start` and `step`, so 0 to 1 by 0.1
+  is exactly `0`, `0.1` … `1`. Labels drop trailing zeros. Codes: `RangeErrorCode`.
+- **Results** (`computeResults(votes, deck)`), plain and unrounded, after the round-1
+  prototype's `stats()`:
+  - `distribution`: the count of every voted card, specials included, in display
+    order; a vote outside the deck comes last and counts in no statistic.
+  - `core`: the non-special votes, sorted by deck order. Specials count in no statistic.
+  - `mode`: the core card with the highest count; a tie goes to the earlier deck card.
+  - `agreement`: mode count / core count, 0 to 1; 0 without core votes.
+  - `spread`: `[lowest, highest]` core card by deck order, or `null`.
+  - `consensus`: at least 3 core votes, all the same card.
+  - Numeric decks: `average` (mean), `median` (middle value, or the mean of the two
+    middles), and `suggested`, the deck card nearest the average, a tie to the lower
+    value. Non-numeric decks: `average` and `median` are `null`, `suggested` is the mode.
+  - No core votes: `mode`, `spread`, `average`, `median` and `suggested` are `null`.
