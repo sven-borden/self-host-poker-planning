@@ -12,7 +12,8 @@
       "!**/coverage",
       "!**/.tsbuild",
       "!docs/prototype",
-      "!pnpm-lock.yaml"
+      "!pnpm-lock.yaml",
+      "!**/*.md"
     ]
   },
   "formatter": {
