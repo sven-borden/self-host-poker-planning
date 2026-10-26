@@ -664,6 +664,21 @@ describe("rounds", () => {
     ok(send(anonymous, { type: "castVote", card: "5" }, A));
   });
 
+  it("names nobody when a vote changes after an anonymous reveal", () => {
+    const anonymous = room({
+      settings: { allowChangeAfterReveal: true },
+      round: revealed({ anonymous: true, votes: { [A]: { card: "3" }, [B]: { card: "8" } } }),
+    });
+    const changed = send(anonymous, { type: "castVote", card: "5" }, A);
+    expect(changed.causes).toStrictEqual([{ type: "voteCast" }]);
+    expect(JSON.stringify(changed.causes)).not.toContain(A);
+    // While Voting, an anonymous round still says who voted, never what.
+    const votingRound = room({ round: voting({ anonymous: true }) });
+    expect(send(votingRound, { type: "castVote", card: "5" }, A).causes).toStrictEqual([
+      { type: "voteCast", who: A },
+    ]);
+  });
+
   it("reveals on the PO's command, with zero votes, stopping the timer", () => {
     const before = room({ round: voting({ deadlineAt: T0 + 30_000 }) });
     const result = send(before, { type: "reveal" });

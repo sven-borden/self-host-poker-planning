@@ -136,7 +136,7 @@ Every `apply` runs three steps:
 | `setRole {role}` | self | voter → observer drops the vote while Voting; observer → voter checks capacity when observers do not count |
 | `kick {who}` | PO | `cannot_kick_self`, `unknown_participant` |
 | `startRound {subject}` | PO | any phase; from Voting it abandons the round; number + 1; captures deck, specials, anonymity; starts `timer.seconds` (`bad_subject`) |
-| `castVote {card}` | voter | `no_round`, `not_voter` (observers; the PO when `poVotes` is off), `bad_card` (not in the round's cards); in Revealed only with `allowChangeAfterReveal`, marked `changedAfterReveal`, and never a first vote in an anonymous round (`round_revealed`) |
+| `castVote {card}` | voter | `no_round`, `not_voter` (observers; the PO when `poVotes` is off), `bad_card` (not in the round's cards); in Revealed only with `allowChangeAfterReveal`, marked `changedAfterReveal`, and never a first vote in an anonymous round (`round_revealed`); after an anonymous reveal the `voteCast` cause carries no `who` |
 | `retractVote` | self | Voting only (`not_voting`); no-op without a vote |
 | `reveal` | PO, or anyone if `whoCanReveal = "anyone"` | Voting only (`not_voting`, `not_allowed`); zero votes allowed; stops the timer |
 | `setFinal {card}` | PO | Revealed only (`not_revealed`); a non-special card of the round (`bad_card`) |

@@ -259,20 +259,28 @@ function castVote(state: RoomState, actor: UserId, card: unknown): Step {
   }
   if (previous?.card === card) return done(state);
   const vote: Vote = round.phase === "revealed" ? { card, changedAfterReveal: true } : { card };
-  return done(withRound(state, { ...round, votes: { ...round.votes, [actor]: vote } }), {
-    type: "voteCast",
-    who: actor,
-  });
+  return done(
+    withRound(state, { ...round, votes: { ...round.votes, [actor]: vote } }),
+    voteCause("voteCast", round, actor),
+  );
+}
+
+/**
+ * A vote cause. In an anonymous round after reveal it leaves `who` out: the public card
+ * list changes at the same moment, so naming the person would tie them to both cards.
+ */
+function voteCause(type: "voteCast" | "voteRetracted", round: Round, who: UserId): Cause {
+  return round.anonymous && round.phase === "revealed" ? { type } : { type, who };
 }
 
 function retractVote(state: RoomState, actor: UserId): Step {
   const round = state.round;
   if (round?.phase !== "voting") return refuse("not_voting");
   if (!ownVote(round, actor)) return done(state);
-  return done(withRound(state, { ...round, votes: omit(round.votes, actor) }), {
-    type: "voteRetracted",
-    who: actor,
-  });
+  return done(
+    withRound(state, { ...round, votes: omit(round.votes, actor) }),
+    voteCause("voteRetracted", round, actor),
+  );
 }
 
 function setFinal(state: RoomState, card: unknown): Step {

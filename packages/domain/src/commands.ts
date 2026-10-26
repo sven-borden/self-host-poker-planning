@@ -32,8 +32,9 @@ export type ApplyContext = { actor: UserId; now: number };
 
 /**
  * Client-facing hints for animations and announcements. A cause never carries a card
- * value, except `finalSet`, whose card is public. In an anonymous round after reveal the
- * projection (#5) must strip `who` from vote causes.
+ * value, except `finalSet`, whose card is public. In an anonymous round after reveal
+ * vote causes carry no `who` (a changed vote would otherwise tie the person to both
+ * cards); the projection (#5) strips it too.
  */
 export type Cause =
   | { type: "joined"; who: UserId }
@@ -42,8 +43,8 @@ export type Cause =
   | { type: "renamed"; who: UserId }
   | { type: "roleChanged"; who: UserId; role: Role }
   | { type: "roundStarted"; number: number; restarted?: true }
-  | { type: "voteCast"; who: UserId }
-  | { type: "voteRetracted"; who: UserId }
+  | { type: "voteCast"; who?: UserId }
+  | { type: "voteRetracted"; who?: UserId }
   | { type: "revealed"; by: "manual" | "everyoneVoted" | "timer" }
   | { type: "timerStarted" }
   | { type: "timerStopped" }
