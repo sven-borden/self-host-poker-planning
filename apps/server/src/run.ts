@@ -6,12 +6,26 @@ import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join, resolve } from "node:path";
 import type { DestinationStream } from "pino";
-import { ConfigError, loadConfig } from "./config.ts";
-import { createLogger } from "./logger.ts";
+import { type Config, ConfigError, loadConfig } from "./config.ts";
+import { createLogger, type Logger } from "./logger.ts";
 import { createServer, type PokerServer, type ServerDeps } from "./server.ts";
 
 export type Signal = "SIGTERM" | "SIGINT";
 export type Crash = "uncaughtException" | "unhandledRejection";
+
+/** What later issues hand to `createServer`; `run()` adds the logger and the static folder. */
+export type InjectedDeps = Omit<ServerDeps, "logger" | "staticDir">;
+
+/** What `setup` opened: the server's dependencies, and how to release them. */
+export interface Setup {
+  /** `checkDb` (#7), `registerApi` and `socketMiddleware` (#10), `handlers` (W1). */
+  deps?: InjectedDeps;
+  /**
+   * Releases what `setup` opened (#7: end the pool). Awaited after the server has closed
+   * and before exit 0, inside the shutdown limit; also awaited when listen fails.
+   */
+  dispose?: () => Promise<void>;
+}
 
 export interface ProcessHooks {
   exit(code: number): void;
@@ -23,17 +37,23 @@ export interface ProcessHooks {
   destination?: DestinationStream;
   /** Hard limit for a shutdown; default 10 s. Open connections are cut 2 s before. */
   shutdownTimeoutMs?: number;
-  /** Wires #7's database and #10's auth into the server; receives the valid config. */
-  deps?: Omit<ServerDeps, "logger" | "staticDir">;
+  /**
+   * Opens what the server needs, with the validated config and the process logger: #7
+   * connects and runs the migrations, #10 builds Better Auth. Awaited before `listen()`;
+   * a throw or a rejection logs one fatal line and exits 1 without listening. A setup that
+   * fails halfway releases what it already opened before it throws.
+   */
+  setup?(config: Config, logger: Logger): Promise<Setup>;
 }
 
 /** `apps/web/dist`, seen from `apps/server/src` (tsx) and `apps/server/dist` (bundle). */
 export const DEFAULT_STATIC_DIR = resolve(import.meta.dirname, "../../web/dist");
 
 /**
- * Validates the config, listens and installs the signal handlers. A bad config logs one
- * line naming the variables (never their values) and exits 1. Resolves with the running
- * server, or `undefined` when the config was refused.
+ * Validates the config, runs `setup`, listens and installs the signal handlers. A bad
+ * config logs one line naming the variables (never their values) and exits 1; so does a
+ * failed setup or listen. Resolves with the running server, or `undefined` when it did
+ * not start. On a signal: close the server, then `dispose`, then exit 0.
  */
 export async function run(
   env: Readonly<Record<string, string | undefined>>,
@@ -60,13 +80,26 @@ export async function run(
   if (!existsSync(join(staticDir, "index.html"))) {
     logger.warn({ staticDir }, "web app not built: serving the API only");
   }
-  const server = createServer(config, { ...hooks.deps, logger, staticDir });
+  let setup: Setup = {};
+  if (hooks.setup) {
+    try {
+      setup = await hooks.setup(config, logger);
+    } catch (error) {
+      logger.fatal({ err: error }, "setup failed");
+      hooks.exit(1);
+      return undefined;
+    }
+  }
+  const server = createServer(config, { ...setup.deps, logger, staticDir });
   let address: AddressInfo;
   try {
     address = await server.listen();
   } catch (error) {
     logger.fatal({ err: error, port: config.port }, "cannot listen");
     await server.io.close();
+    await setup.dispose?.().catch((disposeError: unknown) => {
+      logger.error({ err: disposeError }, "dispose failed");
+    });
     hooks.exit(1);
     return undefined;
   }
@@ -98,18 +131,28 @@ export async function run(
     }, timeoutMs);
     cut.unref();
     fail.unref();
-    server.close().then(
-      () => {
-        clearTimeout(cut);
-        clearTimeout(fail);
-        logger.info("shutdown: done");
-        hooks.exit(0);
-      },
-      (error: unknown) => {
-        logger.error({ err: error }, "shutdown: failed");
-        hooks.exit(1);
-      },
-    );
+    const dispose = setup.dispose;
+    server
+      .close()
+      .then(async () => {
+        if (!dispose) return;
+        await dispose();
+        logger.info("shutdown: resources released");
+      })
+      .then(
+        () => {
+          clearTimeout(cut);
+          clearTimeout(fail);
+          logger.info("shutdown: done");
+          hooks.exit(0);
+        },
+        (error: unknown) => {
+          clearTimeout(cut);
+          clearTimeout(fail);
+          logger.error({ err: error }, "shutdown: failed");
+          hooks.exit(1);
+        },
+      );
   });
   return server;
 }

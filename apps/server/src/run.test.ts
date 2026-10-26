@@ -72,9 +72,18 @@ describe("run", () => {
     const port = typeof address === "object" && address ? address.port : 0;
     try {
       const h = hooks();
-      expect(await run({ ...VALID_ENV, PORT: String(port) }, h.hooks)).toBeUndefined();
+      let disposed = 0;
+      const setup = async () => ({
+        dispose: async () => {
+          disposed += 1;
+        },
+      });
+      expect(
+        await run({ ...VALID_ENV, PORT: String(port) }, { ...h.hooks, setup }),
+      ).toBeUndefined();
       expect(h.exits).toEqual([1]);
       expect(h.logs.messages()).toContain("cannot listen");
+      expect(disposed).toBe(1);
     } finally {
       await new Promise((resolve) => blocker.close(resolve));
     }
@@ -133,9 +142,11 @@ describe("run", () => {
       { ...VALID_ENV, PORT: "0" },
       {
         ...h.hooks,
-        deps: {
-          registerApi: (api) => api.get("/api/hang", () => new Promise<Response>(() => {})),
-        },
+        setup: async () => ({
+          deps: {
+            registerApi: (api) => api.get("/api/hang", () => new Promise<Response>(() => {})),
+          },
+        }),
       },
     );
     if (!server) throw new Error("server did not start");
@@ -164,6 +175,80 @@ describe("run", () => {
       expect(fatal).toHaveLength(1);
       expect(fatal[0]).toMatchObject({ msg: "crashed", crash, err: { message: `boom ${crash}` } });
     }
+  });
+});
+
+describe("run with setup", () => {
+  it("awaits setup before listening, then on a signal closes, disposes and exits", async () => {
+    const h = hooks();
+    const events: string[] = [];
+    let server: PokerServer | undefined;
+    server = await run(
+      { ...VALID_ENV, PORT: "0" },
+      {
+        ...h.hooks,
+        setup: async (config, logger) => {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          const listening = h.logs.messages().includes("listening");
+          events.push(`setup ${config.baseUrl}, listening logged: ${listening}`);
+          logger.info("migrated");
+          return {
+            deps: { checkDb: async () => "ok" },
+            dispose: async () => {
+              const open = server?.httpServer.listening;
+              events.push(`dispose, listening: ${open}, exits: ${h.exits.length}`);
+            },
+          };
+        },
+      },
+    );
+    if (!server) throw new Error("server did not start");
+    started.push(server);
+    const messages = h.logs.messages();
+    expect(messages.indexOf("migrated")).toBeLessThan(messages.indexOf("listening"));
+    const { port } = server.httpServer.address() as { port: number };
+    expect(await (await fetch(`http://localhost:${port}/api/health`)).json()).toMatchObject({
+      db: "ok",
+    });
+
+    h.send("SIGTERM");
+    expect(await h.exitCode).toBe(0);
+    expect(events).toEqual([
+      "setup http://localhost:3000, listening logged: false",
+      "dispose, listening: false, exits: 0",
+    ]);
+    const shutdown = h.logs.messages().filter((msg) => msg.startsWith("shutdown:"));
+    expect(shutdown.slice(-3)).toEqual([
+      "shutdown: http server closed",
+      "shutdown: resources released",
+      "shutdown: done",
+    ]);
+  });
+
+  it("exits 1 with one fatal line and never listens when setup fails", async () => {
+    const h = hooks();
+    const setup = () => Promise.reject(new Error("migration failed"));
+    expect(await run({ ...VALID_ENV, PORT: "0" }, { ...h.hooks, setup })).toBeUndefined();
+    expect(h.exits).toEqual([1]);
+    const fatal = h.logs.lines.filter((line) => line.level === 60);
+    expect(fatal).toHaveLength(1);
+    expect(fatal[0]).toMatchObject({ msg: "setup failed", err: { message: "migration failed" } });
+    expect(h.logs.messages()).not.toContain("listening");
+  });
+
+  it("still exits within the shutdown limit when dispose hangs", async () => {
+    const h = hooks({ shutdownTimeoutMs: 2100 });
+    const server = await run(
+      { ...VALID_ENV, PORT: "0" },
+      { ...h.hooks, setup: async () => ({ dispose: () => new Promise<void>(() => {}) }) },
+    );
+    if (!server) throw new Error("server did not start");
+    started.push(server);
+    const begun = performance.now();
+    h.send("SIGTERM");
+    expect(await h.exitCode).toBe(1);
+    expect(performance.now() - begun).toBeLessThan(3000);
+    expect(h.logs.messages()).toContain("shutdown: timed out");
   });
 });
 

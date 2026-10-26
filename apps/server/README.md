@@ -7,8 +7,13 @@ every round and, in production, serves the built web app.
 ## Layout
 
 - `src/main.ts`: the only start path. Calls `run(process.env, …)` with the process hooks.
-- `src/run.ts`: validates the config, logs, listens, installs the SIGTERM/SIGINT handler
-  and exits. A bad config logs one line naming the variables and exits 1.
+- `src/run.ts`: validates the config, runs the `setup` hook, listens, installs the
+  SIGTERM/SIGINT handler and exits. A bad config, a failed `setup` or a failed listen logs
+  one fatal line and exits 1; so does an uncaught exception or unhandled rejection
+  (`processHooks(process)` wires them). `setup(config, logger)` resolves with
+  `{ deps, dispose? }`: `deps` reach `createServer` (#7 `checkDb`, #10 `registerApi` and
+  `socketMiddleware`, W1 `handlers`); `dispose` (#7: end the pool) runs after the server
+  has closed and before exit, inside the 10 s limit.
 - `src/config.ts`: `loadConfig(env)`, zod-validated and frozen; `ConfigError` never
   carries a value.
 - `src/logger.ts`: `createLogger(level, destination?)`, pino JSON on stdout.
