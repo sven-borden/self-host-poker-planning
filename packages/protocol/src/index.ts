@@ -1,5 +1,60 @@
-/**
- * Version of the wire protocol between the web app and the server. Bump it on any
- * breaking change to a command, snapshot or event, so an old client can be told to reload.
- */
-export const PROTOCOL_VERSION = 1;
+export {
+  COMMAND_TYPES,
+  cardSchema,
+  deckSpecSchema,
+  type ParsedCommand,
+  roleSchema,
+  settingsPatchSchema,
+  specialCardSchema,
+  toDomainCommand,
+  userIdSchema,
+  WIRE_LIMITS,
+  type WireCommand,
+  type WireCommandInput,
+  wireCommandSchema,
+} from "./commands.ts";
+export {
+  ACK_ERROR_CODES,
+  type AckErrorCode,
+  PROTOCOL_ERROR_CODES,
+  type ProtocolErrorCode,
+} from "./errors.ts";
+export {
+  type ClientToServerEvents,
+  type ParsedEnter,
+  parseEnter,
+  type ServerToClientEvents,
+} from "./events.ts";
+export { projectCauses, type SnapshotMeta, toSnapshot } from "./project.ts";
+export {
+  type AnonymousRoundView,
+  ackErrorCodeSchema,
+  anonymousRoundViewSchema,
+  type CauseView,
+  type CmdAck,
+  causeSchema,
+  cmdAckSchema,
+  type EnterAck,
+  type EnterPayload,
+  enterAckSchema,
+  enterPayloadSchema,
+  type NamedRoundView,
+  namedRoundViewSchema,
+  type ParticipantView,
+  participantViewSchema,
+  type ResultsView,
+  type RoomSettingsView,
+  type RoomView,
+  type RoundView,
+  resultsSchema,
+  roomSettingsSchema,
+  roomViewSchema,
+  roundViewSchema,
+  type Snapshot,
+  type SubjectView,
+  snapshotSchema,
+  subjectSchema,
+  type VotingRoundView,
+  votingRoundViewSchema,
+} from "./schemas.ts";
+export { PROTOCOL_VERSION } from "./version.ts";
