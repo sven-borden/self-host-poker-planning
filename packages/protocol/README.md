@@ -1,14 +1,20 @@
 # @pp/protocol
 
 The contract between the web app and the server: zod schemas for commands and
-snapshots, the Socket.IO event maps, error codes and `PROTOCOL_VERSION`. Both apps
-import it; it may import `@pp/domain` for types.
+snapshots, the Socket.IO event maps, error codes, `PROTOCOL_VERSION` and the per-viewer
+projection (`toSnapshot`). Both apps import it; it imports `@pp/domain` for its types,
+constants and `computeResults`.
 
 ## Rules
 
-- Schemas and types only. No I/O, no Node or DOM APIs, no sockets.
+- Pure code only: schemas, types and the projection. No I/O, no Node or DOM APIs, no
+  sockets.
 - The server sends error codes, never sentences; the web app translates them.
-- Any breaking change to a message bumps `PROTOCOL_VERSION`.
+- Any breaking change to a message bumps `PROTOCOL_VERSION`. Adding a cause type or an
+  ack error code is breaking too: the schemas are closed unions, so one unknown member
+  fails the whole parse on an older client.
+- Inbound objects (commands, their payloads, `enter`) are strict: an unknown field
+  answers `bad_payload`. Outbound schemas are lenient.
 - Exported as TypeScript source (`exports` points at `src/index.ts`), so there is no
   build step. Import siblings with their `.ts` extension.
 - Tests sit next to the code as `*.test.ts` and run in the `protocol` Vitest project.
