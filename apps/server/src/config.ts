@@ -16,7 +16,7 @@ export interface Config {
   /** Public origin without a trailing slash, for example `https://poker.borden.ch`. */
   readonly baseUrl: string;
   readonly logLevel: LogLevel;
-  /** Trust `X-Forwarded-*` from the reverse proxy for client addresses (rate limits). */
+  /** Trust `X-Forwarded-For` from the reverse proxy: see `clientIp` (rate limits). */
   readonly trustProxy: boolean;
   readonly roomTtlDays: number;
   /** Set at image build (#11); reported by `/api/health`. */

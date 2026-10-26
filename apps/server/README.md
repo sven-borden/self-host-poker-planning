@@ -6,7 +6,7 @@ every round and, in production, serves the built web app.
 
 ## Layout
 
-- `src/main.ts`: the only start path. Calls `run(process.env, …)` with the process hooks.
+- `src/main.ts`: the only start path. Calls `run(process.env, processHooks(process))`.
 - `src/run.ts`: validates the config, runs the `setup` hook, listens, installs the
   SIGTERM/SIGINT handler and exits. A bad config, a failed `setup` or a failed listen logs
   one fatal line and exits 1; so does an uncaught exception or unhandled rejection
@@ -23,17 +23,23 @@ every round and, in production, serves the built web app.
   `@pp/protocol`'s event maps; parses every payload before a handler sees it.
 - `src/server.ts`: `createServer(config, deps)` puts both on one HTTP server and returns
   `{ app, httpServer, io, listen(), close() }`.
+- `src/client-ip.ts`: `clientIp(request, config.trustProxy)`, the client address for the
+  rate limits (architecture section 8). Takes a Node request (`c.env.incoming` in Hono,
+  `socket.request` in Socket.IO). Never logged.
 
 ## Rules
 
 - Nothing opens a port, connects to the database or reads the environment at module
   load: modules export factories, `main.ts` calls `run()`.
 - Never read, log or print a secret or a vote value. Log lines carry ids (request,
-  connection, room code), never bodies, cookies, auth headers or query strings.
+  connection, room code), never bodies, cookies, auth headers, query strings or client
+  addresses. The logger also redacts cookies, auth headers and `auth` payloads of an
+  object logged whole (a handshake), as a second line of defence.
 - The server answers with codes (`{ code: "not_found" }`, ack codes), never sentences.
 - Socket payloads are `unknown` at runtime: `parseEnter` and `toDomainCommand` run on
   every message, junk answers `bad_payload`, a missing ack callback is fine, a throwing
-  handler answers `internal`. Messages are capped at 16 KB.
+  handler answers `internal`. Messages are capped at 16 KB. A handshake middleware may be
+  async; a throw or a rejection refuses the socket with `internal` and logs one line.
 - Socket.IO accepts a handshake only without an `Origin` header (a non-browser client) or
   with `Origin` equal to `BASE_URL`'s origin, on both transports (`allowRequest`). So
   `pnpm dev` needs `BASE_URL=http://localhost:5173` (Vite forwards the Origin unchanged);
@@ -46,11 +52,19 @@ every round and, in production, serves the built web app.
   `pnpm start` runs the bundle with plain Node 24 and `--enable-source-maps`, so stack
   traces point at the TypeScript source. It reads no `.env`.
 - The web app is served from `STATIC_DIR`, else `apps/web/dist` resolved from the
-  server's own folder (`src/` or `dist/`). Files under `assets/` are cached for a year,
-  everything else is `no-cache`; dot-folders (`.vite/`) are never served; a path whose
-  last segment has no dot falls back to `index.html`.
-- Shutdown: stop accepting, close Socket.IO, wait for open requests; open connections
-  are cut 2 s before the 10 s limit. One log line per phase.
+  server's own folder (`src/` or `dist/`). The folder is listed once at start, skipping
+  dot entries (`.vite/`) and symbolic links, and only a request for exactly a listed path
+  reaches the disk: no other case, Windows short name or trailing dot. After rebuilding
+  `apps/web/dist` while the server runs, restart it (`tsx watch` does not watch `dist`):
+  new hashed assets answer 404 until then. Files under `assets/` are cached for a year,
+  everything else is `no-cache`; a path whose last segment has no dot falls back to
+  `index.html`. JSON 404 and 500 answers carry `Cache-Control: no-store`.
+- `/api/health` waits at most 2 s for `checkDb`, then reports `db: "error"` with a 503.
+- Shutdown: stop accepting, drop every socket (clients see `transport close` and
+  reconnect), wait for open requests, then the `dispose` of `setup`; open connections are
+  cut 2 s before the 10 s limit. One log line per phase, written when it has happened.
+- `pnpm --filter @pp/server test` runs the `server` project of the root Vitest config;
+  every package has the same `test` script.
 - Tests use port 0 and close every server and socket they open (Vitest must exit on its
   own). `src/test-support.ts` collects log lines in memory.
 - Import siblings with their `.ts` extension.

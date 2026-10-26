@@ -288,18 +288,22 @@ is missing in any catalog. The server sends codes, never sentences.
 - pino JSON logs on stdout (request id, connection id, room code, no secrets, no vote
   values). Each HTTP request gets an id (an incoming `x-request-id` is kept when it is at
   most 64 safe characters) echoed in `x-request-id`; each socket gets a random connection
-  id. Never logged: bodies, cookies, auth headers, query strings, config values.
+  id. Never logged: bodies, cookies, auth headers, query strings, config values, client
+  addresses; the logger redacts cookies, auth headers and `auth` payloads as a backstop.
   `/api/*` requests log at `info`; `/api/health` and static files at `debug`; 5xx at
   `error`.
 - `GET /api/health` → `{ status, version, commit, db, uptime }`; used by the Docker
   `HEALTHCHECK` and by the merge loop to confirm a deploy. `version` and `commit` come
   from `APP_VERSION` and `GIT_COMMIT` (`dev` and `unknown` when unset), `uptime` is whole
   seconds. `db` is `unchecked` until #7 adds a ping, then `ok` (200) or `error` (503,
-  `status: "error"`). Sent with `Cache-Control: no-store`.
+  `status: "error"`; also when the ping has not answered within 2 s, so a hung pool
+  cannot hang the `HEALTHCHECK`). Sent with `Cache-Control: no-store`, like every JSON
+  404 and 500.
 - A bad config stops the server with one log line naming the variables (never their
-  values) and exit code 1. `SIGTERM`/`SIGINT` stop accepting connections, close
-  Socket.IO, wait for open requests (cut after 8 s) and exit 0 within 10 s, one log line
-  per phase.
+  values) and exit code 1; so do a failed startup step (#7's migrations run before the
+  server listens) and an uncaught exception or unhandled rejection. `SIGTERM`/`SIGINT`
+  stop accepting connections, drop every socket, wait for open requests (cut after 8 s),
+  release the database pool and exit 0 within 10 s, one log line per phase.
 - Optional Sentry (`SENTRY_DSN`) and Umami (`UMAMI_URL`, `UMAMI_WEBSITE_ID`); nothing
   external loads when they are unset.
 
@@ -316,11 +320,11 @@ is missing in any catalog. The server sends codes, never sentences.
 |---|---|---|
 | `DATABASE_URL` | yes | Postgres connection |
 | `BETTER_AUTH_SECRET` | yes | session signing |
-| `BASE_URL` | yes | public URL, cookies and OAuth callbacks |
+| `BASE_URL` | yes | public origin (no path, no credentials): cookies, OAuth callbacks, the only `Origin` Socket.IO accepts from a browser; `http://localhost:5173` for `pnpm dev` |
 | `PORT` | no (3000) | HTTP and Socket.IO port |
 | `ROOM_TTL_DAYS` | no (90) | retention |
 | `LOG_LEVEL` | no (info) | logging: `fatal` … `trace`, `silent` |
-| `TRUST_PROXY` | no (true) | client IPs behind the proxy |
+| `TRUST_PROXY` | no (true) | client IPs for rate limits: the right-most `X-Forwarded-For` entry when true, the socket address when false |
 | `STATIC_DIR` | no (`apps/web/dist`) | built web app; the image sets its own path |
 | `GIT_COMMIT`, `APP_VERSION` | no | reported by `/api/health`; set at image build |
 | `REDIS_URL` | no | scale-out only (#39) |
