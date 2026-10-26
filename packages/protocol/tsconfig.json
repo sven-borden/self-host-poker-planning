@@ -3,7 +3,5 @@
   "compilerOptions": {
     "outDir": "./.tsbuild"
   },
-  "include": [
-    "src"
-  ]
+  "include": ["src"]
 }
