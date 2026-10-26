@@ -15,6 +15,8 @@ export interface AppEnv {
     /** Correlates every log line of one HTTP request; echoed in `x-request-id`. */
     requestId: string;
     log: Logger;
+    /** Set by the web app's static handler: the file it served (internal). */
+    staticFile?: string;
   };
 }
 
@@ -114,11 +116,16 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
  */
 function mountWebApp(app: Hono<AppEnv>, root: string): void {
   const assets = join(root, "assets") + sep;
-  const setCache = (path: string, c: Context<AppEnv>) => {
-    c.header("Cache-Control", path.startsWith(assets) ? IMMUTABLE : REVALIDATE);
-  };
-  app.use("*", serveStatic<AppEnv>({ root, onFound: setCache }));
-  const index = serveStatic<AppEnv>({ root, path: "index.html", onFound: setCache });
+  // serveStatic builds its response before `onFound` runs, so a header set there is lost:
+  // remember the file and set Cache-Control once the response exists.
+  app.use("*", async (c, next) => {
+    await next();
+    const file = c.get("staticFile");
+    if (file) c.header("Cache-Control", file.startsWith(assets) ? IMMUTABLE : REVALIDATE);
+  });
+  const remember = (path: string, c: Context<AppEnv>) => c.set("staticFile", path);
+  app.use("*", serveStatic<AppEnv>({ root, onFound: remember }));
+  const index = serveStatic<AppEnv>({ root, path: "index.html", onFound: remember });
   app.use("*", (c, next) => {
     const last = c.req.path.slice(c.req.path.lastIndexOf("/") + 1);
     return last.includes(".") ? next() : index(c, next);
