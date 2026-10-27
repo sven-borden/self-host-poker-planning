@@ -44,9 +44,14 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#15 (PP-015)** realtime room sync: PR #76 in review, CI green.
-- **#24 (PP-024)** landing page, join by code, not-found and error pages, in
-  `../pp-wt-24`.
+- **#15 (PP-015)** realtime room sync: PR #76. The review found no blocker. Its
+  fixer stopped at a usage limit, partway through the fixes: per-user socket limits,
+  serialized enters, room ids instead of codes in logs and channel names, a re-auth
+  status, and draining in-flight acks on shutdown. Check what reached the branch
+  (worktree `../pp-wt-15`), then finish with a fresh fixer.
+- **#24 (PP-024)** landing page, join by code, not-found and error pages: PR #77, CI
+  green. Its review stopped at the usage limit; run it again.
+- Next after #76 merges: #16 (join a room).
 
 ## Next
 
