@@ -89,12 +89,21 @@ export const votingRoundViewSchema = z.object({
   anonymous: z.boolean(),
 });
 
-/** Revealed with names: every vote with its voter, in participant order. */
+/**
+ * Revealed with names: every vote with its voter, in participant order, then the votes of
+ * people who left after the reveal, by id, each with the `name` they had (#19).
+ */
 export const namedRoundViewSchema = z.object({
   ...revealedFields,
   anonymous: z.literal(false),
   votes: z.array(
-    z.object({ who: userIdSchema, card: cardSchema, changedAfterReveal: z.boolean() }),
+    z.object({
+      who: userIdSchema,
+      card: cardSchema,
+      changedAfterReveal: z.boolean(),
+      /** Only for a voter who is no longer in the room. */
+      name: z.string().optional(),
+    }),
   ),
 });
 

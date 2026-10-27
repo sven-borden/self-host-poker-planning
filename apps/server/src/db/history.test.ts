@@ -50,13 +50,13 @@ describe("historyRow", () => {
     });
   });
 
-  it("keeps the card of a voter who left, with a null name, after the others", () => {
+  it("keeps the card of a voter who left after the others, with the name the vote kept (#19)", () => {
     const s = play(revealedRoom(), "u2", { type: "leave" }, T0 + 11);
     expect(historyRow("r", ended(s)).votes).toEqual({
       kind: "named",
       votes: [
         { who: "u3", name: "Cy", card: "8" },
-        { who: "u2", name: null, card: "5" },
+        { who: "u2", name: "Bob", card: "5" },
       ],
     });
   });

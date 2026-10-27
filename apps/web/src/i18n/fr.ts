@@ -138,6 +138,13 @@ export const fr: Catalog<"many"> = {
     next: "Tour suivant",
     waiting: "En attente du PO",
     revealed: "Cartes révélées",
+    reveal: "Révéler les cartes",
+    revealKey: "Touche R, quand le focus est sur la table ou sur vos cartes",
+  },
+  results: {
+    cards: "Cartes jouées",
+    offTable: "Hors de la table",
+    someone: "Une personne partie",
   },
   hand: {
     hintVoting: "Choisissez une carte pour voter. Choisissez-la à nouveau pour retirer votre vote.",
@@ -170,6 +177,7 @@ export const fr: Catalog<"many"> = {
     votedMany_many: "{{count, number}} personnes ont voté.",
     votedMany_other: "{{count, number}} personnes ont voté.",
     roundStarted: "Le vote a commencé.",
+    revealed: "Les cartes sont révélées.",
   },
   cards: {
     yourCards: "Vos cartes",

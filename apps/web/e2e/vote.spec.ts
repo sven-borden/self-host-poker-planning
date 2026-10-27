@@ -37,7 +37,8 @@ const hand = (page: Page) => page.getByRole("toolbar", { name: "Your cards" });
 const handCard = (page: Page, label: string) =>
   hand(page).getByRole("button", { name: label, exact: true });
 const handLive = (page: Page) => page.locator("[data-hand-live]");
-const centre = (page: Page) => page.locator("[data-centre]");
+/** The centre's status line; the PO's buttons sit beside it (#19). */
+const centre = (page: Page) => page.locator("[data-centre] [data-centre-status]");
 const pressedCards = (page: Page) => hand(page).locator("button[aria-pressed='true']");
 
 async function pick(page: Page, label: string, said: string) {

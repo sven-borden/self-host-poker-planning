@@ -81,7 +81,8 @@ type Round = {
   deck: RoomSettings["deck"];       // captured at the round's start: votes are checked
   specials: RoomSettings["specials"]; //   against deckCards(deck, specials)
   anonymous: boolean;               // !settings.revealNames at the start; a change applies next round
-  votes: Record<UserId, { card: Card; changedAfterReveal?: true }>;
+  votes: Record<UserId, { card: Card; changedAfterReveal?: true; name?: string }>;
+                                    // name: kept when the voter leaves after a named reveal (#19)
   startedAt: number;
   revealedAt?: number;
   deadlineAt?: number;              // timer running
@@ -154,10 +155,10 @@ client that sends one gets `bad_payload`; the server's timers send it (section 9
 | Command | Who | Rule (error codes) |
 |---|---|---|
 | `join {name, role}` | anyone admitted | name with whitespace runs (tabs, line breaks) collapsed to one space and trimmed, 1–32 chars and at most 512 code units, no lone surrogate, at most 3 combining marks in a row (`bad_name`; titles follow the same rules with 200 chars); `already_joined`; `room_full` past 16 counted or 32 in all |
-| `leave` | self | removes the person (and their vote while Voting); a leaving PO keeps ownership |
+| `leave` | self | removes the person (and their vote while Voting); after a named reveal the vote stays with the `name` they had (#19), after an anonymous one the card stays alone; a leaving PO keeps ownership |
 | `rename {name}` | self | as `join` |
 | `setRole {role}` | self | voter → observer drops the vote while Voting; observer → voter checks capacity when observers do not count |
-| `kick {who}` | PO | `cannot_kick_self`, `unknown_participant` |
+| `kick {who}` | PO | `cannot_kick_self`, `unknown_participant`; the vote as for `leave` |
 | `startRound {subject}` | PO | any phase; from Voting it abandons the round; number + 1; captures deck, specials, anonymity; starts `timer.seconds` (`bad_subject`) |
 | `castVote {card, round}` | voter | `no_round`; `round_changed` when `round` (the number of the round the press was made for) is not the current round's, so a vote in flight when the next round starts never lands in it; `not_voter` (observers; the PO when `poVotes` is off), `bad_card` (not in the round's cards); in Revealed only in a named round with `allowChangeAfterReveal` (a change or a first vote, marked `changedAfterReveal`); an anonymous round locks its votes at reveal, whatever the setting, decided by the round's own `anonymous` flag (`round_revealed`), because the people who could still change shrink as voters leave and a change would then point at someone; the `voteCast` cause always carries `who` |
 | `retractVote {round}` | self | `round_changed` as for `castVote`; Voting only (`not_voting`); no-op without a vote |
@@ -179,8 +180,11 @@ Socket.IO with typed event maps from `packages/protocol` (`ClientToServerEvents`
 `ServerToClientEvents`). The server validates every inbound payload with the protocol's
 zod schemas; the web checks the server's messages by shape (`isSnapshot`, `isEnterAck`,
 `isCmdAck`), not with zod, which would cost the room route about 27 kB gzipped.
-`PROTOCOL_VERSION` is 3 (3 added the `away` and `back` causes, #17; 2 the `busy` ack
-code, #15; 1 was the first deploy).
+`PROTOCOL_VERSION` is 4 (4 added the `round` of `castVote` and `retractVote` and the
+`round_changed` ack code, #18; 3 the `away` and `back` causes, #17; 2 the `busy` ack
+code, #15; 1 was the first deploy). Adding an optional field to an outbound view is not
+breaking (the web checks shapes, the schemas are lenient), so #19's departed `name`
+kept version 4.
 
 | Event | Direction | Payload | Ack |
 |---|---|---|---|
@@ -226,7 +230,9 @@ code, #15; 1 was the first deploy).
     own card, only for the viewer).
   - Voting: no other card anywhere.
   - Revealed: plus `revealedAt`, `final?` and `results` (`computeResults`).
-  - Revealed, named: plus `votes: { who, card, changedAfterReveal }[]` in participant order.
+  - Revealed, named: plus `votes: { who, card, changedAfterReveal, name? }[]` in
+    participant order; `name` only for a voter who left after the reveal (#19), the name
+    the domain kept with the vote, since no participant row names them any more.
   - Revealed, anonymous: plus `cards: Card[]` in deck order (deck cards, specials, then
     unknown labels by code point); no mapping between `voted` and `cards`, ever, and
     nothing per person (no `changedAfterReveal`).
@@ -312,6 +318,15 @@ Server: `apps/server/src/sync/room-sync.ts` (the `handlers` of `createRealtime`)
   in flight when the PO starts the next round is refused with `round_changed`, and the
   hand rolls back without a message (the new round's hand is empty anyway). The pick changes only the viewer's own screen; the others learn
   the vote from the server's `voted`, never the card.
+- **Revealing from the web** (#19, `apps/web/src/room/round-centre.tsx`): the PO's
+  "Reveal cards" (or the key R, on the table or the hand) sends `reveal` and renders nothing of its own: the
+  forced, automatic and timer reveals all reach the page as the same revealed snapshot,
+  and the page shows them alike. A non-PO's `reveal` is refused with `not_allowed` and
+  stores nothing; the last two votes sent together reveal once, one version each, on one
+  instance or two (`room-sync.db.test.ts`). The page animates only a change it saw (a
+  slot it showed face down or empty); a reload or a late joiner gets the revealed room at
+  rest. A named vote whose voter has no seat (gone, or an observer now) shows under the
+  table, so every vote the results count is on screen.
 - Measured on one instance with Postgres (`room-sync.db.test.ts`): a join reaches the
   other client in about 4 ms median, 17 ms worst of ten.
 
@@ -367,7 +382,7 @@ transaction as the commit, so a lost commit writes nothing. Writing the same rou
 (`room_id`, `number`) updates its row, so a retry or a later rewrite (for example by an
 idle job) never duplicates it. `votes` is `{ kind: "named", votes: [{ who, name, card,
 changedAfterReveal? }] }`, people still in the room by joining order, then those who
-left by id with `name: null` (the room no longer knows it), or `{ kind: "anonymous",
+left by id with the name the vote kept (#19), or `null` for a vote stored before it, or `{ kind: "anonymous",
 cards }`, the cards alone in display order (expanded from `stats.distribution`): no user
 id, no name, no order that follows the people.
 

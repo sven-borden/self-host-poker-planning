@@ -101,10 +101,10 @@ describe("the table's states (#17)", () => {
       { kind: "revealed", card: null },
     ]);
     const anonymous = tableData(view(revealed(true), "u0")).people;
-    // Who voted is public; no card belongs to anyone.
+    // Who voted is public; no card belongs to anyone: it went to the row under the table.
     expect(anonymous.map((p) => p.status)).toEqual([
       { kind: "revealed", card: null },
-      { kind: "voted" },
+      { kind: "voted", dealt: true },
       { kind: "revealed", card: null },
     ]);
   });

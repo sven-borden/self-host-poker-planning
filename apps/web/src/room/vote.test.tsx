@@ -17,6 +17,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../stores/room-store.ts";
 import { RoomView } from "./room-view.tsx";
+import { isRevealKey } from "./round-centre.tsx";
 
 // The hand and the table's centre on the room page (#18), against a fake server that runs
 // the real domain: each command goes through `apply`, and the snapshot it produced is in
@@ -99,7 +100,10 @@ const pressed = () =>
     .filter((b) => b.getAttribute("aria-pressed") === "true")
     .map((b) => b.getAttribute("aria-label"));
 const handLive = () => document.querySelector("[data-hand-live]")?.textContent ?? "";
-const centre = () => document.querySelector("[data-centre]")?.textContent ?? "";
+/** The centre's status line (the PO's buttons beside it are not part of it). */
+const centre = () =>
+  (document.querySelector("[data-centre-status]") ?? document.querySelector("[data-centre]"))
+    ?.textContent ?? "";
 const mySlot = () => document.querySelector("[data-slot-card][data-you] [data-face]");
 
 const table: Array<[string, Participant["role"]]> = [
@@ -405,5 +409,227 @@ describe("the table's centre", () => {
     await renderRoom(revealed.state);
     expect(centre()).toBe("Cards revealed");
     expect(screen.queryByRole("button", { name: "Next round" })).toBeNull();
+  });
+});
+
+describe("the reveal (#19)", () => {
+  /** A voting round where the viewer is the PO; Ana voted 8. */
+  function ownerRound(settings: Partial<RoomSettings> = {}): RoomState {
+    let state: RoomState = { ...stateWith(table, settings), ownerId: ME };
+    const started = apply(
+      state,
+      { type: "startRound", subject: { kind: "none" } },
+      {
+        actor: ME,
+        now: 50,
+      },
+    );
+    if (!started.ok) throw new Error(started.error);
+    state = started.state;
+    const voted = apply(state, { type: "castVote", card: "8" }, { actor: "ana", now: 60 });
+    if (!voted.ok) throw new Error(voted.error);
+    return voted.state;
+  }
+  const revealButton = () => screen.queryByRole("button", { name: "Reveal cards" });
+  const press = (key: string, init: KeyboardEventInit = {}, target: Element = document.body) =>
+    fireEvent.keyDown(target, { key, ...init });
+
+  it("gives the PO a reveal button, also on the key R, and nobody else", async () => {
+    await renderRoom(ownerRound());
+    expect(centre()).toBe("1/3 voted so far");
+    expect(revealButton()?.getAttribute("aria-keyshortcuts")).toBe("R");
+    revealButton()?.focus();
+    fireEvent.click(revealButton() as HTMLElement);
+    await waitFor(() => expect(server.round?.phase).toBe("revealed"));
+    expect(sent).toEqual([{ type: "reveal" }]);
+    expect(revealButton()).toBeNull();
+    // The button left with the focus: it goes on to the next round's button.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Next round" })),
+    );
+    expect(card("8").getAttribute("aria-disabled")).toBe("true");
+    expect(
+      screen.getByText("The cards are revealed. Votes can no longer change in this round."),
+    ).toBeTruthy();
+
+    cleanup();
+    sent = [];
+    await renderRoom(voting());
+    expect(centre()).toBe("0/3 voted so far");
+    expect(revealButton()).toBeNull();
+    press("r");
+    expect(sent).toEqual([]);
+  });
+
+  it("reveals on R alone, only on the table or the hand (WCAG 2.1.4)", async () => {
+    await renderRoom(ownerRound());
+    const table = document.querySelector("[data-room-table]") as HTMLElement;
+    /** Elements the page could hold inside the table, where R must not reveal. */
+    const inside = (html: string) => {
+      const holder = document.createElement("div");
+      holder.innerHTML = html;
+      table.append(holder);
+      return holder;
+    };
+    const field = inside("<input>").firstElementChild as Element;
+    const widgets = [
+      "<div role='menu'><button>x</button></div>",
+      "<div role='menubar'><button>x</button></div>",
+      "<ul role='listbox'><li tabindex='0'>x</li></ul>",
+      "<div role='dialog'><button>x</button></div>",
+      "<div role='alertdialog'><button>x</button></div>",
+    ].map((html) => inside(html).querySelector("button, li") as Element);
+    // Out of scope: the page itself and the header (its Language and Theme menus).
+    const header = document.createElement("button");
+    document.body.append(header);
+    try {
+      press("r");
+      press("r", {}, header);
+      press("r", {}, field);
+      for (const widget of widgets) press("r", {}, widget);
+      const button = revealButton() as HTMLElement;
+      press("R", { ctrlKey: true }, button);
+      press("r", { metaKey: true }, button);
+      press("r", { altKey: true }, button);
+      press("R", { shiftKey: true }, button);
+      press("r", { repeat: true }, button);
+      press("r", { isComposing: true }, button);
+      press("e", {}, button);
+      expect(sent).toEqual([]);
+
+      // In scope: the centre's button, a seat, a card of the hand.
+      const seen: boolean[] = [];
+      const record = (event: KeyboardEvent) => {
+        seen.push(isRevealKey(event));
+        event.preventDefault();
+      };
+      document.addEventListener("keydown", record, { capture: true });
+      press("r", {}, button);
+      press("R", {}, document.querySelector("[data-seat] button") as Element);
+      press("r", {}, card("5"));
+      document.removeEventListener("keydown", record, { capture: true });
+      expect(seen).toEqual([true, true, true]);
+      expect(sent).toEqual([]);
+
+      press("r", {}, card("5"));
+      await waitFor(() => expect(server.round?.phase).toBe("revealed"));
+      expect(sent).toEqual([{ type: "reveal" }]);
+    } finally {
+      header.remove();
+    }
+  });
+
+  it("says on the button where R works", async () => {
+    await renderRoom(ownerRound());
+    expect(revealButton()?.getAttribute("aria-keyshortcuts")).toBe("R");
+    expect(revealButton()?.getAttribute("title")).toBe(
+      "Key R, while the focus is on the table or your cards",
+    );
+  });
+
+  it("shows a refused reveal, but not one the last vote made moot", async () => {
+    await renderRoom(ownerRound());
+    mocks.commandSender.mockImplementation(() => async () => ({ ok: false, code: "not_allowed" }));
+    fireEvent.click(revealButton() as HTMLElement);
+    await screen.findByText("This room’s settings do not let you do that.");
+    mocks.commandSender.mockImplementation(() => async () => ({ ok: false, code: "not_voting" }));
+    fireEvent.click(revealButton() as HTMLElement);
+    await waitFor(() =>
+      expect(screen.queryByText("This room’s settings do not let you do that.")).toBeNull(),
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows the automatic reveal as the forced one", async () => {
+    await renderRoom(ownerRound());
+    fireEvent.click(card("5"));
+    await waitFor(() => expect(handLive()).toBe("Your vote: 5."));
+    run("po", { type: "castVote", card: "3" });
+    expect(server.round?.phase).toBe("revealed");
+    expect(revealButton()).toBeNull();
+    expect(screen.getByRole("button", { name: "Next round" })).toBeTruthy();
+    expect(mySlot()?.getAttribute("data-face")).toBe("up");
+    const seat = (name: string) =>
+      [...document.querySelectorAll("[data-seat]")].find((s) => s.textContent?.includes(name));
+    expect(seat("Name ana")?.textContent).toContain("Name ana, card 8");
+    expect(card("5").getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("deals an anonymous round's cards under the table, tied to nobody", async () => {
+    await renderRoom(ownerRound({ revealNames: false }));
+    expect(document.querySelector("[data-results]")).toBeNull();
+    fireEvent.click(card("5"));
+    await waitFor(() => expect(handLive()).toBe("Your vote: 5."));
+    run("po", { type: "castVote", card: "?" });
+    const row = await screen.findByRole("list", { name: "Cards played" });
+    const spoken = (item: HTMLElement) => item.querySelector(".sr-only")?.textContent;
+    expect(within(row).getAllByRole("listitem").map(spoken)).toEqual(["5", "8", "unsure"]);
+    // Nothing in the row names a person or points at one.
+    const html = row.outerHTML;
+    for (const leak of ["Name", "ana", ME, "po", "data-you", "data-seat"]) {
+      expect(html).not.toContain(leak);
+    }
+    // The seats keep only who voted; their cards left for the row.
+    expect(document.querySelectorAll("[data-face='gone']")).toHaveLength(3);
+    expect(document.querySelectorAll("[data-face='up']")).toHaveLength(0);
+  });
+
+  it("names a voter who left after a named reveal, under the table", async () => {
+    await renderRoom(ownerRound());
+    run(ME, { type: "reveal" });
+    expect(document.querySelector("[data-results]")).toBeNull();
+    run("ana", { type: "leave" });
+    const left = await screen.findByRole("list", { name: "Not at the table" });
+    expect(left.textContent).toContain("Name ana, card 8");
+    // A departed vote the server sent without a name still shows its card.
+    const round = useRoomStore.getState().snapshot?.room.round;
+    if (round?.phase !== "revealed" || round.anonymous) throw new Error("named reveal expected");
+    act(() => {
+      const snapshot = useRoomStore.getState().snapshot;
+      if (!snapshot) return;
+      useRoomStore.getState().receive({
+        ...snapshot,
+        version: snapshot.version + 1,
+        room: {
+          ...snapshot.room,
+          round: { ...round, votes: round.votes.map(({ name: _, ...vote }) => vote) },
+        },
+      });
+    });
+    await waitFor(() => expect(left.textContent).toContain("Someone who left, card 8"));
+  });
+
+  it("shows the card of a voter who became an observer after a named reveal", async () => {
+    await renderRoom(ownerRound());
+    run(ME, { type: "reveal" });
+    expect(run("ana", { type: "setRole", role: "observer" })).toBeNull();
+    const row = await screen.findByRole("list", { name: "Not at the table" });
+    const items = within(row).getAllByRole("listitem");
+    expect(items.map((item) => item.querySelector(".sr-only")?.textContent)).toEqual([
+      "Name ana, card 8",
+    ]);
+    // One accessible name: the visible name is hidden from assistive tech, whole on hover.
+    const visible = items[0]?.querySelector("[aria-hidden='true'][title]");
+    expect(visible?.getAttribute("title")).toBe("Name ana");
+    expect(document.querySelectorAll("[data-face='up']")).toHaveLength(0);
+  });
+
+  it("shows the card of a voter who left and came back as an observer", async () => {
+    await renderRoom(ownerRound());
+    run(ME, { type: "reveal" });
+    run("ana", { type: "leave" });
+    expect(run("ana", { type: "join", name: "Ana again", role: "observer" })).toBeNull();
+    const row = await screen.findByRole("list", { name: "Not at the table" });
+    expect(row.textContent).toMatch(/, card 8$/);
+    expect(within(row).getAllByRole("listitem")).toHaveLength(1);
+  });
+
+  it("lists nobody off the table in an anonymous reveal: its row holds every card", async () => {
+    await renderRoom(ownerRound({ revealNames: false }));
+    run(ME, { type: "reveal" });
+    run("ana", { type: "setRole", role: "observer" });
+    expect(screen.queryByRole("list", { name: "Not at the table" })).toBeNull();
+    const row = await screen.findByRole("list", { name: "Cards played" });
+    expect(row.outerHTML).not.toContain("ana");
   });
 });

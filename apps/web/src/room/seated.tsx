@@ -9,6 +9,7 @@ import { type Box, CardFlight, type Flight, type InAir } from "./card-flight.tsx
 import { failureMessage } from "./failure.ts";
 import { confirmedOf, shownCard, withShownVote } from "./hand-state.ts";
 import { LiveAnnouncer } from "./live-announcer.tsx";
+import { RevealedCards } from "./revealed-cards.tsx";
 import { RoundCentre } from "./round-centre.tsx";
 import { handView, tableData } from "./table-data.ts";
 import { useVote } from "./use-vote.ts";
@@ -25,6 +26,11 @@ interface SeatedProps {
   onFocused: () => void;
   onLeaving: (leaving: boolean) => void;
 }
+
+/** One round in one phase: a new round, or the reveal, changes it. */
+const keyOf = (
+  round: RoomSnapshotView["round"] | { number: number; startedAt: number; phase: string },
+) => (round === null ? "lobby" : `${round.number}:${round.startedAt}:${round.phase}`);
 
 const boxOf = (rect: DOMRect): Box => ({
   left: rect.left,
@@ -44,6 +50,11 @@ const boxOf = (rect: DOMRect): Box => ({
  * The viewer's unconfirmed pick (`useVote`) is folded into the room they see
  * (`withShownVote`): their seat, the count in the centre and the hand agree at once, and
  * settle on the server's snapshot when the ack comes back.
+ *
+ * The reveal (#19): the table turns the cards over by itself (a seat's card seen face
+ * down that turns up flips), and `RevealedCards` deals an anonymous round's cards under
+ * the table when this page saw the round voting just before (`liveReveal`); after a
+ * reload everything shows at rest.
  */
 export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedProps) {
   const t = useT();
@@ -52,7 +63,18 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
   const shown = withShownVote(room, shownCard(vote.state, confirmedOf(room)));
   const { people, observers, looks } = tableData(shown);
   const hand = handView(shown, me);
-  const [startFailure, setStartFailure] = useState<string | null>(null);
+  /** A refused start or reveal; a new round or phase clears it. */
+  const [centreFailure, setCentreFailure] = useState<string | null>(null);
+  const roundKey = keyOf(room.round);
+  const [seen, setSeen] = useState({ key: roundKey, liveReveal: false });
+  if (seen.key !== roundKey) {
+    // The round moved on: from voting to revealed while on screen is a live reveal.
+    const round = room.round;
+    const liveReveal =
+      round?.phase === "revealed" && seen.key === keyOf({ ...round, phase: "voting" });
+    setSeen({ key: roundKey, liveReveal });
+    setCentreFailure(null);
+  }
   const [flight, setFlight] = useState<Flight | null>(null);
   const flights = useRef(0);
   /** An interrupted flight's card, for the next one to start from. */
@@ -104,13 +126,14 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           observers={observers}
           hiddenSlot={flight?.kind === "play" ? me.id : null}
         >
-          <RoundCentre room={shown} onFailure={setStartFailure} />
+          <RoundCentre room={shown} onFailure={setCentreFailure} />
         </TableStage>
+        <RevealedCards room={room} live={seen.liveReveal} />
         <LiveAnnouncer />
-        {startFailure !== null ? (
+        {centreFailure !== null ? (
           <p role="alert" className="mt-3 flex items-start justify-center gap-2 text-sm">
             <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
-            {failureMessage(t, startFailure)}
+            {failureMessage(t, centreFailure)}
           </p>
         ) : null}
       </section>

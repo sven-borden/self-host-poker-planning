@@ -1,12 +1,14 @@
 /**
  * The room sync against Postgres with real guests (Better Auth sessions, the real
  * handshake): join latency (AC 1), a burst past the message limit (AC 3), secrecy on the
- * raw WebSocket frames, idempotent ids, a revoked session, one session flooding a room
+ * raw WebSocket frames, the reveal (#19: a non-PO is refused, the last two votes sent
+ * together reveal once), idempotent ids, a revoked session, one session flooding a room
  * from many sockets, and the deadline timeout on one and on two server instances sharing
  * the database. The restart (AC 2) is `restart.db.test.ts`.
  */
 import { performance } from "node:perf_hooks";
 import { apply, type Command, createRoom, type RoomState } from "@pp/domain";
+import type { Snapshot } from "@pp/protocol";
 import { cardLeaks } from "@pp/protocol/leak-scan";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Config } from "../config.ts";
@@ -256,6 +258,90 @@ describe("secrecy on the real frames", () => {
     expect(revealed?.room.round && "votes" in revealed.room.round).toBe(false);
     for (const frame of first.frames) expect(frame).not.toContain('"votes"');
   });
+});
+
+describe("the reveal (#19)", () => {
+  it("refuses a reveal from someone who is not the PO, on the wire (AC 1)", async () => {
+    const code = await insert(votingRoom());
+    const b = client(bob);
+    const c = client(cy);
+    await Promise.all([b.enter(code), c.enter(code)]);
+    expect(await b.cmd("reveal")).toEqual({ ok: false, code: "not_allowed" });
+    expect(await c.cmd("reveal")).toEqual({ ok: false, code: "not_allowed" });
+    // Nothing was stored or broadcast: the round still votes, at the inserted version.
+    await sleep(100);
+    expect(b.received).toHaveLength(1);
+    expect(c.received).toHaveLength(1);
+    const stored = await main().database.store.loadRoom(code);
+    expect(stored?.version).toBe(1);
+    expect(stored?.state.round?.phase).toBe("voting");
+    // The PO may.
+    const a = client(ada);
+    await a.enter(code);
+    expect(await a.cmd("reveal")).toEqual({ ok: true, version: 2 });
+    const seen = await c.waitFor((s) => s.room.round?.phase === "revealed");
+    expect(seen.snapshot.causes).toEqual([{ type: "revealed", by: "manual" }]);
+  });
+
+  /**
+   * Ada and Bob send the round's last two votes at the same moment; Cy watches. Each
+   * commit reaches the sockets of the instance that stored it, so Cy watches on every
+   * instance in play, and the union of what Cy saw is every stored change.
+   */
+  async function lastTwoVotesTogether(instances: [Instance, Instance]) {
+    const code = await insert(votingRoom());
+    const a = client(ada, instances[0]);
+    const b = client(bob, instances[1]);
+    const watchers = [client(cy, instances[0]), client(cy, instances[1])];
+    await Promise.all([a.enter(code), b.enter(code), ...watchers.map((w) => w.enter(code))]);
+    const acks = await Promise.all([
+      a.cmd("castVote", { card: "3", round: 1 }),
+      b.cmd("castVote", { card: "8", round: 1 }),
+    ]);
+    expect(acks.map((ack) => ack.ok)).toEqual([true, true]);
+    // Only the instance that stored the reveal broadcasts it.
+    await Promise.any(
+      watchers.map((w) => w.waitFor((s) => s.room.round?.phase === "revealed", 3000)),
+    );
+    // Let a losing compare-and-set finish its retry before counting.
+    await sleep(200);
+    const seen = new Map<number, Snapshot>();
+    for (const w of watchers) {
+      for (const { snapshot } of w.received.slice(1)) seen.set(snapshot.version, snapshot);
+    }
+    const reveals = [...seen.values()].flatMap((s) =>
+      s.causes.filter((cause) => cause.type === "revealed"),
+    );
+    // A person holds at most 8 sockets: close this round's before the next one.
+    for (const c of [a, b, ...watchers]) c.close();
+    const stored = await main().database.store.loadRoom(code);
+    return { reveals, versions: [...seen.keys()].sort((x, y) => x - y), stored };
+  }
+
+  it("reveals exactly once when the last two votes arrive together (AC 2)", async () => {
+    for (let i = 0; i < 5; i++) {
+      const { reveals, versions, stored } = await lastTwoVotesTogether([main(), main()]);
+      expect(reveals).toEqual([{ type: "revealed", by: "everyoneVoted" }]);
+      // One version per vote, the second one revealing.
+      expect(versions).toEqual([2, 3]);
+      expect(stored?.version).toBe(3);
+      expect(stored?.state.round).toMatchObject({
+        phase: "revealed",
+        votes: { [ada.id]: { card: "3" }, [bob.id]: { card: "8" } },
+      });
+    }
+  }, 30_000);
+
+  it("reveals exactly once when the two votes reach two instances together (AC 2)", async () => {
+    const second = instances[1] ?? (await startInstance());
+    for (let i = 0; i < 5; i++) {
+      const { reveals, versions, stored } = await lastTwoVotesTogether([main(), second]);
+      expect(reveals).toEqual([{ type: "revealed", by: "everyoneVoted" }]);
+      expect(versions).toEqual([2, 3]);
+      expect(stored?.version).toBe(3);
+      expect(stored?.state.round?.phase).toBe("revealed");
+    }
+  }, 30_000);
 });
 
 describe("commands", () => {

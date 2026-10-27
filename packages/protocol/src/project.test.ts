@@ -141,6 +141,27 @@ describe("toSnapshot", () => {
     expect(toSnapshot(state, "o", META).room.round).not.toHaveProperty("yourVote");
   });
 
+  it("names a voter who left after a named reveal by the name the vote kept (#19)", () => {
+    const { state } = run([...votingRoomSteps(false), reveal, ["b", { type: "leave" }]]);
+    const round = toSnapshot(state, "o", META).room.round;
+    expect(round).toMatchObject({
+      voted: ["po", "c", "b"],
+      votes: [
+        { who: "po", card: "?", changedAfterReveal: false },
+        { who: "c", card: "3", changedAfterReveal: false },
+        { who: "b", card: "8", changedAfterReveal: false, name: "name b" },
+      ],
+    });
+    // Someone back in the room is named by the participants alone.
+    const back = run([["b", { type: "join", name: "back again", role: "voter" }]], state).state;
+    const again = toSnapshot(back, "o", META).room.round;
+    expect(again && "votes" in again ? again.votes : []).toContainEqual({
+      who: "b",
+      card: "8",
+      changedAfterReveal: false,
+    });
+  });
+
   it("keeps a departed voter's card after an anonymous reveal, so leaving names nobody", () => {
     const { state } = run([...votingRoomSteps(true), reveal, ["b", { type: "leave" }]]);
     const round = toSnapshot(state, "o", META).room.round;

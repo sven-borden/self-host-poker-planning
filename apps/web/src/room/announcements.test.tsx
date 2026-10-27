@@ -54,7 +54,10 @@ describe("liveEvents", () => {
     const changed = run("ana", { type: "castVote", card: "13" });
     expect(liveEvents(changed.room, changed.causes, voted.room)).toEqual([]);
     const away = run(":server", { type: "presence", who: "ben", connected: false });
-    expect(said(liveEvents(away.room, away.causes, changed.room))).toBe("Ben is away.");
+    // Everyone present has voted once Ben is away: the round reveals itself.
+    expect(said(liveEvents(away.room, away.causes, changed.room))).toBe(
+      "Ben is away. Cards revealed.",
+    );
     const back = run(":server", { type: "presence", who: "ben", connected: true });
     expect(said(liveEvents(back.room, back.causes, away.room))).toBe("Ben is back.");
     const left = run("ben", { type: "leave" });
@@ -86,10 +89,50 @@ describe("liveEvents", () => {
     const before = run("ana", { type: "castVote", card: "13" });
     const revealed = run("me", { type: "castVote", card: "21" });
     const text = said(liveEvents(revealed.room, revealed.causes, before.room));
-    expect(text).toBe("Me voted.");
+    // The last vote revealed the round: the reveal is said, its cards are not.
+    expect(text).toBe("Me voted. Cards revealed.");
     expect(text).not.toMatch(/13|21/);
     const final = run("me", { type: "setFinal", card: "13" });
     expect(liveEvents(final.room, final.causes, revealed.room)).toEqual([]);
+  });
+
+  it("says the reveal once, to everyone, the PO who forced it too (#19)", () => {
+    const { run } = story("me");
+    run("me", { type: "join", name: "Me", role: "voter" });
+    run("ana", { type: "join", name: "Ana", role: "voter" });
+    run("me", { type: "startRound", subject: { kind: "none" } });
+    const voted = run("ana", { type: "castVote", card: "13" });
+    const forced = run("me", { type: "reveal" });
+    const events = liveEvents(forced.room, forced.causes, voted.room);
+    expect(events).toEqual([{ kind: "revealed", who: "", name: "" }]);
+    expect(said(mergeEvents(events, events))).toBe("Cards revealed.");
+    // A new round in the same batch makes the reveal moot.
+    const next = run("me", { type: "startRound", subject: { kind: "none" } });
+    const both = mergeEvents(events, liveEvents(next.room, next.causes, forced.room));
+    expect(said(both)).toBe("Voting started.");
+  });
+
+  it("says a reveal it missed while away from the server, once, from the phase it shows", () => {
+    const { run } = story("ana");
+    run("me", { type: "join", name: "Me", role: "voter" });
+    run("ana", { type: "join", name: "Ana", role: "voter" });
+    run("me", { type: "startRound", subject: { kind: "none" } });
+    const voting = run("ana", { type: "castVote", card: "13" });
+    const forced = run("me", { type: "reveal" });
+    // The snapshot a reconnect brings: no causes, the round now revealed.
+    expect(liveEvents(forced.room, [], voting.room)).toEqual([
+      { kind: "revealed", who: "", name: "" },
+    ]);
+    // With the cause too, still once.
+    expect(liveEvents(forced.room, forced.causes, voting.room)).toEqual([
+      { kind: "revealed", who: "", name: "" },
+    ]);
+    // Already revealed before, a first look, or a later round: nothing to say.
+    expect(liveEvents(forced.room, [], forced.room)).toEqual([]);
+    expect(liveEvents(forced.room, [], null)).toEqual([]);
+    run("me", { type: "startRound", subject: { kind: "none" } });
+    const later = run("me", { type: "reveal" });
+    expect(liveEvents(later.room, [], voting.room)).toEqual([]);
   });
 });
 
@@ -182,6 +225,23 @@ describe("LiveAnnouncer", () => {
       });
     }
     expect(region()?.textContent).toMatch(/^\d people joined\.$/);
+  });
+
+  it("says the reveal a reconnect brings, though its snapshot has no causes", () => {
+    const { run } = story("ana");
+    run("me", { type: "join", name: "Me", role: "voter" });
+    run("ana", { type: "join", name: "Ana", role: "voter" });
+    run("me", { type: "startRound", subject: { kind: "none" } });
+    act(() => {
+      useRoomStore.getState().receive(run("ana", { type: "castVote", card: "13" }));
+    });
+    render(<LiveAnnouncer />);
+    const revealed = run("me", { type: "reveal" });
+    act(() => {
+      useRoomStore.getState().receive({ ...revealed, causes: [] });
+      vi.advanceTimersByTime(LIVE_QUIET_MS);
+    });
+    expect(region()?.textContent).toBe("Cards revealed.");
   });
 
   it("says the same words again as a new announcement", () => {

@@ -188,6 +188,13 @@ export const en = {
     next: "Next round",
     waiting: "Waiting for the PO",
     revealed: "Cards revealed",
+    reveal: "Reveal cards",
+    revealKey: "Key R, while the focus is on the table or your cards",
+  },
+  results: {
+    cards: "Cards played",
+    offTable: "Not at the table",
+    someone: "Someone who left",
   },
   hand: {
     hintVoting: "Pick a card to vote. Pick it again to take your vote back.",
@@ -215,6 +222,7 @@ export const en = {
     votedMany_one: "{{count, number}} person voted.",
     votedMany_other: "{{count, number}} people voted.",
     roundStarted: "Voting started.",
+    revealed: "Cards revealed.",
   },
   cards: {
     yourCards: "Your cards",

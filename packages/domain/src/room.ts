@@ -57,7 +57,15 @@ export type Subject =
   /** `key` ("ABC-123", an Azure DevOps id) is detected server-side later, never sent by a client. */
   | { kind: "link"; url: string; key?: string };
 
-export type Vote = { card: Card; changedAfterReveal?: true };
+export type Vote = {
+  card: Card;
+  changedAfterReveal?: true;
+  /**
+   * The voter's name, kept when they leave or are kicked after a named reveal (#19), so
+   * the results still say who played the card. Never set in an anonymous round.
+   */
+  name?: string;
+};
 
 export type Round = {
   number: number;
