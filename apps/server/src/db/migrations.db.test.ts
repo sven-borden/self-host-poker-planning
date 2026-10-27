@@ -7,7 +7,7 @@ import {
   setupDatabase,
 } from "../database.ts";
 import { run, type Signal } from "../run.ts";
-import { collectLogs } from "../test-support.ts";
+import { collectLogs, VALID_ENV } from "../test-support.ts";
 import { createTestDatabase, type TestDatabase, testClient } from "./test-db.ts";
 
 /** Everything a migration can change, in a fixed order, plus the applied migrations. */
@@ -140,7 +140,12 @@ describe("migrations", () => {
     let signal: (s: Signal) => void = () => {};
     try {
       const starting = run(
-        { DATABASE_URL: first.url, BASE_URL: "http://localhost:3000", PORT: "0" },
+        {
+          DATABASE_URL: first.url,
+          BASE_URL: "http://localhost:3000",
+          BETTER_AUTH_SECRET: VALID_ENV.BETTER_AUTH_SECRET,
+          PORT: "0",
+        },
         {
           exit: (code) => exits.push(code),
           onSignal: (handler) => {

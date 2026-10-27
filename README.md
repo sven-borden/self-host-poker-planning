@@ -54,7 +54,7 @@ Variables compose reads from `.env` (the full list is in
 | `POSTGRES_PASSWORD` | yes | password of the bundled Postgres; letters and digits only (`openssl rand -hex 24`) |
 | `BETTER_AUTH_SECRET` | yes | signs session cookies; `openssl rand -base64 32`; changing it signs everybody out |
 | `BASE_URL` | yes | the address people open, such as `http://localhost:3000` or `https://poker.example.com` |
-| `TRUST_PROXY` | no (`false`) | `true` only when a reverse proxy is the sole way to reach the port and appends `X-Forwarded-For`; on a port that faces clients it lets them fake their address |
+| `TRUST_PROXY` | no (`false`) | number of reverse proxies in front that append `X-Forwarded-For` (`true` = 1, `false` = 0, up to 10); count only proxies no client can bypass, or clients can fake their address |
 | `LOG_LEVEL`, `ROOM_TTL_DAYS` | no | logging (`info`) and days before an idle room is deleted (`90`) |
 | `GIT_COMMIT`, `APP_VERSION` | no | build arguments shown by `/api/health` |
 
@@ -67,7 +67,8 @@ from the bundled database; to use your own Postgres, run the image alone with
   set `BASE_URL` to the public `https://` origin and `TRUST_PROXY=true`, with port 3000
   reachable only through the proxy. With two proxies in a row, the first one must be a
   trusted peer of the second (Traefik: `forwardedHeaders.trustedIPs`), or the second
-  deletes `X-Forwarded-For` and the app sees only the first proxy's address.
+  deletes `X-Forwarded-For` and the app sees only the first proxy's address; once it
+  trusts the first, set `TRUST_PROXY=2`.
 - **Coolify** (build pack Dockerfile, port 3000): in the application's settings
   - turn on "Advanced > Build > Source commit availability: Available during build",
     otherwise `/api/health` reports `commit: unknown`;

@@ -8,6 +8,13 @@
       "when": 1793058368922,
       "tag": "0000_create_room_and_round_history",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793062570875,
+      "tag": "0001_add_better_auth_tables",
+      "breakpoints": true
     }
   ]
 }

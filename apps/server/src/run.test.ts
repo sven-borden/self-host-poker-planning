@@ -47,7 +47,12 @@ function hooks(extra: { shutdownTimeoutMs?: number } = {}) {
 describe("run", () => {
   it("stops with one log line and exit code 1 when DATABASE_URL is missing", async () => {
     const h = hooks();
-    expect(await run({ BASE_URL: VALID_ENV.BASE_URL }, h.hooks)).toBeUndefined();
+    expect(
+      await run(
+        { BASE_URL: VALID_ENV.BASE_URL, BETTER_AUTH_SECRET: VALID_ENV.BETTER_AUTH_SECRET },
+        h.hooks,
+      ),
+    ).toBeUndefined();
     expect(h.exits).toEqual([1]);
     expect(h.logs.raw).toHaveLength(1);
     expect(h.logs.raw[0]?.trimEnd()).not.toMatch(/\n/);

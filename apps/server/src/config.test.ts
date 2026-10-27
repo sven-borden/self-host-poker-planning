@@ -20,12 +20,13 @@ describe("loadConfig", () => {
       databaseUrl: VALID_ENV.DATABASE_URL,
       baseUrl: "http://localhost:3000",
       logLevel: "info",
-      trustProxy: true,
+      trustProxy: 1,
       roomTtlDays: 90,
       gitCommit: undefined,
       appVersion: undefined,
       staticDir: undefined,
       migrationsDir: undefined,
+      betterAuthSecret: VALID_ENV.BETTER_AUTH_SECRET,
     });
     expect(Object.isFrozen(config)).toBe(true);
   });
@@ -34,6 +35,7 @@ describe("loadConfig", () => {
     const config = loadConfig({
       PORT: "8080",
       DATABASE_URL: "postgresql://db.internal/pp?sslmode=require",
+      BETTER_AUTH_SECRET: VALID_ENV.BETTER_AUTH_SECRET,
       BASE_URL: "https://poker.example.com/",
       LOG_LEVEL: "debug",
       TRUST_PROXY: "0",
@@ -49,19 +51,56 @@ describe("loadConfig", () => {
       databaseUrl: "postgresql://db.internal/pp?sslmode=require",
       baseUrl: "https://poker.example.com",
       logLevel: "debug",
-      trustProxy: false,
+      trustProxy: 0,
       roomTtlDays: 30,
       gitCommit: "0a14f15",
       appVersion: "1.2.0+build.7",
       staticDir: "/app/public",
       migrationsDir: "/app/drizzle",
+      betterAuthSecret: VALID_ENV.BETTER_AUTH_SECRET,
     });
   });
 
-  it("accepts true and 1 for TRUST_PROXY", () => {
-    expect(loadConfig({ ...VALID_ENV, TRUST_PROXY: "true" }).trustProxy).toBe(true);
-    expect(loadConfig({ ...VALID_ENV, TRUST_PROXY: "1" }).trustProxy).toBe(true);
-    expect(loadConfig({ ...VALID_ENV, TRUST_PROXY: "false" }).trustProxy).toBe(false);
+  it("reads TRUST_PROXY as a number of proxies: true is 1, false is 0", () => {
+    const proxies = (TRUST_PROXY: string) => loadConfig({ ...VALID_ENV, TRUST_PROXY }).trustProxy;
+    expect(proxies("true")).toBe(1);
+    expect(proxies("1")).toBe(1);
+    expect(proxies("2")).toBe(2);
+    expect(proxies("10")).toBe(10);
+    expect(proxies("false")).toBe(0);
+    expect(proxies("0")).toBe(0);
+    for (const TRUST_PROXY of ["yes", "11", "-1", "1.5", "TRUE"]) {
+      expect(configError({ ...VALID_ENV, TRUST_PROXY }).message).toContain(
+        "TRUST_PROXY must be true, false or a number of proxies from 0 to 10",
+      );
+    }
+  });
+
+  it("requires a BETTER_AUTH_SECRET of 32 characters or more, without echoing it", () => {
+    const { BETTER_AUTH_SECRET: _, ...withoutSecret } = VALID_ENV;
+    expect(configError(withoutSecret).message).toContain("BETTER_AUTH_SECRET is required");
+    const short = `${SECRET}-short`;
+    const error = configError({ ...VALID_ENV, BETTER_AUTH_SECRET: short });
+    expect(error.variables).toEqual(["BETTER_AUTH_SECRET"]);
+    expect(error.message).toContain("BETTER_AUTH_SECRET must be at least 32 random characters");
+    expect(error.message).not.toContain(short);
+    const secret = "0123456789abcdef0123456789abcdef";
+    expect(loadConfig({ ...VALID_ENV, BETTER_AUTH_SECRET: secret }).betterAuthSecret).toBe(secret);
+  });
+
+  it("refuses the old placeholder and a secret of one repeated character, without echoing it", () => {
+    for (const fake of [
+      "replace-with-32-or-more-random-characters",
+      "x".repeat(32),
+      "0".repeat(64),
+      "\u{1F600}".repeat(32),
+    ]) {
+      const error = configError({ ...VALID_ENV, BETTER_AUTH_SECRET: fake });
+      expect(error.variables).toEqual(["BETTER_AUTH_SECRET"]);
+      expect(error.message).toBe(
+        "Invalid configuration: BETTER_AUTH_SECRET must be at least 32 random characters, such as the output of openssl rand -base64 32. See .env.example.",
+      );
+    }
   });
 
   it("treats an empty value as unset", () => {
@@ -73,7 +112,10 @@ describe("loadConfig", () => {
   });
 
   it("names a missing DATABASE_URL in one line", () => {
-    const error = configError({ BASE_URL: VALID_ENV.BASE_URL });
+    const error = configError({
+      BASE_URL: VALID_ENV.BASE_URL,
+      BETTER_AUTH_SECRET: VALID_ENV.BETTER_AUTH_SECRET,
+    });
     expect(error.variables).toEqual(["DATABASE_URL"]);
     expect(error.message).toBe(
       "Invalid configuration: DATABASE_URL is required. See .env.example.",
@@ -91,6 +133,7 @@ describe("loadConfig", () => {
       GIT_COMMIT: "has space",
       APP_VERSION: "x".repeat(65),
       STATIC_DIR: undefined,
+      BETTER_AUTH_SECRET: SECRET,
     });
     expect(error.variables).toEqual([
       "PORT",
@@ -101,6 +144,7 @@ describe("loadConfig", () => {
       "ROOM_TTL_DAYS",
       "GIT_COMMIT",
       "APP_VERSION",
+      "BETTER_AUTH_SECRET",
     ]);
     expect(error.message).toContain("DATABASE_URL must be a postgres:// or postgresql:// URL");
     expect(error.message).toContain("PORT must be an integer from 0 to 65535");

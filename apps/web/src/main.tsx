@@ -10,6 +10,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app.tsx";
 import { startLanguage } from "./i18n/i18n.ts";
+import { ensureIdentity } from "./identity/identity.ts";
 import { createAppRouter } from "./router.ts";
 
 const container = document.getElementById("root");
@@ -32,3 +33,9 @@ void Promise.all([startLanguage(), router.load().catch(() => {})]).then(() => {
     </StrictMode>,
   );
 });
+
+// Every visitor gets an identity: the session cookie's, or a new guest's (#10). It runs
+// next to the first render rather than before it; sockets wait for it
+// (`connectWhenIdentified`). A temporary failure (a redeploy) is retried with backoff;
+// a final one (cookies blocked) is kept in the identity store.
+ensureIdentity({ retry: true }).catch(() => {});

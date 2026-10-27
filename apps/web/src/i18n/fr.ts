@@ -67,6 +67,11 @@ export const fr: Catalog<"many"> = {
     title: "Page introuvable",
     body: "Cette adresse ne mène nulle part. Vérifiez le lien ou repartez de l’accueil.",
   },
+  identity: {
+    reconnecting: "Connexion au serveur…",
+    cookiesBlocked:
+      "Ce site a besoin des cookies pour vous reconnaître dans une salle. Autorisez-les pour ce site, puis rechargez la page.",
+  },
   common: {
     close: "Fermer",
     notifications: "Notifications",

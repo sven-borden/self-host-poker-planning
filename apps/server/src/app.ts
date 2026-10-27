@@ -7,6 +7,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { join, sep } from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { type Context, Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import type { Config } from "./config.ts";
 import type { Logger } from "./logger.ts";
 
@@ -44,6 +45,12 @@ export interface AppDeps {
 
 /** A hung pool must not hang the Docker HEALTHCHECK: the check gives up after this. */
 export const DB_CHECK_TIMEOUT_MS = 2000;
+
+/**
+ * Body cap of every `/api/*` request: nothing the API takes comes close (identity routes
+ * cap theirs lower). A bigger body is refused with `bad_payload` before anyone reads it.
+ */
+export const API_BODY_LIMIT_BYTES = 16 * 1024;
 
 /** An incoming `x-request-id` is kept only when it is short and harmless in a log line. */
 const SAFE_REQUEST_ID = /^[\w.:-]{1,64}$/;
@@ -108,6 +115,16 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
     );
   });
 
+  app.use(
+    "/api/*",
+    bodyLimit({
+      maxSize: API_BODY_LIMIT_BYTES,
+      onError: (c) => {
+        c.header("Cache-Control", "no-store");
+        return c.json({ code: "bad_payload" }, 413);
+      },
+    }),
+  );
   deps.registerApi?.(app);
 
   // Anything else under /api is a JSON 404, never the web app.

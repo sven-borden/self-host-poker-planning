@@ -8,6 +8,8 @@ export const SECRET = "hunter2-do-not-log";
 export const VALID_ENV = {
   DATABASE_URL: `postgres://pp:${SECRET}@localhost:5432/pp`,
   BASE_URL: "http://localhost:3000",
+  /** A fake signing secret: tests assert it never reaches a log line or a response. */
+  BETTER_AUTH_SECRET: "fake-test-secret-0123456789abcdefghijklmnop",
 } as const;
 
 export function testConfig(env: Record<string, string> = {}): Config {
