@@ -37,10 +37,12 @@ async function insert(state: RoomState, store: RoomStore = a.store) {
 async function rowOf(id: string) {
   const sql = testClient(t.url);
   try {
-    const [row] = await sql`
-      select owner_user_id, version, password_hash, jsonb_typeof(live) as live_type,
-        last_active_at from room where id = ${id}`;
-    return row;
+    const { rows } = await sql.query(
+      `select owner_user_id, version, password_hash, jsonb_typeof(live) as live_type,
+        last_active_at from room where id = $1`,
+      [id],
+    );
+    return rows[0];
   } finally {
     await sql.end();
   }
@@ -49,9 +51,12 @@ async function rowOf(id: string) {
 async function historyOf(id: string) {
   const sql = testClient(t.url);
   try {
-    return await sql`
-      select number, votes, stats, final, row_to_json(h)::text as text
-      from round_history h where room_id = ${id} order by number`;
+    const { rows } = await sql.query(
+      `select number, votes, stats, final, row_to_json(h)::text as text
+      from round_history h where room_id = $1 order by number`,
+      [id],
+    );
+    return rows;
   } finally {
     await sql.end();
   }
@@ -92,6 +97,16 @@ describe("insertRoom and loadRoom", () => {
 describe("commitRoom", () => {
   it("writes once per version and copies the owner", async () => {
     const room = await insert(votingRoom());
+    // An hour back, so the commit must move it forward (no tie within the same millisecond).
+    const sql = testClient(t.url);
+    try {
+      await sql.query(
+        "update room set last_active_at = last_active_at - interval '1 hour' where id = $1",
+        [room.id],
+      );
+    } finally {
+      await sql.end();
+    }
     const before = await rowOf(room.id);
     const next = play(room.state, "u1", { type: "transferOwner", to: "u2" });
     expect(await a.store.commitRoom(room.id, FIRST_VERSION, next)).toBe(true);
@@ -99,9 +114,7 @@ describe("commitRoom", () => {
     expect(await b.store.commitRoom(room.id, FIRST_VERSION, room.state)).toBe(false);
     const after = await rowOf(room.id);
     expect(after).toMatchObject({ owner_user_id: "u2", version: FIRST_VERSION + 1 });
-    expect(after?.last_active_at.getTime()).toBeGreaterThanOrEqual(
-      before?.last_active_at.getTime(),
-    );
+    expect(after?.last_active_at.getTime()).toBeGreaterThan(before?.last_active_at.getTime());
     expect((await a.store.loadRoom(room.code))?.state).toEqual(next);
   });
 
@@ -225,7 +238,7 @@ describe("history", () => {
     await a.store.commitRoom(room.id, 1, next, { round: ended, participants: {}, finishedAt: T0 });
     const sql = testClient(t.url);
     try {
-      await sql`delete from room where id = ${room.id}`;
+      await sql.query("delete from room where id = $1", [room.id]);
     } finally {
       await sql.end();
     }

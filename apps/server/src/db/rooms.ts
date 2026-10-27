@@ -5,12 +5,12 @@
  */
 import type { RoomState } from "@pp/domain";
 import { and, eq, sql } from "drizzle-orm";
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { guard } from "./errors.ts";
 import { type EndedRound, historyRow, isHistory } from "./history.ts";
 import { room, roundHistory } from "./schema.ts";
 
-export type Db = PostgresJsDatabase;
+export type Db = NodePgDatabase;
 
 /** A room as loaded: `state` is `live`, `version` the value the next commit must expect. */
 export interface StoredRoom {

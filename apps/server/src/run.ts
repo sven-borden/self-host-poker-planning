@@ -42,18 +42,22 @@ export interface ProcessHooks {
    * connects and runs the migrations, #10 builds Better Auth. Awaited before `listen()`;
    * a throw or a rejection logs one fatal line and exits 1 without listening. A setup that
    * fails halfway releases what it already opened before it throws.
+   *
+   * `signal` aborts when SIGTERM or SIGINT arrives during the start: setup stops waiting,
+   * releases what it opened and rejects; `run()` then logs one line and exits 0.
    */
-  setup?(config: Config, logger: Logger): Promise<Setup>;
+  setup?(config: Config, logger: Logger, signal: AbortSignal): Promise<Setup>;
 }
 
 /** `apps/web/dist`, seen from `apps/server/src` (tsx) and `apps/server/dist` (bundle). */
 export const DEFAULT_STATIC_DIR = resolve(import.meta.dirname, "../../web/dist");
 
 /**
- * Validates the config, runs `setup`, listens and installs the signal handlers. A bad
+ * Validates the config, installs the signal handlers, runs `setup` and listens. A bad
  * config logs one line naming the variables (never their values) and exits 1; so does a
  * failed setup or listen. Resolves with the running server, or `undefined` when it did
- * not start. On a signal: close the server, then `dispose`, then exit 0.
+ * not start. On a signal: close the server, then `dispose`, then exit 0; during `setup`,
+ * abort it and exit 0.
  */
 export async function run(
   env: Readonly<Record<string, string | undefined>>,
@@ -80,21 +84,63 @@ export async function run(
   if (!existsSync(join(staticDir, "index.html"))) {
     logger.warn({ staticDir }, "web app not built: serving the API only");
   }
+
+  // The signal handlers come before `setup`: with Node as PID 1 a SIGTERM nobody handles
+  // is ignored, and a start waiting on the database would keep the container up. A signal
+  // while starting aborts `setup`; once `run()` is past it, it stops the way it started.
+  const timeoutMs = hooks.shutdownTimeoutMs ?? 10_000;
+  const aborter = new AbortController();
+  let stopping: Signal | undefined;
+  let running = false;
+  let startLimit: ReturnType<typeof setTimeout> | undefined;
   let setup: Setup = {};
+  let server: PokerServer | undefined;
+  hooks.onSignal((signal) => {
+    if (stopping) {
+      logger.info({ signal }, "shutdown: already in progress");
+      return;
+    }
+    stopping = signal;
+    if (running && server) {
+      shutdown(server, signal);
+      return;
+    }
+    startLimit = setTimeout(() => {
+      logger.error({ timeoutMs }, "shutdown: timed out");
+      hooks.exit(1);
+    }, timeoutMs);
+    startLimit.unref();
+    aborter.abort();
+  });
+  const stoppedWhileStarting = (signal: Signal) => {
+    clearTimeout(startLimit);
+    logger.info({ signal }, "shutdown: stopped while starting");
+    hooks.exit(0);
+    return undefined;
+  };
+
   if (hooks.setup) {
     try {
-      setup = await hooks.setup(config, logger);
+      setup = await hooks.setup(config, logger, aborter.signal);
     } catch (error) {
+      if (stopping) return stoppedWhileStarting(stopping);
       logger.fatal({ err: error }, "setup failed");
       hooks.exit(1);
       return undefined;
     }
+    if (stopping) {
+      await setup.dispose?.().catch((disposeError: unknown) => {
+        logger.error({ err: disposeError }, "dispose failed");
+      });
+      return stoppedWhileStarting(stopping);
+    }
   }
-  const server = createServer(config, { ...setup.deps, logger, staticDir });
+  server = createServer(config, { ...setup.deps, logger, staticDir });
   let address: AddressInfo;
   try {
     address = await server.listen();
   } catch (error) {
+    clearTimeout(startLimit);
     logger.fatal({ err: error, port: config.port }, "cannot listen");
     await server.io.close();
     await setup.dispose?.().catch((disposeError: unknown) => {
@@ -111,15 +157,15 @@ export async function run(
     },
     "listening",
   );
+  running = true;
+  if (stopping) {
+    // The signal came while listen() ran: stop now, through the normal path.
+    clearTimeout(startLimit);
+    shutdown(server, stopping);
+  }
+  return server;
 
-  const timeoutMs = hooks.shutdownTimeoutMs ?? 10_000;
-  let stopping = false;
-  hooks.onSignal((signal) => {
-    if (stopping) {
-      logger.info({ signal }, "shutdown: already in progress");
-      return;
-    }
-    stopping = true;
+  function shutdown(server: PokerServer, signal: Signal): void {
     logger.info({ signal }, "shutdown: started");
     const cut = setTimeout(() => {
       logger.warn("shutdown: closing the remaining connections");
@@ -153,8 +199,7 @@ export async function run(
           hooks.exit(1);
         },
       );
-  });
-  return server;
+  }
 }
 
 /** The part of `process` that `processHooks` uses; tests pass an EventEmitter. */
