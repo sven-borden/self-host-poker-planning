@@ -66,7 +66,7 @@ const CHIP =
 
 /** The line under the card: the agreement, or "Tie". */
 const CENTRE_CAPTION =
-  "text-center text-[12px]/tight font-semibold tabular-nums in-data-[variant=phone]:text-[10px]/tight";
+  "min-w-0 text-center text-[12px]/tight font-semibold tabular-nums in-data-[variant=phone]:text-[10px]/tight";
 
 interface CentreResultProps {
   room: RoomView;
@@ -111,10 +111,16 @@ function Centre({
       data-centre-result={summary.kind}
       className={cn(
         "m-0 flex items-center justify-center",
-        // The PO's phone centre wraps into a column no wider than the space between the
-        // side cards: the pill or the caption goes under the chip.
+        // The PO's phone centre stays narrower than the space between the side cards and
+        // as short as it can: the agreement beside the chip, on two lines ("Agreement" over
+        // "25%"); the pill, or "Tie", under the chip or chips.
         compact
-          ? "flex-row flex-wrap gap-x-1.5 gap-y-0.5 whitespace-nowrap in-data-[variant=phone]:max-w-[68px] in-data-[variant=phone]:gap-x-1 in-data-[variant=phone]:whitespace-normal"
+          ? cn(
+              "flex-row gap-x-1.5 gap-y-0.5 whitespace-nowrap in-data-[variant=phone]:gap-x-1 in-data-[variant=phone]:whitespace-normal",
+              summary.kind === "suggested"
+                ? "in-data-[variant=phone]:max-w-[76px]"
+                : "flex-wrap in-data-[variant=phone]:max-w-[68px]",
+            )
           : "flex-col gap-1",
       )}
     >

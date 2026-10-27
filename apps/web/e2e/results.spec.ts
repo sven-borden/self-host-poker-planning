@@ -181,7 +181,7 @@ test("a named round: the centre, the panel, the seats and the live region say th
   }
 });
 
-test("a consensus, then a T-shirt round with no average (AC 2)", async ({
+test("a consensus, then a T-shirt round with no average and a tie for most voted (AC 2)", async ({
   page,
   context,
   baseURL,
@@ -214,23 +214,28 @@ test("a consensus, then a T-shirt round with no average (AC 2)", async ({
     ).toMatchObject({ ok: true });
     await page.getByRole("button", { name: "Next round" }).click();
     await expect(handCard(page, "M")).toBeVisible();
-    await vote(guests, ["M", "L", "?"], 2);
+    await vote(guests, ["M", "L", "L"], 2);
     await handCard(page, "M").click();
 
-    const expected = computeResults(["M", "M", "L", "?"], { kind: "preset", id: "tshirt" });
-    await expect(centreSentence(page)).toHaveText(
-      `Most voted ${expected.suggested}. Agreement ${percent(expected.agreement)}.`,
-    );
+    // M and L, twice each: the centre names the tie the panel shows, never one card of it.
+    const expected = computeResults(["M", "M", "L", "L"], { kind: "preset", id: "tshirt" });
+    const sentence = `Tie between M and L. Agreement ${percent(expected.agreement)}.`;
+    await expect(centreSentence(page)).toHaveText(sentence);
+    await expect(tableLive(page)).toContainText(`Cards revealed. ${sentence}`);
+    await expect(page.locator("[data-centre-result='tie'] [data-mini-card]")).toHaveText([
+      "M",
+      "L",
+    ]);
+    await expect(page.locator("[data-centre-caption]")).toHaveText("Tie");
     await expect(results(page).locator("dt")).toHaveText(["Most voted", "Agreement", "Spread"]);
-    await expect(stat(page, "mostVoted")).toHaveText(expected.mode ?? "");
+    await expect(stat(page, "mostVoted").locator("[aria-hidden]")).toHaveText("M · L");
     await expect(stat(page, "agreement")).toHaveText(percent(expected.agreement));
     await expect(stat(page, "spread").locator("[aria-hidden]")).toHaveText("M–L");
     // No average, no median, on screen or for a screen reader (AC 2).
     await expect(results(page)).not.toContainText("Average");
     await expect(results(page)).not.toContainText("Median");
-    await expect(spoken(page, "Not counted")).toHaveText(["unsure: 1 vote"]);
     await page.waitForTimeout(1_200);
-    await shoot(page, "results-tshirt");
+    await shoot(page, "results-tshirt-tie");
   } finally {
     po.close();
     for (const guest of guests) guest.close();
@@ -259,18 +264,40 @@ async function centreClearance(page: Page) {
   });
 }
 
-test("the PO's phone centre holds the result and Next round, clear of 16 cards, in every language", async ({
+/** Light and dark at the current size (a phone), not the full set `shoot` takes. */
+async function shootPhone(page: Page, name: string) {
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.screenshot({ path: `${SHOTS}${name}-360-${scheme}.png`, fullPage: true });
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+}
+
+/** How many rows the distribution's columns take. */
+const columnRows = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Set(
+        [...document.querySelectorAll("[data-column]")].map((column) =>
+          Math.round(column.getBoundingClientRect().bottom),
+        ),
+      ).size,
+  );
+
+test("the PO's phone centre holds the result and Next round, clear of every card at 4, 8, 10 and 16 seats, in every language", async ({
   page,
+  context,
   baseURL,
 }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(420_000);
+  const base = baseURL ?? "";
   const code = await createRoom(page);
   await join(page, "Ana");
-  const names = Array.from({ length: 15 }, (_, i) => `Guest ${i + 1}`);
-  const guests = await guestsJoin(baseURL ?? "", code, names);
+  const guests: Guest[] = [];
+  const po = await sameUser(base, context);
   try {
+    expect(await po.enter(code)).toMatchObject({ ok: true });
     await page.setViewportSize({ width: 360, height: 900 });
-    await expect(seats(page).locator("[data-seat]")).toHaveCount(16);
     const languages = [
       ["Français", /^Language: English$/],
       ["Deutsch", /^Langue/],
@@ -278,7 +305,7 @@ test("the PO's phone centre holds the result and Next round, clear of 16 cards, 
     ] as const;
     const measure = async (label: string) => {
       // English first, then French and German, back to English.
-      const sizes = [{ language: "English", ...(await centreClearance(page)) }];
+      const sizes = [{ label, language: "English", ...(await centreClearance(page)) }];
       for (const [language, current] of languages) {
         await page.getByRole("button", { name: current }).click();
         await page.getByRole("menuitemradio", { name: language }).click();
@@ -288,7 +315,7 @@ test("the PO's phone centre holds the result and Next round, clear of 16 cards, 
           language === "Français" ? "fr" : language === "Deutsch" ? "de" : "en",
         );
         if (language !== "English") {
-          sizes.push({ language, ...(await centreClearance(page)) });
+          sizes.push({ label, language, ...(await centreClearance(page)) });
           await page.screenshot({
             path: `${SHOTS}results-centre-${label}-${language === "Français" ? "fr" : "de"}-360.png`,
           });
@@ -297,29 +324,115 @@ test("the PO's phone centre holds the result and Next round, clear of 16 cards, 
       return sizes;
     };
 
-    await page.getByRole("button", { name: "Start voting" }).click();
-    await vote(guests, Array(15).fill("8"));
-    await handCard(page, "8").click();
-    await expect(centreSentence(page)).toHaveText("Consensus on 8.");
-    await page.waitForTimeout(2_800);
-    const consensus = await measure("consensus");
-
-    await page.getByRole("button", { name: "Next round" }).click();
+    const sizes: Awaited<ReturnType<typeof measure>> = [];
+    let round = 0;
+    const play = async (cards: readonly string[], mine: string) => {
+      round += 1;
+      await page.getByRole("button", { name: round === 1 ? "Start voting" : "Next round" }).click();
+      await expect(handCard(page, mine)).toBeVisible();
+      await vote(guests, cards, round);
+      await handCard(page, mine).click();
+    };
     const mixed = ["1", "2", "3", "5", "8", "13", "21", "3", "5", "8", "13", "2", "3", "5", "?"];
-    await vote(guests, mixed, 2);
-    await handCard(page, "21").click();
-    await expect(centreSentence(page)).toContainText("Suggested");
-    await page.waitForTimeout(2_800);
-    const suggested = await measure("suggested");
+    for (const count of [4, 8, 10, 16]) {
+      const names = Array.from(
+        { length: count - 1 - guests.length },
+        (_, i) => `Guest ${guests.length + i + 1}`,
+      );
+      guests.push(...(await guestsJoin(base, code, names)));
+      await expect(seats(page).locator("[data-seat]")).toHaveCount(count);
 
-    for (const size of [...consensus, ...suggested]) {
-      const most = size.language === "Deutsch" ? 84 : 71;
-      expect(size.height, `${size.language} centre height`).toBeLessThanOrEqual(most);
-      expect(size.touching, `${size.language} centre against a card`).toBe(0);
+      // Everyone plays 8: the chip, and the Consensus pill under it.
+      await play(Array(guests.length).fill("8"), "8");
+      await expect(centreSentence(page)).toHaveText("Consensus on 8.");
+      await page.waitForTimeout(2_800);
+      if (count !== 16) await shootPhone(page, `results-centre-consensus-${count}`);
+      sizes.push(...(await measure(`consensus-${count}`)));
+
+      // Mixed cards: the chip, and the agreement under it.
+      await play(mixed.slice(0, guests.length), "21");
+      await expect(centreSentence(page)).toContainText("Suggested");
+      await page.waitForTimeout(2_800);
+      if (count !== 16) await shootPhone(page, `results-centre-suggested-${count}`);
+      sizes.push(...(await measure(`suggested-${count}`)));
     }
-    // Logged for the build log and the design brief: the heights in each language.
-    console.log(`centre sizes: ${JSON.stringify({ consensus, suggested })}`);
+    // Sixteen people on seven Fibonacci cards: one row of columns at 360 px.
+    expect(await columnRows(page)).toBe(1);
+    await shootPhone(page, "results-columns-fib-16");
+
+    // The modified Fibonacci deck's eleven cards, all played: still one row.
+    expect(
+      await po.cmd("updateSettings", { patch: { deck: { kind: "preset", id: "mfib" } } }),
+    ).toMatchObject({ ok: true });
+    const eleven = ["0", "½", "1", "2", "3", "5", "8", "13", "20", "40", "3", "5", "8", "13", "?"];
+    await play(eleven, "100");
+    await expect(results(page).locator("[data-column]")).toHaveCount(11);
+    await page.waitForTimeout(2_800);
+    expect(await columnRows(page)).toBe(1);
+    await shootPhone(page, "results-columns-mfib-16");
+
+    // Logged for the build log and the design brief: the sizes in each language.
+    console.log(`centre sizes: ${JSON.stringify(sizes)}`);
+    for (const size of sizes) {
+      const at = `${size.label} in ${size.language}`;
+      expect(size.width, `${at}: centre width`).toBeLessThanOrEqual(76);
+      expect(size.touching, `${at}: centre against a card`).toBe(0);
+    }
   } finally {
+    po.close();
+    for (const guest of guests) guest.close();
+  }
+});
+
+test("a results chunk that cannot load still shows an anonymous round, and the next reveal tries again", async ({
+  page,
+  context,
+  baseURL,
+}) => {
+  test.setTimeout(120_000);
+  const base = baseURL ?? "";
+  // The chunk is gone, as after a redeploy that removed an old build.
+  let gone = true;
+  await page.route(/\/assets\/results-[^/]+\.js$/, (route) =>
+    gone ? route.fulfill({ status: 404, body: "" }) : route.continue(),
+  );
+  const code = await createRoom(page);
+  await join(page, "Ana");
+  const guests = await guestsJoin(base, code, ["Cleo", "Dan", "Eve"]);
+  const po = await sameUser(base, context);
+  try {
+    expect(await po.enter(code)).toMatchObject({ ok: true });
+    expect(await po.cmd("updateSettings", { patch: { revealNames: false } })).toMatchObject({
+      ok: true,
+    });
+    await expect(seats(page).locator("[data-seat]")).toHaveCount(4);
+    await page.getByRole("button", { name: "Start voting" }).click();
+    await vote(guests, ["5", "3", "5"]);
+    await handCard(page, "8").click();
+
+    // 3, 5, 5 and 8: the centre says the result in a sentence, and the cards show in the
+    // deck's order under the table, tied to nobody.
+    const sentence = "Suggested 5. Agreement 50%.";
+    await expect(page.locator("[data-centre-fallback]")).toHaveText(sentence);
+    await expect(tableLive(page)).toContainText(`Cards revealed. ${sentence}`);
+    await expect(results(page)).toHaveCount(0);
+    const played = page.getByRole("list", { name: "Cards played" });
+    await expect(played.locator("li .sr-only")).toHaveText(["3", "5", "5", "8"]);
+    await page.waitForTimeout(1_200);
+    await shoot(page, "results-chunk-failed-anonymous");
+
+    // The chunk is back: the next reveal loads it, without a reload.
+    gone = false;
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.getByRole("button", { name: "Next round" }).click();
+    await expect(handCard(page, "8")).toBeVisible();
+    await vote(guests, ["5", "3", "5"], 2);
+    await handCard(page, "8").click();
+    await expect(centreSentence(page)).toHaveText(sentence);
+    await expect(stat(page, "agreement")).toHaveText("50%");
+    await expect(page.locator("[data-results='anonymous']")).toHaveCount(0);
+  } finally {
+    po.close();
     for (const guest of guests) guest.close();
   }
 });
