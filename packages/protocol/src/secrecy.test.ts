@@ -277,5 +277,6 @@ describe("snapshots", () => {
       }),
       RUNS,
     );
-  });
+    // Every frame's snapshot for every viewer, parsed twice: 2.7 s on a busy machine.
+  }, 15_000);
 });

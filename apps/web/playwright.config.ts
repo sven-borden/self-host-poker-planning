@@ -51,6 +51,12 @@ export default defineConfig({
     locale: "en-US",
     browserName: "chromium",
     ...(ci ? {} : { channel: "msedge" }),
+    // A failed test keeps its trace in test-results/ (`pnpm exec playwright show-trace
+    // <trace.zip>`); a passing one does not. The trace's screencast covers every page,
+    // also those of contexts a test makes itself, which a video would miss. CI uploads
+    // test-results/ only when the job fails.
+    trace: "retain-on-failure",
+    video: "off",
   },
   webServer: [
     {

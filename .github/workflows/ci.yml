@@ -104,8 +104,9 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # The browser download is cached per Playwright version; system packages install
-      # every time.
+      # The browser download is cached per Playwright version; its system packages install
+      # every time. A dry run of install-deps (#23) found fonts missing on ubuntu-26.04 on
+      # every run, so it never saved the apt step.
       - id: playwright
         run: echo "version=$(pnpm --filter @pp/web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -123,7 +124,7 @@ jobs:
             apps/web/playwright-report/
             apps/web/test-results/
             apps/web/tmp/screenshots/
-          retention-days: 7
+          retention-days: 5
 
   # The Docker image and compose.yaml (#11): build the image, then
   # scripts/docker-check.sh starts app and Postgres with compose and checks size (< 250 MB),
