@@ -242,7 +242,10 @@ function TimerRing({
 
 /** The chip's look: a stadium on the felt, its text in tabular numerals. */
 const CHIP =
-  "relative inline-flex h-9 min-w-16 items-center justify-center gap-1.5 rounded-full px-3.5 text-[15px] leading-none font-bold whitespace-nowrap text-table-ink tabular-nums in-data-[variant=phone]:h-6 in-data-[variant=phone]:min-w-10 in-data-[variant=phone]:gap-1 in-data-[variant=phone]:px-2 in-data-[variant=phone]:text-[11px]";
+  "relative inline-flex h-9 min-w-16 items-center justify-center gap-1.5 rounded-full px-3.5 text-[15px] leading-none font-bold whitespace-nowrap text-table-ink tabular-nums in-data-[variant=phone]:h-6 in-data-[variant=phone]:min-w-10 in-data-[variant=phone]:gap-1 in-data-[variant=phone]:px-1.5 in-data-[variant=phone]:text-[11px]";
+
+/** "Time is up" is the chip's longest text: smaller on a phone, so it stays within 76 px. */
+const UP_TEXT = "in-data-[variant=phone]:text-[10px] in-data-[variant=phone]:tracking-tight";
 
 /** The 1 Hz pulse of the last 10 s; never under reduced motion, where colour and text say it. */
 function usePulse<E extends HTMLElement>(on: boolean) {
@@ -319,7 +322,9 @@ export function TimerChip({ countdown }: { countdown: Countdown }) {
     >
       <ChipFace countdown={countdown} reduced={reduced} size={size}>
         {state === "up" ? (
-          <span data-timer-text>{t("timer.up")}</span>
+          <span data-timer-text className={UP_TEXT}>
+            {t("timer.up")}
+          </span>
         ) : (
           <>
             <span aria-hidden="true" data-timer-text>
@@ -491,7 +496,9 @@ export function TimerControls({
                   <span className="in-data-[variant=phone]:sr-only">{t("timer.button")}</span>
                 </>
               ) : (
-                <span data-timer-text>{state === "up" ? t("timer.up") : time}</span>
+                <span data-timer-text className={cn(state === "up" && UP_TEXT)}>
+                  {state === "up" ? t("timer.up") : time}
+                </span>
               )}
             </ChipFace>
           </button>

@@ -82,7 +82,12 @@ function VotingCentre({
   useLastSecondsWarning(countdown);
   const { count, total } = voteCount(room);
   const status = (
-    <p data-centre-status="voting" tabIndex={-1} className="m-0 outline-none">
+    // On a phone the count keeps the centre box's 68 px, however wide the timer above it.
+    <p
+      data-centre-status="voting"
+      tabIndex={-1}
+      className="m-0 outline-none in-data-[variant=phone]:max-w-17"
+    >
       {t("table.votedSoFar", { count, total })}
     </p>
   );
