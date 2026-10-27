@@ -15,14 +15,11 @@ import {
   validateCustomDeck,
 } from "./decks.ts";
 import {
-  MAX_LINK_LENGTH,
   MAX_NAME_LENGTH,
   MAX_ROOM_NAME_LENGTH,
   MAX_TIMER_SECONDS,
-  MAX_TITLE_LENGTH,
   MIN_TIMER_SECONDS,
   type RoomSettings,
-  type Subject,
   WHO_CAN_REVEAL,
 } from "./room.ts";
 
@@ -75,9 +72,9 @@ const TOO_MANY_MARKS = /(?:(?!\u{FE0F})\p{M}(?:\u{200C}|\u{200D}|\u{FE0F})*){4}/
  * text with more than 3 combining marks on one character (Vietnamese, Thai and Hindi
  * need up to 2 or 3; "Zalgo" text needs dozens). A
  * lone surrogate refuses the text: Postgres jsonb would refuse it at write time.
- * Covers names, round titles and (W1) room names.
+ * Covers names, round titles (`apply-subject.ts`) and (W1) room names.
  */
-function cleanText(raw: unknown, max: number): string | null {
+export function cleanText(raw: unknown, max: number): string | null {
   if (typeof raw !== "string" || !raw.isWellFormed()) return null;
   const spaced = raw.replace(WHITESPACE_RUN, " ");
   const text = spaced.trim().normalize("NFC");
@@ -100,79 +97,6 @@ export function cleanName(raw: unknown): string | null {
  */
 export function cleanRoomName(raw: unknown): string | null {
   return cleanText(raw, MAX_ROOM_NAME_LENGTH);
-}
-
-/**
- * An `http(s)` URL with a non-empty host and no user info (`https://a.com@b.com` would
- * hide the real host), without whitespace, control or format characters. Checked by
- * pattern: the domain has no `URL`.
- */
-const LINK = /^https?:\/\/[^\s\p{Cc}\p{Cf}/?#@\\]+(?:[/?#][^\s\p{Cc}\p{Cf}]*)?$/iu;
-
-/**
- * A round subject, cleaned, or `null` (`bad_subject`). A client-sent link `key` is
- * dropped; the link's own key is detected here (`linkKey`), which on the wire means by the
- * server, since only the server runs `apply`.
- */
-export function cleanSubject(raw: unknown): Subject | null {
-  if (!isRecord(raw)) return null;
-  if (raw.kind === "none") return { kind: "none" };
-  if (raw.kind === "title") {
-    const text = cleanText(raw.text, MAX_TITLE_LENGTH);
-    return text === null ? null : { kind: "title", text };
-  }
-  if (raw.kind === "link" && typeof raw.url === "string") {
-    const url = raw.url.trim();
-    if (url.length > MAX_LINK_LENGTH || !url.isWellFormed() || !LINK.test(url)) return null;
-    const key = linkKey(url);
-    return key === null ? { kind: "link", url } : { kind: "link", url, key };
-  }
-  return null;
-}
-
-/** A link cut into its host, its path and its query (after the `?`, without it). */
-const URL_PARTS = /^https?:\/\/([^/?#]+)([^?#]*)(?:\?([^#]*))?/i;
-/**
- * A Jira issue key: a project key (a capital letter, then capitals, digits or `_`, 2 to 32
- * characters in all), a dash and the issue's number (no leading zero). Jira writes keys
- * in capitals, so `abc-1` is not one.
- */
-const JIRA_KEY = "[A-Z][A-Z0-9_]{1,31}-[1-9][0-9]{0,9}";
-/** `…/browse/ABC-123` at the end of the path; a context path such as `/jira` may precede it. */
-const JIRA_BROWSE = new RegExp(`/browse/(${JIRA_KEY})/?$`);
-/** `selectedIssue=ABC-123` in the query, as a Jira board or backlog links an issue. */
-const JIRA_SELECTED = new RegExp(`(?:^|&)selectedIssue=(${JIRA_KEY})(?:&|$)`);
-/** An Azure DevOps work item id: a positive number of at most 10 digits. */
-const ADO_ID = "[1-9][0-9]{0,9}";
-/** `dev.azure.com/{org}/{project}/_workitems/edit/{id}`. */
-const ADO_PATH = new RegExp(`^/[^/]+/[^/]+/_workitems/edit/(${ADO_ID})/?$`, "i");
-/** `{org}.visualstudio.com/{project}/_workitems/edit/{id}`; a collection may precede the project. */
-const VSTS_PATH = new RegExp(`^(?:/[^/]+){1,2}/_workitems/edit/(${ADO_ID})/?$`, "i");
-const VSTS_HOST = /^[a-z0-9][a-z0-9-]*\.visualstudio\.com$/i;
-
-/**
- * The issue a link points at, for its chip: a Jira key ("ABC-123", from `/browse/ABC-123`
- * or `selectedIssue=ABC-123`) on any host, since Jira is often self-hosted, or an Azure
- * DevOps work item id ("12345", from `dev.azure.com/{org}/{project}/_workitems/edit/12345`
- * or `{org}.visualstudio.com/…/_workitems/edit/12345`); else `null`. A key with a letter
- * is Jira's, digits alone are an Azure DevOps id. Read by pattern, like the link itself:
- * the domain has no `URL`.
- */
-export function linkKey(url: string): string | null {
-  const parts = URL_PARTS.exec(url);
-  if (parts === null) return null;
-  // Both groups always match, if only the empty string; `String` keeps the types honest.
-  const host = String(parts[1]).toLowerCase();
-  const path = String(parts[2]);
-  const jira = JIRA_BROWSE.exec(path) ?? JIRA_SELECTED.exec(parts[3] ?? "");
-  if (jira !== null) return String(jira[1]);
-  const ado =
-    host === "dev.azure.com"
-      ? ADO_PATH.exec(path)
-      : VSTS_HOST.test(host)
-        ? VSTS_PATH.exec(path)
-        : null;
-  return ado === null ? null : String(ado[1]);
 }
 
 /** A timer length: an integer from 5 to 3600 seconds. */
