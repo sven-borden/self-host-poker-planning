@@ -136,7 +136,7 @@ export const fr: Catalog<"many"> = {
     specialsHint:
       "Des cartes pour dire que vous hésitez, qu’il faut une pause ou que le sujet est trop gros pour être estimé. Elles ne comptent jamais dans les résultats.",
     specialsNone: "Aucune",
-    timer: "Minuteur de chaque tour",
+    timer: "Minuteur pour chaque tour",
     timerHint:
       "Chaque tour démarre avec ce compte à rebours. Un changement s’applique dès le tour suivant.",
     timerThenReveal: "À la fin, les cartes se retournent.",
@@ -149,7 +149,7 @@ export const fr: Catalog<"many"> = {
     timerSet: "Valider",
     timerRevealAtEnd: "Révéler à la fin du minuteur",
     timerRevealAtEndHint:
-      "Désactivé, tout le monde voit que le temps est écoulé et le product owner révèle les cartes.",
+      "Si c’est désactivé, tout le monde voit que le temps est écoulé et le product owner révèle les cartes.",
     whoCanReveal: "Qui peut révéler",
     whoCanRevealHint: "Qui peut retourner les cartes. Jamais les observateurs.",
     revealByOwner: "Le product owner",
@@ -344,7 +344,7 @@ export const fr: Catalog<"many"> = {
     shortSeconds: "{{n, number}} s",
     shortMinutes: "{{n, number}} min",
     button: "Minuteur",
-    buttonRunning: "Minuteur, reste {{time}}",
+    buttonRunning: "Minuteur, en cours",
     buttonUp: "Minuteur, temps écoulé",
     menu: "Minuteur",
     start: "Lancer un minuteur",
@@ -353,7 +353,6 @@ export const fr: Catalog<"many"> = {
     addSpoken: "Ajouter 30 secondes",
     stop: "Arrêter",
     stopSpoken: "Arrêter le minuteur",
-    custom: "Autre",
     customLabel: "Durée",
     customStart: "Lancer",
     left: "Temps restant : {{time}}",

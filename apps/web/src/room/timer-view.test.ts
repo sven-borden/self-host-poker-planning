@@ -92,7 +92,7 @@ describe("the timer's view (#27)", () => {
     expect(shortDuration(en, 30)).toBe("30\u{a0}s");
     expect(shortDuration(en, 60)).toBe("60\u{a0}s");
     expect(shortDuration(en, 120)).toBe("2\u{a0}min");
-    expect(shortDuration(fixedT("de"), 120)).toBe("2\u{a0}Min.");
+    expect(shortDuration(fixedT("de"), 120)).toBe("2\u{a0}min");
     expect(shortDuration(en, 150)).toBe("2:30");
   });
 

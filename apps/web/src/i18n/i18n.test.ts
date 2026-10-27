@@ -164,9 +164,10 @@ describe("catalogs", () => {
       "deckField.rangeStart",
       "final.short",
       "results.moreCards",
-      // The timer (#27): a unit and a clock read the same in German.
+      // The timer (#27): units and a clock read the same in German.
       "timer.minutesSeconds",
       "timer.shortSeconds",
+      "timer.shortMinutes",
       "timer.add",
     ],
   };
