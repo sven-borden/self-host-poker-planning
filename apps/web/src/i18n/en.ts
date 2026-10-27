@@ -294,6 +294,7 @@ export const en = {
   },
   final: {
     label: "Final estimate",
+    short: "Final",
     record: "Record {{card}}",
     recordNothing: "Record",
     recorded: "Recorded",

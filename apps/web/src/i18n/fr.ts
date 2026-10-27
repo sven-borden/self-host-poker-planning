@@ -247,6 +247,7 @@ export const fr: Catalog<"many"> = {
   },
   final: {
     label: "Estimation finale",
+    short: "Finale",
     record: "Enregistrer {{card}}",
     recordNothing: "Enregistrer",
     recorded: "Enregistrée",

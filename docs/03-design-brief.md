@@ -152,11 +152,14 @@ Positions are percentages of the stage, so one formula serves every width:
   result, set apart from the suggestion: its mini card with a 2 px brass outline beside
   "Final estimate", said as "Final estimate: 8."; the result turns compact (card beside
   its caption), and on phones both cards shrink to 18 px chips, the stack at most 76 px
-  wide. A final recorded on screen pops in (crossfade under reduced motion). The live
+  wide, and the label shortens to "Final" ("Finale", "Final"): "Endgültige Schätzung" on
+  two lines made the stack 76 px wide and touched the side cards at 10 seats. A final recorded on screen pops in (crossfade under reduced motion). The live
   region says "The PO recorded 8 as the final estimate." or "The PO changed the final
   estimate to 13.", once, to everyone. Measured clear of every card at 4, 8, 10 and 16
   seats, in English, French and German, on desktop and at 360 px, for the PO and a voter
-  (`final-estimate.spec.ts`): SIZES.
+  (`final-estimate.spec.ts`): on phones 68 to 71 px wide and 47 px tall (suggestion) or
+  59 px (consensus pill); on desktop 113 to 140 px wide (German widest) and 84 px tall.
+  The bar under the table never meets the table or a card, and no page scrolls sideways.
 - "Vote again" (#32): the PO's secondary action beside "Next round". It keeps the
   subject (the title, or the link with its key) and starts a new round with the next
   number, the votes cleared and the timer as at any start; the revealed round stays in

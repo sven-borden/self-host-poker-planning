@@ -135,8 +135,19 @@ function CentreFinal({ card, live }: { card: string; live: boolean }) {
         value={card}
         className={cn("shadow-md outline-2 outline-offset-1 outline-brass", CHIP)}
       />
-      <span aria-hidden="true" data-final-caption className={FINAL_CAPTION}>
+      {/* On a phone the short word: "Endgültige Schätzung" would reach the side cards. */}
+      <span
+        aria-hidden="true"
+        data-final-caption
+        className={cn(FINAL_CAPTION, "in-data-[variant=phone]:hidden")}
+      >
         {t("final.label")}
+      </span>
+      <span
+        aria-hidden="true"
+        className={cn(FINAL_CAPTION, "hidden in-data-[variant=phone]:inline")}
+      >
+        {t("final.short")}
       </span>
     </p>
   );

@@ -245,6 +245,7 @@ export const de: Catalog = {
   },
   final: {
     label: "Endgültige Schätzung",
+    short: "Final",
     record: "{{card}} festhalten",
     recordNothing: "Festhalten",
     recorded: "Festgehalten",

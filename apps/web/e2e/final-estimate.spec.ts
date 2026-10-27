@@ -519,34 +519,41 @@ test("the picker and the centre with a final stay clear of every card at 4, 8, 1
   const sizes: Array<Record<string, unknown>> = [];
   try {
     expect(await po.enter(code)).toMatchObject({ ok: true });
-    const measure = async (label: string) => {
-      for (const [who, viewer] of [
-        ["po", page],
-        ["voter", ben.page],
-      ] as const) {
+    // One page's sizes in English, French and German, each at both widths: the language
+    // changes once per page, through the header's menu, as a person would change it.
+    const measureOne = async (who: string, viewer: Page, label: string) => {
+      const found: Array<Record<string, unknown>> = [];
+      const atBothSizes = async (language: string) => {
         for (const [size, viewport] of [
           ["desktop", { width: 1280, height: 900 }],
           ["phone", { width: 360, height: 800 }],
         ] as const) {
           await viewer.setViewportSize(viewport);
           await viewer.waitForTimeout(150);
-          sizes.push({ label, who, size, language: "en", ...(await clearance(viewer)) });
-          for (const [language, current, lang] of LANGUAGES) {
-            await viewer.getByRole("button", { name: current }).click();
-            await viewer.getByRole("menuitemradio", { name: language }).click();
-            await expect(viewer.getByRole("menu")).toHaveCount(0);
-            await expect(viewer.locator("html")).toHaveAttribute("lang", lang);
-            if (lang !== "en") {
-              sizes.push({ label, who, size, language: lang, ...(await clearance(viewer)) });
-              if (size === "phone" && label.endsWith("-16")) {
-                await viewer.screenshot({
-                  path: `${SHOTS}final-centre-${label}-${who}-${lang}-360.png`,
-                });
-              }
-            }
+          found.push({ label, who, size, language, ...(await clearance(viewer)) });
+          if (size === "phone" && label.endsWith("-16") && language !== "en") {
+            await viewer.screenshot({
+              path: `${SHOTS}final-centre-${label}-${who}-${language}-360.png`,
+            });
           }
         }
+      };
+      await atBothSizes("en");
+      for (const [language, current, lang] of LANGUAGES) {
+        await viewer.getByRole("button", { name: current }).click();
+        await viewer.getByRole("menuitemradio", { name: language }).click();
+        await expect(viewer.getByRole("menu")).toHaveCount(0);
+        await expect(viewer.locator("html")).toHaveAttribute("lang", lang);
+        if (lang !== "en") await atBothSizes(lang);
       }
+      return found;
+    };
+    const measure = async (label: string) => {
+      const both = await Promise.all([
+        measureOne("po", page, label),
+        measureOne("voter", ben.page, label),
+      ]);
+      sizes.push(...both.flat());
     };
 
     let round = 0;
@@ -560,7 +567,8 @@ test("the picker and the centre with a final stay clear of every card at 4, 8, 1
       await expect(recordButton(page)).toBeVisible();
       expect(await po.cmd("setFinal", { card: final })).toMatchObject({ ok: true });
       await expect(centreFinal(ben.page)).toHaveAttribute("data-centre-final", final);
-      await page.waitForTimeout(2_000);
+      // The results' motion settles before anything is measured.
+      await page.waitForTimeout(1_500);
     };
     const mixed = ["1", "2", "3", "5", "8", "13", "21", "3", "5", "8", "13", "2", "3", "5"];
     for (const count of [4, 8, 10, 16]) {
@@ -574,7 +582,7 @@ test("the picker and the centre with a final stay clear of every card at 4, 8, 1
       await play(Array(guests.length).fill("8"), "8", "8", "13");
       await measure(`consensus-${count}`);
       // Mixed cards, and a final other than the suggestion.
-      await play(mixed.slice(0, guests.length), "21", "?", "21");
+      await play(mixed.slice(0, guests.length), "21", "5", "21");
       await measure(`suggested-${count}`);
     }
 
