@@ -169,8 +169,12 @@ server sends and never decides the outcome of a round.
   makes Vite 8's rolldown split shared modules (tailwind-merge, the English catalog,
   React's runtime) out of the entry chunk and costs the room route 12.8 kB gzipped. A
   keyframed one-off such as the card's flight uses `Element.animate` instead (no
-  dependency, interruptible with `cancel`, `matchMedia` for reduced motion); check the
-  budget before reaching for `m` in a lazy chunk. An animated component wraps its `m.div` elements in `<MotionFeatures>`
+  dependency, interruptible with `cancel`, `matchMedia` for reduced motion). Two splits
+  keep Motion within budget, measured by #18's review: one lazy boundary for every
+  Motion component (room route 167.6 kB), or a dynamic `import("motion/mini")` inside the
+  effect (3.2 kB lazy). #19's flip and #20's columns may use either, or `Element.animate`;
+  check the budget before reaching for `m` in a lazy chunk (ADR-008). An animated
+  component wraps its `m.div` elements in `<MotionFeatures>`
   (`<MotionFeatures layout>` when it needs layout animations): the features chunk
   (`domAnimation`, or `domMax` for layout) is fetched when the first one mounts, never at
   page load. Biome refuses `import { motion } from "motion/react"`. Every animation has a

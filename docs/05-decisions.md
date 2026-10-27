@@ -81,6 +81,15 @@ shadcn/ui (Radix) copied into the repo. Dark mode and branding are token overrid
 and exit, gestures; CSS 3D for the flip. The motion spec in the design brief bounds it.
 **Alternatives.** GSAP (imperative, own licence); CSS and WAAPI only (more code).
 
+**Amended (#18, 2026-10-27).** The card's travel from the hand to the seat uses the Web
+Animations API (`Element.animate`), not Motion. Importing the shell's `motion.tsx` (or
+Motion's `m`) from the room's lazy chunk made Vite 8's rolldown split shared modules out
+of the entry chunk: +12.8 kB gzipped on the room route. The trip is pure keyframes and
+needs none of Motion's features. Two measured splits keep Motion within budget: one lazy
+boundary for the room's Motion components (room route 167.6 kB), or a dynamic
+`import("motion/mini")` inside the effect (3.2 kB lazy). #19's flip and #20's columns
+may use either, or the Web Animations API; whichever they pick, the budget check decides.
+
 ## ADR-009: Guest-first identity with Better Auth
 
 **Decision.** Every visitor gets an anonymous Better Auth session: a real user row
