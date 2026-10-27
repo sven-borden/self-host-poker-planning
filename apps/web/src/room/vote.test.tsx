@@ -367,6 +367,29 @@ describe("the hand", () => {
     expect(card("unsure").getAttribute("aria-pressed")).toBe("false");
   });
 
+  it("centres the card the arrow keys focus in the hand, never scrolling the page (#22)", async () => {
+    await renderRoom(voting());
+    const bar = hand();
+    // A 200 px hand whose cards stand 52 px apart, scrolled by scrollLeft.
+    vi.spyOn(bar, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 200, 90));
+    for (const [i, button] of within(bar).getAllByRole("button").entries()) {
+      vi.spyOn(button, "getBoundingClientRect").mockImplementation(
+        () => new DOMRect(12 + i * 52 - bar.scrollLeft, 20, 44, 64),
+      );
+    }
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    card("0").focus();
+    fireEvent.keyDown(card("0"), { key: "ArrowRight" });
+    fireEvent.keyDown(card("1"), { key: "ArrowRight" });
+    fireEvent.keyDown(card("2"), { key: "ArrowRight" });
+    expect(document.activeElement).toBe(card("3"));
+    expect(focus).toHaveBeenLastCalledWith({ preventScroll: true });
+    // "3" sat at 168 to 212, past the fade at 168: now its middle is the hand's.
+    const at = card("3").getBoundingClientRect();
+    expect(at.left + at.width / 2).toBe(100);
+    focus.mockRestore();
+  });
+
   it("is waiting in the lobby and hidden from observers and from a PO who does not vote", async () => {
     await renderRoom(stateWith(table));
     expect(card("5").getAttribute("aria-disabled")).toBe("true");
