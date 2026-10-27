@@ -376,10 +376,39 @@ language, and an unknown code gets a generic one.
 
 ## 12. Deployment
 
-- Docker image: multi-stage build, Node 24 slim runtime, non-root, < 250 MB.
-- `compose.yaml`: app + Postgres 17 with a volume; used locally and on Coolify.
-- Coolify (Sven's instance): application from the Dockerfile, Postgres resource with
-  daily backups, domain `poker.borden.ch`, auto-deploy from `main`.
+- Docker image (`Dockerfile`, #11), multi-stage. The build stage is `node:24-slim` with
+  pnpm 12 through corepack: `pnpm fetch` into a BuildKit cache mount, an offline frozen
+  install, `pnpm build`, then `pnpm --filter @pp/server deploy --prod` keeps only the
+  server's runtime dependencies (their `.d.ts`, sourcemaps and docs dropped). The runtime
+  is `debian:bookworm-slim` plus the `node` binary of that same `node:24-slim`, both
+  pinned by digest: `node:24-slim` itself is 235 MB unpacked (npm, corepack, headers), so
+  the image would miss the 250 MB budget; this one is about 220 MB (Debian 85, Node 127,
+  app 23). `/app` holds `dist/main.mjs`, `drizzle/`, `public/` (the web app) and
+  `node_modules/`, owned by root; the process runs as uid 10001 with `NODE_ENV=production`,
+  `STATIC_DIR=/app/public` and `MIGRATIONS_DIR=/app/drizzle`. Node is PID 1 and handles
+  `SIGTERM` itself (section 11). `HEALTHCHECK`: a Node `fetch` of `/api/health` every 30 s
+  (timeout 3 s, start period 120 s for the database wait, the migration lock and the
+  migrations, probing every 2 s meanwhile). Build arguments `GIT_COMMIT` (falling back to
+  `SOURCE_COMMIT`, which Coolify passes) and `APP_VERSION` become the env of the same name
+  and the OCI labels `revision` and `version`.
+- `compose.yaml`: `app` (built from `.`, image `poker-planning:local`) and `db`
+  (`postgres:17`, volume `pgdata`, `pg_isready` health check, not published on the host);
+  `app` starts once `db` is healthy, both `restart: unless-stopped`, port 3000.
+  `DATABASE_URL` is built from `db`; `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET` and
+  `BASE_URL` are required, and `TRUST_PROXY` defaults to false there. For self-hosters
+  (README, "Self-hosting"); Coolify builds the Dockerfile instead.
+- CI job `docker` builds the image with the GitHub Actions cache and runs
+  `scripts/docker-check.sh`: size under 250 MB, compose up until healthy, a smoke test
+  (`/api/health` with `db: ok` and the PR's commit, the web app, Socket.IO over a
+  WebSocket with the right `Origin`, a foreign `Origin` refused), a room row that survives
+  a restart without migrations running twice, an extra migration applied once on restart,
+  and exit code 0 on `SIGTERM` while serving and while waiting for the database.
+- Coolify (Sven's instance): application from the Dockerfile (build pack `dockerfile`,
+  port 3000, health path `/api/health`), Postgres resource with daily backups, domain
+  `poker.borden.ch`, auto-deploy from `main`. TLS ends at a Synology reverse proxy in front
+  of Coolify's Traefik; both must pass WebSocket upgrades. With two proxies the right-most
+  `X-Forwarded-For` entry is the Synology, not the client: the rate limits of section 8
+  need a hop count or a trusted-proxy list before they rely on `clientIp`.
 - Azure: same image. Service still open (Container Apps by default; see
   `docs/04-open-questions.md` and #38).
 
@@ -394,7 +423,8 @@ language, and an unknown code gets a generic one.
 | `TRUST_PROXY` | no (true) | client IPs for rate limits: the right-most `X-Forwarded-For` entry when true, the socket address when false |
 | `STATIC_DIR` | no (`apps/web/dist`) | built web app; the image sets its own path |
 | `MIGRATIONS_DIR` | no (`apps/server/drizzle`) | SQL migrations applied at start; the image copies the folder next to `dist/` or sets this |
-| `GIT_COMMIT`, `APP_VERSION` | no | reported by `/api/health`; set at image build |
+| `GIT_COMMIT`, `APP_VERSION` | no | reported by `/api/health`; set at image build (build arguments; `SOURCE_COMMIT` stands in for `GIT_COMMIT`) |
+| `POSTGRES_PASSWORD` | compose only | password of the bundled Postgres; letters and digits, since it goes into `DATABASE_URL` |
 | `REDIS_URL` | no | scale-out only (#39) |
 | `SENTRY_DSN`, `UMAMI_URL`, `UMAMI_WEBSITE_ID` | no | opt-in observability |
 | Google / Microsoft keys | no (W5) | social sign-in |
