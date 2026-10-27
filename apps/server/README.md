@@ -112,18 +112,25 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   only because tests run servers without identity: a W1 handler answers
   `unauthenticated` when it is missing. Over HTTP, `sessionUser(auth, c.req.raw.headers)`.
 - `user.name` is `""` until the person picks one; `POST /api/me/name` sets it through
-  the domain's `cleanName`. Never write `user.name` another way.
+  the domain's `cleanName`, rate limited per user and per address. Never write
+  `user.name` another way.
+- Only `AUTH_ROUTES` (get-session, sign-in/anonymous, sign-out) reach Better Auth; add
+  an endpoint there only after checking what it returns (no tokens) and what it lets a
+  client change. Cookie names come from `cookieNaming` (`__Host-pp.*` on https).
 - Client address for a rate limit: `clientIp(request, config.trustProxy)`, where
   `trustProxy` counts the proxies (`TRUST_PROXY`). Better Auth gets the same address in
   `x-pp-client-ip` (`CLIENT_IP_HEADER`), set by `registerAuthApi` after dropping the
   client's copy; its own `X-Forwarded-For` reading is not used.
-- Each `createAuth` has its own rate-limit counters (`memoryRateLimit`): Better Auth's
-  memory store is shared by the whole process.
-- Never log a cookie, a session token or `config.betterAuthSecret`; Better Auth's log
-  calls go to pino with their message only. Tests use the fake secret of
-  `test-support.ts` and grep the logs for it and for every token they saw.
-- Better Auth's answers that are not codes (404 text, the 429 sentence, 5xx bodies)
-  become `not_found`, `rate_limited` and `internal` in `registerAuthApi`.
+- `setupServer` creates one limiter (`memoryRateLimit`, bounded) for Better Auth and
+  `/api/me/name`: Better Auth's own memory store is shared by the whole process.
+- Never log a cookie, a session token or `config.betterAuthSecret`, nor any error from
+  Better Auth or the driver: their messages can hold a token. Better Auth's logger goes
+  to pino with a fixed message and at most its error code, `onAPIError.throw` stops it
+  and better-call from printing, and thrown errors are logged by `errorCode` only.
+  `auth.db.test.ts` captures console, stdout and stderr and greps them and the logs for
+  the fake secret and every token it saw.
+- Better Auth's answers become the app's codes in `registerAuthApi` (`authErrorCode`),
+  and `withoutTokens` drops every `token` field from its JSON.
 
 ## Database
 

@@ -225,9 +225,12 @@ Socket.IO with typed event maps from `packages/protocol` (`ClientToServerEvents`
 - **Handshake**: a browser handshake must come from `BASE_URL`'s origin (checked first,
   on both transports), then carry the session cookie (section 7): the middleware
   resolves it and sets `socket.data.user = { id, name, isAnonymous }`, or refuses the
-  socket with `connect_error` `unauthenticated`. The web app connects only once it has a
-  session (`connectWhenIdentified`), runs the identity bootstrap once more on
-  `unauthenticated`, and shows `errors.unauthenticated` after a second refusal.
+  socket with `connect_error` `unauthenticated`; a database failure refuses it with
+  `internal`. The web app connects only once it has a session (`connectWhenIdentified`),
+  runs the identity bootstrap once more on `unauthenticated`, and shows
+  `errors.unauthenticated` after a second refusal. After `internal` or `rate_limited` it
+  connects again with backoff (1 s doubling to 30 s, jittered, at least a `retryAfter`
+  the server sends), and the connection status stays `reconnecting`.
 - **Reconnect**: Socket.IO reconnects automatically; on every (re)join the server
   sends a fresh snapshot. `protocol` mismatch → the client reloads.
 
@@ -312,27 +315,57 @@ password, no social provider before W5.
 
 - **Guests**: every page load runs the web app's bootstrap: `GET /api/auth/get-session`,
   and without a session `POST /api/auth/sign-in/anonymous`, which creates a `user` row
-  (`is_anonymous`, a placeholder email, no personal data) and a session. User ids are
-  Better Auth's 32 alphanumeric characters, within `userIdSchema`. The web app uses a
-  few typed `fetch` calls, not `better-auth/client` (12 kB gzipped).
-- **Cookie**: `pp.session_token`, the session token signed with `BETTER_AUTH_SECRET`;
-  httpOnly, `SameSite=Lax`, path `/`; with an https `BASE_URL` also `Secure` with the
-  `__Secure-` prefix. `trustedOrigins` is `BASE_URL` alone.
+  (`is_anonymous`, a placeholder email, no personal data) and a session, then reads the
+  session back. User ids are Better Auth's 32 alphanumeric characters, within
+  `userIdSchema`. The web app uses a few typed `fetch` calls, not `better-auth/client`
+  (12 kB gzipped).
+  - Two tabs at once: the bootstrap holds the `pp-identity` Web Lock, so the second tab
+    finds the first one's session. Without the lock API, the server's `not_allowed` to a
+    second sign-in makes the tab read the session instead.
+  - Temporary failures (`network`, `internal`, `rate_limited`, a 502 during a redeploy)
+    are retried with backoff (1 s doubling to 30 s, jittered, at least `Retry-After`);
+    the root layout shows a quiet "Connecting to the server" toast meanwhile.
+  - Cookies blocked (`navigator.cookieEnabled` false, or the new session does not read
+    back): `cookies_blocked`, no further guest on that page, and a message that the site
+    needs cookies.
+- **Cookie**: the session token signed with `BETTER_AUTH_SECRET`, httpOnly,
+  `SameSite=Lax`, `Path=/`, never a `Domain`. With an https `BASE_URL` it is
+  `__Host-pp.session_token`, `Secure`: the browser accepts that prefix only without
+  `Domain`, so a sibling site (`*.borden.ch`) cannot plant a session cookie that would be
+  sent first (`__Secure-` allows `Domain`). With an http `BASE_URL` (a LAN address,
+  compose without TLS) it is `pp.session_token` without `Secure`, so the browser keeps it.
+  Every other Better Auth cookie follows the same naming. `trustedOrigins` is `BASE_URL`
+  alone.
+- **Endpoints**: only `GET /api/auth/get-session`, `POST /api/auth/sign-in/anonymous` and
+  `POST /api/auth/sign-out` reach Better Auth (`AUTH_ROUTES`); every other path under
+  `/api/auth` is a JSON 404 before its rate limiter (`/list-sessions` would hand out raw
+  tokens, and the limiter keeps a counter per path). A POST from another `Origin` is
+  refused with `not_allowed`. Bodies under `/api/auth/*` and `/api/me/*` are capped at
+  4 KB, every other `/api/*` body at 16 KB (`bad_payload`, 413). No answer carries a
+  `token` field: the cookie carries the session.
 - **Lifetime**: a session lasts `ROOM_TTL_DAYS` (90) after the last visit, so a guest
   keeps their identity as long as their rooms live; a visit extends it at most once a
   day. Changing `BETTER_AUTH_SECRET` signs everybody out (new guests).
 - **Display name**: `user.name`, `""` until the person picks one (#16 asks on joining;
   the plugin's English "Anonymous" is never stored). `POST /api/me/name { name }` cleans
   it with the domain's `cleanName` (whitespace collapsed, 1 to 32 characters within the
-  code-unit cap, well-formed) and answers `{ name }` or `{ code: "bad_name" }`; it
-  refuses another `Origin` and a non-JSON body. Better Auth's `/update-user` and
-  `/delete-anonymous-user` are disabled.
+  code-unit cap, well-formed, nothing invisible: see section 8) and answers `{ name }` or
+  `{ code: "bad_name" }`; it refuses another `Origin` and a non-JSON body, and allows 10
+  changes per user and 60 per address a minute. Better Auth's `/update-user` is never
+  forwarded.
 - **Privacy**: sessions store neither the client address nor the user agent (a database
-  hook nulls both); Better Auth's telemetry is off; its log calls keep the message and
-  drop the arguments.
+  hook nulls both); Better Auth's telemetry is off.
+- **Logs**: a failed query's error carries its parameters (a session token), so no
+  Better Auth or driver error is ever printed: Better Auth's logger goes to pino with a
+  fixed message and at most its error code (`INTERNAL_SERVER_ERROR`);
+  `onAPIError.throw` keeps better-call from printing its `# SERVER_ERROR` dump to stderr
+  and Better Auth from printing 4xx lines; the handler logs only the code of a thrown
+  error; `sessionUser` rethrows a `DatabaseError` with the code alone.
 - **Sockets**: see section 5, "Handshake". The handshake never refreshes a session.
-- **Errors**: Better Auth's 404, 429 and 5xx answers become `not_found`, `rate_limited`
-  and `internal`. A database failure while reading a session is a 500, never "no
+- **Errors**: Better Auth's answers become the app's codes, never its sentences: 404
+  `not_found`, 401 `unauthenticated`, 403 and a guest's second anonymous sign-in
+  `not_allowed`, 429 `rate_limited` (with `Retry-After`), any other 4xx `bad_payload`,
+  5xx `internal`. A database failure while reading a session is a 500, never "no
   session", so an outage cannot hand out a new guest identity.
 - **W5**: Google and Microsoft Entra ID. Better Auth's anonymous plugin, on a social
   sign-in, calls `onLinkAccount({ anonymousUser, newUser })` and then deletes the guest:
@@ -348,7 +381,14 @@ password, no social provider before W5.
 - Password (optional): argon2id hash. A correct entry sets a signed, httpOnly
   room-access cookie for that room; attempts limited per IP and per room.
 - Limits: names 32 characters, subjects 200, custom cards 4 characters × 20, payloads
-  16 KB. HTTP rate limits on room creation, join and password; per-socket command rate
+  16 KB.
+- Text (names, round titles, room names: the domain's `cleanText`): control characters,
+  bidi controls and default-ignorable code points are refused (zero-width space, soft
+  hyphen, LRM, Hangul fillers, U+FEFF …), except ZWJ, ZWNJ and VS16, and tag characters
+  inside an emoji flag. Text that is blank once cleaned (whitespace, format characters,
+  the braille blank, combining marks without a base) is refused. The web app renders
+  every user-provided name inside `<bdi>` (W1), so a right-to-left name cannot reorder
+  the text around it. HTTP rate limits on room creation, join and password; per-socket command rate
   limit.
 - Client address for every rate limit: `clientIp(request, TRUST_PROXY)`, the entry
   `TRUST_PROXY` places from the right of `X-Forwarded-For` (each proxy appends the
@@ -356,8 +396,10 @@ password, no social provider before W5.
 - Identity limits (Better Auth's limiter, keyed on that same address, which the server
   passes in a header of its own after dropping any client copy): anonymous sign-in 60 per
   address and minute, so a team of 30 behind one office address joins at once; every
-  other auth endpoint 100 per 10 s. Answer: 429 `rate_limited`. The counters live in the
-  process (per instance with #39).
+  other auth endpoint 100 per 10 s; display name changes 10 per user and 60 per address
+  a minute. Answer: 429 `rate_limited`. The counters live in the process (per instance
+  with #39), at most 50,000 at once: expired ones are swept every 30 s, and when full the
+  oldest tenth goes.
 - Headers: strict CSP (no inline scripts), HSTS, `X-Content-Type-Options`,
   `Referrer-Policy`. Subject links are rendered with `rel="noopener noreferrer"` and
   only `http(s)` schemes.
@@ -490,7 +532,7 @@ language, and an unknown code gets a generic one.
 | Env var | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | yes | Postgres connection, a real session (port 5432, no transaction-mode pooler); `?sslmode=` has libpq's meaning (`require` encrypts without checking the certificate, `verify-full` checks it) |
-| `BETTER_AUTH_SECRET` | yes | signs the session cookies; at least 32 characters (`openssl rand -base64 32`); never logged; changing it signs everybody out |
+| `BETTER_AUTH_SECRET` | yes | signs the session cookies; at least 32 random characters (`openssl rand -base64 32`; the old `.env.example` placeholder and one repeated character are refused); never logged; changing it signs everybody out |
 | `BASE_URL` | yes | public origin (no path, no credentials): cookies, OAuth callbacks, the only `Origin` Socket.IO accepts from a browser; `http://localhost:5173` for `pnpm dev` |
 | `PORT` | no (3000) | HTTP and Socket.IO port |
 | `ROOM_TTL_DAYS` | no (90) | retention |

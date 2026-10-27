@@ -69,10 +69,16 @@ server sends and never decides the outcome of a round.
   static imports) exceeds 200 kB gzipped. Lazy chunks (Motion features, the toaster, the
   French and German catalogs) do not count.
 - Nothing connects at module load: `createSocket()` returns an unconnected socket.
-  `connectWhenIdentified(socket)` connects it once `ensureIdentity()` resolved; on
-  `connect_error` `unauthenticated` it runs the bootstrap once more and reconnects, and a
-  second refusal sets the identity store's error, which the root layout shows as a toast
-  (`errors.unauthenticated`). The session cookie is httpOnly: never read it.
+  `connectWhenIdentified(socket)` connects it once `ensureIdentity({ retry: true })`
+  resolved; on `connect_error` `unauthenticated` it runs the bootstrap once more and
+  reconnects, and a second refusal sets the identity store's error, which the root layout
+  shows as a toast (`errors.unauthenticated`). After `internal` or `rate_limited` it
+  connects again with `retryDelay`'s backoff. The session cookie is httpOnly: never read
+  it.
+- The identity bootstrap holds the `pp-identity` Web Lock (two tabs, one guest), always
+  takes the user from a session read, retries temporary failures (identity status
+  `retrying`, a quiet toast) and stops at `cookies_blocked`. Render every user-provided
+  name inside `<bdi>`.
 - Browser code only: `tsconfig.app.json` covers `src/` with DOM types and no Node types;
   `tsconfig.node.json` covers `vite.config.ts` and `scripts/`, which run under Node 24's
   type stripping.
