@@ -84,6 +84,12 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   cards. A change during voting asks first, then restarts the round, timer included.
   Labels never draw under 7 px; one that cannot fit is clipped with its full text in a
   title. The room route loads 172.2 kB.
+- The timer from #27: a per-round length in the panel (off, 30 s, 60 s, 2 min, custom)
+  with "Reveal when the timer ends", and the PO's start, stop and +30 s by "Reveal
+  cards". A ring drains around the centre on the server's clock (`server-clock.ts`,
+  monotonic, re-synced after a sleep). The server reveals at the deadline, exactly once,
+  even after a restart; pages ping `timeUp` as a fallback. A deck restart restarts the
+  timer. The room route loads 172.9 kB.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -94,32 +100,31 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#27 (PP-027)** the timer: a per-round setting, the PO's start, stop and +30 s, and
-  a ring around the centre. PR #90 is in review; it must merge `main` (#26's restart
-  also resets `timerStartedAt` and `timeUpAt`).
 - **#30 (PP-030)** PO powers: hand over, claim when the PO is gone or away for 120 s,
-  remove someone. Building in `../pp-wt-30`.
+  remove someone. PR #91 reviewed (no blocker); the fixer in `../pp-wt-30` merges `main`
+  and moves the claim banner onto #27's `serverTime()`.
+- **#28 (PP-028)** reveal modes: who can reveal ("anyone" means anyone who votes, never
+  an observer: today the domain lets an observer reveal), a voter's "Reveal cards" and
+  `R`, the revealer named in the live region. Building in `../pp-wt-28`.
 
 ## Next
 
-- W2 order, by dependencies:
-  - #28 (reveal modes) after #27 merges, since both change the table's centre. #29
-    (change after reveal) needs #28; #31 (password) needs #30.
-  - #28 is mostly done already: anonymous rounds (#19, #25) and reveal when everyone
-    voted (#25). It adds who can reveal ("anyone": a voter's "Reveal cards" and `R`,
-    never an observer). PO decision: switching anonymity never re-projects the round
-    on the table; it applies from the next round, as #25 does, since names already
-    seen cannot be hidden and an anonymous round must never gain them.
+- W2 order, by dependencies: #29 (change after reveal) needs #28; #31 (password) needs
+  #30. They start as #28 and #30 merge.
+  - PO decision for #28: switching anonymity never re-projects the round on the table;
+    it applies from the next round, as #25 does, since names already seen cannot be
+    hidden and an anonymous round must never gain them.
 - Chores to fold into a later issue: a lazy catalog for the settings panel (about
   2 kB off both pages); the burst test's one `room_not_found` (see the build log).
   - Each later setting drops its control into #25's panel (see the web README).
 - Notes to carry into the briefs:
   - #29: change after reveal never applies to anonymous rounds. The panel's `locked`
     toggle shows why.
-  - #30: when the PO leaves, the room can be claimed at once.
   - #31: the header GET shows a password room's name.
-  - #27: the four-person spec asserts the countdown and keeps one round where every
-    client is idle, so the server's own timeout stays proven.
+  - #39 (scale-out): a kick must close the person's sockets on every instance; today
+    only on the one that ran it.
+  - Later: a person removed while their socket was down comes back to the join form
+    with no notice (accepted at #30's review).
 - **W2 runs without a new go** (Sven, 2026-10-26: "once wave 0 is done, start the
   next one").
 
