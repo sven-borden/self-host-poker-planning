@@ -203,6 +203,7 @@ export const de: Catalog = {
     opensInNewTab: "(öffnet in einem neuen Tab)",
     anonymous: "Anonym",
     anonymousHint: "Die Karten werden ohne Namen gezeigt.",
+    anonymousSpoken: "Anonyme Runde: Die Karten werden ohne Namen gezeigt.",
     titleTooLong: "Ein Titel darf höchstens {{max, number}} Zeichen lang sein.",
     linkTooLong: "Ein Link darf höchstens {{max, number}} Zeichen lang sein.",
     badLink: "Nur http- und https-Links sind möglich, ohne Benutzername und Passwort.",

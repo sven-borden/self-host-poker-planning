@@ -252,6 +252,7 @@ export const en = {
     opensInNewTab: "(opens in a new tab)",
     anonymous: "Anonymous",
     anonymousHint: "Cards are shown without names.",
+    anonymousSpoken: "Anonymous round: cards are shown without names.",
     titleTooLong: "A title can have at most {{max, number}} characters.",
     linkTooLong: "A link can have at most {{max, number}} characters.",
     badLink: "Only http and https links work, without a user name or password.",
