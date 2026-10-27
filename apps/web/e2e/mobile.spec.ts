@@ -1,17 +1,13 @@
-import {
-  type Browser,
-  type BrowserContext,
-  devices,
-  expect,
-  type Page,
-  test,
-} from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import {
   createRoom,
   type Guest,
+  guestsJoin,
+  hand,
+  handCard,
   join,
   newGuest,
-  ownAddress,
+  phone,
   SHOTS,
   sameUser,
   seats,
@@ -21,8 +17,9 @@ import {
 // Pixel 7 descriptors by touch (AC 1), no sideways scroll from 320 to 640 px in English,
 // French and German in every phase (AC 2), 16 seats that stay apart at 360 px (AC 3), the
 // hand docked within thumb reach while voting, the subject, table and hand on one screen
-// at 390 × 844 with 8 people, a phone on its side, and the screenshots. Exported helpers
-// are meant for #23's four-person round. Needs DATABASE_URL; skipped without it locally,
+// at 390 × 844 with 8 people, a phone on its side, and the screenshots. The helpers for
+// phones (`phone`, `guestsJoin`, `hand`, `handCard`) live in support.ts, for #23's
+// four-person round: Playwright refuses a test file that imports another. Needs DATABASE_URL; skipped without it locally,
 // failing without it in CI.
 
 test.skip(
@@ -35,81 +32,9 @@ test.beforeAll(() => {
   }
 });
 
-type Device = "iPhone 13" | "Pixel 7";
-
-export interface Phone {
-  context: BrowserContext;
-  page: Page;
-  /** Every `navigator.vibrate` pattern the page asked for. */
-  vibrations: () => Promise<number[]>;
-  /** Uncaught errors on the page. */
-  errors: string[];
-}
-
-/**
- * A phone: a device descriptor (viewport, touch, mobile, user agent) in the configured
- * Chromium or Edge, or a bare phone-sized viewport. The iPhone has no `navigator.vibrate`,
- * as in Safari; elsewhere each call is recorded.
- */
-export async function phone(
-  browser: Browser,
-  device: Device | { width: number; height: number },
-): Promise<Phone> {
-  const options =
-    typeof device === "string"
-      ? (({ defaultBrowserType: _, ...descriptor }) => descriptor)(devices[device])
-      : { viewport: device, isMobile: true, hasTouch: true, deviceScaleFactor: 2 };
-  const context = await browser.newContext({
-    ...options,
-    locale: "en-US",
-    extraHTTPHeaders: ownAddress(),
-  });
-  const ios = device === "iPhone 13";
-  await context.addInitScript((noVibrate: boolean) => {
-    const calls: number[] = [];
-    Object.assign(window, { __vibrations: calls });
-    if (noVibrate) {
-      Reflect.deleteProperty(Navigator.prototype, "vibrate");
-      return;
-    }
-    Object.defineProperty(Navigator.prototype, "vibrate", {
-      configurable: true,
-      value: (pattern: number | Iterable<number>) => {
-        calls.push(...(typeof pattern === "number" ? [pattern] : pattern));
-        return true;
-      },
-    });
-  }, ios);
-  const page = await context.newPage();
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  return {
-    context,
-    page,
-    errors,
-    vibrations: () =>
-      page.evaluate(() => (window as unknown as { __vibrations: number[] }).__vibrations),
-  };
-}
-
-export const hand = (page: Page) => page.getByRole("toolbar", { name: "Your cards" });
-export const handCard = (page: Page, label: string) =>
-  hand(page).getByRole("button", { name: label, exact: true });
 const handLive = (page: Page) => page.locator("[data-hand-live]");
 const results = (page: Page) => page.getByRole("region", { name: "Results" });
 const stat = (page: Page, key: string) => results(page).locator(`[data-stat='${key}'] dd`);
-
-/** Guests who join as voters over the protocol, named in order. */
-export async function guestsJoin(base: string, code: string, names: readonly string[]) {
-  const guests: Guest[] = [];
-  for (const name of names) {
-    const guest = await newGuest(base);
-    guests.push(guest);
-    expect(await guest.enter(code)).toMatchObject({ ok: true });
-    expect(await guest.cmd("join", { name, role: "voter" })).toMatchObject({ ok: true });
-  }
-  return guests;
-}
 
 async function vote(guests: readonly Guest[], cards: readonly string[], round = 1) {
   for (const [i, guest] of guests.entries()) {
@@ -186,12 +111,9 @@ test("a round on an iPhone 13 and a Pixel 7, by touch (AC 1)", async ({ browser,
       [iphone, "5"],
       [pixel, "8"],
     ] as const) {
-      // Within thumb reach without scrolling: docked at the bottom of the screen.
-      const dock = viewer.page.locator("[data-hand-dock]");
-      await expect(dock).toHaveCSS("position", "sticky");
-      const box = await dock.boundingBox();
-      const height = viewer.page.viewportSize()?.height ?? 0;
-      expect(box && box.y >= 0 && box.y + box.height <= height, JSON.stringify(box)).toBe(true);
+      // Docked at the bottom of the screen where the table leaves room for it, in the page
+      // under the table where it does not; never over "Reveal cards" or the viewer's seat.
+      expectClearOfDock(await dockAtTop(viewer.page), card);
       await handCard(viewer.page, card).tap();
       await expect(handLive(viewer.page)).toHaveText(`Your vote: ${card}.`);
     }
@@ -315,6 +237,54 @@ test("no page scrolls sideways from 320 to 640 px, in English, French and German
   }
 });
 
+/** What the phone shows at the top of the page while voting, and where the docked hand is. */
+async function dockAtTop(page: Page) {
+  await page.waitForTimeout(150);
+  return page.evaluate(() => {
+    window.scrollTo(0, 0);
+    const box = (element: Element | null) => {
+      if (!element) return null;
+      const { top, bottom } = element.getBoundingClientRect();
+      return { top, bottom };
+    };
+    const dock = document.querySelector("[data-hand-dock]");
+    const panel = document.querySelector("[data-room-hand]");
+    return {
+      dock: dock ? { ...box(dock), position: getComputedStyle(dock).position } : null,
+      hand: panel ? getComputedStyle(panel).position : null,
+      kept: {
+        "Reveal cards": box(document.querySelector("[data-reveal]")),
+        "the viewer's seat": box(document.querySelector("[data-room-table] [data-seat][data-you]")),
+        "the viewer's slot": box(
+          document.querySelector("[data-room-table] [data-slot-card][data-you]"),
+        ),
+      },
+      height: document.documentElement.clientHeight,
+    };
+  });
+}
+
+type AtTop = Awaited<ReturnType<typeof dockAtTop>>;
+
+/**
+ * Nothing that matters lies under the docked hand: "Reveal cards" and the viewer's seat
+ * and slot end above it, on screen. A hand that does not dock stays in the page.
+ */
+function expectClearOfDock(at: AtTop, where: string) {
+  if (at.dock === null) {
+    expect(at.hand, `${where}: the hand in the page`).toBe("static");
+    return;
+  }
+  const dock = at.dock as { top: number; bottom: number; position: string };
+  expect(dock.position, where).toBe("sticky");
+  expect(dock.bottom, `${where}: the dock on screen`).toBeLessThanOrEqual(at.height + 0.5);
+  for (const [name, box] of Object.entries(at.kept)) {
+    if (box === null) continue;
+    expect(box.top, `${where}: ${name} on screen`).toBeGreaterThanOrEqual(0);
+    expect(box.bottom, `${where}: ${name} above the dock`).toBeLessThanOrEqual(dock.top + 0.5);
+  }
+}
+
 interface Box {
   left: number;
   top: number;
@@ -437,6 +407,13 @@ test("16 seats stay apart at 360 px: names, initials and colours of their own, n
       }
     }
     await shootPhone(page, "voting-16");
+    // The second Ana Lima is numbered for sighted people too, in her seat's popover.
+    await page.setViewportSize({ width: 360, height: 780 });
+    await seats(page).getByRole("button", { name: "Ana Lima (2), thinking" }).tap();
+    await expect(page.getByRole("dialog")).toContainText("Ana Lima (2)");
+    await page.screenshot({ path: `${SHOTS}phone-fix-08-namesake-popover-360x780.png` });
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
 
     // Everyone else votes, the PO last: the round reveals itself.
     await vote(guests.slice(9), ["40", "100", "?", "5", "8", "13"]);
@@ -464,6 +441,36 @@ test("16 seats stay apart at 360 px: names, initials and colours of their own, n
     expect((await sideScroll(page)).over).toBeLessThanOrEqual(0);
     await page.waitForTimeout(2600);
     await shootPhone(page, "reveal-16");
+
+    // The T-shirt deck's long labels narrow rather than shrink below 7 px, on the slots
+    // and in the centre's tie chips ("XL", "XXL").
+    expect(
+      await owner.cmd("updateSettings", { patch: { deck: { kind: "preset", id: "tshirt" } } }),
+    ).toMatchObject({ ok: true });
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.getByRole("button", { name: "Next round" }).tap();
+    await vote(
+      guests,
+      ["XXL", "XXL", "XXL", "XXL", "XL", "XL", "XL", "XL", "XS", "XS", "S", "S", "M", "M", "L"],
+      2,
+    );
+    await handCard(page, "L").tap();
+    await expect(results(page)).toBeVisible();
+    await expect(page.locator("[data-room-table] [data-face='up']")).toHaveCount(16);
+    const shirts = await page
+      .locator("[data-room-table] span[data-card-value]")
+      .evaluateAll((values) =>
+        values.map((value) => ({
+          card: value.textContent,
+          px: Number.parseFloat(getComputedStyle(value).fontSize),
+          narrow: value.hasAttribute("data-narrow"),
+        })),
+      );
+    expect(shirts.filter(({ px }) => px < 7)).toEqual([]);
+    expect(shirts.some(({ card, narrow }) => card === "XXL" && narrow)).toBe(true);
+    await page.waitForTimeout(2600);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: `${SHOTS}phone-fix-06-tshirt-16-360x780.png` });
   } finally {
     owner?.close();
     for (const guest of guests) guest.close();
@@ -522,10 +529,11 @@ test("at 390 × 844 with 8 people the subject, the table and the hand fit on one
       expect(fit.first, "the subject on screen").toBeGreaterThanOrEqual(0);
       expect(fit.table, "the table above the hand").toBeLessThanOrEqual(fit.handTop);
       expect(fit.handBottom, "the hand on screen").toBeLessThanOrEqual(fit.height);
-      // At the top of the page the hand is docked at the bottom, within thumb reach.
-      await viewer.evaluate(() => window.scrollTo(0, 0));
-      const dock = await viewer.locator("[data-hand-dock]").boundingBox();
-      expect(dock && dock.y + dock.height <= 844).toBe(true);
+      // At the top of the page the hand is docked at the bottom, within thumb reach, and
+      // the table, "Reveal cards" and the viewer's seat end above it.
+      const atTop = await dockAtTop(viewer);
+      expect(atTop.dock, "docked at 390 × 844").not.toBeNull();
+      expectClearOfDock(atTop, "390 × 844");
     }
     // The PO, field and all, and a guest see it all at the top of the page, unscrolled.
     for (const viewer of [page, ben.page]) {
@@ -554,6 +562,143 @@ test("at 390 × 844 with 8 people the subject, the table and the hand fit on one
     await page.getByRole("heading", { name: "You", exact: true }).scrollIntoViewIfNeeded();
     await expect(page.getByRole("heading", { name: "You", exact: true })).toBeInViewport();
   } finally {
+    for (const guest of guests) guest.close();
+    await po.context.close();
+    await ben.context.close();
+  }
+});
+
+const LONG_TITLES = {
+  en: "Payment retries for the second card when the first one is declined twice in a row",
+  fr: "Nouvelles tentatives de paiement avec la deuxième carte quand la première est refusée",
+  de: "Zahlungswiederholung mit der zweiten Karte, wenn die erste zweimal abgelehnt wird",
+} as const;
+
+test("the docked hand never covers Reveal cards or the viewer's seat: 320 to 390 px, three languages, two-line titles, 150 % text", async ({
+  browser,
+  baseURL,
+}) => {
+  test.setTimeout(300_000);
+  const po = await phone(browser, "iPhone SE");
+  const ben = await phone(browser, { width: 390, height: 844 });
+  const { page } = po;
+  let guests: Guest[] = [];
+  let owner: Guest | undefined;
+  /** Where the hand docked, for the report. */
+  const docked: string[] = [];
+  const sizes = [
+    { width: 390, height: 844 },
+    { width: 390, height: 664 }, // an iPhone 13 in Safari, its bars showing
+    { width: 360, height: 780 },
+    { width: 320, height: 568 }, // an iPhone SE
+  ];
+  try {
+    const code = await createRoom(page);
+    await join(page, "Ana");
+    await ben.page.goto(page.url());
+    await join(ben.page, "Ben");
+    guests = await guestsJoin(baseURL ?? "", code, [
+      "Cleo",
+      "Dan",
+      "Eve Novak",
+      "Finn",
+      "Gus",
+      "Hana",
+    ]);
+    owner = await sameUser(baseURL ?? "", po.context);
+    expect(await owner.enter(code)).toMatchObject({ ok: true });
+
+    for (const subject of ["link", "title"] as const) {
+      for (const language of ["en", "fr", "de"] as const) {
+        if (subject === "title" || language === "en") {
+          const ack = await owner.cmd("startRound", {
+            subject:
+              subject === "link"
+                ? { kind: "link", url: "https://example.atlassian.net/browse/PAY-482" }
+                : { kind: "title", text: LONG_TITLES[language] },
+          });
+          expect(ack).toMatchObject({ ok: true });
+        }
+        for (const [who, viewer] of [
+          ["PO", page],
+          ["guest", ben.page],
+        ] as const) {
+          await inLanguage(viewer, language);
+          await expect(viewer.locator("[data-room-hand]")).toBeVisible();
+          if (who === "PO") await expect(viewer.locator("[data-reveal]")).toBeVisible();
+          for (const size of sizes) {
+            await viewer.setViewportSize(size);
+            const where = `${who}, ${language}, ${subject}, ${size.width} × ${size.height}`;
+            const at = await dockAtTop(viewer);
+            if (who === "PO") expect(at.kept["Reveal cards"], where).not.toBeNull();
+            expectClearOfDock(at, where);
+            if (at.dock) docked.push(where);
+          }
+          // 150 % text: the dock grows with it, and still covers nothing.
+          if (language !== "fr") {
+            const larger = await viewer.addStyleTag({ content: "html { font-size: 150% }" });
+            for (const size of [sizes[0], sizes[2]]) {
+              if (!size) continue;
+              await viewer.setViewportSize(size);
+              const where = `${who}, ${language}, ${subject}, 150 % text, ${size.width} × ${size.height}`;
+              const at = await dockAtTop(viewer);
+              expectClearOfDock(at, where);
+              if (at.dock) docked.push(where);
+              if (who === "PO" && language === "en" && subject === "link" && size.width === 390) {
+                await viewer.screenshot({ path: `${SHOTS}phone-fix-04-text150-390x844.png` });
+              }
+            }
+            await larger.evaluate((element) => (element as Element).remove());
+          }
+        }
+        // The reviewer's situations, after the fix.
+        if (language === "en" && subject === "link") {
+          await page.setViewportSize({ width: 320, height: 568 });
+          await dockAtTop(page);
+          await page.screenshot({ path: `${SHOTS}phone-fix-01-iphone-se-po-320x568.png` });
+          await ben.page.setViewportSize({ width: 390, height: 664 });
+          await dockAtTop(ben.page);
+          await ben.page.screenshot({ path: `${SHOTS}phone-fix-02-iphone13-guest-390x664.png` });
+        }
+        if (language === "de" && subject === "title") {
+          await page.setViewportSize({ width: 360, height: 780 });
+          await dockAtTop(page);
+          await page.screenshot({ path: `${SHOTS}phone-fix-03-de-two-line-title-360x780.png` });
+        }
+        if (subject === "title" || language === "de") {
+          expect(await owner.cmd("reveal")).toMatchObject({ ok: true });
+        }
+      }
+    }
+    // The one-screen promise holds where it was made: 390 × 844, English, a short subject.
+    expect(docked).toContain("PO, en, link, 390 × 844");
+    expect(docked).toContain("guest, en, link, 390 × 844");
+    test.info().annotations.push({ type: "docked", description: docked.join("; ") });
+    console.log(`docked: ${docked.join("; ")}`);
+
+    // Arrow keys keep the focused card in sight, and the page where it was.
+    expect(await owner.cmd("startRound", { subject: { kind: "none" } })).toMatchObject({
+      ok: true,
+    });
+    await inLanguage(ben.page, "en");
+    await ben.page.setViewportSize({ width: 360, height: 780 });
+    await dockAtTop(ben.page);
+    await handCard(ben.page, "0").focus();
+    const scrolled = await ben.page.evaluate(() => window.scrollY);
+    for (let i = 0; i < 6; i++) await ben.page.keyboard.press("ArrowRight");
+    await expect(handCard(ben.page, "13")).toBeFocused();
+    const bar = await hand(ben.page).boundingBox();
+    const thirteen = await handCard(ben.page, "13").boundingBox();
+    expect(
+      bar &&
+        thirteen &&
+        thirteen.x >= bar.x + 31 &&
+        thirteen.x + thirteen.width <= bar.x + bar.width - 31,
+      JSON.stringify({ bar, thirteen }),
+    ).toBe(true);
+    expect(await ben.page.evaluate(() => window.scrollY)).toBe(scrolled);
+  } finally {
+    owner?.close();
     for (const guest of guests) guest.close();
     await po.context.close();
     await ben.context.close();
@@ -599,6 +744,17 @@ test("a phone on its side (844 × 390) keeps the table, the hand and the control
         fullPage: true,
       });
     }
+    // A smaller phone on its side (750 × 342): the PO's field is compact, so the first
+    // screen reaches the table.
+    await page.getByRole("button", { name: "Next round" }).tap();
+    await page.setViewportSize({ width: 750, height: 342 });
+    await page.waitForTimeout(200);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const field = await page.locator("[data-next-subject]").boundingBox();
+    expect(field?.height ?? 99, "the subject field").toBeLessThanOrEqual(48);
+    const stage = await page.locator("[data-stage]").boundingBox();
+    expect(stage?.y ?? 999, "the table starts on the first screen").toBeLessThan(342);
+    await page.screenshot({ path: `${SHOTS}phone-fix-05-landscape-750x342.png` });
     expect(po.errors).toEqual([]);
   } finally {
     for (const guest of guests) guest.close();
