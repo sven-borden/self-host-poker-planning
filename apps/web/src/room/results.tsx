@@ -255,12 +255,20 @@ function Panel({ model, motion }: { model: ResultsModel; motion: RevealMotion })
             key={stat.key}
             data-stat={stat.key}
             className={cn(
-              "flex flex-col-reverse items-center gap-1 text-center",
+              "flex min-w-0 flex-col-reverse items-center gap-1 text-center",
               stats.length === 3 && stat.key === "spread" && "col-span-2 sm:col-span-1",
             )}
           >
             <dt className={CAPTION}>{stat.caption}</dt>
-            <dd className="m-0 font-display text-[28px]/none font-extrabold whitespace-nowrap tabular-nums [font-stretch:110%] phone:text-[24px]/none">
+            {/* A tie of many cards (#26: up to 20 in a custom deck) wraps between them. */}
+            <dd
+              className={cn(
+                "m-0 font-display text-[28px]/none font-extrabold tabular-nums [font-stretch:110%] phone:text-[24px]/none",
+                stat.key === "mostVoted"
+                  ? "max-w-full text-balance [overflow-wrap:anywhere]"
+                  : "whitespace-nowrap",
+              )}
+            >
               {stat.value === null ? (
                 <>
                   <span aria-hidden="true">—</span>

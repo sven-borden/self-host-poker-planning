@@ -11,6 +11,9 @@ const src = (path: string) => fileURLToPath(new URL(`./src/${path}`, import.meta
 // In development the web app runs on 5173 and forwards the API and the socket to the
 // server on 3000, so the browser sees a single origin, as it does in production. The
 // server (#6) serves `dist/` with a history fallback, so the base stays "/".
+// E2E_API_PORT moves the server for an end-to-end run beside another (playwright.config.ts).
+const api = `http://localhost:${process.env.E2E_API_PORT ?? 3000}`;
+
 export default defineConfig({
   base: "/",
   plugins: [
@@ -57,8 +60,8 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      "/api": "http://localhost:3000",
-      "/socket.io": { target: "http://localhost:3000", ws: true },
+      "/api": api,
+      "/socket.io": { target: api, ws: true },
     },
   },
 });

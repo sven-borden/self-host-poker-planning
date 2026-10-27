@@ -95,7 +95,8 @@ export function CardValue({ value, room }: { value: string; room: number }) {
       data-card-value
       data-narrow={narrow || undefined}
       className="whitespace-nowrap"
-      style={{ fontSize: `${scale}em`, fontStretch: narrow ? "70%" : undefined }}
+      // Never below 7 px (#26): a four-letter word on a phone's slot would land just under.
+      style={{ fontSize: `max(7px, ${scale}em)`, fontStretch: narrow ? "70%" : undefined }}
     >
       {value}
     </span>

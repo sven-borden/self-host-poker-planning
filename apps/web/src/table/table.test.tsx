@@ -254,7 +254,7 @@ describe("cards", () => {
     const value = document.querySelector<HTMLElement>("[data-card-value]");
     expect(value?.className).toContain("whitespace-nowrap");
     // At 42 % it would be 5 px on a phone's chip: it narrows to 70 % width and grows.
-    expect(value?.style.fontSize).toBe("0.579em");
+    expect(value?.style.fontSize).toBe("max(7px, 0.579em)");
     expect(value?.style.fontStretch).toBe("70%");
   });
 

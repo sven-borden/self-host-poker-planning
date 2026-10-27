@@ -444,14 +444,24 @@ function openAtTop(box: HTMLElement | null) {
   title?.focus({ preventScroll: true });
 }
 
-/** Scrolls a focused element out from under the sticky head, where the browser left it. */
+/**
+ * Scrolls a focused element out from under the sticky head, where the browser left it, or
+ * up from below the sheet's bottom, where the focus trap's wrap from the first control to
+ * the last leaves it (Radix focuses without scrolling).
+ */
 function keepClearOfHead(box: HTMLElement | null, target: EventTarget) {
   if (!box || !(target instanceof HTMLElement) || target.closest("[data-panel-head]")) return;
   requestAnimationFrame(() => {
     const head = box.querySelector("[data-panel-head]")?.getBoundingClientRect();
     if (!head || document.activeElement !== target) return;
-    const gap = head.bottom - target.getBoundingClientRect().top;
-    if (gap > 0) box.scrollTop -= gap + 8;
+    const rect = target.getBoundingClientRect();
+    const gap = head.bottom - rect.top;
+    if (gap > 0) {
+      box.scrollTop -= gap + 8;
+      return;
+    }
+    const below = rect.bottom - box.getBoundingClientRect().bottom;
+    if (below > 0) box.scrollTop += below + 8;
   });
 }
 

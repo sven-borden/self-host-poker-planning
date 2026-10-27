@@ -4,7 +4,10 @@ import { defineConfig } from "@playwright/test";
 // `pnpm gate`; CI runs them in the `web-e2e` job). Locally they use the installed
 // Microsoft Edge and build first; in CI they use Playwright's Chromium on a fresh build.
 
-const PORT = 4173;
+// Two worktrees can run the suite side by side on other ports: E2E_WEB_PORT for the
+// preview, E2E_API_PORT for the server (vite.config.ts forwards to it).
+const PORT = Number(process.env.E2E_WEB_PORT ?? 4173);
+const API_PORT = Number(process.env.E2E_API_PORT ?? 3000);
 const ci = Boolean(process.env.CI);
 const preview = `pnpm exec vite preview --port ${PORT} --strictPort`;
 
@@ -16,12 +19,12 @@ const apiServer = databaseUrl
   ? [
       {
         command: "pnpm --filter @pp/server exec tsx src/main.ts",
-        url: "http://localhost:3000/api/health",
+        url: `http://localhost:${API_PORT}/api/health`,
         reuseExistingServer: false,
         timeout: 60_000,
         env: {
           DATABASE_URL: databaseUrl,
-          PORT: "3000",
+          PORT: String(API_PORT),
           BASE_URL: `http://localhost:${PORT}`,
           BETTER_AUTH_SECRET: "e2e-fake-secret-not-used-anywhere-else-0123456789",
           // `vite preview` forwards without adding X-Forwarded-For, so the header a test
