@@ -173,7 +173,7 @@ in Voting until the next command arrives. Not built in #3.
 
 Socket.IO with typed event maps from `packages/protocol` (`ClientToServerEvents`,
 `ServerToClientEvents`); every payload is validated with zod on both ends.
-`PROTOCOL_VERSION` is 1.
+`PROTOCOL_VERSION` is 2 (2 added the `busy` ack code, #15; 1 was the first deploy).
 
 | Event | Direction | Payload | Ack |
 |---|---|---|---|
