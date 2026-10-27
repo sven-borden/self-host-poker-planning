@@ -6,7 +6,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./app.tsx";
 import { ErrorPage } from "./components/shell/error-page.tsx";
 import { changeLanguage } from "./i18n/i18n.ts";
@@ -66,6 +66,12 @@ afterEach(async () => {
   window.localStorage.clear();
   await act(() => changeLanguage("en"));
 });
+
+// The room route is a lazy chunk; load it once up front, so no test's wait pays for its
+// first transform (a slow machine took longer than findByRole's second).
+beforeAll(async () => {
+  await import("./routes/r/$code.tsx");
+}, 30_000);
 
 describe("the landing page", () => {
   const COPY = {
