@@ -25,6 +25,7 @@ export {
   type PresetDeckId,
   SPECIAL_CARDS,
   type SpecialCard,
+  UNITS_PER_CHARACTER,
   validateCustomDeck,
 } from "./decks.ts";
 export { generateRange, type RangeErrorCode } from "./range.ts";

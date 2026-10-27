@@ -1,20 +1,27 @@
-import { cleanName, MAX_NAME_LENGTH, MAX_PARTICIPANTS, type Role } from "@pp/domain";
+import {
+  cleanName,
+  MAX_NAME_LENGTH,
+  MAX_PARTICIPANTS,
+  type Role,
+  UNITS_PER_CHARACTER,
+} from "@pp/domain";
 import { OctagonXIcon } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { useT } from "../i18n/hooks.ts";
-import { setDisplayName } from "../identity/identity.ts";
 import { cn } from "../lib/utils.ts";
-import { sendCommand } from "../realtime/room-connection.ts";
+import { commandSender } from "../realtime/room-connection.ts";
 import { useIdentityStore } from "../stores/identity-store.ts";
 import { codeOf, failureMessage } from "./failure.ts";
+import { saveName } from "./save-name.ts";
 
 /**
- * The name input takes this many code units: a little over 32 characters of text, with
- * room for emoji and for accents typed as separate marks. A paste of any size is cut here.
+ * The name input takes as many code units as the domain accepts for 32 characters, so
+ * the browser never cuts an emoji or an accented letter in half; `cleanName` counts the
+ * characters. Only a paste far beyond any name is cut here.
  */
-export const NAME_INPUT_MAX_UNITS = MAX_NAME_LENGTH * 4;
+export const NAME_INPUT_MAX_UNITS = MAX_NAME_LENGTH * UNITS_PER_CHARACTER;
 
 const ROLE_OPTIONS = [
   { role: "voter", label: "seat.voter", hint: "seat.voterHint" },
@@ -24,8 +31,12 @@ const ROLE_OPTIONS = [
 interface JoinFormProps {
   /** Whether observers take one of the 16 seats (the room's setting). */
   observersCount: boolean;
-  /** Moves the focus to the name field when the form appears (after leaving the room). */
+  /**
+   * Moves the focus to the name field (after leaving the room, or when a seat frees up),
+   * then calls `onFocused`, so the request is not replayed later.
+   */
   focusOnMount?: boolean;
+  onFocused?: () => void;
   /** Called just before `join` is sent, and with false when it was refused. */
   onJoining: (joining: boolean) => void;
   /** The server answered `room_full` for everyone: the page shows the room-full screen. */
@@ -35,12 +46,19 @@ interface JoinFormProps {
 /**
  * The join screen (#16): a display name, prefilled with the last one this browser used,
  * and voter or observer, voter by default. The PO joins the same way. Submitting checks
- * the name with the domain's `cleanName`, saves it on the user (`setDisplayName`), then
- * sends `join`. The page swaps the form for the table when the snapshot says `you`.
+ * the name with the domain's `cleanName`, saves it on the user when it changed (`saveName`,
+ * which never blocks the join), then sends `join` to the room that was on screen at the
+ * submit. The page swaps the form for the table when the snapshot says `you`.
  */
-export function JoinForm({ observersCount, focusOnMount, onJoining, onFull }: JoinFormProps) {
+export function JoinForm({
+  observersCount,
+  focusOnMount,
+  onFocused,
+  onJoining,
+  onFull,
+}: JoinFormProps) {
   const t = useT();
-  const ids = { heading: useId(), name: useId(), hint: useId(), error: useId() };
+  const ids = { heading: useId(), name: useId(), hint: useId(), error: useId(), role: useId() };
   const savedName = useIdentityStore((state) => state.name);
   const [name, setName] = useState(savedName ?? "");
   const [edited, setEdited] = useState(false);
@@ -55,8 +73,10 @@ export function JoinForm({ observersCount, focusOnMount, onJoining, onFull }: Jo
   }, [edited, savedName]);
 
   useEffect(() => {
-    if (focusOnMount) nameInput.current?.focus();
-  }, [focusOnMount]);
+    if (!focusOnMount) return;
+    nameInput.current?.focus();
+    onFocused?.();
+  }, [focusOnMount, onFocused]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -64,15 +84,19 @@ export function JoinForm({ observersCount, focusOnMount, onJoining, onFull }: Jo
     if (busy) return;
     setFailure(null);
     // The domain's own rule, checked here: a refused name costs no request.
-    if (cleanName(name) === null) {
+    const cleaned = cleanName(name);
+    if (cleaned === null) {
       refuse("bad_name");
       return;
     }
+    // The join goes to the room on screen now, or nowhere: the page may move to another
+    // room while the name is being saved.
+    const send = commandSender();
     setBusy(true);
     try {
-      const saved = await setDisplayName(name);
+      const joinName = await saveName(cleaned);
       onJoining(true);
-      const ack = await sendCommand({ type: "join", payload: { name: saved, role } });
+      const ack = await send({ type: "join", payload: { name: joinName, role } });
       // Joined, or another tab of this browser joined first: the snapshot holds `you`.
       if (ack.ok || ack.code === "already_joined") return;
       onJoining(false);
@@ -140,7 +164,7 @@ export function JoinForm({ observersCount, focusOnMount, onJoining, onFull }: Jo
                 key={option.role}
                 data-role-option={option.role}
                 className={cn(
-                  "flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border border-line px-3 py-2.5 transition-colors",
+                  "flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border border-line-strong px-3 py-2.5 transition-colors",
                   "hover:bg-surface-2 has-checked:border-spruce has-checked:bg-surface-2",
                 )}
               >
@@ -151,10 +175,16 @@ export function JoinForm({ observersCount, focusOnMount, onJoining, onFull }: Jo
                   checked={role === option.role}
                   onChange={() => setRole(option.role)}
                   className="mt-1 size-4 shrink-0 accent-spruce"
+                  aria-labelledby={`${ids.role}-${option.role}`}
+                  aria-describedby={`${ids.role}-${option.role}-hint`}
                 />
                 <span className="flex min-w-0 flex-col">
-                  <span className="font-medium">{t(option.label)}</span>
-                  <span className="text-sm text-ink-2">{t(option.hint)}</span>
+                  <span id={`${ids.role}-${option.role}`} className="font-medium">
+                    {t(option.label)}
+                  </span>
+                  <span id={`${ids.role}-${option.role}-hint`} className="text-sm text-ink-2">
+                    {t(option.hint)}
+                  </span>
                 </span>
               </label>
             ))}

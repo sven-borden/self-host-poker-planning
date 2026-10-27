@@ -14,8 +14,15 @@ import { useIdentityStore } from "../stores/identity-store.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { RoomView } from "./room-view.tsx";
 
-const mocks = vi.hoisted(() => ({ sendCommand: vi.fn(), setDisplayName: vi.fn() }));
-vi.mock("../realtime/room-connection.ts", () => ({ sendCommand: mocks.sendCommand }));
+const mocks = vi.hoisted(() => ({
+  sendCommand: vi.fn(),
+  commandSender: vi.fn(),
+  setDisplayName: vi.fn(),
+}));
+vi.mock("../realtime/room-connection.ts", () => ({
+  sendCommand: mocks.sendCommand,
+  commandSender: mocks.commandSender,
+}));
 vi.mock("../identity/identity.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../identity/identity.ts")>()),
   setDisplayName: mocks.setDisplayName,
@@ -46,6 +53,12 @@ function show(state: RoomState) {
   });
 }
 
+/** `show`, then waits for the table's lazy chunk: the "You" panel is there. */
+async function showSeated(state: RoomState) {
+  show(state);
+  await screen.findByRole("heading", { name: "You" });
+}
+
 /** RoomView inside a router, for the room-full screen's link home. */
 async function renderView() {
   const router = createRouter({
@@ -69,6 +82,10 @@ beforeEach(() => {
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   version = 1;
   useRoomStore.getState().open(CODE);
+  // A sender bound when a form is submitted; here it sends through the same mock.
+  mocks.commandSender.mockImplementation(
+    () => (command: unknown) => mocks.sendCommand(command) as unknown,
+  );
 });
 
 afterEach(async () => {
@@ -76,6 +93,7 @@ afterEach(async () => {
   useRoomStore.getState().reset();
   useIdentityStore.getState().reset();
   mocks.sendCommand.mockReset();
+  mocks.commandSender.mockReset();
   mocks.setDisplayName.mockReset();
   vi.restoreAllMocks();
   await act(() => changeLanguage("en"));
@@ -99,7 +117,8 @@ describe("the join form", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Join the room" }));
     await waitFor(() => expect(screen.getByRole("heading", { name: "You" })).toBeTruthy());
-    expect(mocks.setDisplayName).toHaveBeenCalledWith("  Cleo   M ");
+    // Saved cleaned, as the server would store it.
+    expect(mocks.setDisplayName).toHaveBeenCalledWith("Cleo M");
     expect(mocks.sendCommand).toHaveBeenCalledWith({
       type: "join",
       payload: { name: "Cleo M", role: "observer" },
@@ -145,13 +164,13 @@ describe("the join form", () => {
       target: { value: "Eve" },
     });
     const submit = screen.getByRole("button", { name: "Join the room" });
-    mocks.setDisplayName.mockRejectedValueOnce(new IdentityError("rate_limited"));
+    mocks.setDisplayName.mockResolvedValue("Eve");
+    mocks.sendCommand.mockResolvedValueOnce({ ok: false, code: "rate_limited" });
     fireEvent.click(submit);
     await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/Too many attempts/));
-    mocks.setDisplayName.mockRejectedValueOnce(new IdentityError("network"));
+    mocks.sendCommand.mockRejectedValueOnce(new IdentityError("network"));
     fireEvent.click(submit);
     await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/Could not reach/));
-    mocks.setDisplayName.mockResolvedValue("Eve");
     mocks.sendCommand.mockResolvedValueOnce({ ok: false, code: "offline" });
     fireEvent.click(submit);
     await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/connection/));
@@ -166,6 +185,77 @@ describe("the join form", () => {
     mocks.sendCommand.mockResolvedValueOnce({ ok: false, code: "already_joined" });
     fireEvent.click(submit);
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("binds the join to the room on screen at the submit, before the name is saved", async () => {
+    await renderView();
+    show(stateWith(others));
+    const order: string[] = [];
+    mocks.commandSender.mockImplementation(() => {
+      order.push("bind");
+      return (command: unknown) => {
+        order.push("send");
+        return mocks.sendCommand(command) as unknown;
+      };
+    });
+    mocks.setDisplayName.mockImplementation(async (name: string) => {
+      order.push("save");
+      return name;
+    });
+    mocks.sendCommand.mockResolvedValue({ ok: false, code: "offline" });
+    fireEvent.change(screen.getByRole("textbox", { name: "Your name" }), {
+      target: { value: "Eve" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Join the room" }));
+    await waitFor(() => expect(order).toEqual(["bind", "save", "send"]));
+  });
+
+  it("joins without saving a name that is already the saved one", async () => {
+    useIdentityStore.getState().setIdentity({ userId: ME, name: "Cleo" });
+    await renderView();
+    show(stateWith(others));
+    mocks.sendCommand.mockImplementation(async () => {
+      show(joined);
+      return { ok: true, version };
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Join the room" }));
+    await screen.findByRole("heading", { name: "You" });
+    expect(mocks.setDisplayName).not.toHaveBeenCalled();
+    expect(mocks.sendCommand).toHaveBeenCalledWith({
+      type: "join",
+      payload: { name: "Cleo", role: "voter" },
+    });
+  });
+
+  it("joins with the name typed when saving it fails, and says nothing of the save", async () => {
+    useIdentityStore.getState().setIdentity({ userId: ME, name: "Cleo" });
+    await renderView();
+    show(stateWith(others));
+    fireEvent.change(screen.getByRole("textbox", { name: "Your name" }), {
+      target: { value: " Cleo  Z " },
+    });
+    mocks.setDisplayName.mockRejectedValue(new IdentityError("rate_limited"));
+    mocks.sendCommand.mockImplementation(async () => {
+      show(stateWith([...others, [ME, "Cleo Z", "voter"]]));
+      return { ok: true, version };
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Join the room" }));
+    await screen.findByRole("heading", { name: "You" });
+    expect(mocks.setDisplayName).toHaveBeenCalledWith("Cleo Z");
+    expect(mocks.sendCommand).toHaveBeenCalledWith({
+      type: "join",
+      payload: { name: "Cleo Z", role: "voter" },
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("describes each role by its hint, outside its name", async () => {
+    await renderView();
+    show(stateWith(others));
+    const voter = screen.getByRole("radio", { name: "Voter" });
+    const hint = document.getElementById(voter.getAttribute("aria-describedby") ?? "");
+    expect(hint?.textContent).toBe("Plays a card in every round");
+    expect(screen.getByRole("radio", { name: "Observer" })).toBeTruthy();
   });
 
   it("shows the room-full screen on room_full, and the form again once the room changes", async () => {
@@ -192,7 +282,29 @@ describe("the join form", () => {
     ]);
     show(stateWith(sixteen));
     expect(screen.getByRole("heading", { name: "This room is full" })).toBeTruthy();
-    expect(screen.getByText(/16 people are already in this room/)).toBeTruthy();
+    expect(screen.getByText(/16 people are already here/)).toBeTruthy();
+  });
+
+  it("gives the form the focus, and says so, when a seat frees up", async () => {
+    await renderView();
+    const sixteen = Array.from({ length: 16 }, (_, i): [string, string, Participant["role"]] => [
+      `u${i}`,
+      `P${i}`,
+      "voter",
+    ]);
+    show(stateWith(sixteen));
+    const notice = document.querySelector("[data-room-notice]");
+    expect(notice?.textContent).toBe("");
+    show(stateWith(sixteen.slice(1)));
+    const name = screen.getByRole("textbox", { name: "Your name" });
+    await waitFor(() => expect(document.activeElement).toBe(name));
+    expect(notice?.getAttribute("role")).toBe("status");
+    expect(notice?.textContent).toBe("A seat is free. You can join now.");
+    // The focus request is spent: a later snapshot leaves the focus where the reader put it.
+    const observer = screen.getByRole("radio", { name: "Observer" });
+    act(() => observer.focus());
+    show(stateWith(sixteen.slice(2)));
+    expect(document.activeElement).toBe(observer);
   });
 
   it("offers the observer row when only the seats are taken", async () => {
@@ -214,7 +326,7 @@ describe("the join form", () => {
 describe("at the table", () => {
   it("seats the viewer first, observers in the row, every name inside bdi", async () => {
     await renderView();
-    show(joined);
+    await showSeated(joined);
     const seats = screen.getByRole("list", { name: "People at the table" });
     const names = [...seats.querySelectorAll("[data-seat-part=name] bdi")].map(
       (b) => b.textContent,
@@ -227,7 +339,7 @@ describe("at the table", () => {
 
   it("renames: saves the name, sends rename, and Escape cancels back to the button", async () => {
     await renderView();
-    show(joined);
+    await showSeated(joined);
     fireEvent.click(screen.getByRole("button", { name: "Change your name" }));
     let field = screen.getByRole("textbox", { name: "Your name" });
     expect(document.activeElement).toBe(field);
@@ -268,7 +380,7 @@ describe("at the table", () => {
 
   it("keeps the editor open with the message when the rename is refused", async () => {
     await renderView();
-    show(joined);
+    await showSeated(joined);
     fireEvent.click(screen.getByRole("button", { name: "Change your name" }));
     const field = screen.getByRole("textbox", { name: "Your name" });
     fireEvent.change(field, { target: { value: "Cleo C" } });
@@ -281,9 +393,38 @@ describe("at the table", () => {
     expect(screen.getByRole("textbox", { name: "Your name" })).toBeTruthy();
   });
 
+  it("renames with the name typed when saving it fails, bound to the room at the submit", async () => {
+    await renderView();
+    await showSeated(joined);
+    const order: string[] = [];
+    mocks.commandSender.mockImplementation(() => {
+      order.push("bind");
+      return (command: unknown) => {
+        order.push("send");
+        return mocks.sendCommand(command) as unknown;
+      };
+    });
+    mocks.setDisplayName.mockImplementation(async () => {
+      order.push("save");
+      throw new IdentityError("rate_limited");
+    });
+    mocks.sendCommand.mockImplementation(async () => {
+      show(stateWith([...others, [ME, "Cleo D", "voter"]]));
+      return { ok: true, version };
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Change your name" }));
+    const field = screen.getByRole("textbox", { name: "Your name" });
+    fireEvent.change(field, { target: { value: "Cleo  D" } });
+    fireEvent.submit(field);
+    await waitFor(() => expect(screen.queryByRole("textbox")).toBeNull());
+    expect(order).toEqual(["bind", "save", "send"]);
+    expect(mocks.sendCommand).toHaveBeenCalledWith({ type: "rename", payload: { name: "Cleo D" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("switches role, and shows a refusal", async () => {
     await renderView();
-    show(joined);
+    await showSeated(joined);
     mocks.sendCommand.mockImplementationOnce(async () => {
       show(stateWith([...others, [ME, "Cleo", "observer"]]));
       return { ok: true, version };
@@ -298,13 +439,15 @@ describe("at the table", () => {
     expect(seats.textContent).not.toContain("Cleo");
     mocks.sendCommand.mockResolvedValueOnce({ ok: false, code: "room_full" });
     fireEvent.click(screen.getByRole("button", { name: "Switch to voter" }));
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/This room is full/));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toMatch(/All 16 seats are taken/),
+    );
   });
 
   it("leaves: the join form comes back with the focus on the name", async () => {
     useIdentityStore.getState().setIdentity({ userId: ME, name: "Cleo" });
     await renderView();
-    show(joined);
+    await showSeated(joined);
     mocks.sendCommand.mockImplementationOnce(async () => {
       show(stateWith(others));
       return { ok: true, version };
@@ -319,7 +462,7 @@ describe("at the table", () => {
 
   it("treats not_participant on leave as left, and shows other refusals", async () => {
     await renderView();
-    show(joined);
+    await showSeated(joined);
     mocks.sendCommand.mockResolvedValueOnce({ ok: false, code: "offline" });
     fireEvent.click(screen.getByRole("button", { name: "Leave the room" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/connection/));
@@ -332,7 +475,7 @@ describe("at the table", () => {
     await act(() => changeLanguage("fr"));
     await renderView();
     show(joined);
-    expect(screen.getByRole("button", { name: "Quitter la salle" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Quitter la salle" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Passer observateur" })).toBeTruthy();
   });
 });

@@ -271,7 +271,10 @@ describe("sendCommand", () => {
   // a lost ack, or `busy`, must not send the command again to B (#76's open point).
   it.each([
     ["lost", (fail: (error: Error) => void) => fail(new Error("operation has timed out"))],
-    ["busy", (_fail: unknown, answer: (ack: unknown) => void) => answer({ ok: false, code: "busy" })],
+    [
+      "busy",
+      (_fail: unknown, answer: (ack: unknown) => void) => answer({ ok: false, code: "busy" }),
+    ],
   ] as const)("sends nothing to the next room when the ack is %s", async (_, settleAck) => {
     let answer: (ack: unknown) => void = () => {};
     let fail: (error: Error) => void = () => {};

@@ -128,6 +128,7 @@ export const en = {
     offline: "The connection to the server was lost. Reload the page to try again.",
     backHome: "Back to the home page",
     tableHeading: "The table",
+    seatFree: "A seat is free. You can join now.",
   },
   seat: {
     title: "Take a seat",
@@ -145,7 +146,7 @@ export const en = {
       "All {{max, number}} seats at the table are taken. Join as an observer, or wait until someone leaves.",
     fullTitle: "This room is full",
     fullBody:
-      "{{max, number}} people are already in this room. This page lets you join as soon as someone leaves.",
+      "{{max, number}} people are already here. Keep this page open: you can join as soon as someone leaves.",
   },
   you: {
     title: "You",
@@ -159,6 +160,7 @@ export const en = {
     toVoter: "Switch to voter",
     leave: "Leave the room",
     leaving: "Leaving…",
+    seatsFull: "All {{max, number}} seats are taken. Try again once someone leaves.",
   },
   table: {
     seats: "People at the table",

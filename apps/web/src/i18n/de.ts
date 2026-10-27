@@ -78,6 +78,7 @@ export const de: Catalog = {
       "Die Verbindung zum Server wurde unterbrochen. Laden Sie die Seite neu, um es erneut zu versuchen.",
     backHome: "Zurück zur Startseite",
     tableHeading: "Der Tisch",
+    seatFree: "Ein Platz ist frei. Sie können jetzt beitreten.",
   },
   seat: {
     title: "Nehmen Sie Platz",
@@ -86,13 +87,13 @@ export const de: Catalog = {
     nameHint: "Bis zu {{max, number}} Zeichen. Beim nächsten Mal ist er schon eingetragen.",
     roleLabel: "Ihre Rolle",
     voter: "Abstimmen",
-    voterHint: "Spielt in jeder Runde eine Karte",
+    voterHint: "In jeder Runde eine Karte spielen",
     observer: "Beobachten",
-    observerHint: "Schaut zu, ohne abzustimmen",
+    observerHint: "Zuschauen, ohne abzustimmen",
     submit: "Raum betreten",
     joining: "Raum wird betreten…",
     seatsFull:
-      "Alle {{max, number}} Plätze am Tisch sind besetzt. Treten Sie als Beobachter bei oder warten Sie, bis jemand geht.",
+      "Alle {{max, number}} Plätze sind besetzt. Wählen Sie „Beobachten“ oder warten Sie, bis jemand geht.",
     fullTitle: "Dieser Raum ist voll",
     fullBody:
       "In diesem Raum sind bereits {{max, number}} Personen. Sobald jemand geht, können Sie auf dieser Seite beitreten.",
@@ -109,6 +110,7 @@ export const de: Catalog = {
     toVoter: "Zum Abstimmen wechseln",
     leave: "Raum verlassen",
     leaving: "Raum wird verlassen…",
+    seatsFull: "Alle {{max, number}} Plätze sind besetzt. Versuchen Sie es, sobald jemand geht.",
   },
   table: {
     seats: "Personen am Tisch",

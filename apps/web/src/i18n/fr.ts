@@ -78,6 +78,7 @@ export const fr: Catalog<"many"> = {
     offline: "La connexion au serveur a été perdue. Rechargez la page pour réessayer.",
     backHome: "Retour à l’accueil",
     tableHeading: "La table",
+    seatFree: "Une place s’est libérée. Vous pouvez entrer.",
   },
   seat: {
     title: "Prenez place",
@@ -95,7 +96,7 @@ export const fr: Catalog<"many"> = {
       "Les {{max, number}} places à la table sont prises. Rejoignez la salle en tant qu’observateur, ou attendez qu’une place se libère.",
     fullTitle: "Cette salle est complète",
     fullBody:
-      "{{max, number}} personnes sont déjà dans cette salle. Cette page vous laisse entrer dès que quelqu’un part.",
+      "{{max, number}} personnes sont déjà là. Gardez cette page ouverte : vous pourrez entrer dès que quelqu’un part.",
   },
   you: {
     title: "Vous",
@@ -109,6 +110,7 @@ export const fr: Catalog<"many"> = {
     toVoter: "Passer votant",
     leave: "Quitter la salle",
     leaving: "Sortie de la salle…",
+    seatsFull: "Les {{max, number}} places sont prises. Réessayez quand quelqu’un part.",
   },
   table: {
     seats: "Personnes à la table",

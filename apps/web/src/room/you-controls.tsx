@@ -1,23 +1,24 @@
-import { cleanName, MAX_NAME_LENGTH, type Role } from "@pp/domain";
+import { cleanName, MAX_NAME_LENGTH, MAX_PARTICIPANTS, type Role } from "@pp/domain";
 import type { ParticipantView } from "@pp/protocol";
 import { OctagonXIcon } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { useT } from "../i18n/hooks.ts";
-import { setDisplayName } from "../identity/identity.ts";
-import { type CommandResult, sendCommand } from "../realtime/room-connection.ts";
+import { type CommandResult, commandSender, sendCommand } from "../realtime/room-connection.ts";
 import { Avatar } from "../table/avatar.tsx";
 import { codeOf, failureMessage } from "./failure.ts";
 import { NAME_INPUT_MAX_UNITS } from "./join-form.tsx";
+import { saveName } from "./save-name.ts";
 
 type Action = "rename" | "role" | "leave";
 
 interface YouControlsProps {
   /** The viewer as the snapshot lists them. */
   me: ParticipantView;
-  /** Moves the focus to this panel's heading when it appears (after joining). */
+  /** Moves the focus to this panel's heading (after joining), then calls `onFocused`. */
   focusOnMount?: boolean;
+  onFocused?: () => void;
   /** Called just before `leave` is sent, and with false when it was refused. */
   onLeaving: (leaving: boolean) => void;
 }
@@ -28,7 +29,7 @@ interface YouControlsProps {
  * prefills it; switching role sends `setRole`; leaving sends `leave`, after which the
  * snapshot no longer holds `you` and the page shows the join form again.
  */
-export function YouControls({ me, focusOnMount, onLeaving }: YouControlsProps) {
+export function YouControls({ me, focusOnMount, onFocused, onLeaving }: YouControlsProps) {
   const t = useT();
   const ids = { heading: useId(), name: useId(), hint: useId(), error: useId() };
   const heading = useRef<HTMLHeadingElement>(null);
@@ -40,8 +41,10 @@ export function YouControls({ me, focusOnMount, onLeaving }: YouControlsProps) {
   const [failure, setFailure] = useState<{ message: string; nameRefused: boolean } | null>(null);
 
   useEffect(() => {
-    if (focusOnMount) heading.current?.focus();
-  }, [focusOnMount]);
+    if (!focusOnMount) return;
+    heading.current?.focus();
+    onFocused?.();
+  }, [focusOnMount, onFocused]);
 
   useEffect(() => {
     if (editing) {
@@ -52,7 +55,12 @@ export function YouControls({ me, focusOnMount, onLeaving }: YouControlsProps) {
 
   function refuse(code: string) {
     const nameRefused = code === "bad_name";
-    setFailure({ message: failureMessage(t, code), nameRefused });
+    // Only a switch to voter meets `room_full` here: the seats are taken, not the room.
+    const message =
+      code === "room_full"
+        ? t("you.seatsFull", { max: MAX_PARTICIPANTS })
+        : failureMessage(t, code);
+    setFailure({ message, nameRefused });
     if (nameRefused) nameInput.current?.focus();
   }
 
@@ -99,10 +107,11 @@ export function YouControls({ me, focusOnMount, onLeaving }: YouControlsProps) {
       stopEditing();
       return;
     }
-    const done = await run("rename", async () => {
-      const saved = await setDisplayName(draft);
-      return sendCommand({ type: "rename", payload: { name: saved } });
-    });
+    // Bound now: the rename goes to this room or nowhere, whatever the save takes.
+    const send = commandSender();
+    const done = await run("rename", async () =>
+      send({ type: "rename", payload: { name: await saveName(cleaned) } }),
+    );
     if (done) stopEditing();
   }
 
@@ -183,7 +192,7 @@ export function YouControls({ me, focusOnMount, onLeaving }: YouControlsProps) {
           <div className="flex min-w-0 items-center gap-3">
             <Avatar id={me.id} name={me.name} size={36} />
             <div className="flex min-w-0 flex-col">
-              <span data-you-name className="truncate font-semibold">
+              <span data-you-name dir="auto" className="truncate font-semibold">
                 <bdi>{me.name}</bdi>
               </span>
               <span data-you-role={me.role} className="text-sm text-ink-2">
