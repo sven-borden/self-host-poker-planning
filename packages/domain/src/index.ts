@@ -30,6 +30,12 @@ export {
 export { generateRange, type RangeErrorCode } from "./range.ts";
 export { computeResults, type Results } from "./results.ts";
 export {
+  isRoomCode,
+  ROOM_CODE_ALPHABET,
+  ROOM_CODE_LENGTH,
+  ROOM_CODE_PATTERN,
+} from "./room-code.ts";
+export {
   createRoom,
   DEFAULT_SETTINGS,
   MAX_LINK_LENGTH,

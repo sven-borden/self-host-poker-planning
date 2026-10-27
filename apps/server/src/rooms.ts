@@ -120,7 +120,10 @@ export function registerRoomApi(
     const code = c.req.param("code");
     // A malformed code cannot name a room: no query.
     const header = isRoomCode(code) ? await rooms.loadRoomHeader(code) : null;
-    if (!header) return c.json({ code: "room_not_found" }, 404);
+    // The retention period lets the page say how long an idle room is kept (#24).
+    if (!header) {
+      return c.json({ code: "room_not_found", retentionDays: config.roomTtlDays }, 404);
+    }
     return c.json({ code: header.code, name: header.name });
   });
 }

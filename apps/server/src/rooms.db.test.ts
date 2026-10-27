@@ -338,10 +338,14 @@ describe("GET /api/rooms/:code", () => {
     expect(found.response.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("answers room_not_found for an unknown or a malformed code", async () => {
+  it("answers room_not_found, with the retention period, for an unknown or a malformed code", async () => {
     for (const code of ["Unknown123", "abc", "0OIl000000", "1234567890a", "%F0%9F%98%80"]) {
       const result = await call(`/api/rooms/${code}`, {});
-      expect(result, code).toMatchObject({ status: 404, json: { code: "room_not_found" } });
+      expect(result.status, code).toBe(404);
+      expect(result.json, code).toEqual({
+        code: "room_not_found",
+        retentionDays: config.roomTtlDays,
+      });
       expect(result.response.headers.get("cache-control")).toBe("no-store");
     }
   });
