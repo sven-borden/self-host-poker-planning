@@ -26,8 +26,9 @@ export interface NextRound {
  * Sends `startRound` with the draft as its subject, checked first with the domain's
  * rules (`draftSubject`). A refused subject, here or by the server (`bad_subject`), shows
  * under the field and takes the focus there; any other refusal goes to `onFailure`, the
- * line under the table. A started round clears the draft, and the focus goes to the hand
- * (or the centre's status for a PO without a hand), from the field too.
+ * line under the table. A started round clears the draft; a start from the field keeps
+ * the focus in it, a start from the centre's button moves it to the hand (or the centre's
+ * status for a PO without a hand).
  */
 export function useNextRound(onFailure: (code: string | null) => void): NextRound {
   const [draft, setDraftState] = useState("");
@@ -59,10 +60,10 @@ export function useNextRound(onFailure: (code: string | null) => void): NextRoun
       const ack = await send({ type: "startRound", payload: { subject: parsed.subject } });
       if (ack.ok) {
         setDraftState("");
-        // The button is gone with the old phase; a start from the field leaves it too.
-        if (field.current !== null && document.activeElement === field.current) {
-          field.current.blur();
-        }
+        // The button is gone with the old phase: its focus goes to the hand. A start from
+        // the field keeps the focus there (`focusSoon` leaves a placed focus alone): the
+        // field stays, Enter in it does nothing while Voting, so a second Enter is not a
+        // vote. The hand also ignores Enter and Space just after it got the focus.
         focusSoon("[data-hand] [tabindex='0']", "[data-centre-status='voting']");
       } else if (ack.code === "bad_subject") {
         setProblem("bad_subject");
@@ -90,7 +91,8 @@ interface NextSubjectProps {
 /**
  * The subject field, for the PO only: empty is "Round N", a title, or a link (Jira and
  * Azure DevOps keys are read by the server). Enter starts the round when the centre
- * offers to; nothing is cut or stripped, a refusal says why.
+ * offers to; while Voting it does nothing, and the hint says the subject waits for the
+ * next round. Nothing is cut or stripped, a refusal says why.
  */
 export function NextSubject({ next, nextNumber, canStart }: NextSubjectProps) {
   const t = useT();
@@ -127,7 +129,9 @@ export function NextSubject({ next, nextNumber, canStart }: NextSubjectProps) {
         </p>
       ) : null}
       <p id={ids.hint} className="m-0 text-sm text-ink-2">
-        {t("round.subjectHint", { round: nextNumber })}
+        {canStart
+          ? t("round.subjectHint", { round: nextNumber })
+          : t("round.subjectHintVoting", { round: nextNumber })}
       </p>
     </form>
   );
