@@ -25,7 +25,7 @@ describe("RoomStatus", () => {
     };
     const store = useRoomStore.getState();
     store.open("abc");
-    render(<RoomStatus code="abc" />);
+    render(<RoomStatus />);
     expect(screen.getByRole("status").textContent).toBe("Connecting to the room…");
     act(() => {
       store.receive(toSnapshot(state, "ua", { code: "abc", version: 2, now: 0 }));
@@ -43,7 +43,7 @@ describe("RoomStatus", () => {
     await act(() => changeLanguage("de"));
     useRoomStore.getState().open("abc");
     useRoomStore.getState().fail("protocol_mismatch");
-    render(<RoomStatus code="abc" />);
+    render(<RoomStatus />);
     expect(screen.getByRole("alert").textContent).toContain(
       "Eine neue Version der App ist verfügbar.",
     );

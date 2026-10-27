@@ -13,22 +13,22 @@
  *   Auth from printing its own 4xx lines; the handler logs a thrown error's code only;
  * - `sessionUser` turns any failure into a `DatabaseError` holding a code.
  */
-import type { IncomingMessage } from "node:http";
 import { cleanName } from "@pp/domain";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { isAPIError } from "better-auth/api";
 import { anonymous } from "better-auth/plugins";
 import { and, eq, gt, sql } from "drizzle-orm";
-import type { Context, Hono } from "hono";
+import type { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { AppEnv } from "./app.ts";
-import { clientIp } from "./client-ip.ts";
 import type { Config } from "./config.ts";
 import { authSchema, session, user } from "./db/auth-schema.ts";
 import { errorCode, guard } from "./db/errors.ts";
 import type { Db } from "./db/rooms.ts";
+import { foreignOrigin, isJsonBody, rateLimited, requestIp } from "./http.ts";
 import type { Logger } from "./logger.ts";
+import { memoryRateLimit, type RateLimiter } from "./rate-limit.ts";
 import type { SocketMiddleware } from "./realtime.ts";
 
 export const AUTH_BASE_PATH = "/api/auth";
@@ -108,60 +108,6 @@ export interface SocketUser {
   readonly name: string;
   /** True for a guest; false once W5 links a Google or Microsoft account. */
   readonly isAnonymous: boolean;
-}
-
-type RateLimitStorage = NonNullable<NonNullable<BetterAuthOptions["rateLimit"]>["customStorage"]>;
-
-export type RateLimiter = RateLimitStorage;
-
-/** At most this many counters live at once; the oldest tenth goes when it is reached. */
-export const RATE_LIMIT_MAX_KEYS = 50_000;
-/** Expired counters are swept at most this often. */
-const SWEEP_EVERY_MS = 30_000;
-
-/**
- * A fixed-window counter per key (`ip|path`, or `rename|…`), in this process. Better
- * Auth's own memory store is one map shared by every instance in the process, which would
- * leak counts between tests; this one belongs to its `setupServer`. With several
- * instances (#39) each counts on its own.
- *
- * Memory stays bounded and each call costs O(1) amortized: expired counters are swept
- * every 30 s, and at `maxKeys` the oldest tenth (by window start) is dropped at once.
- */
-export function memoryRateLimit(
-  now: () => number = Date.now,
-  maxKeys: number = RATE_LIMIT_MAX_KEYS,
-): RateLimitStorage {
-  const windows = new Map<string, { count: number; resetAt: number }>();
-  let nextSweep = 0;
-  return {
-    consume: async (key, { window, max }) => {
-      const at = now();
-      if (at >= nextSweep) {
-        nextSweep = at + SWEEP_EVERY_MS;
-        for (const [k, entry] of windows) if (entry.resetAt <= at) windows.delete(k);
-      }
-      const entry = windows.get(key);
-      if (!entry || entry.resetAt <= at) {
-        // Re-inserted, so the map stays ordered by window start.
-        windows.delete(key);
-        if (windows.size >= maxKeys) {
-          let drop = Math.max(1, Math.floor(maxKeys / 10));
-          for (const k of windows.keys()) {
-            windows.delete(k);
-            if (--drop === 0) break;
-          }
-        }
-        windows.set(key, { count: 1, resetAt: at + window * 1000 });
-        return { allowed: true, retryAfter: null };
-      }
-      if (entry.count >= max) {
-        return { allowed: false, retryAfter: Math.ceil((entry.resetAt - at) / 1000) };
-      }
-      entry.count += 1;
-      return { allowed: true, retryAfter: null };
-    },
-  };
 }
 
 export function authOptions(
@@ -345,18 +291,6 @@ function codeOf(json: unknown): unknown {
   return typeof json === "object" && json !== null ? Reflect.get(json, "code") : undefined;
 }
 
-/** The client address of a request, as every rate limit sees it (`TRUST_PROXY` hops). */
-function requestIp(c: Context<AppEnv>, config: Config): string | undefined {
-  const incoming = (c.env as { incoming?: IncomingMessage } | undefined)?.incoming;
-  return incoming ? clientIp(incoming, config.trustProxy) : undefined;
-}
-
-function rateLimited(c: Context<AppEnv>, retryAfter: number | null | undefined) {
-  c.header("Retry-After", String(retryAfter ?? 60));
-  c.header("Cache-Control", "no-store");
-  return c.json({ code: "rate_limited" }, 429);
-}
-
 /**
  * Mounts the allowed Better Auth endpoints (`AUTH_ROUTES`) under `/api/auth/*` and
  * `POST /api/me/name`. Each auth request gets the client address in `CLIENT_IP_HEADER`,
@@ -384,8 +318,7 @@ export function registerAuthApi(
     }
     // Better Auth checks the Origin too, but skips it when NODE_ENV is test: this check
     // holds everywhere. A browser always sends Origin on a POST.
-    const origin = c.req.header("origin");
-    if (c.req.method === "POST" && origin !== undefined && origin !== config.baseUrl) {
+    if (c.req.method === "POST" && foreignOrigin(c, config)) {
       c.header("Cache-Control", "no-store");
       return c.json({ code: "not_allowed" }, 403);
     }
@@ -420,11 +353,8 @@ export function registerAuthApi(
   // origin is refused, and a JSON body cannot come from a plain cross-site form.
   app.post("/api/me/name", async (c) => {
     c.header("Cache-Control", "no-store");
-    const origin = c.req.header("origin");
-    if (origin !== undefined && origin !== config.baseUrl) {
-      return c.json({ code: "not_allowed" }, 403);
-    }
-    if (!c.req.header("content-type")?.toLowerCase().startsWith("application/json")) {
+    if (foreignOrigin(c, config)) return c.json({ code: "not_allowed" }, 403);
+    if (!isJsonBody(c)) {
       return c.json({ code: "bad_payload" }, 415);
     }
     const ipKey = `rename|ip|${requestIp(c, config) ?? "unknown"}`;

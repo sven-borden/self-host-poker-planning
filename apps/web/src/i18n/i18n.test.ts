@@ -132,8 +132,8 @@ describe("catalogs", () => {
   // Strings that read the same in that language on purpose: the product's name, a list
   // built from placeholders, and words both languages share.
   const SAME_AS_ENGLISH: Record<"fr" | "de", readonly string[]> = {
-    fr: ["app.name", "table.seatCardWord", "common.notifications"],
-    de: ["app.name", "table.seatCardWord", "theme.system", "dev.hand"],
+    fr: ["app.name", "table.seatCardWord", "common.notifications", "decks.fib"],
+    de: ["app.name", "table.seatCardWord", "theme.system", "dev.hand", "decks.fib"],
   };
 
   it.each(["fr", "de"] as const)(

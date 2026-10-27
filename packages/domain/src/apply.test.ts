@@ -494,11 +494,17 @@ describe("membership", () => {
     ).toBe(name);
   });
 
-  it("accepts a name of up to 16 code units per character", () => {
-    // "a" plus 512 combining acute accents: NFC folds the first into "á", 512 units left.
-    const name = ok(send(room(), { type: "rename", name: `a${"\u0301".repeat(512)}` }, A))
-      .participants[A]?.name;
-    expect(name).toHaveLength(512);
+  it("accepts a name of up to 16 code units per character, and refuses a pile of marks", () => {
+    // 32 family emoji: 11 code units each, under the 16 per character the cap allows.
+    const family = "👨‍👩‍👧‍👦";
+    const name = ok(send(room(), { type: "rename", name: family.repeat(32) }, A)).participants[A]
+      ?.name;
+    expect(name).toHaveLength(32 * family.length);
+    // "a" plus 512 combining acute accents is one character, but not a name.
+    expect(send(room(), { type: "rename", name: `a${"́".repeat(512)}` }, A)).toMatchObject({
+      ok: false,
+      error: "bad_name",
+    });
   });
 
   it("seats the 16th person and, with observers not counting, the 32nd member", () => {

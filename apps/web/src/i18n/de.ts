@@ -25,11 +25,36 @@ export const de: Catalog = {
     title: "Gemeinsam schätzen, an einem Tisch",
     lede: "Alle wählen eine Karte, die Karten werden gemeinsam aufgedeckt, und das Team bespricht die Unterschiede. Kein Konto nötig.",
     createRoom: "Raum erstellen",
-    createRoomSoon: "Das Erstellen von Räumen folgt in der nächsten Version.",
+  },
+  createRoom: {
+    lede: "Sie werden sein Product Owner. Teilen Sie den Link, und Ihr Team kommt dazu, ohne Konto.",
+    nameLabel: "Raumname",
+    optional: "Freiwillig",
+    nameHint: "Alle mit dem Link sehen ihn. Höchstens {{max, number}} Zeichen.",
+    deckLabel: "Kartendeck",
+    submit: "Raum erstellen",
+    creating: "Raum wird erstellt…",
+    notAllowed:
+      "Der Server hat diese Anfrage abgelehnt: Seine eingestellte Adresse ist nicht die, die Sie verwenden. Bitten Sie die Betreiberin oder den Betreiber, BASE_URL zu prüfen.",
+  },
+  decks: {
+    fib: "Fibonacci",
+    mfib: "Fibonacci, modifiziert",
+    tshirt: "T-Shirt-Größen",
+    pow2: "Zweierpotenzen",
+    seq: "1 bis 10",
   },
   room: {
     title: "Raum {{code}}",
     codeLabel: "Raumcode",
+    loading: "Raum wird geöffnet…",
+    copyLink: "Link kopieren",
+    linkCopied: "Link kopiert. Senden Sie ihn an Ihr Team.",
+    copyFailed:
+      "Ihr Browser hat das Kopieren nicht erlaubt. Markieren Sie den Link unten und kopieren Sie ihn.",
+    linkLabel: "Raumlink",
+    notFoundTitle: "Raum nicht gefunden",
+    retry: "Erneut versuchen",
     statusConnecting: "Verbindung zum Raum wird hergestellt…",
     statusLive: "Verbunden",
     statusReconnecting: "Verbindung unterbrochen. Neuer Versuch…",
@@ -79,6 +104,8 @@ export const de: Catalog = {
       "Diese Website braucht Cookies, um Sie in einem Raum wiederzuerkennen. Erlauben Sie Cookies für diese Website und laden Sie die Seite dann neu.",
   },
   common: {
+    network:
+      "Der Server ist nicht erreichbar. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
     close: "Schließen",
     notifications: "Benachrichtigungen",
   },
@@ -126,6 +153,8 @@ export const de: Catalog = {
     bad_payload:
       "Der Server konnte diese Anfrage nicht lesen. Laden Sie die Seite neu und versuchen Sie es erneut.",
     protocol_mismatch: "Eine neue Version der App ist verfügbar. Laden Sie die Seite neu.",
+    bad_room_name:
+      "Ein Raumname hat {{min, number}} bis {{max, number}} sichtbare Zeichen. Kürzen Sie ihn, oder lassen Sie das Feld leer.",
     room_not_found:
       "Diesen Raum gibt es nicht, oder er wurde nach langer Zeit ohne Nutzung gelöscht. Prüfen Sie den Link.",
     password_required: "Dieser Raum hat ein Passwort. Geben Sie es ein, um beizutreten.",

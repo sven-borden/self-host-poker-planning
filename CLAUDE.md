@@ -77,7 +77,9 @@ Code conventions live next to the code (package READMEs); do not duplicate them 
   compare-and-set. A redeploy mid-round loses nothing, not even unrevealed votes.
 - A room holds at most 16 people; observers count unless the room setting says otherwise.
 - Room codes are random (at least 58 bits). Room passwords are argon2id hashes and
-  attempts are rate-limited. Nothing secret is ever logged.
+  attempts are rate-limited. Nothing secret is ever logged. A room code is a bearer
+  capability: it never appears in logs, error messages, Sentry or Umami; logs name a
+  room by its id.
 - Every user-facing string exists in `en`, `fr` and `de`; CI fails on a missing key.
   The server returns error codes, never sentences.
 - No tracking by default. Sentry and Umami are opt-in through environment variables.

@@ -45,6 +45,8 @@ const errors = {
     "The special cards (?, ☕, ∞) are turned on in the room settings, not added to the deck.",
   bad_payload: "The server could not read that request. Reload the page and try again.",
   protocol_mismatch: "A new version of the app is available. Reload the page.",
+  bad_room_name:
+    "A room name needs {{min, number}} to {{max, number}} visible characters. Shorten it, or leave the field empty.",
   room_not_found:
     "This room does not exist, or it was deleted after a long time without use. Check the link.",
   password_required: "This room has a password. Enter it to join.",
@@ -78,11 +80,35 @@ export const en = {
     title: "Estimate together, around one table",
     lede: "Everyone picks a card, the cards turn over together, and the team talks about the difference. No account needed.",
     createRoom: "Create a room",
-    createRoomSoon: "Creating rooms arrives in the next version.",
+  },
+  createRoom: {
+    lede: "You become its product owner. Share the link and your team joins, no account needed.",
+    nameLabel: "Room name",
+    optional: "Optional",
+    nameHint: "Everyone with the link sees it. Up to {{max, number}} characters.",
+    deckLabel: "Deck",
+    submit: "Create the room",
+    creating: "Creating the room…",
+    notAllowed:
+      "The server did not accept this request: its configured address is not the one you used. Ask whoever runs it to check BASE_URL.",
+  },
+  decks: {
+    fib: "Fibonacci",
+    mfib: "Modified Fibonacci",
+    tshirt: "T-shirt sizes",
+    pow2: "Powers of 2",
+    seq: "1 to 10",
   },
   room: {
     title: "Room {{code}}",
     codeLabel: "Room code",
+    loading: "Opening the room…",
+    copyLink: "Copy the link",
+    linkCopied: "Link copied. Send it to your team.",
+    copyFailed: "Your browser did not allow copying. Select the link below and copy it.",
+    linkLabel: "Room link",
+    notFoundTitle: "Room not found",
+    retry: "Try again",
     statusConnecting: "Connecting to the room…",
     statusLive: "Connected",
     statusReconnecting: "Connection lost. Reconnecting…",
@@ -131,6 +157,7 @@ export const en = {
       "This site needs cookies to recognise you in a room. Allow cookies for it, then reload the page.",
   },
   common: {
+    network: "Could not reach the server. Check your connection, then try again.",
     close: "Close",
     notifications: "Notifications",
   },

@@ -52,6 +52,7 @@ export function memoryRoomStore(): MemoryRoomStore {
       // A copy, as Postgres would hand out: the runner compares states by identity.
       return room ? { ...room, state: structuredClone(room.state) } : null;
     },
+    loadRoomHeader: async (code) => (rooms.has(code) ? { code, name: null } : null),
     commitRoom: async (id, expectedVersion, next) => {
       const room = byId(id);
       if (!room || room.version !== expectedVersion) return false;

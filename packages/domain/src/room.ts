@@ -91,6 +91,8 @@ export const MAX_PARTICIPANTS = 16;
 export const MAX_MEMBERS = 32;
 /** A display name holds 1 to this many user-perceived characters. */
 export const MAX_NAME_LENGTH = 32;
+/** A room name, when a room has one, holds 1 to this many user-perceived characters. */
+export const MAX_ROOM_NAME_LENGTH = 60;
 /** A subject title holds 1 to this many user-perceived characters. */
 export const MAX_TITLE_LENGTH = 200;
 /** A subject link holds at most this many characters. */

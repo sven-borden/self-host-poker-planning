@@ -45,7 +45,7 @@ test.describe("with an English browser", () => {
     await pick(page, /^Language: English$/, "Français");
     await expect(heading).toHaveText(HOME.fr);
     await expect(page.locator("html")).toHaveAttribute("lang", "fr");
-    await expect(page.getByRole("button", { name: "Créer une salle" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Créer la salle" })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Thème/ })).toBeVisible();
     expect(await marked(page)).toBe(true);
 
