@@ -380,15 +380,19 @@ server sends and never decides the outcome of a round.
   The PO's powers (#30): every person's popover, on a seat or in the observers' row (now
   buttons too, `data-person-trigger` = the id, a 44 px hit area through `after:`), takes
   a `PersonActions` slot from `TableStage` (`actions`). `room/person-actions.tsx` shows
-  the PO "Make product owner" (not for someone away) and "Remove from the room"; each asks
-  in an inline group that takes the focus (`[data-po-question]`), "Cancel" gives it back,
-  and a sent question stays until its ack, since a hand-over makes the viewer someone
-  else first. After a removal the focus goes to the button that took the person's place
-  (`focusAfterRemoval`). `room/claim-banner.tsx` reads the room's `ownerClaimableAt` and
-  the snapshot's `serverNow` (an offset per snapshot) and shows "Claim the product owner
-  role" from that moment above the table (`[data-claim]`); its status line stays mounted
-  so the banner is heard; a refused claim hides the button for `CLAIM_REFUSAL_MS` with
-  "Not yet"; a claim that lost to another says nothing. Copy: `po.*`, `claim.*`,
+  the PO "Make product owner" (`aria-disabled` with `po.targetAway` for someone away,
+  and "Hand over" likewise when they go away while asked) and "Remove from the room";
+  each asks in an inline group that takes the focus (`[data-po-question]`), "Cancel"
+  gives it back, and a sent question stays until its ack, since a hand-over makes the
+  viewer someone else first. After a removal, or when a seat or an observer unmounts with
+  its popover open, the focus goes to the button that took the person's place
+  (`table/person-focus.ts`: `focusAfterRemoval`, `useFocusAfterRemoval`).
+  `room/claim-banner.tsx` reads the room's `ownerClaimableAt` against #27's
+  `serverTime()` (`useClockOffset()` redraws it when the estimate moves) and shows "Claim
+  the product owner role" 20 ms or half a round trip after that moment, above the table
+  (`[data-claim]`); its status line stays mounted so the banner is heard; a refused claim
+  hides the button for `CLAIM_REFUSAL_MS` with "Not yet"; a claim that lost to another
+  says nothing; a claim after a reveal sends the focus to `AFTER_REVEAL`. Copy: `po.*`, `claim.*`,
   `live.removed*`, `live.owner*`, `room.kicked`. Tests: `po-powers.test.tsx`,
   `e2e/po-powers.spec.ts`.
   `failure.ts` turns refusal codes into copy. Focus: after joining it moves to the "You"

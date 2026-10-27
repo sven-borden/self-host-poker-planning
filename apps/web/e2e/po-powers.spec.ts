@@ -116,7 +116,7 @@ test("the PO hands the role over and takes it back; everyone hears it once", asy
     await shoot(page, "po-popover");
     await popover(page).getByRole("button", { name: "Make product owner" }).click();
     const question = popover(page).getByRole("group", {
-      name: "Hand the product owner role to Ben? You become a voter.",
+      name: "Hand the product owner role to Ben? You stay a voter.",
     });
     await expect(question).toBeFocused();
     await shoot(page, "po-hand-over-question");
@@ -157,7 +157,7 @@ test("someone claims the role at once when the PO left", async ({ page, browser 
     await page.getByRole("button", { name: "Leave the room" }).click();
     await expect(page.getByRole("button", { name: "Join the room" })).toBeVisible();
     await expect(ben.page.locator("[data-claim]")).toContainText(
-      "The product owner is not in the room.",
+      "The product owner left the room.",
     );
     await claimButton(ben.page).click();
     await expectOwner(ben.page, true);
@@ -252,6 +252,15 @@ test("the PO removes someone, whose page leaves the room within 1 s, and who joi
     await join(ben.page, "Ben");
     await expect(removed).toHaveCount(0);
     await expect(personButton(page, "Ben")).toHaveCount(1);
+
+    // Ben leaves while Ana's question about him is open: his seat goes with the popover,
+    // and Ana's focus lands on the seat that took his place, not on the page.
+    await personButton(page, "Ben").click();
+    await popover(page).getByRole("button", { name: "Make product owner" }).click();
+    await expect(popover(page).getByRole("group")).toBeFocused();
+    await ben.page.getByRole("button", { name: "Leave the room" }).click();
+    await expect(popover(page)).toHaveCount(0);
+    await expect(personButton(page, "Ana")).toBeFocused();
   } finally {
     await ben.context.close();
   }
