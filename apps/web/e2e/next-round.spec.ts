@@ -128,8 +128,11 @@ test("three people, a titled round then a Jira round: votes clear, the number ri
       await expect(subjectLine(viewer)).toContainText("Round 2");
     }
     await expect(tableLive(cleo.page)).toContainText("Voting started: PAY-482.");
-    // The focus left the field for the hand's tab stop.
-    await expect(hand(page).locator("[tabindex='0']")).toBeFocused();
+    // The focus stays in the field, which now says when its subject will be used.
+    await expect(subjectField(page)).toBeFocused();
+    await expect(
+      page.getByText("Round 3 will start with this subject after the reveal."),
+    ).toBeVisible();
 
     // AC 2: the finished round 1, with its subject, its votes and its stats.
     const [first, ...others] = await historyOf(code);
@@ -189,7 +192,7 @@ test("the browser and the server refuse other schemes, credentials and a title o
       ["javascript:alert(1)", badLink],
       ["data:text/html,<script>alert(1)</script>", badLink],
       ["http://user:pass@acme.atlassian.net/browse/PAY-1", badLink],
-      ["x".repeat(201), "A title holds at most 200 characters."],
+      ["x".repeat(201), "A title can have at most 200 characters."],
     ] as const) {
       await subjectField(page).fill(draft);
       await page.getByRole("button", { name: "Start voting" }).click();
@@ -261,5 +264,123 @@ test("an anonymous round leaves only its cards in history (AC 2)", async ({
   } finally {
     po.close();
     for (const guest of guests) guest.close();
+  }
+});
+
+/** The round's number and how many votes it holds, as the server stored them in Postgres. */
+async function roomOf(code: string): Promise<{ round: number; votes: number }> {
+  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  client.on("error", () => {});
+  await client.connect();
+  try {
+    const { rows } = await client.query<{ round: number; votes: number }>(
+      `select (live->'round'->>'number')::int as round,
+      (select count(*) from jsonb_object_keys(coalesce(live->'round'->'votes', '{}'::jsonb)))::int
+        as votes
+      from room where code = $1`,
+      [code],
+    );
+    const [row] = rows;
+    if (!row) throw new Error("no such room");
+    return row;
+  } finally {
+    await client.end();
+  }
+}
+
+test("a double Enter in the subject field starts one round and casts no vote, in the lobby and after a reveal", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const code = await createRoom(page);
+  await join(page, "Ana");
+  for (const [round, url] of [
+    [1, "https://acme.atlassian.net/browse/PAY-482"],
+    [2, "https://acme.atlassian.net/browse/PAY-483"],
+  ] as const) {
+    await subjectField(page).fill(url);
+    await subjectField(page).press("Enter");
+    await page.waitForTimeout(120);
+    await subjectField(page).press("Enter");
+    await expect(centreStatus(page)).toHaveText("0/1 voted so far");
+    await expect(subjectLine(page)).toContainText(`Round ${round}`);
+    // Long enough for a stray vote to reach the server.
+    await page.waitForTimeout(600);
+    await expect(pressedCards(page)).toHaveCount(0);
+    await expect(subjectField(page)).toBeFocused();
+    // One round started (a second start would have made it the next one), and no vote.
+    expect(await roomOf(code)).toEqual({ round, votes: 0 });
+    // Vote and reveal for the next pass.
+    await handCard(page, "5").click();
+    await expect(page.getByRole("button", { name: "Next round" })).toBeVisible();
+  }
+});
+
+test("a double Enter on the centre's button starts one round and casts no vote; the hand then answers Enter again", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const code = await createRoom(page);
+  await join(page, "Ana");
+  for (const [round, name] of [
+    [1, "Start voting"],
+    [2, "Next round"],
+  ] as const) {
+    const button = page.getByRole("button", { name });
+    await button.focus();
+    await button.press("Enter");
+    // The focus moves to the hand; the second Enter lands on a card and is ignored.
+    await expect(hand(page).locator("[tabindex='0']")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press(" ");
+    await expect(centreStatus(page)).toHaveText("0/1 voted so far");
+    await page.waitForTimeout(600);
+    await expect(pressedCards(page)).toHaveCount(0);
+    expect(await roomOf(code)).toEqual({ round, votes: 0 });
+    // A moment later Enter on a card votes, which reveals this one-person round.
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("button", { name: "Next round" })).toBeVisible();
+    expect(await roomOf(code)).toEqual({ round, votes: 1 });
+  }
+});
+
+test("a long title shows on at most two lines, the whole title on hover", async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  await createRoom(page);
+  await join(page, "Ana");
+  const ben = await newPerson(browser);
+  try {
+    await ben.page.goto(page.url());
+    await join(ben.page, "Ben");
+    const title =
+      "As a finance admin I want the monthly invoice export to split every line by currency and cost centre, so that the controllers can reconcile the ledger without editing the file by hand";
+    await subjectField(page).fill(title);
+    await page.getByRole("button", { name: "Start voting" }).click();
+    for (const viewer of [page, ben.page]) {
+      const shown = subjectLine(viewer).locator("bdi[data-subject-title]");
+      await expect(shown).toHaveText(title);
+      await expect(shown).toHaveAttribute("title", title);
+      for (const width of [360, 1440]) {
+        await viewer.setViewportSize({ width, height: 900 });
+        // Two lines at most: the clamp holds the rest, and nothing spills sideways.
+        const box = await shown.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            lines: element.clientHeight / Number.parseFloat(style.lineHeight),
+            overflow: document.documentElement.scrollWidth - window.innerWidth,
+          };
+        });
+        expect(box.lines, `${width} px`).toBeLessThanOrEqual(2.05);
+        expect(box.overflow, `${width} px`).toBeLessThanOrEqual(0);
+      }
+    }
+    await shoot(page, "next-round-long-title-po");
+    await shoot(ben.page, "next-round-long-title");
+  } finally {
+    await ben.context.close();
   }
 });

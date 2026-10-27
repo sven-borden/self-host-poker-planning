@@ -495,7 +495,7 @@ describe("the next round with a subject (#21)", () => {
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
     expect(server.round?.votes).toEqual({});
     expect(pressed()).toEqual([]);
-    await act(async () => new Promise((resolve) => requestAnimationFrame(resolve)));
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
     expect(document.activeElement).toBe(field());
   });
 
