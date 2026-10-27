@@ -43,7 +43,9 @@ Code conventions live next to the code (package READMEs); do not duplicate them 
   that `https://poker.borden.ch/api/health` reports the new commit.
 - CI runs on pull requests only: lint, typecheck, unit, build, then integration and
   end-to-end tests against Postgres. The repo is public, so Actions minutes are free.
-- Migrations: additive, descriptively named, safe on a live database mid-deploy.
+- Migrations: additive, descriptively named, safe on a live database mid-deploy. After
+  merging `main` into a branch that adds one, delete and regenerate it: drizzle applies
+  a migration only when its journal time is newer than the last one applied.
 
 ## Subagents
 
