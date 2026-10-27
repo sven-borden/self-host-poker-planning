@@ -4,7 +4,7 @@
 #
 #   scripts/docker-check.sh              build with compose, then check
 #   scripts/docker-check.sh --no-build   check an existing poker-planning:local (CI builds
-#                                        it first with the GitHub Actions cache)
+#                                        it first)
 #
 # It runs as its own compose project, `pp-check`, on port 3000 with throwaway secrets, and
 # removes its containers, network and volume at the end, whatever happens. Steps:
@@ -13,7 +13,8 @@
 #  3. smoke test (scripts/docker-smoke.mjs): health with db ok and the expected commit, the
 #     web app, Socket.IO over WebSocket with the right Origin, a foreign Origin refused;
 #  4. restart keeps rooms: a room row inserted with psql survives `restart app`, and no
-#     migration runs twice;
+#     migration runs twice; it also survives `down` (without -v) and `up`, the volume
+#     keeps it;
 #  5. restart applies new migrations: the image's migrations plus one extra, mounted as
 #     MIGRATIONS_DIR, apply once and the room row is still there;
 #  6. SIGTERM: the app exits 0 when stopped while serving, and when stopped while it waits
@@ -36,6 +37,9 @@ BETTER_AUTH_SECRET="$(random)"
 export POSTGRES_PASSWORD BETTER_AUTH_SECRET
 export BASE_URL=http://localhost:3000
 export GIT_COMMIT="${GIT_COMMIT:-$(git rev-parse HEAD)}"
+# Compose also reads the developer's .env; the shell wins over it, so pin what the steps
+# rely on (step 6 looks for an info-level log line).
+export LOG_LEVEL=info TRUST_PROXY=false ROOM_TTL_DAYS=90 APP_VERSION=
 export COMPOSE_PROJECT_NAME=pp-check
 # Git Bash would rewrite container paths such as app:/app/drizzle into Windows paths.
 export MSYS_NO_PATHCONV=1
@@ -77,7 +81,7 @@ compose ps
 step "3. smoke test"
 node scripts/docker-smoke.mjs "$BASE_URL" "$GIT_COMMIT" || fail "smoke test"
 
-step "4. restart keeps rooms and runs no migration twice"
+step "4. restart and down/up keep rooms and run no migration twice"
 psql "insert into room (code, owner_user_id, live, version) values ('dockercheck1', 'docker-check', '{}', 1)" >/dev/null
 migrations="$(psql "select count(*) from drizzle.__drizzle_migrations")"
 compose restart app
@@ -86,6 +90,13 @@ up_app
 [[ "$(psql "select count(*) from drizzle.__drizzle_migrations")" == "$migrations" ]] ||
   fail "migrations ran again on restart"
 echo "ok: room row kept, $migrations migration(s) recorded before and after"
+compose down --timeout 15 # no -v: the pgdata volume stays
+compose up -d --no-build --wait --wait-timeout 180 || fail "compose up after down did not get healthy"
+[[ "$(psql "select count(*) from room where code = 'dockercheck1'")" == 1 ]] ||
+  fail "room row lost when the containers were removed (volume not kept)"
+[[ "$(psql "select count(*) from drizzle.__drizzle_migrations")" == "$migrations" ]] ||
+  fail "migrations ran again after down and up"
+echo "ok: room row kept after down (without -v) and up"
 
 step "5. restart applies a new migration"
 compose cp app:/app/drizzle "$WORK/drizzle"

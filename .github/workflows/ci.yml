@@ -105,7 +105,7 @@ jobs:
             apps/web/tmp/screenshots/
           retention-days: 7
 
-  # The Docker image and compose.yaml (#11): build with the GitHub Actions layer cache, then
+  # The Docker image and compose.yaml (#11): build the image, then
   # scripts/docker-check.sh starts app and Postgres with compose and checks size (< 250 MB),
   # health, the commit, Socket.IO over WebSocket, restarts, migrations and SIGTERM. It
   # tears everything down itself.
@@ -127,8 +127,6 @@ jobs:
           load: true
           tags: poker-planning:local
           build-args: GIT_COMMIT=${{ github.event.pull_request.head.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
       - run: scripts/docker-check.sh --no-build
         env:
           GIT_COMMIT: ${{ github.event.pull_request.head.sha }}
