@@ -2,7 +2,9 @@
  * Socket.IO on the app's HTTP server. Every incoming payload is `unknown` (the event maps
  * describe a well-behaved client and check nothing at runtime): `enter` goes through
  * `parseEnter`, `cmd` through `toDomainCommand`, and only parsed values reach the
- * handlers. Rooms arrive in W1; until then both events answer `room_not_found`.
+ * handlers (`sync/room-sync.ts` in the running server). Every message first takes a token
+ * from the socket's bucket (`SOCKET_MESSAGE_LIMIT`): past it, the answer is `rate_limited`
+ * and the socket stays open.
  */
 import { randomBytes } from "node:crypto";
 import type { Server as HttpServer } from "node:http";
@@ -19,8 +21,13 @@ import {
 import { type ExtendedError, Server, type Socket } from "socket.io";
 import type { SocketUser } from "./auth.ts";
 import type { Logger } from "./logger.ts";
+import {
+  createTokenBucket,
+  SOCKET_MESSAGE_LIMIT,
+  type TokenBucketOptions,
+} from "./sync/token-bucket.ts";
 
-/** Per-socket server data. W1 adds the room. */
+/** Per-socket server data. */
 export interface SocketData {
   /** Random id that ties a socket's log lines together; never sent to clients. */
   conn: string;
@@ -30,6 +37,13 @@ export interface SocketData {
    * identity (`setupServer`): a socket without a valid session never connects.
    */
   user?: SocketUser;
+  /**
+   * The session behind `user` (its id, not its token): a socket outlives a sign-out, so
+   * the room sync checks it again on every `enter`.
+   */
+  sessionId?: string;
+  /** The code of the room this socket entered; a socket follows one room at a time. */
+  room?: string;
 }
 
 type InterServerEvents = Record<string, never>;
@@ -55,10 +69,14 @@ export type SocketMiddleware = (
   next: (err?: ExtendedError) => void,
 ) => void | Promise<void>;
 
-/** What the server does with a parsed message. W1 replaces the stubs. */
+/** What the server does with a parsed message (`sync/room-sync.ts`). */
 export interface RealtimeHandlers {
   enter(socket: RealtimeSocket, enter: EnterPayload): EnterAck | Promise<EnterAck>;
   cmd(socket: RealtimeSocket, id: string, command: Command): CmdAck | Promise<CmdAck>;
+  /** Called once with the Socket.IO server, before any connection (for broadcasts). */
+  attach?(io: RealtimeServer): void;
+  /** Called after a socket closed; it has already left its Socket.IO rooms. */
+  disconnect?(socket: RealtimeSocket): void;
 }
 
 export const noRoomHandlers: RealtimeHandlers = {
@@ -79,13 +97,21 @@ export interface RealtimeOptions {
   handlers?: RealtimeHandlers;
   /** Run in order on every handshake after the connection id is set (#10: session). */
   middleware?: readonly SocketMiddleware[];
+  /** Messages (`enter` and `cmd`) per socket; `SOCKET_MESSAGE_LIMIT` by default. */
+  messageLimit?: TokenBucketOptions;
 }
 
 /** Payload cap per message, both transports (architecture section 8). */
 export const MAX_PAYLOAD_BYTES = 16 * 1024;
 
 export function createRealtime(httpServer: HttpServer, options: RealtimeOptions): RealtimeServer {
-  const { logger, allowedOrigin, handlers = noRoomHandlers, middleware = [] } = options;
+  const {
+    logger,
+    allowedOrigin,
+    handlers = noRoomHandlers,
+    middleware = [],
+    messageLimit = SOCKET_MESSAGE_LIMIT,
+  } = options;
   const io: RealtimeServer = new Server(httpServer, {
     maxHttpBufferSize: MAX_PAYLOAD_BYTES,
     serveClient: false,
@@ -100,17 +126,25 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     next();
   });
   for (const fn of middleware) io.use(guard(fn, logger));
+  handlers.attach?.(io);
 
   io.on("connection", (socket) => {
     const log = logger.child({ conn: socket.data.conn });
     log.info({ transport: socket.conn.transport.name }, "socket connected");
-    socket.on("disconnect", (reason) => log.info({ reason }, "socket disconnected"));
+    socket.on("disconnect", (reason) => {
+      log.info({ reason }, "socket disconnected");
+      handlers.disconnect?.(socket);
+    });
+    const bucket = createTokenBucket(messageLimit);
+    const limited = { ok: false, code: "rate_limited" } as const;
 
     onRaw(socket, log, "enter", async (payload) => {
+      if (!bucket.take()) return limited;
       const parsed = parseEnter(payload);
       return parsed.ok ? handlers.enter(socket, parsed.enter) : { ok: false, code: parsed.code };
     });
     onRaw(socket, log, "cmd", async (payload) => {
+      if (!bucket.take()) return limited;
       const parsed = toDomainCommand(payload);
       return parsed.ok
         ? handlers.cmd(socket, parsed.id, parsed.command)
