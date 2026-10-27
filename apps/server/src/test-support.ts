@@ -1,5 +1,5 @@
 /** Helpers shared by the server tests. Not imported by `main.ts`, so never bundled. */
-import { type Config, loadConfig } from "./config.ts";
+import { type Config, type LogLevel, loadConfig } from "./config.ts";
 import { createLogger, type Logger } from "./logger.ts";
 
 /** A password-shaped secret: tests assert it never reaches a log line or a message. */
@@ -23,8 +23,8 @@ export interface LogCollector {
   messages(): string[];
 }
 
-/** A debug-level logger whose output is kept in memory. */
-export function collectLogs(): LogCollector {
+/** A logger (debug level unless told otherwise) whose output is kept in memory. */
+export function collectLogs(level: LogLevel = "debug"): LogCollector {
   const raw: string[] = [];
   const lines: Record<string, unknown>[] = [];
   const destination = {
@@ -37,7 +37,7 @@ export function collectLogs(): LogCollector {
     raw,
     lines,
     destination,
-    logger: createLogger("debug", destination),
+    logger: createLogger(level, destination),
     messages: () => lines.map((line) => String(line.msg)),
   };
 }
