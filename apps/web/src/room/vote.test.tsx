@@ -129,7 +129,9 @@ const voting = () => {
 // The table is a lazy chunk; load it once up front, so no test's wait pays for its transform.
 beforeAll(async () => {
   await import("./seated.tsx");
-  await import("./results.tsx");
+  // The results' module, through its loader: a reveal then draws it at once.
+  const { loadResults } = await import("./results-chunk.tsx");
+  expect(await loadResults()).not.toBeNull();
 }, 30_000);
 
 beforeEach(() => {
@@ -568,7 +570,7 @@ describe("the reveal (#19)", () => {
       expect(text).toBeTruthy();
       return text;
     });
-    expect(sentence).toBe("Suggested 5, agreement 33%.");
+    expect(sentence).toBe("Suggested 5. Agreement 33%.");
     expect(screen.getByRole("button", { name: "Next round" })).toBeTruthy();
     const panel = await screen.findByRole("region", { name: "Results" });
     const stat = (key: string) => panel.querySelector(`[data-stat='${key}'] dd`)?.textContent;

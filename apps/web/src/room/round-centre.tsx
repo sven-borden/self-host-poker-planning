@@ -1,9 +1,9 @@
 import type { RoomView } from "@pp/protocol";
-import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { commandSender, sendCommand } from "../realtime/room-connection.ts";
-import { CentreFallback, CentreResult, type RevealMotion } from "./results-chunk.tsx";
+import { CentreResult, type RevealMotion } from "./results-chunk.tsx";
 import { voteCount } from "./table-data.ts";
 
 interface RoundCentreProps {
@@ -23,8 +23,8 @@ const CENTRE_BUTTON =
  * The status in the middle of the table (#18). Voting: how many have voted out of how
  * many can vote, and for the PO the reveal button (#19, also the key R). Lobby: a minimal
  * start button for the PO, which sends `startRound` without a subject, and a calm line for
- * everyone else. Revealed: the result (#20, `CentreResult`, from the results chunk; "Cards
- * revealed" until it has loaded), and for the PO "Next round" under it. #21 replaces
+ * everyone else. Revealed: the result (#20, `CentreResult`, from the results chunk; the
+ * result as a sentence until it has loaded), and for the PO "Next round" under it. #21 replaces
  * `StartRound` with "Next round" and its subject field.
  */
 export function RoundCentre({
@@ -59,11 +59,7 @@ export function RoundCentre({
       </p>
     );
   }
-  const result = (
-    <Suspense fallback={<CentreFallback />}>
-      <CentreResult room={room} compact={owner} motion={reveal} />
-    </Suspense>
-  );
+  const result = <CentreResult room={room} compact={owner} motion={reveal} />;
   if (!owner) return result;
   // The seam #21 replaces: "Next round" under the result.
   return (

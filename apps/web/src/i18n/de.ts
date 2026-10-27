@@ -145,7 +145,7 @@ export const de: Catalog = {
     revealKey: "Taste R, solange der Fokus auf dem Tisch oder Ihren Karten liegt",
   },
   results: {
-    title: "Ergebnis",
+    title: "Ergebnisse",
     average: "Durchschnitt",
     median: "Median",
     agreement: "Einigkeit",
@@ -165,11 +165,16 @@ export const de: Catalog = {
     highestNames: "Höchste Karte {{card}}: {{names}}",
     consensus: "Konsens",
     consensusOn: "Konsens bei {{card}}.",
+    agreementShort: "Einigkeit {{agreement, number(style: percent; maximumFractionDigits: 0)}}",
+    tie: "Gleichstand",
     suggestedAgreement:
-      "Vorschlag {{card}}, Einigkeit {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
+      "Vorschlag: {{card}}. Einigkeit: {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
     mostVotedAgreement:
-      "Meiste Stimmen {{card}}, Einigkeit {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
+      "Meiste Stimmen: {{card}}. Einigkeit: {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
+    tieAgreement:
+      "Gleichstand zwischen {{cards}}. Einigkeit: {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
     nothing: "Nichts zu zählen.",
+    cards: "Gespielte Karten",
     offTable: "Nicht am Tisch",
     someone: "Jemand, der gegangen ist",
   },

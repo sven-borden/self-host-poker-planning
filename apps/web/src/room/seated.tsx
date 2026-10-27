@@ -1,6 +1,6 @@
 import type { ParticipantView, RoomView as RoomSnapshotView } from "@pp/protocol";
 import { OctagonXIcon } from "lucide-react";
-import { Suspense, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useT } from "../i18n/hooks.ts";
 import { cardLabel } from "../table/cards.tsx";
 import { Hand } from "../table/hand.tsx";
@@ -81,7 +81,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
   }
   const inRound = room.round !== null;
   useEffect(() => {
-    // A reveal is in sight: fetch the results' chunk now, so it is there when it comes.
+    // A reveal is in sight: load the results' module now, so the reveal draws it at once.
     if (inRound) prefetchResults();
   }, [inRound]);
   const faceUp = people.filter((p) => p.status.kind === "revealed" && p.status.card !== null);
@@ -143,11 +143,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           <RoundCentre room={shown} onFailure={setCentreFailure} reveal={reveal} />
         </TableStage>
         <RevealedCards room={room} />
-        {room.round?.phase === "revealed" ? (
-          <Suspense fallback={null}>
-            <ResultsPanel room={room} motion={reveal} />
-          </Suspense>
-        ) : null}
+        {room.round?.phase === "revealed" ? <ResultsPanel room={room} motion={reveal} /> : null}
         <LiveAnnouncer />
         {centreFailure !== null ? (
           <p role="alert" className="mt-3 flex items-start justify-center gap-2 text-sm">

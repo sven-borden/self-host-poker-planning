@@ -11,7 +11,7 @@ import { type RoomView, toSnapshot } from "@pp/protocol";
 import { act, cleanup, render, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatNumber } from "../i18n/format.ts";
-import { changeLanguage, loadLanguage } from "../i18n/i18n.ts";
+import { changeLanguage, fixedT, loadLanguage } from "../i18n/i18n.ts";
 import { CentreResult, ResultsPanel } from "./results.tsx";
 import {
   CONSENSUS_POP_MS,
@@ -24,7 +24,13 @@ import {
   riseLabel,
   showAt,
 } from "./results-motion.ts";
-import { resultsModel } from "./results-view.ts";
+import {
+  type RevealedRound,
+  resultsModel,
+  revealSummary,
+  summarySentence,
+} from "./results-view.ts";
+import { RevealedCards } from "./revealed-cards.tsx";
 
 // The results (#20) against the domain: for every built-in deck, the numbers the panel
 // and the centre show are `computeResults` for the same votes, formatted (AC 1); a deck
@@ -133,7 +139,7 @@ describe("the results panel shows computeResults for every built-in deck (AC 1, 
       expect(spoken("Not counted")).toEqual(
         specials.map(({ card, count }) => `${SPOKEN[card] ?? card}: ${votes(count)}`),
       );
-      expect(region.textContent).toContain("Special cards stay out of the numbers.");
+      expect(region.textContent).toContain("Special cards don’t count toward these numbers.");
     }
     // The lowest and highest voters, by name: a named round whose cards differ.
     const lowest = cards.flatMap((card, i) => (card === low ? [`Person ${i}`] : []));
@@ -151,7 +157,7 @@ describe("the results panel shows computeResults for every built-in deck (AC 1, 
     const sentence = container.querySelector(".sr-only")?.textContent;
     const word = deck === "tshirt" ? "Most voted" : "Suggested";
     expect(sentence).toBe(
-      `${word} ${expected.suggested}, agreement ${percent(expected.agreement)}.`,
+      `${word} ${expected.suggested}. Agreement ${percent(expected.agreement)}.`,
     );
     expect(container.querySelector("[data-mini-card]")?.textContent).toBe(expected.suggested);
   });
@@ -204,6 +210,76 @@ describe("the results' edge cases", () => {
     expect(stat("mostVoted")?.querySelector("[aria-hidden]")?.textContent).toBe("M · L");
     expect(stat("mostVoted")?.querySelector(".sr-only")?.textContent).toBe("M and L");
     expect(stat("agreement")?.textContent).toBe("50%");
+  });
+
+  it("labels the centre's figure as the team's agreement, even for a card nobody played", () => {
+    // 3, 3 and 13: the average 6.3 is nearest 5, which nobody played; 67% is how much the
+    // team agrees (two of three on 3), not support for 5.
+    const room = revealed("fib", ["3", "3", "13"]);
+    const { container } = render(<CentreResult room={room} compact={false} motion={AT_REST} />);
+    expect(
+      container.querySelector("[data-centre-result]")?.getAttribute("data-centre-result"),
+    ).toBe("suggested");
+    expect(container.querySelector("[data-mini-card]")?.textContent).toBe("5");
+    expect(container.querySelector("[data-centre-caption]")?.textContent).toBe("Agreement 67%");
+    expect(container.querySelector(".sr-only")?.textContent).toBe("Suggested 5. Agreement 67%.");
+  });
+
+  it("names a tie for most voted in the centre, as the panel does", () => {
+    const room = revealed("tshirt", ["M", "L", "M", "L"]);
+    const { container } = render(<CentreResult room={room} compact motion={AT_REST} />);
+    expect(
+      container.querySelector("[data-centre-result]")?.getAttribute("data-centre-result"),
+    ).toBe("tie");
+    expect(
+      Array.from(container.querySelectorAll("[data-mini-card]"), (card) => card.textContent),
+    ).toEqual(["M", "L"]);
+    expect(container.querySelector("[data-centre-caption]")?.textContent).toBe("Tie");
+    expect(container.querySelector(".sr-only")?.textContent).toBe(
+      "Tie between M and L. Agreement 50%.",
+    );
+  });
+
+  it("says the tie and the suggestion in French and German", async () => {
+    await Promise.all([loadLanguage("fr"), loadLanguage("de")]);
+    const round = (room: RoomView) => room.round as RevealedRound;
+    const tie = revealSummary(round(revealed("tshirt", ["XS", "M", "XS", "M", "L", "L"])));
+    const suggested = revealSummary(round(revealed("fib", ["3", "3", "13"])));
+    const pct = (value: number, locale: string) =>
+      formatNumber(value, locale, { style: "percent", maximumFractionDigits: 0 });
+    expect(summarySentence(fixedT("fr"), tie)).toBe(
+      `Égalité entre XS, M et L. Accord : ${pct(1 / 3, "fr")}.`,
+    );
+    expect(summarySentence(fixedT("de"), tie)).toBe(
+      `Gleichstand zwischen XS, M und L. Einigkeit: ${pct(1 / 3, "de")}.`,
+    );
+    expect(summarySentence(fixedT("fr"), suggested)).toBe(
+      `Carte suggérée : 5. Accord : ${pct(2 / 3, "fr")}.`,
+    );
+    expect(summarySentence(fixedT("de"), suggested)).toBe(
+      `Vorschlag: 5. Einigkeit: ${pct(2 / 3, "de")}.`,
+    );
+  });
+
+  it("suggests a card on a numeric deck even when most voted is a tie", () => {
+    const summary = revealSummary(revealed("fib", ["3", "3", "8", "8"]).round as RevealedRound);
+    expect(summary).toEqual({ kind: "suggested", card: "5", agreement: 0.5, mostVoted: false });
+  });
+
+  it("marks the lowest or highest card of a vote not at the table, as on a seat", () => {
+    const room = revealed("fib", ["1", "5", "8"]);
+    // Person 0 played the lowest card, then switched to observer after the reveal.
+    const moved = {
+      ...room,
+      participants: room.participants.map((p) =>
+        p.id === "p0" ? { ...p, role: "observer" as const } : p,
+      ),
+    };
+    const { container } = render(<RevealedCards room={moved} />);
+    const item = container.querySelector("[data-off-table]");
+    expect(item?.getAttribute("data-extreme")).toBe("low");
+    expect(item?.querySelector("[data-badge='lowest']")).not.toBeNull();
+    expect(item?.querySelector(".sr-only")?.textContent).toMatch(/^Person 0, .*1, lowest card$/);
   });
 
   it("formats the numbers in the reader's language", async () => {

@@ -58,7 +58,7 @@ describe("liveEvents", () => {
     const away = run(":server", { type: "presence", who: "ben", connected: false });
     // Everyone present has voted once Ben is away: the round reveals itself.
     expect(said(liveEvents(away.room, away.causes, changed.room))).toBe(
-      "Ben is away. Cards revealed. Suggested 8, agreement 50%.",
+      "Ben is away. Cards revealed. Suggested 8. Agreement 50%.",
     );
     const back = run(":server", { type: "presence", who: "ben", connected: true });
     expect(said(liveEvents(back.room, back.causes, away.room))).toBe("Ben is back.");
@@ -93,7 +93,7 @@ describe("liveEvents", () => {
     const text = said(liveEvents(revealed.room, revealed.causes, before.room));
     // The last vote revealed the round: the reveal and its result are said (#20), which
     // belong to nobody; whose card is what is never said.
-    expect(text).toBe("Me voted. Cards revealed. Suggested 13, agreement 50%.");
+    expect(text).toBe("Me voted. Cards revealed. Suggested 13. Agreement 50%.");
     expect(text).not.toMatch(/21/);
     const final = run("me", { type: "setFinal", card: "13" });
     expect(liveEvents(final.room, final.causes, revealed.room)).toEqual([]);
@@ -108,7 +108,7 @@ describe("liveEvents", () => {
     const forced = run("me", { type: "reveal" });
     const events = liveEvents(forced.room, forced.causes, voted.room);
     expect(events).toEqual([{ kind: "revealed", who: "", name: "", summary: ana13 }]);
-    expect(said(mergeEvents(events, events))).toBe("Cards revealed. Suggested 13, agreement 100%.");
+    expect(said(mergeEvents(events, events))).toBe("Cards revealed. Suggested 13. Agreement 100%.");
     // A new round in the same batch makes the reveal moot.
     const next = run("me", { type: "startRound", subject: { kind: "none" } });
     const both = mergeEvents(events, liveEvents(next.room, next.causes, forced.room));
@@ -137,7 +137,7 @@ describe("liveEvents", () => {
     expect(round({}, ["8", "8", "8"])).toBe("Cards revealed. Consensus on 8.");
     expect(round({}, ["?", "☕"])).toBe("Cards revealed. Nothing to count.");
     expect(round({ deck: { kind: "preset", id: "tshirt" } }, ["M", "L", "M", "S"])).toBe(
-      "Cards revealed. Most voted M, agreement 50%.",
+      "Cards revealed. Most voted M. Agreement 50%.",
     );
   });
 
@@ -270,7 +270,7 @@ describe("LiveAnnouncer", () => {
       useRoomStore.getState().receive({ ...revealed, causes: [] });
       vi.advanceTimersByTime(LIVE_QUIET_MS);
     });
-    expect(region()?.textContent).toBe("Cards revealed. Suggested 13, agreement 100%.");
+    expect(region()?.textContent).toBe("Cards revealed. Suggested 13. Agreement 100%.");
   });
 
   it("says the same words again as a new announcement", () => {

@@ -208,7 +208,7 @@ export const en = {
     cardVotes_one: "{{card}}: {{count, number}} vote",
     cardVotes_other: "{{card}}: {{count, number}} votes",
     notCounted: "Not counted",
-    notCountedNote: "Special cards stay out of the numbers.",
+    notCountedNote: "Special cards don’t count toward these numbers.",
     extremes: "Lowest and highest cards",
     lowest: "Lowest",
     highest: "Highest",
@@ -216,11 +216,16 @@ export const en = {
     highestNames: "Highest card {{card}}: {{names}}",
     consensus: "Consensus",
     consensusOn: "Consensus on {{card}}.",
+    agreementShort: "Agreement {{agreement, number(style: percent; maximumFractionDigits: 0)}}",
+    tie: "Tie",
     suggestedAgreement:
-      "Suggested {{card}}, agreement {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
+      "Suggested {{card}}. Agreement {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
     mostVotedAgreement:
-      "Most voted {{card}}, agreement {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
+      "Most voted {{card}}. Agreement {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
+    tieAgreement:
+      "Tie between {{cards}}. Agreement {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
     nothing: "Nothing to count.",
+    cards: "Cards played",
     offTable: "Not at the table",
     someone: "Someone who left",
   },

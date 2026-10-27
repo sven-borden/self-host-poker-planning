@@ -64,18 +64,24 @@ function useResultsMotion(root: { current: HTMLElement | null }, motion: RevealM
 const CHIP =
   "in-data-[variant=phone]:h-[18px] in-data-[variant=phone]:w-auto in-data-[variant=phone]:min-w-[15px] in-data-[variant=phone]:rounded-[3px] in-data-[variant=phone]:px-[3px] in-data-[variant=phone]:text-[11px]";
 
+/** The line under the card: the agreement, or "Tie". */
+const CENTRE_CAPTION =
+  "text-center text-[12px]/tight font-semibold tabular-nums in-data-[variant=phone]:text-[10px]/tight";
+
 interface CentreResultProps {
   room: RoomView;
-  /** The PO's centre, which also holds "Next round": one line instead of two. */
+  /** The PO's centre, which also holds "Next round": side by side, wrapping on phones. */
   compact: boolean;
   motion: RevealMotion;
 }
 
 /**
  * The table's centre after a reveal (docs/03-design-brief.md, "The table"): the suggested
- * card with its agreement, or the card and a "Consensus" pill when everyone agrees, or
- * "Nothing to count." when no card counts. A sentence says it to screen readers; the
- * card and the pill are drawn for the eye.
+ * card with the team's agreement under it ("Agreement 67%", the panel's word: how much
+ * the team agrees, not the suggestion's support), the tied cards with "Tie" on a deck
+ * without numbers, the card and a "Consensus" pill when everyone agrees, or "Nothing to
+ * count." when no card counts. A sentence says it to screen readers; the cards, the
+ * caption and the pill are drawn for the eye.
  */
 export function CentreResult({ room, compact, motion }: CentreResultProps) {
   const round = room.round;
@@ -93,10 +99,11 @@ function Centre({
   motion: RevealMotion;
 }) {
   const t = useT();
-  const format = useFormat();
   const root = useRef<HTMLParagraphElement>(null);
   useResultsMotion(root, motion);
   const sentence = summarySentence(t, summary);
+  const cards =
+    summary.kind === "tie" ? summary.cards : summary.kind === "none" ? [] : [summary.card];
   return (
     <p
       ref={root}
@@ -104,8 +111,10 @@ function Centre({
       data-centre-result={summary.kind}
       className={cn(
         "m-0 flex items-center justify-center",
+        // The PO's phone centre wraps into a column no wider than the space between the
+        // side cards: the pill or the caption goes under the chip.
         compact
-          ? "flex-row gap-1.5 whitespace-nowrap in-data-[variant=phone]:gap-1"
+          ? "flex-row flex-wrap gap-x-1.5 gap-y-0.5 whitespace-nowrap in-data-[variant=phone]:max-w-[68px] in-data-[variant=phone]:gap-x-1 in-data-[variant=phone]:whitespace-normal"
           : "flex-col gap-1",
       )}
     >
@@ -114,14 +123,16 @@ function Centre({
       ) : (
         <>
           <span className="sr-only">{sentence}</span>
-          <span data-show className="flex">
-            <MiniCard value={summary.card} className={cn("shadow-md", compact && CHIP)} />
+          <span data-show className="flex flex-wrap justify-center gap-1">
+            {cards.map((card) => (
+              <MiniCard key={card} value={card} className={cn("shadow-md", compact && CHIP)} />
+            ))}
           </span>
           {summary.kind === "consensus" ? (
             <span
               aria-hidden="true"
               data-pop
-              className="relative rounded-full bg-brass-soft px-2 py-0.5 text-[11px]/tight font-semibold text-brass-ink in-data-[variant=phone]:px-1.5 in-data-[variant=phone]:text-[10px]/tight"
+              className="relative rounded-full bg-brass-soft px-2 py-0.5 text-[11px]/tight font-semibold whitespace-nowrap text-brass-ink in-data-[variant=phone]:px-1.5 in-data-[variant=phone]:text-[10px]/tight"
             >
               <span
                 data-pulse
@@ -130,12 +141,10 @@ function Centre({
               {t("results.consensus")}
             </span>
           ) : (
-            <span
-              aria-hidden="true"
-              data-show
-              className="text-[13px]/tight font-semibold tabular-nums in-data-[variant=phone]:text-[11px]/tight"
-            >
-              {format.number(summary.agreement, { style: "percent", maximumFractionDigits: 0 })}
+            <span aria-hidden="true" data-show data-centre-caption className={CENTRE_CAPTION}>
+              {summary.kind === "tie"
+                ? t("results.tie")
+                : t("results.agreementShort", { agreement: summary.agreement })}
             </span>
           )}
         </>
@@ -225,22 +234,27 @@ function Panel({ model, motion }: { model: ResultsModel; motion: RevealMotion })
       <h2 id={ids.title} className="sr-only">
         {t("results.title")}
       </h2>
+      {/* The numbers show at once; only the columns move. A deck without numbers has three
+          statistics: on a phone the spread takes the second row whole, so "XS–XXL" stays
+          on one line. */}
       <dl
-        data-show
         data-stats
         className={cn(
           "m-0 grid w-full max-w-xl gap-x-4 gap-y-4",
-          stats.length === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3",
+          stats.length === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2 sm:grid-cols-3",
         )}
       >
         {stats.map((stat) => (
           <div
             key={stat.key}
             data-stat={stat.key}
-            className="flex flex-col-reverse items-center gap-1 text-center"
+            className={cn(
+              "flex flex-col-reverse items-center gap-1 text-center",
+              stats.length === 3 && stat.key === "spread" && "col-span-2 sm:col-span-1",
+            )}
           >
             <dt className={CAPTION}>{stat.caption}</dt>
-            <dd className="m-0 font-display text-[28px]/none font-extrabold tabular-nums [font-stretch:110%] phone:text-[24px]/none">
+            <dd className="m-0 font-display text-[28px]/none font-extrabold whitespace-nowrap tabular-nums [font-stretch:110%] phone:text-[24px]/none">
               {stat.value === null ? (
                 <>
                   <span aria-hidden="true">—</span>
@@ -260,7 +274,6 @@ function Panel({ model, motion }: { model: ResultsModel; motion: RevealMotion })
       </dl>
       {model.extremes.length > 0 ? (
         <ul
-          data-show
           data-extremes
           aria-label={t("results.extremes")}
           className="m-0 flex w-full list-none flex-col items-center gap-2 p-0 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-x-8"
@@ -296,20 +309,22 @@ function Panel({ model, motion }: { model: ResultsModel; motion: RevealMotion })
         <div className="flex flex-wrap items-end justify-center gap-x-8 gap-y-4">
           {model.columns.length > 0 ? (
             <div className="flex flex-col items-center gap-2">
-              <p id={ids.columns} data-show className={CAPTION}>
+              {/* The list's name; hidden itself, so it is read once. */}
+              <p id={ids.columns} aria-hidden="true" className={CAPTION}>
                 {t("results.distribution")}
               </p>
+              {/* Narrower on a phone, so the 11 cards of a deck fit one row at 360 px. */}
               <ul
                 aria-labelledby={ids.columns}
                 data-distribution
-                className="m-0 flex list-none flex-wrap items-end justify-center gap-x-2 gap-y-3 p-0"
+                className="m-0 flex list-none flex-wrap items-end justify-center gap-x-2 gap-y-3 p-0 phone:gap-x-0.5"
               >
                 {model.columns.map((column) => (
                   <li
                     key={column.card}
                     data-column
                     data-extreme={column.extreme}
-                    className="flex w-9 flex-col items-center gap-1"
+                    className="flex w-9 flex-col items-center gap-1 phone:w-6"
                   >
                     <span
                       aria-hidden="true"
@@ -322,14 +337,15 @@ function Panel({ model, motion }: { model: ResultsModel; motion: RevealMotion })
                     <span
                       aria-hidden="true"
                       data-bar
-                      className="pp-bar block w-6 origin-bottom rounded-t-[3px]"
+                      className="pp-bar block w-6 origin-bottom rounded-t-[3px] phone:w-5"
                       style={{
                         height: Math.max(BAR_MIN_PX, Math.round((column.count / top) * BAR_MAX_PX)),
                       }}
                     />
-                    <span data-show className="flex">
-                      <MiniCard value={column.card} />
-                    </span>
+                    <MiniCard
+                      value={column.card}
+                      className="phone:h-[34px] phone:w-6 phone:text-[12px]"
+                    />
                     <span className="sr-only">
                       {[
                         t("results.cardVotes", {
@@ -345,8 +361,8 @@ function Panel({ model, motion }: { model: ResultsModel; motion: RevealMotion })
             </div>
           ) : null}
           {model.uncounted.length > 0 ? (
-            <div data-show data-uncounted className="flex max-w-56 flex-col items-center gap-2">
-              <p id={ids.uncounted} className={CAPTION}>
+            <div data-uncounted className="flex max-w-56 flex-col items-center gap-2">
+              <p id={ids.uncounted} aria-hidden="true" className={CAPTION}>
                 {t("results.notCounted")}
               </p>
               <ul

@@ -1,6 +1,8 @@
 import { isNumericDeck } from "@pp/domain";
 import type { RoomView } from "@pp/protocol";
-import type { TFunction } from "../i18n/i18n.ts";
+import { formatList } from "../i18n/format.ts";
+import { languageOf, type TFunction } from "../i18n/i18n.ts";
+import { localeFor } from "../i18n/language.ts";
 import type { Extreme } from "../table/seat.tsx";
 
 // What a revealed round says (#20), read from the server's `round.results`: the domain's
@@ -17,6 +19,8 @@ export type RevealSummary =
   | { kind: "consensus"; card: string }
   /** `mostVoted` on a deck without numbers, where the suggestion is the most played card. */
   | { kind: "suggested"; card: string; agreement: number; mostVoted: boolean }
+  /** A deck without numbers whose top count is shared: the tied cards, in deck order. */
+  | { kind: "tie"; cards: string[]; agreement: number }
   /** No card counts: nobody voted, or only special cards were played. */
   | { kind: "none" };
 
@@ -61,19 +65,39 @@ export function extremeOf(round: RevealedRound, card: string): Extreme | undefin
   return undefined;
 }
 
+/** The counted cards played most often, in deck order: several on a tie, none without votes. */
+function mostVotedOf(results: RevealedRound["results"]): string[] {
+  const counted = new Set(results.core);
+  const columns = results.distribution.filter(({ card }) => counted.has(card));
+  const top = Math.max(0, ...columns.map((c) => c.count));
+  return columns.filter((c) => c.count === top).map((c) => c.card);
+}
+
+/**
+ * The centre's result. A numeric deck suggests the card nearest the average, whatever the
+ * tie for most voted; a deck without numbers suggests its most voted card, or names the
+ * tie when the top count is shared (the panel's "M · L"), never one card of it.
+ */
 export function revealSummary(round: RevealedRound): RevealSummary {
   const { results } = round;
   if (results.suggested === null) return { kind: "none" };
   if (results.consensus) return { kind: "consensus", card: results.mode ?? results.suggested };
+  const numeric = isNumericDeck(round.deck);
+  const top = numeric ? [] : mostVotedOf(results);
+  if (top.length > 1) return { kind: "tie", cards: top, agreement: results.agreement };
   return {
     kind: "suggested",
     card: results.suggested,
     agreement: results.agreement,
-    mostVoted: !isNumericDeck(round.deck),
+    mostVoted: !numeric,
   };
 }
 
-/** "Consensus on 8.", "Suggested 5, agreement 60%.", "Nothing to count." */
+/**
+ * "Consensus on 8.", "Suggested 5. Agreement 60%.", "Tie between M and L. Agreement
+ * 50%.", "Nothing to count." The agreement is how much the team agrees (the share of the
+ * most voted card), not the suggestion's support: the suggested card may be one nobody played.
+ */
 export function summarySentence(t: TFunction, summary: RevealSummary): string {
   switch (summary.kind) {
     case "consensus":
@@ -81,6 +105,11 @@ export function summarySentence(t: TFunction, summary: RevealSummary): string {
     case "suggested":
       return t(summary.mostVoted ? "results.mostVotedAgreement" : "results.suggestedAgreement", {
         card: summary.card,
+        agreement: summary.agreement,
+      });
+    case "tie":
+      return t("results.tieAgreement", {
+        cards: formatList(summary.cards, localeFor(languageOf(t))),
         agreement: summary.agreement,
       });
     case "none":
@@ -104,7 +133,6 @@ export function resultsModel(room: RoomView): ResultsModel | null {
     const extreme = extremeOf(round, card);
     columns.push(extreme ? { card, count, extreme } : { card, count });
   }
-  const top = Math.max(0, ...columns.map((c) => c.count));
   const counted = results.core.length;
 
   const extremes: ResultsModel["extremes"] = [];
@@ -129,7 +157,7 @@ export function resultsModel(room: RoomView): ResultsModel | null {
     median: results.median,
     agreement: counted > 0 ? results.agreement : null,
     spread: results.spread,
-    mostVoted: counted > 0 ? columns.filter((c) => c.count === top).map((c) => c.card) : [],
+    mostVoted: mostVotedOf(results),
     summary: revealSummary(round),
     extremes,
   };

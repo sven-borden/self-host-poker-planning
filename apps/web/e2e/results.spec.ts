@@ -108,8 +108,8 @@ test("a named round: the centre, the panel, the seats and the live region say th
 
     const expected = computeResults(["5", "8", ...plays], { kind: "preset", id: "fib" });
     // 2, 3, 5, 5, 8, 8 and 13: the average 6.3 is nearest 5, two votes in seven.
-    const sentence = `Suggested ${expected.suggested}, agreement ${percent(expected.agreement)}.`;
-    expect(sentence).toBe("Suggested 5, agreement 29%.");
+    const sentence = `Suggested ${expected.suggested}. Agreement ${percent(expected.agreement)}.`;
+    expect(sentence).toBe("Suggested 5. Agreement 29%.");
     for (const viewer of [page, ben.page]) {
       await expect(centreSentence(viewer)).toHaveText(sentence);
       await expect(tableLive(viewer)).toContainText(`Cards revealed. ${sentence}`);
@@ -219,7 +219,7 @@ test("a consensus, then a T-shirt round with no average (AC 2)", async ({
 
     const expected = computeResults(["M", "M", "L", "?"], { kind: "preset", id: "tshirt" });
     await expect(centreSentence(page)).toHaveText(
-      `Most voted ${expected.suggested}, agreement ${percent(expected.agreement)}.`,
+      `Most voted ${expected.suggested}. Agreement ${percent(expected.agreement)}.`,
     );
     await expect(results(page).locator("dt")).toHaveText(["Most voted", "Agreement", "Spread"]);
     await expect(stat(page, "mostVoted")).toHaveText(expected.mode ?? "");

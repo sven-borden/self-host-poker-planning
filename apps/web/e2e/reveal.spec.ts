@@ -118,8 +118,8 @@ test("the PO reveals a named round; the cards turn over in seat order from the v
     await expect(page.getByRole("button", { name: "Next round" })).toBeFocused();
     await expect(status(ben.page)).toHaveAttribute("data-centre-status", "revealed");
     // The result comes with the reveal (#20): 3, 5, 5, 8, 8 and 13 average 7.
-    await expect(tableLive(ben.page)).toContainText("Cards revealed. Suggested 8, agreement 33%.");
-    await expect(tableLive(page)).toContainText("Cards revealed. Suggested 8, agreement 33%.");
+    await expect(tableLive(ben.page)).toContainText("Cards revealed. Suggested 8. Agreement 33%.");
+    await expect(tableLive(page)).toContainText("Cards revealed. Suggested 8. Agreement 33%.");
     const benSeats = seats(ben.page);
     await expect(benSeats.getByRole("button", { name: "Gus, card unsure" })).toHaveCount(0);
     await expect(benSeats.getByRole("button", { name: "Gus, unsure" })).toHaveCount(1);
@@ -342,7 +342,7 @@ test("an anonymous round reveals itself when everyone voted, and ties no card to
 
     await expect(status(ben.page)).toHaveAttribute("data-centre-status", "revealed");
     // 2, 3, 5, 5, 8, 8 and 13 average 6.3, nearest 5: two votes in seven.
-    await expect(tableLive(ben.page)).toContainText("Cards revealed. Suggested 5, agreement 29%.");
+    await expect(tableLive(ben.page)).toContainText("Cards revealed. Suggested 5. Agreement 29%.");
     // The cards show in the results' columns (#20), which replace #19's row.
     const row = ben.page.getByRole("list", { name: "Votes per card" });
     await expect(row.locator(".sr-only")).toHaveText([
