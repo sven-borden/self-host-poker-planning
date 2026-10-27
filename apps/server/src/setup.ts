@@ -12,10 +12,17 @@ import { registerRoomApi } from "./rooms.ts";
 import type { Setup } from "./run.ts";
 import { createRoomSync } from "./sync/room-sync.ts";
 
+/** Knobs for tests only; production runs with the defaults. */
+export interface SetupTuning {
+  /** The presence grace (`PRESENCE_GRACE_MS`, 15 s, by default). */
+  presenceGraceMs?: number;
+}
+
 export async function setupServer(
   config: Config,
   logger: Logger,
   signal?: AbortSignal,
+  tuning: SetupTuning = {},
 ): Promise<Setup & { database: Database; auth: ReturnType<typeof createAuth> }> {
   const opened = await setupDatabase(config, logger, signal);
   const { database } = opened;
@@ -30,7 +37,13 @@ export async function setupServer(
     throw error;
   }
   const { runner, store, db } = database;
-  const sync = createRoomSync({ runner, store, logger, sessionAlive: sessionChecker(db) });
+  const sync = createRoomSync({
+    runner,
+    store,
+    logger,
+    sessionAlive: sessionChecker(db),
+    ...(tuning.presenceGraceMs !== undefined && { presenceGraceMs: tuning.presenceGraceMs }),
+  });
   return {
     database,
     auth,
