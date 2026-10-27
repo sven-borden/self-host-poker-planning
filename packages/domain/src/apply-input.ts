@@ -31,25 +31,49 @@ export function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Control characters and bidirectional overrides: they break or spoof the text around them. */
-const UNSAFE_TEXT = /[\p{Cc}‪-‮⁦-⁩]/u;
-/** Whitespace and invisible format characters: text made only of these looks empty. */
-const BLANK = /[\s\p{Cf}]/gu;
-/** A run of whitespace, tabs and line breaks included. */
-const WHITESPACE_RUN = /\s+/gu;
+/**
+ * Characters that break, hide or spoof the text around them: control characters, bidi
+ * controls (overrides, isolates, LRM, RLM, ALM) and every default-ignorable code point
+ * (zero-width space, soft hyphen, word joiner, Hangul fillers, variation selectors, tag
+ * characters …), which render as nothing, so "Sv" + U+200B + "en" would show as "Sven".
+ * Emoji need three of them, which `ALLOWED_INVISIBLE` takes out first.
+ */
+const UNSAFE_TEXT = /[\p{Cc}\p{Bidi_Control}\p{Default_Ignorable_Code_Point}]/u;
+/** ZWNJ (Persian, Hindi), ZWJ (emoji sequences) and VS16 (emoji presentation). */
+const ALLOWED_INVISIBLE = /\u{200C}|\u{200D}|\u{FE0F}/gu;
+/** A flag of tag characters (🏴 England, Scotland, Wales): its tags are allowed. */
+const EMOJI_TAG_SEQUENCE = /\u{1F3F4}[\u{E0020}-\u{E007E}]+\u{E007F}/gu;
+/**
+ * What shows as nothing on its own: whitespace, format characters, the braille blank
+ * (U+2800) and combining marks, which need a base to show on. Text made only of these is
+ * blank.
+ */
+const BLANK = /[\s\p{Cf}\u{2800}\p{M}]/gu;
+/**
+ * A run of whitespace, tabs and line breaks included, but not U+FEFF: JavaScript counts
+ * it as whitespace, yet it is default-ignorable and refused like the others.
+ */
+const WHITESPACE_RUN = /[^\S\u{FEFF}]+/gu;
 
 /**
  * Text with every whitespace run (tabs and line breaks too, as in a pasted ticket title)
  * collapsed into one space, trimmed and NFC-normalised, of 1 to `max` user-perceived
- * characters and at most `max × UNITS_PER_CHARACTER` code units, without control
- * characters or bidi overrides and not made of invisible characters only; else `null`.
- * A lone surrogate refuses the text: Postgres jsonb would refuse it at write time.
+ * characters and at most `max × UNITS_PER_CHARACTER` code units; else `null`. Refused:
+ * control characters, bidi controls and default-ignorable characters (ZWJ, ZWNJ and VS16
+ * excepted, and tag characters inside an emoji flag), and text that is blank (only
+ * whitespace, format characters, braille blanks and combining marks without a base). A
+ * lone surrogate refuses the text: Postgres jsonb would refuse it at write time.
+ * Covers names, round titles and (W1) room names.
  */
 function cleanText(raw: unknown, max: number): string | null {
   if (typeof raw !== "string" || !raw.isWellFormed()) return null;
-  const text = raw.replace(WHITESPACE_RUN, " ").trim().normalize("NFC");
+  const spaced = raw.replace(WHITESPACE_RUN, " ");
+  const text = spaced.trim().normalize("NFC");
   if (text.length > max * UNITS_PER_CHARACTER) return null;
-  if (text.replace(BLANK, "") === "" || UNSAFE_TEXT.test(text)) return null;
+  if (text.replace(BLANK, "") === "") return null;
+  // Checked before `trim`, which would drop a U+FEFF at either end.
+  const checked = spaced.replace(EMOJI_TAG_SEQUENCE, "\u{1F3F4}").replace(ALLOWED_INVISIBLE, "");
+  if (UNSAFE_TEXT.test(checked)) return null;
   return cardLength(text) <= max ? text : null;
 }
 
