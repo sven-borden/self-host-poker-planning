@@ -38,6 +38,26 @@ describe("draftSubject", () => {
       ok: true,
       subject: { kind: "link", url: "https://acme.atlassian.net/browse/PAY-482" },
     });
+    // A scheme-like word with a space after its colon is a title, not a refused link.
+    for (const title of [
+      "File: upload size limit",
+      "Data: nightly export",
+      "Blob: storage cleanup",
+      "JavaScript: drop the old bundle",
+    ]) {
+      expect(draftSubject(title), title).toEqual({
+        ok: true,
+        subject: { kind: "title", text: title },
+      });
+    }
+    expect(draftSubject("vbscript:\tlegacy macros")).toEqual({
+      ok: true,
+      subject: { kind: "title", text: "vbscript: legacy macros" },
+    });
+    expect(draftSubject("https://dev.azure.com/acme/Payments/_workitems/edit/12345")).toEqual({
+      ok: true,
+      subject: { kind: "link", url: "https://dev.azure.com/acme/Payments/_workitems/edit/12345" },
+    });
     expect(draftSubject("HTTP://example.com")).toEqual({
       ok: true,
       subject: { kind: "link", url: "HTTP://example.com" },
@@ -63,6 +83,10 @@ describe("draftSubject", () => {
       "data:text/html,<script>alert(1)</script>",
       "vbscript:msgbox(1)",
       "file:///etc/passwd",
+      "File:upload",
+      "data:,x",
+      "blob:https://example.com/0a1b",
+      "mailto://someone@example.com",
       "ftp://example.com/x",
       "http://user:pass@example.com/",
       "https://good.example@evil.example/",
@@ -85,20 +109,38 @@ describe("the subject's words", () => {
   const t = fixedT("en");
 
   it("says why a draft was refused", () => {
-    expect(problemMessage(t, "titleTooLong")).toBe("A title holds at most 200 characters.");
-    expect(problemMessage(t, "linkTooLong")).toBe("A link holds at most 2,000 characters.");
+    expect(problemMessage(t, "titleTooLong")).toBe("A title can have at most 200 characters.");
+    expect(problemMessage(t, "linkTooLong")).toBe("A link can have at most 2,000 characters.");
     expect(problemMessage(t, "badLink")).toBe(
       "Only http and https links work, without a user name or password.",
     );
     expect(problemMessage(t, "bad_subject")).toBe(t("errors.bad_subject"));
     expect(problemMessage(fixedT("fr"), "linkTooLong")).toBe(
-      "Un lien compte au plus 2\u{202F}000 caractères.",
+      "Un lien ne peut pas dépasser 2\u{202F}000 caractères.",
+    );
+    expect(problemMessage(fixedT("de"), "titleTooLong")).toBe(
+      "Ein Titel darf höchstens 200 Zeichen lang sein.",
+    );
+    expect(problemMessage(fixedT("de"), "badLink")).toBe(
+      "Nur http- und https-Links sind möglich, ohne Benutzername und Passwort.",
     );
   });
 
   it("names a round by its key, its title or its number", () => {
     expect(subjectName(t, { number: 3, subject: { kind: "none" } })).toBe("Round 3");
     expect(subjectName(t, { number: 3, subject: { kind: "title", text: "Login" } })).toBe("Login");
+    // The sentence ends with its own full stop: a title's own is left out.
+    for (const [text, said] of [
+      ["Why is login slow?", "Why is login slow"],
+      ["Ship it!", "Ship it"],
+      ["Export the invoices.", "Export the invoices"],
+      ["And then\u{2026}", "And then"],
+      ["Wait ?!", "Wait"],
+      ["v1.2 or 3.0", "v1.2 or 3.0"],
+      ["?", "?"],
+    ] as const) {
+      expect(subjectName(t, { number: 3, subject: { kind: "title", text } }), text).toBe(said);
+    }
     const jira = { kind: "link", url: "https://x.example/browse/AB-1", key: "AB-1" } as const;
     expect(subjectName(t, { number: 3, subject: jira })).toBe("AB-1");
     const ado = { kind: "link", url: "https://dev.azure.com/a/b/_workitems/edit/7", key: "7" };
@@ -150,6 +192,9 @@ describe("RoundSubject", () => {
     const title = document.querySelector("bdi[data-subject-title]");
     expect(title?.textContent).toBe(text);
     expect(title?.querySelector("b")).toBeNull();
+    // At most two lines on screen; the whole title on hover.
+    expect(title?.getAttribute("title")).toBe(text);
+    expect(title?.className).toContain("line-clamp-2");
   });
 
   it("renders a link with its key's chip, in a new tab, with rel noopener noreferrer (AC 1)", () => {

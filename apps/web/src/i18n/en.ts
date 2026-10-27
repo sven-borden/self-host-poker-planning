@@ -198,9 +198,10 @@ export const en = {
     subjectLabel: "Subject of the next round",
     subjectHint:
       "Leave it empty for Round {{round, number}}, type a title, or paste a link to the ticket.",
+    subjectHintVoting: "Round {{round, number}} will start with this subject after the reveal.",
     opensInNewTab: "(opens in a new tab)",
-    titleTooLong: "A title holds at most {{max, number}} characters.",
-    linkTooLong: "A link holds at most {{max, number}} characters.",
+    titleTooLong: "A title can have at most {{max, number}} characters.",
+    linkTooLong: "A link can have at most {{max, number}} characters.",
     badLink: "Only http and https links work, without a user name or password.",
   },
   results: {

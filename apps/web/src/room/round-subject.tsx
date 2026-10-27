@@ -6,9 +6,9 @@ import { keyLabel, safeHref, shortUrl } from "./subject.ts";
 /**
  * The round and its subject, above the table, for everyone (#21): "Round 3" alone, or
  * "Round 3" before the title (inside `<bdi>`, so a right-to-left title cannot reorder the
- * line) or before the link. A link opens in a new tab with `rel="noopener noreferrer"`
- * and shows as its key's chip ("ABC-123", "#12345") or as a shortened URL, the full one
- * in its title. Only an `http(s)` link without credentials becomes a link (`safeHref`).
+ * line; at most two lines, the whole title in its `title`) or before the link. A link
+ * opens in a new tab with `rel="noopener noreferrer"` and shows as its key's chip
+ * ("ABC-123", "#12345") or as a shortened URL, the full one in its title. Only an `http(s)` link without credentials becomes a link (`safeHref`).
  */
 export function RoundSubject({ round }: { round: Pick<RoundView, "number" | "subject"> }) {
   const t = useT();
@@ -16,16 +16,24 @@ export function RoundSubject({ round }: { round: Pick<RoundView, "number" | "sub
   const number = t("round.number", { round: round.number });
   if (subject.kind === "none") {
     return (
-      <p data-round-subject="none" className={LINE}>
+      <p data-round-subject="none" className={`${LINE} items-center`}>
         <span className="font-semibold">{number}</span>
       </p>
     );
   }
   return (
-    <p data-round-subject={subject.kind} className={LINE}>
+    <p
+      data-round-subject={subject.kind}
+      // A title of two lines keeps "Round 3" on its first line.
+      className={`${LINE} ${subject.kind === "title" ? "items-baseline" : "items-center"}`}
+    >
       <span className="shrink-0 text-ink-2">{number}</span>
       {subject.kind === "title" ? (
-        <bdi data-subject-title className="min-w-0 truncate font-semibold">
+        <bdi
+          data-subject-title
+          title={subject.text}
+          className="line-clamp-2 min-w-0 font-semibold break-words"
+        >
           {subject.text}
         </bdi>
       ) : (
@@ -35,7 +43,7 @@ export function RoundSubject({ round }: { round: Pick<RoundView, "number" | "sub
   );
 }
 
-const LINE = "m-0 mb-3 flex min-w-0 items-center justify-center gap-2 text-sm";
+const LINE = "m-0 mb-3 flex min-w-0 justify-center gap-2 text-sm";
 
 function SubjectLink({ url, linkKey }: { url: string; linkKey: string | undefined }) {
   const t = useT();

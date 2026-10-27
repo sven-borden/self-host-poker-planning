@@ -147,10 +147,11 @@ export const de: Catalog = {
     subjectLabel: "Thema der nächsten Runde",
     subjectHint:
       "Für Runde {{round, number}} leer lassen, einen Titel eingeben oder den Link zum Ticket einfügen.",
+    subjectHintVoting: "Runde {{round, number}} beginnt nach dem Aufdecken mit diesem Thema.",
     opensInNewTab: "(öffnet in einem neuen Tab)",
-    titleTooLong: "Ein Titel hat höchstens {{max, number}} Zeichen.",
-    linkTooLong: "Ein Link hat höchstens {{max, number}} Zeichen.",
-    badLink: "Nur http- und https-Links funktionieren, ohne Benutzername oder Passwort.",
+    titleTooLong: "Ein Titel darf höchstens {{max, number}} Zeichen lang sein.",
+    linkTooLong: "Ein Link darf höchstens {{max, number}} Zeichen lang sein.",
+    badLink: "Nur http- und https-Links sind möglich, ohne Benutzername und Passwort.",
   },
   results: {
     title: "Ergebnisse",

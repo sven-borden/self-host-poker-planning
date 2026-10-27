@@ -148,9 +148,10 @@ export const fr: Catalog<"many"> = {
     subjectLabel: "Sujet du prochain tour",
     subjectHint:
       "Laissez vide pour le tour {{round, number}}, saisissez un titre ou collez le lien du ticket.",
+    subjectHintVoting: "Le tour {{round, number}} commencera avec ce sujet après la révélation.",
     opensInNewTab: "(s’ouvre dans un nouvel onglet)",
-    titleTooLong: "Un titre compte au plus {{max, number}} caractères.",
-    linkTooLong: "Un lien compte au plus {{max, number}} caractères.",
+    titleTooLong: "Un titre ne peut pas dépasser {{max, number}} caractères.",
+    linkTooLong: "Un lien ne peut pas dépasser {{max, number}} caractères.",
     badLink: "Seuls les liens http et https fonctionnent, sans nom d’utilisateur ni mot de passe.",
   },
   results: {

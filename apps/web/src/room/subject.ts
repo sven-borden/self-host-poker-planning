@@ -19,13 +19,18 @@ export type Draft = { ok: true; subject: OutgoingSubject } | { ok: false; proble
 
 /** Text that starts like a link: a scheme and `//`. */
 const LINK_LIKE = /^[a-z][a-z0-9+.-]*:\/\//i;
-/** Schemes that run or embed something, refused as links rather than kept as a title. */
-const SCRIPT_SCHEME = /^(?:javascript|data|vbscript|file|blob):/i;
+/**
+ * Schemes that run or embed something, refused as links rather than kept as a title. A
+ * space after the colon makes a title ("File: upload size limit", "Data: nightly export").
+ */
+const SCRIPT_SCHEME = /^(?:javascript|data|vbscript|file|blob):(?!\s)/i;
 const WHITESPACE_RUN = /\s+/gu;
+/** What ends a title as a sentence would; the live region's sentence adds its own. */
+const END_PUNCTUATION = /\s*[.?!\u{2026}]+$/u;
 
 /**
- * The PO's field as a subject: empty is "Round N", a link (anything that starts like
- * one, or a script scheme) must be `http(s)` without credentials and at most 2,000
+ * The PO's field as a subject: empty is "Round N", a link (a scheme and `//`, or a script
+ * scheme with no space after its colon) must be `http(s)` without credentials and at most 2,000
  * characters, anything else is a title of 1 to 200 characters under the domain's text
  * rules. Nothing is cut or stripped: a refusal says why.
  */
@@ -95,11 +100,12 @@ export function shortUrl(url: string): string {
 
 /**
  * How the live region names a round: its key ("ABC-123", "#12345"), its title, or
- * "Round N" (no subject, or a link without a key, which would read badly aloud).
+ * "Round N" (no subject, or a link without a key, which would read badly aloud). A
+ * title's closing `.`, `?`, `!` or `…` is left out: the sentence ends with its own.
  */
 export function subjectName(t: TFunction, round: Pick<RoundView, "number" | "subject">): string {
   const { subject } = round;
-  if (subject.kind === "title") return subject.text;
+  if (subject.kind === "title") return subject.text.replace(END_PUNCTUATION, "") || subject.text;
   if (subject.kind === "link" && subject.key !== undefined) return keyLabel(subject.key);
   return t("round.number", { round: round.number });
 }

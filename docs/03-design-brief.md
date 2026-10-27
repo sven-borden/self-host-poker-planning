@@ -125,13 +125,14 @@ Positions are percentages of the stage, so one formula serves every width:
   disc at the avatar's bottom right, the voted check's corner, free after a reveal; the
   seat's label adds "lowest card" or "highest card". Anonymous rounds never do.
 - The round's subject (#21). Above the table everyone reads the round: "Round 3" alone,
-  or "Round 3" in ink-2 before the title (semibold, one line, ellipsis) or the link. A
-  link is a small surface-2 pill that opens in a new tab: the key's chip ("PAY-482" in
-  mono spruce, "#12345" for Azure DevOps) when the server found one, else the shortened
+  or "Round 3" in ink-2 before the title (semibold, at most two lines, then an ellipsis;
+  the whole title on hover) or the link. A link is a small surface-2 pill that opens in
+  a new tab: the key's chip ("PAY-482" in mono spruce, "#12345" for Azure DevOps) when the server found one, else the shortened
   URL (no scheme or `www.`, at most 40 characters, the full URL in its title), then an
   external-link icon; 44 px tall on phones. The PO's controls sit above that line: a
   "Subject of the next round" field (max 576 px wide, the whole width on phones) with
-  "Leave it empty for Round 4, type a title, or paste a link to the ticket." under it.
+  "Leave it empty for Round 4, type a title, or paste a link to the ticket." under it;
+  while Voting the hint reads "Round 4 will start with this subject after the reveal."
   The field stays in every phase (PO decision, 2026-10-27): the table never jumps at a
   reveal, and the PO can paste the next ticket while the team votes. Only the centre's
   "Start voting" and "Next round" start a round, or Enter in the field when the centre
