@@ -48,10 +48,30 @@ export function labelScale(value: string, room: number): number {
   return Math.min(1, Math.floor((room / labelEms(value)) * 1000) / 1000);
 }
 
+/** Below this scale a label narrows instead (`labelFit`). */
+const NARROW_BELOW = 0.8;
+/**
+ * How wide Archivo ExtraBold is at 70 % width against the faces' 110 %: 0.66 ("XXL",
+ * "100") to 0.72 ("M"), measured in Chromium; rounded up, so a label never overflows.
+ */
+const NARROW_WIDTH = 0.73;
+
+/**
+ * How a label fits `room` ems: its scale, and whether it uses Archivo's width axis at
+ * 70 % (`narrow`). A label that would shrink below 80 % narrows instead, so "XXL" and
+ * "100" stay legible on the dense phone slot and the results' chips (#22).
+ */
+export function labelFit(value: string, room: number): { scale: number; narrow: boolean } {
+  const scale = labelScale(value, room);
+  if (scale >= NARROW_BELOW) return { scale, narrow: false };
+  return { scale: labelScale(value, room / NARROW_WIDTH), narrow: true };
+}
+
 /**
  * A card's face value, in the font size of its parent, shrunk so that it fits in `room`
- * ems of that size on one line. ☕ and ∞ are drawn as icons: emoji and missing glyphs
- * would render in another font, colour or size on every system.
+ * ems of that size on one line (narrowed first when it is long, `labelFit`). ☕ and ∞ are
+ * drawn as icons: emoji and missing glyphs would render in another font, colour or size
+ * on every system.
  */
 export function CardValue({ value, room }: { value: string; room: number }) {
   if (value === "☕" || value === "∞") {
@@ -67,12 +87,14 @@ export function CardValue({ value, room }: { value: string; room: number }) {
       />
     );
   }
+  const { scale, narrow } = labelFit(value, room);
   return (
     <span
       aria-hidden="true"
       data-card-value
+      data-narrow={narrow || undefined}
       className="whitespace-nowrap"
-      style={{ fontSize: `${labelScale(value, room)}em` }}
+      style={{ fontSize: `${scale}em`, fontStretch: narrow ? "70%" : undefined }}
     >
       {value}
     </span>
@@ -229,7 +251,8 @@ export function SlotCard({ face, value, size, turnDelay = 0, className }: SlotCa
   }
   // The dense phone slot (20 × 28, 16 people) cannot grow without touching its
   // neighbours (layout.test.ts), so its label gets a larger font and 1 px a side
-  // instead of 2: "13" shows at 11 px, "100" at 7 px (#22).
+  // instead of 2, and a long one narrows (`labelFit`): "13" and "XL" show at 11 px,
+  // "100" at 10 px, "XXL" at 7 px (#22).
   const small = size.width <= 20;
   const fontSize = Math.round(size.height * (small ? 0.39 : 0.34));
   const inner = size.width - (small ? 4 : 6);
