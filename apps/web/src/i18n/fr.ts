@@ -30,9 +30,10 @@ export const fr: Catalog<"many"> = {
     step1Body:
       "Donnez-lui un nom si vous le souhaitez et choisissez un jeu de cartes. Vous en devenez le product owner.",
     step2Title: "Partagez le lien",
-    step2Body: "Votre équipe l’ouvre et saisit un nom. Sans compte, rien à installer.",
+    step2Body: "Votre équipe l’ouvre et saisit un nom. Aucun compte, rien à installer.",
     step3Title: "Votez",
-    step3Body: "Chacun choisit une carte en privé. La table montre qui a voté, jamais quoi.",
+    step3Body:
+      "Chacun choisit une carte en privé. La table montre qui a voté, jamais la carte choisie.",
     step4Title: "Révélez",
     step4Body:
       "Les cartes se retournent ensemble. Discutez des écarts, puis passez au tour suivant.",
@@ -117,11 +118,14 @@ export const fr: Catalog<"many"> = {
     submit: "Rejoindre",
     empty: "Saisissez un code de salle, ou collez le lien de la salle.",
     malformed:
-      "Ce n’est pas un code de salle. Un code compte {{length, number}} lettres et chiffres, jamais 0, O, I ni l. Vérifiez-le, ou collez le lien complet.",
+      "Ce n’est pas un code de salle. Un code compte {{length, number}} lettres et chiffres, sans {{excluded}}. Vérifiez-le, ou collez le lien complet.",
+    excluded: "0, O, I ni l",
+    otherHost: "Ce lien est destiné à {{host}}.",
+    openThere: "L’ouvrir là-bas",
   },
   roomGone: {
     lede: "Il n’y a pas de salle à cette adresse. Voici ce qui a pu se passer :",
-    typo: "Le lien a été mal saisi ou coupé. Comparez-le avec celui que vous avez reçu.",
+    typo: "Le code ou le lien a été mal saisi ou coupé. Comparez-le avec celui que vous avez reçu.",
     expired_one:
       "La salle a été supprimée : sur ce serveur, une salle est effacée après {{count, number}} jour sans activité.",
     expired_many:

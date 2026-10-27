@@ -148,7 +148,8 @@ describe("join with a code", () => {
     for (const typed of [
       "Abc12 34567",
       ` ${CODE} `,
-      `https://poker.example.com/r/${CODE}`,
+      `"${CODE}".`,
+      "Abc-12\u{2013}345\u{200B}67",
       `${window.location.origin}/r/${CODE}?from=chat`,
     ]) {
       serve({ [`GET /api/rooms/${CODE}`]: () => json({ code: CODE, name: "Sprint 42" }) });
@@ -159,6 +160,68 @@ describe("join with a code", () => {
       cleanup();
     }
   });
+});
+
+describe("join with a code, the messages", () => {
+  const COPY = {
+    en: {
+      field: "Room code or link",
+      join: "Join",
+      excluded: "0, O, I or l",
+      otherHost: "This link is for poker.other.org. Open it there",
+      open: "Open it there",
+    },
+    fr: {
+      field: "Code ou lien de la salle",
+      join: "Rejoindre",
+      excluded: "0, O, I ni l",
+      otherHost: "Ce lien est destiné à poker.other.org. L’ouvrir là-bas",
+      open: "L’ouvrir là-bas",
+    },
+    de: {
+      field: "Raumcode oder Link",
+      join: "Beitreten",
+      excluded: "0, O, I und l",
+      otherHost: "Dieser Link gehört zu poker.other.org. Dort öffnen",
+      open: "Dort öffnen",
+    },
+  } as const;
+
+  for (const language of ["en", "fr", "de"] as const) {
+    const copy = COPY[language];
+    async function join(typed: string) {
+      const field = await screen.findByRole("textbox", { name: copy.field });
+      fireEvent.change(field, { target: { value: typed } });
+      fireEvent.click(screen.getByRole("button", { name: copy.join }));
+      return field;
+    }
+
+    it(`sets the characters a code never holds in a mono font (${language})`, async () => {
+      serve({});
+      await renderAt("/", language);
+      await join("0OIl000000");
+      const code = (await screen.findByRole("alert")).querySelector("code");
+      expect(code?.textContent).toBe(copy.excluded);
+      expect(code?.className).toContain("font-mono");
+    });
+
+    it(`does not open a room link for another host, and offers it instead (${language})`, async () => {
+      const calls = serve({});
+      const router = await renderAt("/", language);
+      const link = `https://poker.other.org/r/${CODE}?from=chat`;
+      const field = await join(` ${link} `);
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toBe(copy.otherHost);
+      const there = screen.getByRole("link", { name: copy.open });
+      expect(there.getAttribute("href")).toBe(link);
+      expect(there.getAttribute("rel")).toBe("noopener noreferrer");
+      expect(router.state.location.pathname).toBe("/");
+      expect(document.activeElement).toBe(field);
+      expect(field.getAttribute("aria-describedby")).toContain(alert.id);
+      expect(field.getAttribute("aria-invalid")).toBeNull();
+      expect(calls.filter((call) => call.includes("/api/rooms"))).toEqual([]);
+    });
+  }
 });
 
 describe("the missing room", () => {

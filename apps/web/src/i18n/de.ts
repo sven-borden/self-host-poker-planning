@@ -32,7 +32,8 @@ export const de: Catalog = {
     step2Title: "Link teilen",
     step2Body: "Ihr Team öffnet ihn und gibt einen Namen ein. Kein Konto, keine Installation.",
     step3Title: "Abstimmen",
-    step3Body: "Alle wählen verdeckt eine Karte. Der Tisch zeigt, wer abgestimmt hat, nie was.",
+    step3Body:
+      "Alle wählen verdeckt eine Karte. Der Tisch zeigt, wer abgestimmt hat, aber nie, welche Karte.",
     step4Title: "Aufdecken",
     step4Body:
       "Die Karten werden gemeinsam umgedreht. Besprechen Sie die Unterschiede und spielen Sie die nächste Runde.",
@@ -112,15 +113,18 @@ export const de: Catalog = {
   join: {
     title: "Mit Code beitreten",
     label: "Raumcode oder Link",
-    hint: "Fügen Sie den Link ein, den Ihr Team geschickt hat, oder tippen Sie den {{length, number}}-stelligen Code. Leerzeichen spielen keine Rolle.",
+    hint: "Fügen Sie den Link ein, den Ihr Team geschickt hat, oder geben Sie den {{length, number}}-stelligen Code ein. Leerzeichen spielen keine Rolle.",
     submit: "Beitreten",
     empty: "Geben Sie einen Raumcode ein oder fügen Sie den Link zum Raum ein.",
     malformed:
-      "Das ist kein Raumcode. Ein Code hat {{length, number}} Buchstaben und Ziffern, nie 0, O, I oder l. Prüfen Sie ihn oder fügen Sie den ganzen Link ein.",
+      "Das ist kein Raumcode. Ein Code besteht aus {{length, number}} Buchstaben und Ziffern, ohne {{excluded}}. Prüfen Sie ihn oder fügen Sie den ganzen Link ein.",
+    excluded: "0, O, I und l",
+    otherHost: "Dieser Link gehört zu {{host}}.",
+    openThere: "Dort öffnen",
   },
   roomGone: {
     lede: "Unter dieser Adresse gibt es keinen Raum. Möglicherweise ist Folgendes passiert:",
-    typo: "Der Link wurde falsch abgetippt oder abgeschnitten. Vergleichen Sie ihn mit dem, den Sie erhalten haben.",
+    typo: "Der Code oder Link wurde falsch abgetippt oder abgeschnitten. Vergleichen Sie ihn mit dem, den Sie erhalten haben.",
     expired_one:
       "Der Raum wurde gelöscht: Auf diesem Server wird ein Raum nach {{count, number}} Tag ohne Aktivität entfernt.",
     expired_other:
@@ -132,7 +136,7 @@ export const de: Catalog = {
   },
   errorPage: {
     title: "Etwas ist schiefgelaufen",
-    body: "Diese Seite ist auf ein Problem gestoßen und hat angehalten. Neu laden hilft meistens. Wenn es wieder passiert, beginnen Sie auf der Startseite neu.",
+    body: "Auf dieser Seite ist ein Fehler aufgetreten. Meist hilft es, die Seite neu zu laden. Passiert es wieder, beginnen Sie auf der Startseite neu.",
     reload: "Seite neu laden",
   },
   identity: {

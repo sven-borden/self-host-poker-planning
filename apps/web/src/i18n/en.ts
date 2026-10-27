@@ -167,11 +167,14 @@ export const en = {
     submit: "Join",
     empty: "Enter a room code, or paste the room link.",
     malformed:
-      "This is not a room code. A code has {{length, number}} letters and digits, never 0, O, I or l. Check it, or paste the whole link.",
+      "This is not a room code. A code has {{length, number}} letters and digits, never {{excluded}}. Check it, or paste the whole link.",
+    excluded: "0, O, I or l",
+    otherHost: "This link is for {{host}}.",
+    openThere: "Open it there",
   },
   roomGone: {
     lede: "There is no room at this address. One of these may have happened:",
-    typo: "The link was mistyped or cut short. Compare it with the one you were sent.",
+    typo: "The code or link was mistyped or cut short. Compare it with the one you were sent.",
     expired_one:
       "The room was deleted: rooms on this server are removed after {{count, number}} day without activity.",
     expired_other:
