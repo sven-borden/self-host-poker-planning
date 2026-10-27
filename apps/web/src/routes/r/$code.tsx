@@ -10,6 +10,7 @@ import { openRoom } from "../../realtime/room-connection.ts";
 import { RoomStatus } from "../../room/room-status.tsx";
 import { fetchRoomHeader, RoomApiError, type RoomHeader } from "../../rooms/api.ts";
 import { RoomNotFound } from "../../rooms/room-not-found.tsx";
+import { useRoomStore } from "../../stores/room-store.ts";
 
 export const Route = createFileRoute("/r/$code")({
   component: RoomPage,
@@ -102,6 +103,15 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
       linkInput.current?.select();
     }
   }, [showLink]);
+
+  // The room went away between the header and the socket's enter (the purge, or a
+  // deletion): the same page as an unknown code, without the code. The store's code is
+  // checked so that a room left behind never answers for this one.
+  const gone = useRoomStore(
+    (state) =>
+      state.code === header.code && state.status === "error" && state.error === "room_not_found",
+  );
+  if (gone) return <RoomNotFound />;
 
   async function copyLink() {
     let copied = false;

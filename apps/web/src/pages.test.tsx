@@ -14,6 +14,7 @@ import type { Language } from "./i18n/language.ts";
 import { resetIdentityModule } from "./identity/identity.ts";
 import { createAppRouter } from "./router.ts";
 import { useIdentityStore } from "./stores/identity-store.ts";
+import { useRoomStore } from "./stores/room-store.ts";
 
 // The pages of #24 in a real router: the landing page, "Join with a code", the missing
 // room and the generic error page, each in English, French and German.
@@ -237,6 +238,19 @@ describe("the missing room", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Found it" })).toBeDefined();
     expect(router.state.location.pathname).toBe(`/r/${CODE}`);
     expect(document.title).toBe("Poker Planning");
+  });
+  it("replaces the room with the same page when the socket's enter finds no room", async () => {
+    serve({ [`GET /api/rooms/${CODE}`]: () => json({ code: CODE, name: "Gone soon" }) });
+    await renderAt(`/r/${CODE}`);
+    await screen.findByRole("heading", { level: 1, name: "Gone soon" });
+    // What openRoom does with a refused enter: the room was purged after the header loaded.
+    act(() => useRoomStore.getState().fail("room_not_found"));
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Room not found");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("heading", { level: 2, name: "Try another code" })).toBeDefined();
+    expect(document.body.textContent).not.toContain(CODE);
+    expect(document.body.textContent).not.toContain("Gone soon");
+    expect(document.title).toBe("Room not found · Poker Planning");
   });
 });
 
