@@ -698,11 +698,11 @@ describe("the reveal (#19)", () => {
     await renderRoom(ownerRound());
     mocks.commandSender.mockImplementation(() => async () => ({ ok: false, code: "not_allowed" }));
     fireEvent.click(revealButton() as HTMLElement);
-    await screen.findByText("This room’s settings do not let you do that.");
+    await screen.findByText("Only the product owner can reveal now.");
     mocks.commandSender.mockImplementation(() => async () => ({ ok: false, code: "not_voting" }));
     fireEvent.click(revealButton() as HTMLElement);
     await waitFor(() =>
-      expect(screen.queryByText("This room’s settings do not let you do that.")).toBeNull(),
+      expect(screen.queryByText("Only the product owner can reveal now.")).toBeNull(),
     );
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -846,5 +846,93 @@ describe("the reveal (#19)", () => {
     expect(screen.queryByRole("list", { name: "Not at the table" })).toBeNull();
     const columns = await screen.findByRole("list", { name: "Votes per card" });
     expect(columns.outerHTML).not.toContain("Name");
+  });
+});
+
+describe("the reveal by anyone who votes (#28)", () => {
+  /** A voting round the PO started, where Ana voted 8; the viewer votes or observes. */
+  function round(
+    settings: Partial<RoomSettings> = { whoCanReveal: "anyone" },
+    people: Array<[string, Participant["role"]]> = table,
+  ): RoomState {
+    const started = apply(
+      stateWith(people, settings),
+      { type: "startRound", subject: { kind: "none" } },
+      { actor: "po", now: 50 },
+    );
+    if (!started.ok) throw new Error(started.error);
+    const voted = apply(started.state, { type: "castVote", card: "8" }, { actor: "ana", now: 60 });
+    if (!voted.ok) throw new Error(voted.error);
+    return voted.state;
+  }
+  const revealButton = () => screen.queryByRole("button", { name: "Reveal cards" });
+  const centreOf = (phase: string) =>
+    document.querySelector<HTMLElement>(`[data-centre-status='${phase}']`);
+
+  it("gives a voter the PO's button; their reveal puts the focus on the result, with no decision", async () => {
+    await renderRoom(round());
+    expect(centre()).toBe("1/3 voted so far");
+    expect(revealButton()?.getAttribute("aria-keyshortcuts")).toBe("R");
+    revealButton()?.focus();
+    fireEvent.click(revealButton() as HTMLElement);
+    await waitFor(() => expect(server.round?.phase).toBe("revealed"));
+    expect(sent).toEqual([{ type: "reveal" }]);
+    await waitFor(() => expect(document.activeElement).toBe(centreOf("revealed")));
+    expect(centreOf("revealed")?.getAttribute("tabindex")).toBe("-1");
+    // Voters have no decision bar: that is the PO's.
+    expect(screen.queryByRole("button", { name: "Record 8" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Next round" })).toBeNull();
+  });
+
+  it("reveals on R for a voter, from the hand", async () => {
+    await renderRoom(round());
+    fireEvent.keyDown(card("5"), { key: "r" });
+    await waitFor(() => expect(server.round?.phase).toBe("revealed"));
+    expect(sent).toEqual([{ type: "reveal" }]);
+  });
+
+  it("gives no voter a button while only the PO reveals", async () => {
+    await renderRoom(round({ whoCanReveal: "po" }));
+    expect(revealButton()).toBeNull();
+    fireEvent.keyDown(card("5"), { key: "r" });
+    expect(sent).toEqual([]);
+  });
+
+  it("never gives an observer the button, and R does nothing", async () => {
+    await renderRoom(
+      round({ whoCanReveal: "anyone" }, [
+        ["po", "voter"],
+        [ME, "observer"],
+        ["ana", "voter"],
+      ]),
+    );
+    expect(revealButton()).toBeNull();
+    const table = document.querySelector("[data-room-table]") as HTMLElement;
+    const seat = table.querySelector("[data-seat] button") ?? table;
+    fireEvent.keyDown(seat, { key: "r" });
+    expect(sent).toEqual([]);
+  });
+
+  it("takes the button away when the PO takes the reveal back, the focus to the count", async () => {
+    await renderRoom(round());
+    revealButton()?.focus();
+    run("po", { type: "updateSettings", patch: { whoCanReveal: "po" } });
+    expect(revealButton()).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(centreOf("voting")));
+  });
+
+  it("says a reveal refused as the PO took it back, under the table", async () => {
+    await renderRoom(round());
+    // The PO's change reaches the server before the voter's press; its snapshot comes after.
+    server = { ...server, settings: { ...server.settings, whoCanReveal: "po" } };
+    revealButton()?.focus();
+    fireEvent.click(revealButton() as HTMLElement);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("Only the product owner can reveal now.");
+    expect(server.round?.phase).toBe("voting");
+    show(server);
+    expect(revealButton()).toBeNull();
+    // The focus goes to the count, never to the page's body.
+    await waitFor(() => expect(document.activeElement).toBe(centreOf("voting")));
   });
 });

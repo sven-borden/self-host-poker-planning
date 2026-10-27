@@ -159,6 +159,7 @@ export const fr: Catalog<"many"> = {
       "Les résultats montrent les cartes sans les noms. Un changement s’applique à partir du tour suivant.",
     roundStaysNamed: "Ce tour montre encore les noms.",
     roundStaysAnonymous: "Ce tour reste anonyme.",
+    revealWhenAllVotedNow: "Tout le monde a voté\u{202f}: l’activer révèle les cartes.",
     revealWhenAllVoted: "Révéler quand tout le monde a voté",
     revealWhenAllVotedHint:
       "Les cartes se retournent d’elles-mêmes dès que toutes les personnes présentes ont voté.",
@@ -270,6 +271,7 @@ export const fr: Catalog<"many"> = {
     revealed: "Cartes révélées",
     reveal: "Révéler les cartes",
     revealKey: "Touche R, quand le focus est sur la table ou sur vos cartes",
+    revealOwnerOnly: "Seul le product owner peut révéler maintenant.",
     number: "Tour {{round, number}}",
     subjectLabel: "Sujet du prochain tour",
     subjectHint:
@@ -391,6 +393,7 @@ export const fr: Catalog<"many"> = {
     roundStarted: "Le vote a commencé\u{202f}: {{subject}}.",
     roundStartedAnonymous: "Le vote a commencé\u{202f}: {{subject}}, anonyme.",
     revealed: "Les cartes sont révélées.",
+    revealedBy: "{{name}} a révélé les cartes.",
     finalRecorded: "Le product owner a enregistré {{card}} comme estimation finale.",
     finalChanged: "Le product owner a changé l’estimation finale en {{card}}.",
     revote: "Le product owner a relancé le vote sur le même sujet.",

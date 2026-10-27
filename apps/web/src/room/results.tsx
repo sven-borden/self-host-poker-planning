@@ -100,9 +100,11 @@ export function CentreResult({ room, motion }: CentreResultProps) {
   const found = useRef(final);
   if (round?.phase !== "revealed") return null;
   return (
+    // Focusable from code only: a voter's reveal hands the focus here (#28).
     <div
       data-centre-status="revealed"
-      className="flex flex-col items-center gap-1.5 in-data-[variant=phone]:gap-1"
+      tabIndex={-1}
+      className="flex flex-col items-center gap-1.5 outline-none in-data-[variant=phone]:gap-1"
     >
       <Centre summary={revealSummary(round)} compact={final !== null} motion={motion} />
       {final !== null ? (

@@ -193,6 +193,72 @@ describe("liveEvents", () => {
   });
 });
 
+describe("who revealed (#28)", () => {
+  /** A room where anyone who votes reveals: me (the PO), Ana and Ben vote; Ana voted 13. */
+  function anyoneRoom(viewer: string, settings: Partial<RoomState["settings"]> = {}) {
+    const { run } = story(viewer);
+    run("me", { type: "join", name: "Me", role: "voter" });
+    run("ana", { type: "join", name: "Ana", role: "voter" });
+    run("ben", { type: "join", name: "Ben", role: "voter" });
+    run("me", { type: "updateSettings", patch: { whoCanReveal: "anyone", ...settings } });
+    run("me", { type: "startRound", subject: { kind: "none" } });
+    const voting = run("ana", { type: "castVote", card: "13" });
+    return { run, voting };
+  }
+
+  it("names a voter who revealed, then says the result as before", () => {
+    for (const viewer of ["me", "ana"]) {
+      const { run, voting } = anyoneRoom(viewer);
+      const revealed = run("ben", { type: "reveal" });
+      expect(said(liveEvents(revealed.room, revealed.causes, voting.room))).toBe(
+        "Ben revealed the cards. Suggested 13. Agreement 100%.",
+      );
+    }
+  });
+
+  it("names the voter in an anonymous round too: the name ties nobody to a card", () => {
+    const { run, voting } = anyoneRoom("me", { revealNames: false });
+    const revealed = run("ben", { type: "reveal" });
+    expect(revealed.room.round?.anonymous).toBe(true);
+    expect(said(liveEvents(revealed.room, revealed.causes, voting.room))).toBe(
+      "Ben revealed the cards. Suggested 13. Agreement 100%.",
+    );
+  });
+
+  it("keeps the PO's, the voter's own and the automatic reveals' sentences", () => {
+    const po = anyoneRoom("ana");
+    const byPo = po.run("me", { type: "reveal" });
+    expect(said(liveEvents(byPo.room, byPo.causes, po.voting.room))).toBe(
+      "Cards revealed. Suggested 13. Agreement 100%.",
+    );
+    const own = anyoneRoom("ben");
+    const byBen = own.run("ben", { type: "reveal" });
+    expect(said(liveEvents(byBen.room, byBen.causes, own.voting.room))).toBe(
+      "Cards revealed. Suggested 13. Agreement 100%.",
+    );
+    const auto = anyoneRoom("ana");
+    auto.run("me", { type: "castVote", card: "13" });
+    const last = auto.run("ben", { type: "castVote", card: "13" });
+    expect(last.causes).toContainEqual({ type: "revealed", by: "everyoneVoted" });
+    expect(
+      said(liveEvents(last.room, last.causes, auto.voting.room).filter((e) => e.kind === "revealed")),
+    ).toBe("Cards revealed. Consensus on 13.");
+  });
+
+  it("says a voter's reveal once in a batch, and in French and German", async () => {
+    const { run, voting } = anyoneRoom("me");
+    const revealed = run("ben", { type: "reveal" });
+    const events = liveEvents(revealed.room, revealed.causes, voting.room);
+    expect(said(mergeEvents(events, events))).toBe(
+      "Ben revealed the cards. Suggested 13. Agreement 100%.",
+    );
+    await loadLanguage("fr");
+    await loadLanguage("de");
+    expect(describeEvents(fixedT("fr"), events)).toMatch(/^Ben a révélé les cartes\. /);
+    expect(describeEvents(fixedT("de"), events)).toMatch(/^Ben hat die Karten aufgedeckt\. /);
+  });
+});
+
 describe("the final estimate and the re-vote (#32)", () => {
   /** Me (the PO) and Ana in a named round on "Login", revealed: Ana 8, me 5. */
   function revealedStory(viewer = "ana") {

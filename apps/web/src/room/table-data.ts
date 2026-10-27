@@ -124,6 +124,28 @@ function canVote(participant: ParticipantView, room: RoomView): boolean {
 }
 
 /**
+ * Whether the viewer may reveal by hand, as the domain decides it (#28): the PO always;
+ * under "anyone who votes", every voter too; an observer never.
+ */
+export function mayReveal(room: RoomView): boolean {
+  if (room.you === null) return false;
+  if (room.you === room.ownerId) return true;
+  const you = room.participants.find((p) => p.id === room.you);
+  return room.settings.whoCanReveal === "anyone" && you !== undefined && canVote(you, room);
+}
+
+/**
+ * Whether every voter who is present has voted in the voting round: what reveals it at
+ * once while "Reveal when everyone has voted" is on (the domain's `settle`).
+ */
+export function everyoneVoted(room: RoomView): boolean {
+  if (room.round?.phase !== "voting") return false;
+  const voted = new Set(room.round.voted);
+  const present = room.participants.filter((p) => canVote(p, room) && !p.away);
+  return present.length > 0 && present.every((p) => voted.has(p.id));
+}
+
+/**
  * The centre's "5/8 voted so far": who voted out of who can vote. Someone away counts
  * only when their vote is in (the domain's automatic reveal waits for present voters only).
  */

@@ -16,7 +16,7 @@ import { LiveAnnouncer } from "./live-announcer.tsx";
 import { NextSubject, useNextRound } from "./next-round.tsx";
 import { prefetchResults, ResultsPanel } from "./results-chunk.tsx";
 import { RevealedCards } from "./revealed-cards.tsx";
-import { RoundCentre } from "./round-centre.tsx";
+import { centreFailureMessage, RoundCentre } from "./round-centre.tsx";
 import { RoundSubject } from "./round-subject.tsx";
 import { handView, tableData } from "./table-data.ts";
 import { useVote } from "./use-vote.ts";
@@ -191,7 +191,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
         {centreFailure !== null ? (
           <p role="alert" className="mt-3 flex items-start justify-center gap-2 text-sm">
             <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
-            {failureMessage(t, centreFailure)}
+            {centreFailureMessage(t, centreFailure)}
           </p>
         ) : null}
         {room.round?.phase === "revealed" ? <ResultsPanel room={room} motion={reveal} /> : null}

@@ -143,7 +143,13 @@ describe("the settings panel", () => {
       "checked",
       true,
     );
-    expect(shownValue(dialog, "whoCanReveal")).toBe("The product owner");
+    // Who can reveal (#28): two choices, the PO by default.
+    const who = within(dialog).getByRole("radiogroup", { name: "Who can reveal" });
+    expect(within(who).getByRole("radio", { name: "The product owner" })).toHaveProperty(
+      "checked",
+      true,
+    );
+    expect(row(dialog, "whoCanReveal").getAttribute("data-layout")).toBe("block");
     expect(shownValue(dialog, "allowChangeAfterReveal")).toBe("Not allowed");
     const anonymous = within(dialog).getByRole("switch", { name: "Anonymous voting" });
     expect(anonymous.getAttribute("aria-describedby")).toBeTruthy();
@@ -275,6 +281,106 @@ describe("the settings panel", () => {
     fireEvent.click(within(timer).getByRole("button", { name: "Set" }));
     expect(within(timer).getByRole("alert")).not.toBe(first);
     expect(sent()).toBe(before + 2);
+  });
+
+  it("sends who can reveal at once on a click, once the arrow keys rest, and only a change (#28)", async () => {
+    mocks.sendCommand.mockResolvedValue({ ok: true, version: 2 });
+    render(<RoomSettingsButton />);
+    show(newRoom(), PO);
+    const dialog = await openPanel("Room settings");
+    const who = within(dialog).getByRole("radiogroup", { name: "Who can reveal" });
+    expect(who.getAttribute("aria-describedby")).toContain(
+      within(row(dialog, "whoCanReveal")).getByText(
+        "Who may turn the cards over. Observers never can.",
+      ).id,
+    );
+    const radio = (name: string) => within(who).getByRole("radio", { name });
+    // A click sends at once.
+    await act(async () => fireEvent.click(radio("Anyone who votes")));
+    expect(mocks.sendCommand).toHaveBeenCalledTimes(1);
+    expect(mocks.sendCommand).toHaveBeenLastCalledWith({
+      type: "updateSettings",
+      payload: { patch: { whoCanReveal: "anyone" } },
+    });
+    show({ ...state, settings: { ...state.settings, whoCanReveal: "anyone" } }, PO);
+    // Arrows there and back: shown at once, and nothing is sent, since it came back.
+    fireEvent.keyDown(radio("Anyone who votes"), { key: "ArrowLeft" });
+    fireEvent.click(radio("The product owner"));
+    expect(radio("The product owner")).toHaveProperty("checked", true);
+    fireEvent.keyDown(radio("The product owner"), { key: "ArrowRight" });
+    fireEvent.click(radio("Anyone who votes"));
+    await act(() => new Promise((resolve) => setTimeout(resolve, ARROW_SETTLE_MS + 50)));
+    expect(mocks.sendCommand).toHaveBeenCalledTimes(1);
+    // An arrow that rests on the other choice sends it, once.
+    fireEvent.keyDown(radio("Anyone who votes"), { key: "ArrowLeft" });
+    fireEvent.click(radio("The product owner"));
+    expect(mocks.sendCommand).toHaveBeenCalledTimes(1);
+    await act(() => new Promise((resolve) => setTimeout(resolve, ARROW_SETTLE_MS + 50)));
+    expect(mocks.sendCommand).toHaveBeenCalledTimes(2);
+    expect(mocks.sendCommand).toHaveBeenLastCalledWith({
+      type: "updateSettings",
+      payload: { patch: { whoCanReveal: "po" } },
+    });
+  });
+
+  it("sends a choice the arrow keys left when the panel closes before they rest (#28)", async () => {
+    mocks.sendCommand.mockResolvedValue({ ok: true, version: 2 });
+    render(<RoomSettingsButton />);
+    show(newRoom(), PO);
+    const dialog = await openPanel("Room settings");
+    const who = within(dialog).getByRole("radiogroup", { name: "Who can reveal" });
+    fireEvent.keyDown(within(who).getByRole("radio", { name: "The product owner" }), {
+      key: "ArrowRight",
+    });
+    fireEvent.click(within(who).getByRole("radio", { name: "Anyone who votes" }));
+    expect(mocks.sendCommand).not.toHaveBeenCalled();
+    fireEvent.keyDown(document.activeElement ?? dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mocks.sendCommand).toHaveBeenCalledWith({
+      type: "updateSettings",
+      payload: { patch: { whoCanReveal: "anyone" } },
+    });
+  });
+
+  it("ignores a choice while one is on its way (#28)", async () => {
+    mocks.sendCommand.mockReturnValue(new Promise(() => {}));
+    render(<RoomSettingsButton />);
+    show(newRoom(), PO);
+    const dialog = await openPanel("Room settings");
+    const who = within(dialog).getByRole("radiogroup", { name: "Who can reveal" });
+    fireEvent.click(within(who).getByRole("radio", { name: "Anyone who votes" }));
+    expect(who.getAttribute("aria-busy")).toBe("true");
+    fireEvent.click(within(who).getByRole("radio", { name: "The product owner" }));
+    expect(mocks.sendCommand).toHaveBeenCalledTimes(1);
+    expect(within(who).getByRole("radio", { name: "Anyone who votes" })).toHaveProperty(
+      "checked",
+      true,
+    );
+  });
+
+  it("says beforehand, to the PO only, that turning the automatic reveal on reveals now (#28)", async () => {
+    render(<RoomSettingsButton />);
+    const off = { ...newRoom(), settings: { ...DEFAULT_SETTINGS, revealWhenAllVoted: false } };
+    const started = apply(off, { type: "startRound", subject: { kind: "none" } }, {
+      actor: PO,
+      now: 1,
+    });
+    if (!started.ok) throw new Error(started.error);
+    const one = apply(started.state, { type: "castVote", card: "3" }, { actor: PO, now: 2 });
+    if (!one.ok) throw new Error(one.error);
+    show(one.state, PO);
+    const dialog = await openPanel("Room settings");
+    const detail = () =>
+      row(dialog, "revealWhenAllVoted").querySelector("[data-setting-detail]")?.textContent;
+    // Ana has not voted yet: nothing to say.
+    expect(detail()).toBeUndefined();
+    const both = apply(one.state, { type: "castVote", card: "5" }, { actor: ANA, now: 3 });
+    if (!both.ok) throw new Error(both.error);
+    expect(both.state.round?.phase).toBe("voting");
+    show(both.state, PO);
+    expect(detail()).toBe("Everyone has voted: turning this on reveals the cards.");
+    show(both.state, ANA);
+    expect(detail()).toBeUndefined();
   });
 
   it("shows a custom length as a custom choice, and the timer in words to everyone else (#27)", async () => {

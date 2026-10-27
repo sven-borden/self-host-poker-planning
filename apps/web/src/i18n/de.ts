@@ -158,6 +158,7 @@ export const de: Catalog = {
       "Die Ergebnisse zeigen die Karten ohne Namen. Eine Änderung gilt ab der nächsten Runde.",
     roundStaysNamed: "Diese Runde zeigt noch Namen.",
     roundStaysAnonymous: "Diese Runde bleibt anonym.",
+    revealWhenAllVotedNow: "Alle haben abgestimmt: Einschalten deckt die Karten auf.",
     revealWhenAllVoted: "Aufdecken, wenn alle abgestimmt haben",
     revealWhenAllVotedHint:
       "Die Karten werden von selbst aufgedeckt, sobald alle Anwesenden abgestimmt haben.",
@@ -263,6 +264,7 @@ export const de: Catalog = {
     revealed: "Karten aufgedeckt",
     reveal: "Karten aufdecken",
     revealKey: "Taste R, solange der Fokus auf dem Tisch oder Ihren Karten liegt",
+    revealOwnerOnly: "Nur der Product Owner kann jetzt aufdecken.",
     number: "Runde {{round, number}}",
     subjectLabel: "Thema der nächsten Runde",
     subjectHint:
@@ -377,6 +379,7 @@ export const de: Catalog = {
     roundStarted: "Die Abstimmung hat begonnen: {{subject}}.",
     roundStartedAnonymous: "Die Abstimmung hat begonnen: {{subject}}, anonym.",
     revealed: "Die Karten sind aufgedeckt.",
+    revealedBy: "{{name}} hat die Karten aufgedeckt.",
     finalRecorded: "Der Product Owner hat {{card}} als endgültige Schätzung festgehalten.",
     finalChanged: "Der Product Owner hat die endgültige Schätzung auf {{card}} geändert.",
     revote: "Der Product Owner hat eine neue Abstimmung zum selben Thema gestartet.",

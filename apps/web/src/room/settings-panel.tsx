@@ -29,7 +29,9 @@ import { commandSender } from "../realtime/room-connection.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { DeckControl, SpecialsControl } from "./deck-field.tsx";
 import { codeOf, failureMessage } from "./failure.ts";
+import { WhoCanRevealControl } from "./reveal-setting.tsx";
 import { deckName, type SettingKey } from "./settings-words.ts";
+import { everyoneVoted } from "./table-data.ts";
 import { TimerSetting } from "./timer-setting.tsx";
 import { durationWords } from "./timer-view.ts";
 
@@ -38,7 +40,7 @@ import { durationWords } from "./timer-view.ts";
 // setting whose control is not built yet, reads the value and what it means. A lazy
 // chunk of its own (`settings-button.tsx` loads it on the first open).
 //
-// Adding a control (#27 to #29; #26's deck and special cards are the worked example in
+// Adding a control (#29; #26's deck and special cards are the worked example in
 // `deck-field.tsx`): give the setting's field in `GROUPS` a `toggle` (an
 // on-off switch) or a `Control`, a component that renders the input with
 // `ControlProps.id` (or labels a group with `aria-labelledby={labelId}`) and calls
@@ -148,7 +150,7 @@ function SettingSwitch({
 /**
  * The settings in the order the panel shows them (ADR-011's list). Editable now: the
  * settings whose behaviour the room already shows end to end, the deck and the special
- * cards (#26) and the timer (#27) among them. Who can reveal (#28) and changes after the
+ * cards (#26), the timer (#27) and who can reveal (#28) among them. Changes after the
  * reveal (#29) are read-only until their issue adds a control.
  */
 export const GROUPS: readonly SettingGroup[] = [
@@ -205,6 +207,11 @@ export const GROUPS: readonly SettingGroup[] = [
         hint: (t) => t("settings.revealWhenAllVotedHint"),
         value: (t, s) => onOff(t, s.revealWhenAllVoted),
         toggle: { read: (s) => s.revealWhenAllVoted, write: (on) => ({ revealWhenAllVoted: on }) },
+        // Said beforehand to the PO (#28): turning it on now reveals the round at once.
+        detail: (t, s, room) =>
+          !s.revealWhenAllVoted && room.you === room.ownerId && everyoneVoted(room)
+            ? t("settings.revealWhenAllVotedNow")
+            : null,
       },
       {
         key: "whoCanReveal",
@@ -212,6 +219,9 @@ export const GROUPS: readonly SettingGroup[] = [
         hint: (t) => t("settings.whoCanRevealHint"),
         value: (t, s) =>
           t(s.whoCanReveal === "anyone" ? "settings.revealByAnyone" : "settings.revealByOwner"),
+        // #28: applies at once, to the round on the table too.
+        layout: "block",
+        Control: WhoCanRevealControl,
       },
       {
         key: "revealNames",

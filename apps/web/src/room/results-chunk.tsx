@@ -1,7 +1,8 @@
 import type { RoomView } from "@pp/protocol";
-import { type ComponentProps, useEffect, useState } from "react";
+import { type ComponentProps, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useT } from "../i18n/hooks.ts";
 import { cardLabel } from "../table/cards.tsx";
+import { focusSoon } from "./focus.ts";
 import { revealSummary, summarySentence } from "./results-view.ts";
 import { PlayedCards } from "./revealed-cards.tsx";
 
@@ -58,23 +59,36 @@ function useResults(): { module: Results | null; failed: boolean } {
   return state;
 }
 
+const FALLBACK = "m-0 outline-none";
+
 /**
  * The centre until the results have loaded, or when they cannot: the result as a sentence,
  * then the recorded final estimate (#32), which must never be lost with the chunk.
  */
 export function CentreFallback({ room }: { room: RoomView }) {
   const t = useT();
+  const self = useRef<HTMLParagraphElement>(null);
+  // The loaded result replaces this sentence: a focus a voter's reveal put here (#28)
+  // follows it, never left on the page's body.
+  useLayoutEffect(() => {
+    const element = self.current;
+    return () => {
+      if (element !== null && document.activeElement === element) {
+        focusSoon("[data-centre-status='revealed']");
+      }
+    };
+  }, []);
   const round = room.round;
   if (round?.phase !== "revealed") {
     return (
-      <p data-centre-status="revealed" data-centre-fallback className="m-0">
+      <p ref={self} data-centre-status="revealed" data-centre-fallback tabIndex={-1} className={FALLBACK}>
         {t("round.revealed")}
       </p>
     );
   }
   const final = round.final ?? null;
   return (
-    <p data-centre-status="revealed" data-centre-fallback className="m-0">
+    <p ref={self} data-centre-status="revealed" data-centre-fallback tabIndex={-1} className={FALLBACK}>
       {summarySentence(t, revealSummary(round))}
       {final !== null ? (
         <>

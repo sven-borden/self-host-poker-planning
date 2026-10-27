@@ -2,11 +2,13 @@ import type { RoomView } from "@pp/protocol";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
+import type { TFunction } from "../i18n/i18n.ts";
 import { commandSender } from "../realtime/room-connection.ts";
-import { focusAfterReveal } from "./focus.ts";
+import { failureMessage } from "./failure.ts";
+import { focusAfterReveal, focusAfterVoterReveal } from "./focus.ts";
 import type { NextRound } from "./next-round.tsx";
 import { CentreResult, type RevealMotion } from "./results-chunk.tsx";
-import { voteCount } from "./table-data.ts";
+import { mayReveal, voteCount } from "./table-data.ts";
 import {
   TimerChip,
   TimerControls,
@@ -70,9 +72,19 @@ export function RoundCentre({
 export { focusAfterReveal, focusSoon } from "./focus.ts";
 
 /**
+ * What a refusal in the centre says under the table. `not_allowed` comes only from a
+ * reveal there: a voter pressed "Reveal cards" as the PO took the reveal back (#28).
+ */
+export function centreFailureMessage(t: TFunction, code: string): string {
+  return code === "not_allowed" ? t("round.revealOwnerOnly") : failureMessage(t, code);
+}
+
+/**
  * The centre while Voting: the timer when one runs (#27: the ring and the time left, or
  * "Time is up"), the count, and for the PO the timer's controls above the count and
- * "Reveal cards" under it. Without a timer, anyone else reads the count alone.
+ * "Reveal cards" under it. Under "anyone who votes" (#28) a voter's centre holds the same
+ * "Reveal cards", where the PO's sits, under the timer's chip and the count. Without a
+ * timer, anyone else reads the count alone.
  */
 function VotingCentre({
   room,
@@ -88,6 +100,7 @@ function VotingCentre({
   useLastSecondsWarning(countdown);
   useTimeUpPing(countdown);
   const { count, total } = voteCount(room);
+  const reveals = mayReveal(room);
   const status = (
     // On a phone the count keeps the centre box's 68 px, however wide the timer above it.
     <p
@@ -98,7 +111,7 @@ function VotingCentre({
       {t("table.votedSoFar", { count, total })}
     </p>
   );
-  if (!owner) {
+  if (!reveals) {
     if (countdown.state.kind === "none") return status;
     return (
       <div className="flex flex-col items-center gap-1.5 in-data-[variant=phone]:gap-1">
@@ -109,9 +122,13 @@ function VotingCentre({
   }
   return (
     <div className="flex flex-col items-center gap-1.5 in-data-[variant=phone]:gap-0.5 in-data-[variant=phone]:text-[10px]/tight">
-      <TimerControls countdown={countdown} onFailure={onFailure} />
+      {owner ? (
+        <TimerControls countdown={countdown} onFailure={onFailure} />
+      ) : countdown.state.kind === "none" ? null : (
+        <TimerChip countdown={countdown} />
+      )}
       {status}
-      <RevealButton onFailure={onFailure} />
+      <RevealButton owner={owner} onFailure={onFailure} />
     </div>
   );
 }
@@ -161,19 +178,30 @@ export function isRevealKey(event: KeyboardEvent): boolean {
 }
 
 /**
- * "Reveal cards", for the PO while Voting (#19): always allowed, whoever has voted. The
- * key R does the same while the button is on screen and the focus is on the table or the
- * hand (`isRevealKey`); the button's title says so. A refusal shows under the table;
- * `not_voting` says nothing, since the round revealed itself in the meantime (the last
- * vote) or a new one began. When the button leaves with the voting round while it has the
- * focus (pressed, or the last vote revealed the round), the focus goes to the PO's
- * decision under the table (`focusAfterReveal`).
+ * "Reveal cards", for the PO while Voting (#19): always allowed, whoever has voted; and
+ * under "anyone who votes" for every voter (#28). The key R does the same while the
+ * button is on screen and the focus is on the table or the hand (`isRevealKey`); the
+ * button's title says so. A refusal shows under the table (`not_allowed`: the PO took the
+ * reveal back meanwhile, `centreFailureMessage`); `not_voting` says nothing, since the
+ * round revealed itself in the meantime (the last vote) or a new one began. When the
+ * button leaves while it has the focus (pressed, the last vote revealed the round, or the
+ * PO took the reveal back), the focus goes to the PO's decision under the table
+ * (`focusAfterReveal`), or for a voter to the result in the centre, else the count
+ * (`focusAfterVoterReveal`).
  */
-function RevealButton({ onFailure }: { onFailure: (code: string | null) => void }) {
+function RevealButton({
+  owner,
+  onFailure,
+}: {
+  owner: boolean;
+  onFailure: (code: string | null) => void;
+}) {
   const t = useT();
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const button = useRef<HTMLButtonElement>(null);
+  const focusAfter = useRef(focusAfterReveal);
+  focusAfter.current = owner ? focusAfterReveal : focusAfterVoterReveal;
 
   const reveal = useCallback(async () => {
     // Focusable while busy (aria-disabled), so a second press lands here and is dropped.
@@ -184,7 +212,7 @@ function RevealButton({ onFailure }: { onFailure: (code: string | null) => void 
     const send = commandSender();
     try {
       const ack = await send({ type: "reveal" });
-      if (ack.ok) focusAfterReveal();
+      if (ack.ok) focusAfter.current();
       else if (ack.code !== "not_voting") onFailure(ack.code);
     } finally {
       pending.current = false;
@@ -206,7 +234,7 @@ function RevealButton({ onFailure }: { onFailure: (code: string | null) => void 
   useLayoutEffect(() => {
     const element = button.current;
     return () => {
-      if (element !== null && document.activeElement === element) focusAfterReveal();
+      if (element !== null && document.activeElement === element) focusAfter.current();
     };
   }, []);
 
