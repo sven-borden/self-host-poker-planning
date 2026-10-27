@@ -26,10 +26,73 @@ English, French and German.
 - [Decisions (ADR)](docs/05-decisions.md)
 - [Status](docs/STATUS.md)
 
-## Running it
+## Self-hosting
 
-Coming with the first wave: `docker compose up` will start the app and its Postgres
-database.
+One Docker image serves the web app, the API and the WebSocket on port 3000; it needs a
+Postgres 17 database. `compose.yaml` runs both. You need Docker with Compose v2.
+
+```sh
+git clone https://github.com/sven-borden/self-host-poker-planning.git && cd self-host-poker-planning
+cat > .env <<EOF
+POSTGRES_PASSWORD=$(openssl rand -hex 24)
+BETTER_AUTH_SECRET=$(openssl rand -base64 32)
+BASE_URL=http://localhost:3000
+EOF
+docker compose up -d --build
+```
+
+Then open exactly the `BASE_URL`, http://localhost:3000: the server refuses a WebSocket
+from any other address, so `127.0.0.1:3000` loads the page but cannot join a room. Do not
+copy `.env.example` for this: it is the template for local development, and compose
+refuses to start while `BETTER_AUTH_SECRET` is empty.
+
+Variables compose reads from `.env` (the full list is in
+[architecture, section 12](docs/02-architecture.md#12-deployment)):
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `POSTGRES_PASSWORD` | yes | password of the bundled Postgres; letters and digits only (`openssl rand -hex 24`) |
+| `BETTER_AUTH_SECRET` | yes | signs session cookies; `openssl rand -base64 32`; changing it signs everybody out |
+| `BASE_URL` | yes | the address people open, such as `http://localhost:3000` or `https://poker.example.com` |
+| `TRUST_PROXY` | no (`false`) | `true` only when a reverse proxy is the sole way to reach the port and appends `X-Forwarded-For`; on a port that faces clients it lets them fake their address |
+| `LOG_LEVEL`, `ROOM_TTL_DAYS` | no | logging (`info`) and days before an idle room is deleted (`90`) |
+| `GIT_COMMIT`, `APP_VERSION` | no | build arguments shown by `/api/health` |
+
+Compose refuses to start while a required variable is empty. `DATABASE_URL` is built
+from the bundled database; to use your own Postgres, run the image alone with
+`DATABASE_URL`, `BETTER_AUTH_SECRET` and `BASE_URL` set (`docker build -t poker-planning .`).
+
+- **Behind a reverse proxy** (Traefik, nginx, Caddy): proxy everything to port 3000 and
+  let WebSocket upgrades through (`Upgrade` and `Connection` headers on `/socket.io/`),
+  set `BASE_URL` to the public `https://` origin and `TRUST_PROXY=true`, with port 3000
+  reachable only through the proxy. With two proxies in a row, the first one must be a
+  trusted peer of the second (Traefik: `forwardedHeaders.trustedIPs`), or the second
+  deletes `X-Forwarded-For` and the app sees only the first proxy's address.
+- **Coolify** (build pack Dockerfile, port 3000): in the application's settings
+  - turn on "Advanced > Build > Source commit availability: Available during build",
+    otherwise `/api/health` reports `commit: unknown`;
+  - set "Build arguments" to "Managed manually in Dockerfile" (no injected build
+    arguments), and for `DATABASE_URL` and `BETTER_AUTH_SECRET` uncheck "Available at
+    Buildtime": a build argument in scope of a `RUN` stays readable in `docker history`.
+    The Dockerfile declares no `ARG` that could carry a secret, so keep secrets at runtime;
+  - leave Coolify's own HTTP health check off: it runs curl or wget inside the container
+    and the image has neither. The image's `HEALTHCHECK` is used.
+- **Upgrading**: `git pull`, then `docker compose up -d --build`. The new container
+  applies pending migrations before it listens; rooms, even rounds in progress, live in
+  Postgres and survive, and browsers reconnect by themselves.
+- **Backups**: everything lives in the database (volume `poker-planning_pgdata`). Back it
+  up before upgrading and on a schedule, for example
+  `docker compose exec -T db pg_dump -U poker -Fc poker > poker-$(date +%F).dump`, and
+  restore with `pg_restore`. `docker compose down -v` deletes the volume.
+- **Base image updates**: the Dockerfile pins `node:24-slim` and `debian:bookworm-slim` by
+  digest, so a rebuild never picks up Debian security fixes by itself. Every month or
+  after a Debian security advisory, follow the steps in the Dockerfile header (pull both
+  tags, compare Debian versions, replace both digests), then
+  `scripts/docker-check.sh` and a pull request. Nothing automates it.
+- **Health**: `GET /api/health` answers `{ status, version, commit, db, uptime }`; the
+  image's `HEALTHCHECK` uses it.
+- **Checking the image**: `scripts/docker-check.sh` builds it and runs the checks CI runs
+  (size, health, WebSocket, restarts, migrations, signals) as a separate compose project.
 
 ## Run locally
 
@@ -48,8 +111,8 @@ Postgres, one file at a time because they share one database), `pnpm lint`, `pnp
 the rules of each package are in `apps/*/README.md` and `packages/*/README.md`.
 
 CI (`.github/workflows/ci.yml`) runs on pull requests only: job `check` runs `pnpm gate`,
-job `db-tests` runs `pnpm test:db` against a Postgres 17 service; docs-only changes run
-no job.
+job `db-tests` runs `pnpm test:db` against a Postgres 17 service, job `docker` builds
+the image and runs `scripts/docker-check.sh`; docs-only changes run no job.
 
 Workspace conventions:
 
