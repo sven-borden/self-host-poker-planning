@@ -433,9 +433,18 @@ test("R reveals for the PO on the table or the hand only, and reduced motion onl
     await expect(status(page)).toHaveText("1/2 voted so far");
     await expect(page.locator("[data-card-flight]")).toHaveCount(0);
 
+    // In the PO's subject field (#21) R is a letter too.
+    const subject = page.getByRole("textbox", { name: "Subject of the next round" });
+    await subject.click();
+    await page.keyboard.press("r");
+    await expect(subject).toHaveValue("r");
+    await page.waitForTimeout(300);
+    await expect(status(page)).toHaveText("1/2 voted so far");
+    await subject.fill("");
+
     // In the name field R is a letter.
     await page.getByRole("button", { name: "Change your name" }).click();
-    const field = page.getByRole("textbox");
+    const field = page.getByRole("textbox", { name: "Your name" });
     await expect(field).toBeFocused();
     await page.keyboard.press("r");
     await expect(field).toHaveValue(/r$/);
