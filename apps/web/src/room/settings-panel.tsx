@@ -1,6 +1,6 @@
 import { baseCards, MAX_MEMBERS, MAX_PARTICIPANTS, type SettingsPatch } from "@pp/domain";
 import type { RoomSettingsView, RoomView } from "@pp/protocol";
-import { OctagonXIcon } from "lucide-react";
+import { OctagonXIcon, XIcon } from "lucide-react";
 import {
   type ComponentType,
   type ReactNode,
@@ -10,8 +10,10 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { Button } from "../components/ui/button.tsx";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -130,9 +132,12 @@ export const GROUPS: readonly SettingGroup[] = [
         label: (t) => t("settings.specials"),
         hint: (t) => t("settings.specialsHint"),
         value: (t, s, format) =>
+          s.specials.length === 0 ? t("settings.specialsNone") : format.list(s.specials),
+        // What each card says, in words: a symbol alone reads badly aloud.
+        detail: (t, s) =>
           s.specials.length === 0
-            ? t("settings.specialsNone")
-            : format.list(s.specials.map((card) => `${card} ${t(SPOKEN[card])}`)),
+            ? null
+            : s.specials.map((card) => `${card} ${t(SPOKEN[card])}`).join(" · "),
       },
     ],
   },
@@ -281,16 +286,27 @@ interface SettingsPanelProps {
 export function SettingsPanel({ open, onOpenChange, returnFocus }: SettingsPanelProps) {
   const phone = useSyncExternalStore(subscribePhone, isPhone);
   const room = useRoomStore((state) => state.snapshot?.room);
+  const content = useRef<HTMLDivElement>(null);
   return (
     <Sheet open={open && room !== undefined} onOpenChange={onOpenChange}>
       <SheetContent
+        ref={content}
         side={phone ? "bottom" : "right"}
+        showCloseButton={false}
         className={cn(
           "gap-0 overflow-y-auto overscroll-contain border-line bg-surface",
           phone
             ? "max-h-[88dvh] rounded-t-2xl pb-[env(safe-area-inset-bottom)]"
             : "w-full sm:max-w-md",
         )}
+        onOpenAutoFocus={(event) => {
+          // The PO lands on the first control; anyone else on "Close".
+          const label = content.current?.querySelector("[data-setting] label");
+          const first = label instanceof HTMLLabelElement ? label.control : null;
+          if (!(first instanceof HTMLElement)) return;
+          event.preventDefault();
+          first.focus();
+        }}
         onCloseAutoFocus={(event) => {
           // The button lives outside this chunk, so the dialog has no trigger of its own.
           event.preventDefault();
@@ -309,30 +325,41 @@ function PanelBody({ room }: { room: RoomView }) {
   const changes = useSettingChanges(room.settings);
   return (
     <div data-settings-panel={owner ? "owner" : "rules"}>
-      <SheetHeader className="gap-1 pr-14">
-        <SheetTitle className="text-xl font-[760] [font-stretch:110%]">
-          {t(owner ? "settings.openOwner" : "settings.openOthers")}
-        </SheetTitle>
-        <SheetDescription className="text-ink-2">
-          {t(owner ? "settings.ledeOwner" : "settings.ledeOthers")}
-        </SheetDescription>
-      </SheetHeader>
-      {GROUPS.map((group) => (
-        <SettingsGroup key={group.id} group={group}>
-          {group.fields.map((field) => (
-            <FieldRow
-              key={field.key}
-              field={field}
-              room={room}
-              settings={changes.shown}
-              editable={owner}
-              pending={changes.pending[field.key] !== undefined}
-              failure={changes.failure?.key === field.key ? changes.failure.code : null}
-              change={(patch) => changes.change(field.key, patch)}
-            />
-          ))}
-        </SettingsGroup>
-      ))}
+      {/* The title and "Close" stay in sight while the settings scroll under them. */}
+      <div className="sticky top-0 z-10 flex items-start gap-2 border-b border-line bg-surface py-2 pr-2 pl-4">
+        <SheetHeader className="flex-1 gap-1 px-0 py-2">
+          <SheetTitle className="text-xl font-[760] [font-stretch:110%]">
+            {t(owner ? "settings.openOwner" : "settings.openOthers")}
+          </SheetTitle>
+          <SheetDescription className="text-ink-2">
+            {t(owner ? "settings.ledeOwner" : "settings.ledeOthers")}
+          </SheetDescription>
+        </SheetHeader>
+        <SheetClose asChild>
+          <Button variant="ghost" size="icon" className="shrink-0">
+            <XIcon aria-hidden />
+            <span className="sr-only">{t("common.close")}</span>
+          </Button>
+        </SheetClose>
+      </div>
+      <div className="divide-y divide-line">
+        {GROUPS.map((group) => (
+          <SettingsGroup key={group.id} group={group}>
+            {group.fields.map((field) => (
+              <FieldRow
+                key={field.key}
+                field={field}
+                room={room}
+                settings={changes.shown}
+                editable={owner}
+                pending={changes.pending[field.key] !== undefined}
+                failure={changes.failure?.key === field.key ? changes.failure.code : null}
+                change={(patch) => changes.change(field.key, patch)}
+              />
+            ))}
+          </SettingsGroup>
+        ))}
+      </div>
     </div>
   );
 }
@@ -341,11 +368,7 @@ function SettingsGroup({ group, children }: { group: SettingGroup; children: Rea
   const t = useT();
   const heading = useId();
   return (
-    <section
-      aria-labelledby={heading}
-      data-settings-group={group.id}
-      className="border-t border-line px-4 pt-3 pb-1"
-    >
+    <section aria-labelledby={heading} data-settings-group={group.id} className="px-4 pt-3 pb-1">
       <h3 id={heading} className="m-0 font-mono text-xs tracking-[0.08em] text-ink-2 uppercase">
         {group.title(t)}
       </h3>

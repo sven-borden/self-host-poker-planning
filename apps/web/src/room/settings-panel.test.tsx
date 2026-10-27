@@ -91,7 +91,7 @@ describe("the settings panel", () => {
     );
     expect(Object.fromEntries(SETTING_KEYS.map((key) => [key, shownValue(dialog, key)]))).toEqual({
       deck: "Fibonacci",
-      specials: "? unsure and ☕ needs a break",
+      specials: "? and ☕",
       timer: "Off",
       revealWhenAllVoted: "On",
       whoCanReveal: "The product owner",
@@ -102,6 +102,13 @@ describe("the settings panel", () => {
     });
     expect(row(dialog, "deck").querySelector("[data-setting-detail]")?.textContent).toBe(
       "0, 1, 2, 3, 5, 8, 13, 21",
+    );
+    expect(row(dialog, "specials").querySelector("[data-setting-detail]")?.textContent).toBe(
+      "? unsure · ☕ needs a break",
+    );
+    // Anyone but the PO lands on "Close".
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Close" })),
     );
     // The explanation under each setting; changes after the reveal never apply anonymously.
     expect(row(dialog, "allowChangeAfterReveal").textContent).toContain(
@@ -220,7 +227,12 @@ describe("the settings panel", () => {
     button.focus();
     const dialog = await openPanel("Room settings");
     expect(button.getAttribute("aria-expanded")).toBe("true");
-    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    // The PO lands on the first control.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(dialog).getByRole("switch", { name: "Reveal when everyone has voted" }),
+      ),
+    );
     fireEvent.keyDown(document.activeElement ?? dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(document.activeElement).toBe(button);
