@@ -55,11 +55,13 @@ export function RoomSettingsButton() {
         aria-haspopup="dialog"
         aria-expanded={open}
         data-settings-open={owner ? "owner" : "rules"}
-        className="shrink-0 phone:size-11 phone:has-[>svg]:px-0"
+        // An icon below 900 px, as "Copy the link" is on a phone: two labelled buttons
+        // would squeeze a long room name. The name stays, for screen readers.
+        className="shrink-0 max-[900px]:size-11 max-[900px]:has-[>svg]:px-0"
         onClick={show}
       >
         {owner ? <SlidersHorizontalIcon aria-hidden /> : <ListChecksIcon aria-hidden />}
-        <span className="phone:sr-only">{label}</span>
+        <span className="max-[900px]:sr-only">{label}</span>
       </Button>
       {Panel ? <Panel open={open} onOpenChange={setOpen} returnFocus={button} /> : null}
     </>
