@@ -7,12 +7,14 @@ import {
   type Page,
   test,
 } from "@playwright/test";
+import pg from "pg";
 import { io, type Socket } from "socket.io-client";
 import { PROTOCOL_VERSION } from "../../../packages/protocol/src/version.ts";
 
 // Shared by the specs that run against the real server and Postgres (join.spec.ts,
-// presence.spec.ts, mobile.spec.ts): guests driven over the protocol from Node, a client
-// address per person, the room page's common steps, and phones (#22).
+// presence.spec.ts, mobile.spec.ts, four-person.spec.ts, …): guests driven over the
+// protocol from Node, a client address per person, the room page's common steps, phones
+// (#22), the frames a page receives, and Postgres read straight (the history UI is #33).
 
 export const SHOTS = fileURLToPath(new URL("../tmp/screenshots/", import.meta.url));
 export const ROOM_PATH = /\/r\/([1-9A-HJ-NP-Za-km-z]{10})$/;
@@ -145,9 +147,46 @@ export function recordFrames(page: Page): string[] {
   page.on("response", async (response) => {
     if (!new URL(response.url()).pathname.startsWith("/socket.io/")) return;
     if (response.request().method() !== "GET") return;
-    frames.push(await response.text().catch(() => ""));
+    // A body the browser lost is a frame nobody scanned: packetsIn fails on it.
+    frames.push(await response.text().catch(() => UNREADABLE));
   });
   return frames;
+}
+
+const UNREADABLE = "(a polling body the browser could not read)";
+
+/**
+ * Every JSON packet in raw Socket.IO frames, as parsed: an event is an array
+ * (`["snapshot", {…}]`), an ack the array of its arguments (`[{ ok: true, … }]`), a
+ * handshake an object. Engine.io's control packets (close, ping, pong, upgrade, noop and
+ * their probes) carry nothing; any other frame that does not parse throws, so a scan of
+ * these packets never skips a frame it cannot read.
+ */
+export function packetsIn(frames: readonly string[]): unknown[] {
+  const found: unknown[] = [];
+  for (const raw of frames) {
+    // Long-polling packs several packets into one body, separated by U+001E.
+    for (const frame of raw.split("\u{1e}")) {
+      // Engine.io's type comes first: 0 open (JSON), or 4 a message, which holds a
+      // Socket.IO packet (its type, a namespace, an ack id, then JSON); 1, 2, 3, 5 and 6
+      // are control packets.
+      const json =
+        /^0(.*)$/su.exec(frame)?.[1] ?? /^4[0-6](?:\/[^,]*,)?\d*(.*)$/su.exec(frame)?.[1];
+      if (json === undefined) {
+        if (/^[12356](probe)?$/u.test(frame)) continue;
+        // Only the start of it: a frame may hold the room code further on.
+        throw new Error(`Not an engine.io packet: ${frame.slice(0, 16)}…`);
+      }
+      // A Socket.IO connect or disconnect without data.
+      if (json === "") continue;
+      try {
+        found.push(JSON.parse(json));
+      } catch {
+        throw new Error(`A packet that is not JSON: ${frame.slice(0, 16)}…`);
+      }
+    }
+  }
+  return found;
 }
 
 /** The snapshots in raw Socket.IO frames: `snapshot` events and `enter` acks. */
@@ -158,18 +197,8 @@ export function snapshotsIn(frames: readonly string[]): Snapshot[] {
     if ("room" in value && "version" in value) found.push(value as Snapshot);
     else if ("snapshot" in value) visit((value as { snapshot: unknown }).snapshot);
   };
-  for (const raw of frames) {
-    // Long-polling packs several packets into one body, separated by U+001E.
-    for (const frame of raw.split("\u{1e}")) {
-      const start = frame.search(/[[{]/);
-      if (start < 0) continue;
-      try {
-        const parsed: unknown = JSON.parse(frame.slice(start));
-        for (const item of Array.isArray(parsed) ? parsed : [parsed]) visit(item);
-      } catch {
-        // Not a JSON packet (a handshake or a ping).
-      }
-    }
+  for (const parsed of packetsIn(frames)) {
+    for (const item of Array.isArray(parsed) ? parsed : [parsed]) visit(item);
   }
   return found;
 }
@@ -295,3 +324,39 @@ export async function guestsJoin(base: string, code: string, names: readonly str
   }
   return guests;
 }
+
+/** One query against the e2e database, read straight from Postgres. */
+export async function dbQuery<Row>(sql: string, params: unknown[]): Promise<Row[]> {
+  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  client.on("error", () => {});
+  await client.connect();
+  try {
+    return (await client.query(sql, params)).rows as Row[];
+  } finally {
+    await client.end();
+  }
+}
+
+export interface HistoryRow {
+  number: number;
+  subject: unknown;
+  deck: unknown;
+  votes: unknown;
+  stats: unknown;
+  /** The whole row as JSON, to look for a name that must not be there. */
+  text: string;
+}
+
+/** The room's `round_history` rows, in round order (the history UI is #33). */
+export const historyOf = (code: string) =>
+  dbQuery<HistoryRow>(
+    `select h.number, h.subject, h.deck, h.votes, h.stats, row_to_json(h)::text as text
+    from round_history h join room r on r.id = h.room_id where r.code = $1
+    order by h.number`,
+    [code],
+  );
+
+/** The round line over the table, and the PO's field for the next round's subject (#21). */
+export const subjectLine = (page: Page) => page.locator("[data-round-subject]");
+export const subjectField = (page: Page) =>
+  page.getByRole("textbox", { name: "Subject of the next round" });

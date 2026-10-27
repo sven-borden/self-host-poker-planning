@@ -458,7 +458,7 @@ server sends and never decides the outcome of a round.
   150 % text) checks with `dockAtTop` and `expectClearOfDock`. Not part of `pnpm gate`. `e2e/next-round.spec.ts`
   reads `round_history` and the room's stored round straight from Postgres through `pg`,
   a dev dependency pinned to the server's version; #33's history API should replace that
-  direct read. `e2e/settings.spec.ts` (#25) plays the PO's settings by keyboard alone on a
+  direct read (`dbQuery` and `historyOf` in `e2e/support.ts`). `e2e/settings.spec.ts` (#25) plays the PO's settings by keyboard alone on a
   desktop and an iPhone 13, a voter's "Room rules" with a new room's defaults, one
   snapshot per change, the `room_full` rollback, the panel's own live region while the
   table's is hidden, switches in forced colours, the "Anonymous" chip for the PO, a voter
@@ -467,6 +467,32 @@ server sends and never decides the outcome of a round.
   `settings-owner-*`, `settings-rules-*` (360 and 1440 px, light, dark and forced
   colours, taken once the sheet has slid in), `round-anonymous-*` and
   `phone-settings-*`.
+- The four-person round (#23), `e2e/four-person.spec.ts`: the proof of W1 on every pull
+  request. Four browser contexts, the PO, Ben on a Pixel 7, Cleo and the observer Dee,
+  play four rounds: a Jira round with a changed card that the PO reveals, a titled round
+  the last vote reveals, an anonymous round a 5-second timer reveals, and an anonymous
+  round the last vote reveals (the PO turns anonymity on in her settings panel; the timer is set over the protocol
+  until #27).
+  The results each person sees equal `computeResults` and a sentence worked out by hand;
+  `round_history` holds each round. Every frame each page receives goes through the
+  protocol's leak scan (`packetsIn` in `support.ts`, then `stringLeaves` and
+  `isPublicCardPath`): no card before the reveal, a `yourVote` only of the viewer's own,
+  and in the anonymous rounds no vote list, cards in the deck's order and no `who` on a
+  vote cause. Each reveal is counted once the next round has started. `packetsIn` throws
+  on a frame that is neither JSON nor an engine.io control packet. The test never
+  retries, and takes about 19 s locally. Run it alone, with a Postgres as above:
+  `DATABASE_URL=… pnpm --filter @pp/web exec playwright test e2e/four-person.spec.ts`;
+  add `--repeat-each=10 --workers=1` to check it for flakiness.
+- A failure keeps its trace in `test-results/<test>/` (`trace: "retain-on-failure"`);
+  videos are off, since Playwright records them only for the built-in `page` and
+  `context`, not for the contexts the multi-person tests make, and the trace's screencast
+  shows every page anyway. A trace holds the polling bodies but no WebSocket frame, so
+  the four-person test attaches each person's frames (`frames-<name>.txt`, room code
+  masked) when it fails. CI uploads `test-results/`, the HTML report and the screenshots
+  as the `playwright-report` artifact, only when the job fails, for 5 days. Open a trace
+  with `pnpm --filter @pp/web exec playwright show-trace <path>/trace.zip`, or drop it on
+  trace.playwright.dev: each step shows the pages before and after, the console and the
+  network.
 - Tests: the `web` Vitest project extends `vite.config.ts` and runs in jsdom
   (`src/test-setup.ts` stubs `matchMedia`).
 

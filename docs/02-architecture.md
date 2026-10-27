@@ -708,7 +708,7 @@ language, and an unknown code gets a generic one.
 |---|---|---|
 | Unit | Vitest | every `apply` rule, decks, statistics, projections, parsers |
 | Integration | Vitest + Postgres (CI service) | write path with version conflicts, migrations, auth, sockets |
-| End-to-end | Playwright, several browser contexts | full rounds; secrecy asserted on WebSocket frames |
+| End-to-end | Playwright, several browser contexts | full rounds; secrecy asserted on WebSocket frames; `four-person.spec.ts` (#23) plays W1 end to end on every PR |
 | Visual | Playwright screenshots | table with 1–16 seats, both themes, 360 px to 1440 px |
 | Accessibility | axe in Playwright + manual screen reader passes | room, settings, history |
 
