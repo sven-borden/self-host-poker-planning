@@ -107,13 +107,17 @@ export function NextSubject({ next, nextNumber, canStart }: NextSubjectProps) {
         event.preventDefault();
         if (canStart) void next.start();
       }}
-      // `group`: on a phone the hint shows only while the field has the focus (#22).
-      className="group relative mx-auto flex w-full max-w-xl flex-col gap-1.5 phone:gap-1"
+      // `group`: on a phone or a short screen the hint shows only while the field has the
+      // focus (#22).
+      className="group relative mx-auto flex w-full max-w-xl flex-col gap-1.5 phone:gap-1 squat:gap-1"
     >
-      {/* On a phone the label sits small inside the field's top edge: a line less above the table. */}
+      {/*
+        On a phone, and on a short screen such as a phone on its side, the label sits small
+        inside the field's top edge: a line less above the table.
+      */}
       <label
         htmlFor={ids.field}
-        className="text-sm font-medium phone:pointer-events-none phone:absolute phone:top-[5px] phone:left-[13px] phone:text-[11px]/3 phone:text-ink-2"
+        className="text-sm font-medium phone:pointer-events-none phone:absolute phone:top-[5px] phone:left-[13px] phone:text-[0.6875rem]/3 phone:text-ink-2 squat:pointer-events-none squat:absolute squat:top-[5px] squat:left-[13px] squat:text-[0.6875rem]/3 squat:text-ink-2"
       >
         {t("round.subjectLabel")}
       </label>
@@ -127,7 +131,7 @@ export function NextSubject({ next, nextNumber, canStart }: NextSubjectProps) {
         enterKeyHint={canStart ? "go" : "done"}
         aria-invalid={refused || undefined}
         aria-describedby={refused ? `${ids.error} ${ids.hint}` : ids.hint}
-        className="phone:pt-4 phone:pb-0"
+        className="phone:pt-4 phone:pb-0 squat:pt-4 squat:pb-0"
       />
       {refused ? (
         <p id={ids.error} role="alert" className="m-0 flex items-start gap-2 text-sm">
@@ -136,7 +140,7 @@ export function NextSubject({ next, nextNumber, canStart }: NextSubjectProps) {
         </p>
       ) : null}
       {/*
-        On a phone the hint would cost two lines above the table: it shows while the field
+        On a phone or a short screen the hint would cost two lines above the table: it shows while the field
         has the focus, over the subject line rather than in the flow (a tap on "Start
         voting" blurs the field, and a hint that collapsed then would move the button from
         under the finger), and in the flow after a refusal. Hidden, it still describes the
@@ -147,7 +151,7 @@ export function NextSubject({ next, nextNumber, canStart }: NextSubjectProps) {
         className={cn(
           "m-0 text-sm text-ink-2",
           !refused &&
-            "phone:absolute phone:inset-x-0 phone:top-full phone:z-30 phone:mt-1 phone:hidden phone:rounded-md phone:border phone:border-line phone:bg-surface phone:px-3 phone:py-2 phone:shadow-panel phone:group-focus-within:block",
+            "phone:absolute phone:inset-x-0 phone:top-full phone:z-30 phone:mt-1 phone:hidden phone:rounded-md phone:border phone:border-line phone:bg-surface phone:px-3 phone:py-2 phone:shadow-panel phone:group-focus-within:block squat:absolute squat:inset-x-0 squat:top-full squat:z-30 squat:mt-1 squat:hidden squat:rounded-md squat:border squat:border-line squat:bg-surface squat:px-3 squat:py-2 squat:shadow-panel squat:group-focus-within:block",
         )}
       >
         {canStart

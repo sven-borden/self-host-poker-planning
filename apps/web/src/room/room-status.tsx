@@ -21,9 +21,12 @@ export function RoomPresence() {
         className="m-0 inline-flex items-center gap-1.5 text-ink-2"
         data-testid="room-connection"
       >
-        {/* On a phone a live room is a dot, its word for screen readers; any other state is written out. */}
+        {/* On a phone a live room is a dot (CanvasText in forced colours), its word for screen readers; any other state is written out. */}
         {status === "live" ? (
-          <span aria-hidden="true" className="hidden size-2 rounded-full bg-good phone:block" />
+          <span
+            aria-hidden="true"
+            className="hidden size-2 rounded-full bg-good phone:block forced-colors:bg-[CanvasText]"
+          />
         ) : null}
         <span className={status === "live" ? "phone:sr-only" : undefined}>
           {status === "connecting" && t("room.statusConnecting")}

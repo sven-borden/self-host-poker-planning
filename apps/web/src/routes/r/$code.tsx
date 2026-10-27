@@ -141,7 +141,7 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
   return (
     // The header names the room, then gives its code, the connection and the people count
     // on one line (`RoomPresence`). On a phone (#22) it is compact: the name one size
-    // smaller, the copy-link button an icon beside it (its name stays "Copy link"), and
+    // smaller, the copy-link button an icon beside it (its name stays "Copy the link"), and
     // the code's label for screen readers only, so the code, the connection and the
     // count share the line under them.
     <RiseIn data-room-page className="flex flex-col gap-10 phone:gap-2 squat:gap-3">
