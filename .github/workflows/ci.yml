@@ -66,6 +66,8 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The restart test (apps/server/src/sync/restart.db.test.ts) runs the built server.
+      - run: pnpm --filter @pp/server build
       - run: pnpm test:db
 
   # The table in a real browser (#13): Playwright against `vite preview` of a fresh build.

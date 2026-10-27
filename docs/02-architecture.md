@@ -172,8 +172,10 @@ in Voting until the next command arrives. Not built in #3.
 ## 5. Sync protocol
 
 Socket.IO with typed event maps from `packages/protocol` (`ClientToServerEvents`,
-`ServerToClientEvents`); every payload is validated with zod on both ends.
-`PROTOCOL_VERSION` is 1.
+`ServerToClientEvents`). The server validates every inbound payload with the protocol's
+zod schemas; the web checks the server's messages by shape (`isSnapshot`, `isEnterAck`,
+`isCmdAck`), not with zod, which would cost the room route about 27 kB gzipped.
+`PROTOCOL_VERSION` is 2 (2 added the `busy` ack code, #15; 1 was the first deploy).
 
 | Event | Direction | Payload | Ack |
 |---|---|---|---|
@@ -191,7 +193,10 @@ Socket.IO with typed event maps from `packages/protocol` (`ClientToServerEvents`
   of the exact rules (grapheme counts, deck rules, ranges), so its codes reach the user.
 - **Ack codes** (`AckErrorCode`, listed in `ACK_ERROR_CODES`): the domain's `ErrorCode` plus
   `bad_payload`, `protocol_mismatch`, `room_not_found`, `password_required`,
-  `unauthenticated`, `rate_limited`, `internal`. snake_case strings the web app translates.
+  `unauthenticated`, `rate_limited`, `busy`, `internal`. snake_case strings the web app
+  translates. `busy` (#15): the runner's `conflict`, every compare-and-set retry lost to
+  another instance; nothing was stored, so the same command id may be sent again (the web
+  does so up to 4 times). `internal` is kept for "unknown whether it landed".
 - **Enter**: `parseEnter(input)` answers `protocol_mismatch` to any other `protocol` number
   before it looks at the rest (an old client must learn to reload), else `bad_payload`
   or the payload.
@@ -236,8 +241,63 @@ Socket.IO with typed event maps from `packages/protocol` (`ClientToServerEvents`
   `errors.unauthenticated` after a second refusal. After `internal` or `rate_limited` it
   connects again with backoff (1 s doubling to 30 s, jittered, at least a `retryAfter`
   the server sends), and the connection status stays `reconnecting`.
-- **Reconnect**: Socket.IO reconnects automatically; on every (re)join the server
-  sends a fresh snapshot. `protocol` mismatch → the client reloads.
+- **Reconnect**: Socket.IO reconnects automatically; the client sends `enter` on every
+  connect and gets a fresh snapshot. `protocol_mismatch` → the room page shows "a new
+  version is available" with a Reload button, and the socket stops.
+
+### The realtime path as built (#15)
+
+Server: `apps/server/src/sync/room-sync.ts` (the `handlers` of `createRealtime`). Web:
+`apps/web/src/realtime/room-connection.ts` and `stores/room-store.ts`.
+
+- **Message limit**: one token bucket per person, shared by all their sockets, 10
+  messages a second with bursts of 20, for `enter` and `cmd` alike, before any parsing.
+  Past it: `rate_limited`; the socket and the room stay up. A person holds at most 8
+  sockets: the next handshake is refused with `rate_limited`. The bucket outlives the
+  person's last socket until it would be full again, so reconnecting does not refill it.
+- **Enter**: the session is checked again (`sessionChecker`; a socket outlives a
+  sign-out or a deleted user) → `unauthenticated`; the socket joins the room's channel
+  `room:<id>` (never the code, a bearer capability) *before* the room is loaded when this
+  instance knows the id, so a commit in between reaches it; otherwise it loads, joins and
+  loads again. Then `room_not_found` or `{ ok: true, snapshot }` for this viewer (also
+  for someone who has not joined: `you: null`). One room per socket: a socket's enters
+  run one after the other, a failed one leaves the channel it joined, an enter stops when
+  the socket disconnects mid-way, and `socket.data.room` is set only after every check.
+  A command sent during an enter waits for it.
+- **Command**: bucket → `toDomainCommand` (`bad_payload`) → entered room
+  (`room_not_found`) → idempotency → `runner.run(code, s => apply(s, cmd, { actor, now }))`
+  (per-room queue, load, apply, compare-and-set, retry) → broadcast → ack. Each socket of
+  the room gets `toSnapshot(state, its user, { causes })` *before* the ack goes out, so a
+  client holds the new snapshot when its command resolves. A refused command acks the
+  domain code, and whatever the run stored anyway (a timer reveal resolved first) is
+  broadcast. A `kicked` cause sends `kicked` to that person's sockets and closes them.
+- **Idempotency**: the last 100 results of each person (by room id and command id), for
+  the 1000 people who sent a command last, in process memory; one person's flood evicts
+  only their own results. A repeated id (in flight or done) gets the same ack and runs
+  once. `busy` is not remembered. A restart or another instance forgets it, so on
+  shutdown the server stops taking socket messages, waits up to 5 s until every message
+  it took is answered, and only then closes the connections.
+- **Session**: a command checks the session again once the last check is a minute old;
+  when it is gone it answers `unauthenticated` and closes the connection, and the
+  client's reconnect meets the handshake's check.
+- **Database failure**: a `DatabaseError` may hide a commit that landed. The server
+  reloads the room, broadcasts it, acks `internal`, and never runs the command again.
+- **Versions**: each socket remembers the version it holds and never gets the same or an
+  older one; the web store keeps a snapshot only when it is newer than the one it holds.
+- **Deadline timeout** (section 9): one timer per room that has a voting round with a
+  `deadlineAt` and a socket on this instance; re-armed after each broadcast and enter,
+  cleared when the round changes or the last local socket leaves. It runs `timeUp`
+  through the runner; `apply` reveals, the compare-and-set lets only one instance store it
+  (tested with two instances on one database). An instance that lost sends the stored
+  state without causes.
+- **Web**: `openRoom(code)` connects through `connectWhenIdentified` (#10's backoff),
+  sends `enter` on every connect and keeps `status` (`connecting`, `live`, `reconnecting`,
+  `error`). Only an `enter` refused with `internal`, `rate_limited` or `busy` is retried;
+  `unauthenticated` runs the identity bootstrap once more; other refusals are final.
+  `sendCommand(command)` waits for `live`, sends with a fresh id, and resends the same id
+  after a lost ack or `busy`. Messages are checked by shape, not with zod (27 kB gzipped).
+- Measured on one instance with Postgres (`room-sync.db.test.ts`): a join reaches the
+  other client in about 4 ms median, 17 ms worst of ten.
 
 ## 6. Persistence
 
@@ -443,7 +503,8 @@ password, no social provider before W5.
 
 - Timer: `deadlineAt` in the round. Snapshots carry `serverNow`; clients compute their
   clock offset and count down locally. The server also sets a timeout for the room's
-  deadline; whichever fires first (timeout, `timeUp` ping, any command) reveals once.
+  deadline (one per room per instance with sockets in it, section 5); whichever fires
+  first (timeout, `timeUp` ping, any command) reveals once.
 - Presence: a socket connect marks the participant connected. After the last socket of
   a user closes, a 15 s grace period passes before `awaySince` is set, so reloads and
   network blips do not flicker. PO claim opens after 120 s away.

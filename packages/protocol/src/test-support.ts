@@ -195,12 +195,3 @@ export function play(steps: readonly Step[], state = createRoom({ ownerId: OWNER
 export function meta(frame: Frame) {
   return { code: CODE, version: frame.version, now: frame.now, causes: frame.causes };
 }
-
-/** Every string in a value, with its path (`room.round.voted.0`). */
-export function stringLeaves(value: unknown, path = ""): Array<{ path: string; value: string }> {
-  if (typeof value === "string") return [{ path, value }];
-  if (typeof value !== "object" || value === null) return [];
-  return Object.entries(value).flatMap(([key, child]) =>
-    stringLeaves(child, path ? `${path}.${key}` : key),
-  );
-}

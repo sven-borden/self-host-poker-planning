@@ -134,8 +134,9 @@ describe("run", () => {
     expect(shutdown).toEqual([
       "shutdown: started",
       "shutdown: stopped accepting connections",
-      "shutdown: sockets disconnected",
       "shutdown: already in progress",
+      "shutdown: socket messages answered",
+      "shutdown: sockets disconnected",
       "shutdown: http server closed",
       "shutdown: done",
     ]);

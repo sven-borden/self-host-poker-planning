@@ -203,3 +203,12 @@ test("a bogus code with a network failure does not overflow the page at 360 px",
     true,
   );
 });
+
+test("a created room is followed over the socket, live with its snapshot", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Create the room" }).click();
+  await expect(page).toHaveURL(ROOM_PATH);
+  // "Connected" only follows an enter ack that carried a valid snapshot of this room.
+  await expect(page.getByTestId("room-connection")).toHaveText("Connected");
+  await expect(page.getByTestId("room-people")).toHaveText("0 people in the room");
+});

@@ -52,6 +52,7 @@ const errors = {
   password_required: "This room has a password. Enter it to join.",
   unauthenticated: "Your session has ended. Reload the page to continue.",
   rate_limited: "Too many attempts. Wait a moment, then try again.",
+  busy: "The room was busy for a moment. Try again.",
   internal: "Something went wrong on the server. Try again in a moment.",
   /** Any code this version does not know yet. */
   unknown: "Something went wrong. Try again, or reload the page.",
@@ -117,7 +118,14 @@ export const en = {
     linkLabel: "Room link",
     notFoundTitle: "Room not found",
     retry: "Try again",
-    notOpenYet: "This room is not open yet: the table arrives in a later version.",
+    statusConnecting: "Connecting to the room…",
+    statusLive: "Connected",
+    statusReconnecting: "Connection lost. Reconnecting…",
+    people_one: "{{count, number}} person in the room",
+    people_other: "{{count, number}} people in the room",
+    reload: "Reload",
+    kicked: "You were removed from this room.",
+    offline: "The connection to the server was lost. Reload the page to try again.",
     backHome: "Back to the home page",
   },
   table: {
