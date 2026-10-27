@@ -1,14 +1,14 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { createT } from "../i18n/i18n.ts";
-import { I18nProvider } from "../i18n/i18n-context.tsx";
+import { changeLanguage, fixedT, loadLanguage } from "../i18n/i18n.ts";
 import { Avatar, avatarColour, initials } from "./avatar.tsx";
 import { cardLabel, HandCard, labelEms, labelScale, MiniCard, SlotCard } from "./cards.tsx";
 import type { TablePerson } from "./seat.tsx";
 import { TableStage } from "./table-stage.tsx";
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await act(() => changeLanguage("en"));
 });
 
 const person = (id: string, name: string, status: TablePerson["status"]): TablePerson => ({
@@ -82,20 +82,14 @@ describe("TableStage", () => {
     expect(document.querySelectorAll('[data-face="up"]')).toHaveLength(2);
   });
 
-  it("speaks French and German", () => {
-    render(
-      <I18nProvider language="fr">
-        <TableStage people={voting} variant="desktop" />
-      </I18nProvider>,
-    );
+  it("speaks French and German", async () => {
+    await act(() => changeLanguage("fr"));
+    render(<TableStage people={voting} variant="desktop" />);
     expect(screen.getByRole("list", { name: "Personnes à la table" })).toBeDefined();
     expect(screen.getByText("Ben, réfléchit")).toBeDefined();
     cleanup();
-    render(
-      <I18nProvider language="de">
-        <TableStage people={voting} variant="desktop" />
-      </I18nProvider>,
-    );
+    await act(() => changeLanguage("de"));
+    render(<TableStage people={voting} variant="desktop" />);
     expect(screen.getByText("Ana, hat abgestimmt")).toBeDefined();
   });
 
@@ -180,13 +174,23 @@ describe("TableStage", () => {
 });
 
 describe("cards", () => {
-  const t = createT("en");
+  const t = fixedT("en");
 
   it("names special cards in words", () => {
     expect(cardLabel(t, "5")).toBe("5");
     expect(cardLabel(t, "?")).toBe("unsure");
     expect(cardLabel(t, "☕")).toBe("needs a break");
     expect(cardLabel(t, "∞")).toBe("too big to estimate");
+  });
+
+  it("keeps a label as the deck holds it, in every language", async () => {
+    await loadLanguage("fr");
+    await loadLanguage("de");
+    for (const language of ["fr", "de"] as const) {
+      expect(cardLabel(fixedT(language), "0.5")).toBe("0.5");
+      expect(cardLabel(fixedT(language), "½")).toBe("½");
+    }
+    expect(cardLabel(fixedT("fr"), "?")).toBe("incertain");
   });
 
   it("makes a hand card a 44 px-wide-or-more toggle button with corner indices", () => {

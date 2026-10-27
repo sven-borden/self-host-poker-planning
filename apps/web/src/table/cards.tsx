@@ -19,7 +19,12 @@ export function isSpecialCard(value: string): value is (typeof SPECIAL_CARDS)[nu
   return (SPECIAL_CARDS as readonly string[]).includes(value);
 }
 
-/** What a screen reader says for a card: the number, or a word for a special. */
+/**
+ * What a screen reader says for a card: the label as the deck holds it, or a word for a
+ * special. Labels are never localised (docs/03-design-brief.md, "Copy"): no preset holds a
+ * decimal mark ("½" reads the same everywhere) and custom labels stay as typed, so "0.5"
+ * is "0.5" in French too. Numbers the app computes go through `formatNumber` instead.
+ */
 export function cardLabel(t: TFunction, value: string): string {
   return isSpecialCard(value) ? t(SPOKEN[value]) : value;
 }

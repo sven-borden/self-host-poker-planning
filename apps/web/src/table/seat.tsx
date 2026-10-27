@@ -1,8 +1,8 @@
 import { CheckIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover.tsx";
+import { useT } from "../i18n/hooks.ts";
 import type { TFunction } from "../i18n/i18n.ts";
-import { useT } from "../i18n/i18n-context.tsx";
 import { Avatar } from "./avatar.tsx";
 import { cardLabel, isSpecialCard } from "./cards.tsx";
 import type { SeatGeometry, SeatPlace } from "./layout.ts";

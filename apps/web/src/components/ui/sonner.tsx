@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import type { CSSProperties } from "react";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
-import { useT } from "@/i18n/i18n-context.tsx";
+import { useT } from "@/i18n/hooks.ts";
 import { useThemeMode } from "@/theme/use-theme-mode.ts";
 
 // shadcn's sonner wrapper, with our theme store in place of next-themes and translated

@@ -13,7 +13,7 @@
     "test": "vitest run --project=!db",
     "test:coverage": "vitest run --project=!db --coverage",
     "test:db": "vitest run --project=db --no-file-parallelism",
-    "lint": "biome check . && node apps/web/scripts/check-colours.ts",
+    "lint": "biome check . && node apps/web/scripts/check-colours.ts && node apps/web/scripts/check-copy.ts",
     "format": "biome check --write .",
     "typecheck": "tsc --build",
     "gate": "node scripts/check-node.mjs && pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build"
