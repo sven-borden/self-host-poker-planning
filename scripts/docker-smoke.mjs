@@ -24,7 +24,9 @@ function check(ok, what) {
 
 async function health() {
   const res = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-  const body = await res.json();
+  const body = /** @type {{ status?: unknown; db?: unknown; commit?: unknown }} */ (
+    await res.json()
+  );
   console.log(`health: ${JSON.stringify(body)}`);
   check(res.status === 200 && body.status === "ok", "/api/health answers 200 ok");
   check(body.db === "ok", "/api/health reports db ok");
@@ -89,13 +91,20 @@ function enterOverWebSocket(origin, cookie) {
     ws.onerror = () => finish(() => reject(new Error("websocket refused or failed")));
     ws.onclose = (event) =>
       finish(() => reject(new Error(`websocket closed (${event.code}) before the ack`)));
+    // Engine.IO open (0) → connect to namespace "/" (40); ping (2) → pong (3); namespace
+    // connected (40) → emit `enter` with ack id 0 (420[...]); its ack is 430[...]; a
+    // refused namespace connection (a middleware said no) is 44.
     ws.onmessage = (event) => {
       const data = String(event.data);
-      if (data.startsWith("0")) ws.send("40"); // Engine.IO open: connect to namespace "/"
-      else if (data === "2") ws.send("3"); // ping: pong
-      else if (data.startsWith("40")) ws.send('420["enter",{"code":"smoke","protocol":1}]');
-      else if (data.startsWith("44")) finish(() => reject(new Error(`refused: ${data}`)));
-      else if (data.startsWith("430")) {
+      if (data.startsWith("0")) {
+        ws.send("40");
+      } else if (data === "2") {
+        ws.send("3");
+      } else if (data.startsWith("40")) {
+        ws.send('420["enter",{"code":"smoke","protocol":1}]');
+      } else if (data.startsWith("44")) {
+        finish(() => reject(new Error(`refused: ${data}`)));
+      } else if (data.startsWith("430")) {
         const [ack] = JSON.parse(data.slice(3));
         ws.onclose = null;
         finish(() => resolve(ack));
