@@ -213,10 +213,16 @@ describe("sendCommand", () => {
     );
     open(fake);
     fake.up();
-    const ack = await sendCommand({ type: "castVote", payload: { card: "5", round: 1 } });
+    const ack = await sendCommand({
+      type: "castVote",
+      payload: { card: "5", round: 1, restart: 0 },
+    });
     expect(ack).toEqual({ ok: true, version: 2 });
     const cmd = fake.sent.find((s) => s.event === "cmd");
-    expect(cmd?.payload).toMatchObject({ type: "castVote", payload: { card: "5", round: 1 } });
+    expect(cmd?.payload).toMatchObject({
+      type: "castVote",
+      payload: { card: "5", round: 1, restart: 0 },
+    });
     expect(String(cmd?.payload.id)).toMatch(COMMAND_ID_PATTERN);
   });
 

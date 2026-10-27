@@ -168,7 +168,7 @@ describe("a burst past the message limit (AC 3)", () => {
     await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
     const burst = Promise.all(
       Array.from({ length: 200 }, (_, i) =>
-        b.cmd("castVote", { card: i % 2 ? "5" : "3", round: 1 }),
+        b.cmd("castVote", { card: i % 2 ? "5" : "3", round: 1, restart: 0 }),
       ),
     );
     const started = performance.now();
@@ -193,7 +193,7 @@ describe("a burst past the message limit (AC 3)", () => {
     expect(b.latest()?.room.round?.yourVote).toBe(stored?.state.round?.votes[bob.id]?.card);
     // And the socket goes on working once the bucket refills.
     await sleep(300);
-    expect((await b.cmd("retractVote", { round: 1 })).ok).toBe(true);
+    expect((await b.cmd("retractVote", { round: 1, restart: 0 })).ok).toBe(true);
     // Bob's bucket is shared by all his sockets, later tests' too: let it fill up again.
     await sleep(2000);
   });
@@ -206,8 +206,8 @@ describe("secrecy on the real frames", () => {
     const b = client(bob);
     const c = client(cy);
     await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
-    expect((await a.cmd("castVote", { card: "13", round: 1 })).ok).toBe(true);
-    expect((await b.cmd("castVote", { card: "5", round: 1 })).ok).toBe(true);
+    expect((await a.cmd("castVote", { card: "13", round: 1, restart: 0 })).ok).toBe(true);
+    expect((await b.cmd("castVote", { card: "5", round: 1, restart: 0 })).ok).toBe(true);
     // Everyone voted: the room reveals by itself; wait for the last voting snapshot first.
     await c.waitFor((s) => s.room.round?.phase === "revealed");
     await b.waitFor((s) => s.room.round?.phase === "revealed");
@@ -238,8 +238,8 @@ describe("secrecy on the real frames", () => {
       const c = client(cy);
       await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
       // The second vote completes the round: "everyone voted" reveals it.
-      expect((await a.cmd("castVote", { card: cards[0], round: 1 })).ok).toBe(true);
-      expect((await b.cmd("castVote", { card: cards[1], round: 1 })).ok).toBe(true);
+      expect((await a.cmd("castVote", { card: cards[0], round: 1, restart: 0 })).ok).toBe(true);
+      expect((await b.cmd("castVote", { card: cards[1], round: 1, restart: 0 })).ok).toBe(true);
       await c.waitFor((s) => s.room.round?.phase === "revealed");
       return { code, frames: [...c.frames] };
     }
@@ -303,8 +303,8 @@ describe("the reveal (#19)", () => {
     const watchers = [client(cy, instances[0]), client(cy, instances[1])];
     await Promise.all([a.enter(code), b.enter(code), ...watchers.map((w) => w.enter(code))]);
     const acks = await Promise.all([
-      a.cmd("castVote", { card: "3", round: 1 }),
-      b.cmd("castVote", { card: "8", round: 1 }),
+      a.cmd("castVote", { card: "3", round: 1, restart: 0 }),
+      b.cmd("castVote", { card: "8", round: 1, restart: 0 }),
     ]);
     expect(acks.map((ack) => ack.ok)).toEqual([true, true]);
     // Only the instance that stored the reveal broadcasts it.
@@ -412,6 +412,151 @@ describe("the room settings (#25)", () => {
   });
 });
 
+describe("the deck (#26)", () => {
+  // These tests send Ada's commands in a burst; her session's bucket (20, 10 a second) is
+  // shared with the tests after them, so let it refill.
+  afterEach(() => sleep(2_000));
+
+  it("refuses a deck change from a voter and an observer, and brings every custom-deck code to the PO", async () => {
+    const code = await insert(votingRoom());
+    const [a, b, c] = [client(ada), client(bob), client(cy)];
+    await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
+    const tshirt = { deck: { kind: "preset", id: "tshirt" } };
+    expect(await b.cmd("updateSettings", { patch: tshirt })).toEqual({
+      ok: false,
+      code: "not_owner",
+    });
+    expect(await c.cmd("updateSettings", { patch: { specials: [] } })).toEqual({
+      ok: false,
+      code: "not_owner",
+    });
+    const refused: Array<[string, string[]]> = [
+      ["deck_empty", []],
+      ["deck_too_many_cards", Array.from({ length: 21 }, (_, i) => String(i))],
+      ["card_empty", ["1", " "]],
+      ["card_invalid", ["a\u{200b}b"]],
+      ["card_too_long", ["Large"]],
+      ["card_duplicate", ["1", "1.0"]],
+      ["card_special", ["\u{2615}\u{fe0f}"]],
+    ];
+    for (const [expected, cards] of refused) {
+      expect(await a.cmd("updateSettings", { patch: { deck: { kind: "custom", cards } } })).toEqual(
+        { ok: false, code: expected },
+      );
+    }
+    expect((await main().database.store.loadRoom(code))?.version).toBe(1);
+  });
+
+  it("restarts the round on a new deck: votes cleared, same subject and number, and a vote sent before it is refused", async () => {
+    const code = await insert(votingRoom());
+    const [a, b, c] = [client(ada), client(bob), client(cy)];
+    await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
+    expect((await b.cmd("castVote", { card: "5", round: 1, restart: 0 })).ok).toBe(true);
+    const cards = ["0.5", "1", "1.5", "2.5", "5"];
+    expect((await a.cmd("updateSettings", { patch: { deck: { kind: "custom", cards } } })).ok).toBe(
+      true,
+    );
+    for (const watcher of [a, b, c]) {
+      const seen = await watcher.waitFor((s) => s.room.round?.restarts === 1);
+      expect(seen.snapshot.causes).toEqual([
+        { type: "settingsUpdated" },
+        { type: "roundStarted", number: 1, restarted: true },
+      ]);
+      expect(seen.snapshot.room.round).toMatchObject({
+        number: 1,
+        phase: "voting",
+        subject: { kind: "title", text: "Login" },
+        deck: { kind: "custom", cards },
+        voted: [],
+      });
+      expect(seen.snapshot.room.round).not.toHaveProperty("yourVote");
+    }
+    // "5" is in both decks: a vote made for the round before its restart must not land.
+    expect(await b.cmd("castVote", { card: "5", round: 1, restart: 0 })).toEqual({
+      ok: false,
+      code: "round_changed",
+    });
+    expect(await b.cmd("retractVote", { round: 1, restart: 0 })).toEqual({
+      ok: false,
+      code: "round_changed",
+    });
+    expect((await main().database.store.loadRoom(code))?.state.round?.votes).toEqual({});
+    // Played on the new deck, the round reveals and goes to history with its deck.
+    expect((await a.cmd("castVote", { card: "1.5", round: 1, restart: 1 })).ok).toBe(true);
+    expect((await b.cmd("castVote", { card: "0.5", round: 1, restart: 1 })).ok).toBe(true);
+    const revealed = await c.waitFor((s) => s.room.round?.phase === "revealed");
+    expect(revealed.snapshot.room.round).toMatchObject({
+      results: { average: 1, median: 1, consensus: false },
+    });
+    expect((await a.cmd("startRound", { subject: { kind: "none" } })).ok).toBe(true);
+    await c.waitFor((s) => s.room.round?.number === 2);
+    const stored = await main().database.store.loadRoom(code);
+    // Round 2 plays with the custom deck too.
+    expect(stored?.state.round?.deck).toEqual({ kind: "custom", cards });
+    const sql = dbClient(t.url);
+    try {
+      const { rows } = await sql.query(
+        "select number, deck, votes from round_history where room_id = $1 order by number",
+        [stored?.id],
+      );
+      expect(rows).toEqual([
+        {
+          number: 1,
+          deck: { spec: { kind: "custom", cards }, specials: ["?", "☕"] },
+          votes: {
+            kind: "named",
+            votes: [
+              { who: ada.id, name: "Ada", card: "1.5" },
+              { who: bob.id, name: "Bob", card: "0.5" },
+            ],
+          },
+        },
+      ]);
+    } finally {
+      await sql.end();
+    }
+  });
+
+  it("starts the round over on a restart, timer included: the room's timer anew, a timer by hand stops", async () => {
+    // One room without a timer setting, whose PO started a timer by hand; one with a 5 s
+    // timer. Both deadlines are close, and both rounds hold a vote.
+    let byHand = votingRoom();
+    byHand = step(byHand, bob.id, { type: "castVote", card: "5" });
+    let timed = votingRoom();
+    timed = { ...timed, settings: { ...timed.settings, timer: { seconds: 5, revealAtEnd: true } } };
+    timed = step(timed, bob.id, { type: "castVote", card: "5" });
+    const codes = await Promise.all([
+      insert(withDeadline(byHand, Date.now() + 700)),
+      insert(withDeadline(timed, Date.now() + 700)),
+    ]);
+    const [a1, c1, a2, c2] = [client(ada), client(cy), client(ada), client(cy)];
+    await Promise.all([
+      a1.enter(codes[0]),
+      c1.enter(codes[0]),
+      a2.enter(codes[1]),
+      c2.enter(codes[1]),
+    ]);
+    const tshirt = { deck: { kind: "preset", id: "tshirt" } };
+    const before = Date.now();
+    expect((await a1.cmd("updateSettings", { patch: tshirt })).ok).toBe(true);
+    expect((await a2.cmd("updateSettings", { patch: tshirt })).ok).toBe(true);
+    const stopped = await c1.waitFor((s) => s.room.round?.restarts === 1);
+    expect(stopped.snapshot.room.round).not.toHaveProperty("deadlineAt");
+    const anew = await c2.waitFor((s) => s.room.round?.restarts === 1);
+    expect(anew.snapshot.room.round?.deadlineAt).toBeGreaterThanOrEqual(before + 5_000);
+    // Past the old deadlines, both rounds still vote.
+    await sleep(1_000);
+    for (const code of codes) {
+      expect((await main().database.store.loadRoom(code))?.state.round?.phase).toBe("voting");
+    }
+    // A client that sends no restart (one older than #26) votes in the round as it is now.
+    expect((await a2.cmd("castVote", { card: "M", round: 1 })).ok).toBe(true);
+    expect((await main().database.store.loadRoom(codes[1]))?.state.round?.votes[ada.id]).toEqual(
+      expect.objectContaining({ card: "M" }),
+    );
+  });
+});
+
 describe("the next round (#21)", () => {
   async function historyOf(code: string) {
     const stored = await main().database.store.loadRoom(code);
@@ -435,8 +580,8 @@ describe("the next round (#21)", () => {
     const b = client(bob);
     const c = client(cy);
     await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
-    expect((await a.cmd("castVote", { card: "5", round: 1 })).ok).toBe(true);
-    expect((await b.cmd("castVote", { card: "8", round: 1 })).ok).toBe(true);
+    expect((await a.cmd("castVote", { card: "5", round: 1, restart: 0 })).ok).toBe(true);
+    expect((await b.cmd("castVote", { card: "8", round: 1, restart: 0 })).ok).toBe(true);
     await c.waitFor((s) => s.room.round?.phase === "revealed");
     // Before the next round, nothing is history yet.
     expect(await historyOf(code)).toEqual([]);
@@ -501,8 +646,8 @@ describe("commands", () => {
     const b = client(bob);
     await b.enter(code);
     const [x, y] = await Promise.all([
-      b.cmd("castVote", { card: "8", round: 1 }, "twice"),
-      b.cmd("castVote", { card: "8", round: 1 }, "twice"),
+      b.cmd("castVote", { card: "8", round: 1, restart: 0 }, "twice"),
+      b.cmd("castVote", { card: "8", round: 1, restart: 0 }, "twice"),
     ]);
     expect(x).toEqual({ ok: true, version: 2 });
     expect(y).toEqual(x);
@@ -539,7 +684,11 @@ describe("one session flooding a room from many sockets", () => {
       for (let i = 0; i < times; i++) {
         const sent = performance.now();
         acks.push(
-          await honest.cmd("castVote", { card: i % 2 ? "3" : "5", round: 1 }, `${label}-${i}`),
+          await honest.cmd(
+            "castVote",
+            { card: i % 2 ? "3" : "5", round: 1, restart: 0 },
+            `${label}-${i}`,
+          ),
         );
         ms.push(performance.now() - sent);
         await sleep(50);
@@ -602,7 +751,9 @@ describe("one session flooding a room from many sockets", () => {
     expect(accepted).toBeLessThan(20 + 10 * 3);
     // Bob's first vote is still remembered: sent again, it is answered, not applied again.
     const before = (await main().database.store.loadRoom(code))?.version;
-    expect(await honest.cmd("castVote", { card: "5", round: 1 }, "quiet-0")).toEqual(quiet.acks[0]);
+    expect(await honest.cmd("castVote", { card: "5", round: 1, restart: 0 }, "quiet-0")).toEqual(
+      quiet.acks[0],
+    );
     expect((await main().database.store.loadRoom(code))?.version).toBe(before);
   });
 });

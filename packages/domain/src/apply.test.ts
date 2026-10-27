@@ -339,6 +339,27 @@ describe("refusals", () => {
       "round_changed",
     ],
     [
+      "a vote made before the PO restarted the round with a new deck",
+      () => room({ round: voting({ number: 2, restarts: 1 }) }),
+      { type: "castVote", card: "3", round: 2, restart: 0 },
+      A,
+      "round_changed",
+    ],
+    [
+      "a vote made for the first start of a round never restarted",
+      () => room({ round: voting({ number: 2 }) }),
+      { type: "castVote", card: "3", round: 2, restart: 1 },
+      A,
+      "round_changed",
+    ],
+    [
+      "a retract made before the PO restarted the round",
+      () => room({ round: voting({ number: 2, restarts: 2, votes: { [A]: { card: "3" } } }) }),
+      { type: "retractVote", round: 2, restart: 1 },
+      A,
+      "round_changed",
+    ],
+    [
       "a retract made for a round in the lobby",
       lobby,
       { type: "retractVote", round: 1 },
@@ -1205,11 +1226,41 @@ describe("updateSettings", () => {
       { type: "settingsUpdated" },
       { type: "roundStarted", number: 4, restarted: true },
     ]);
+    // The room has no timer, so the one the PO started by hand stops: the round starts over.
     expect(ok(result).round).toEqual({
-      ...voting({ number: 4, deadlineAt: T0 + 9_000 }),
+      ...voting({ number: 4 }),
       deck: { kind: "preset", id: "tshirt" },
       startedAt: T0,
+      restarts: 1,
     });
+  });
+
+  it("starts the room's timer over when it restarts a round", () => {
+    const before = room({
+      settings: { timer: { seconds: 8, revealAtEnd: true } },
+      round: voting({ votes: { [A]: { card: "3" } }, deadlineAt: T0 + 4_000 }),
+    });
+    const now = T0 + 4_000 - 1;
+    const result = send(before, { type: "updateSettings", patch: { specials: [] } }, PO, now);
+    expect(ok(result).round).toMatchObject({ startedAt: now, deadlineAt: now + 8_000, votes: {} });
+  });
+
+  it("counts the restarts, and takes a vote made for the round as it is now", () => {
+    const before = room({ round: voting({ number: 4, restarts: 1 }) });
+    const again = ok(send(before, { type: "updateSettings", patch: { specials: [] } }));
+    expect(again.round?.restarts).toBe(2);
+    const vote = send(again, { type: "castVote", card: "3", round: 4, restart: 2 }, A);
+    expect(ok(vote).round?.votes[A]).toEqual({ card: "3" });
+    const retract = send(ok(vote), { type: "retractVote", round: 4, restart: 2 }, A);
+    expect(ok(retract).round?.votes).toEqual({});
+  });
+
+  it("takes a vote and a retract that carry no restart in a restarted round, as a tab from before #26 sends them", () => {
+    const before = room({ round: voting({ number: 4, restarts: 1 }) });
+    const vote = send(before, { type: "castVote", card: "3", round: 4 }, A);
+    expect(ok(vote).round?.votes[A]).toEqual({ card: "3" });
+    const retract = send(ok(vote), { type: "retractVote", round: 4 }, A);
+    expect(ok(retract).round?.votes).toEqual({});
   });
 
   it("restarts a voting round on new specials", () => {

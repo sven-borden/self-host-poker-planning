@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { validateCustomDeck } from "./custom-deck.ts";
 import {
   type Card,
   cardLength,
@@ -10,7 +11,6 @@ import {
   PRESET_DECKS,
   type PresetDeckId,
   SPECIAL_CARDS,
-  validateCustomDeck,
 } from "./decks.ts";
 
 describe("PRESET_DECKS", () => {

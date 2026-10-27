@@ -27,6 +27,7 @@ import type { TFunction } from "../i18n/i18n.ts";
 import { cn } from "../lib/utils.ts";
 import { commandSender } from "../realtime/room-connection.ts";
 import { useRoomStore } from "../stores/room-store.ts";
+import { DeckControl, SpecialsControl } from "./deck-field.tsx";
 import { codeOf, failureMessage } from "./failure.ts";
 import { deckName, type SettingKey } from "./settings-words.ts";
 
@@ -35,7 +36,8 @@ import { deckName, type SettingKey } from "./settings-words.ts";
 // setting whose control is not built yet, reads the value and what it means. A lazy
 // chunk of its own (`settings-button.tsx` loads it on the first open).
 //
-// Adding a control (#26 to #29): give the setting's field in `GROUPS` a `toggle` (an
+// Adding a control (#27 to #29; #26's deck and special cards are the worked example in
+// `deck-field.tsx`): give the setting's field in `GROUPS` a `toggle` (an
 // on-off switch) or a `Control`, a component that renders the input with
 // `ControlProps.id` (or labels a group with `aria-labelledby={labelId}`) and calls
 // `change` with only the keys it changes. `layout: "block"` gives it the row's whole width.
@@ -143,9 +145,9 @@ function SettingSwitch({
 
 /**
  * The settings in the order the panel shows them (ADR-011's list). Editable now: the
- * settings whose behaviour the room already shows end to end. The deck and specials
- * (#26), the timer (#27), who can reveal (#28) and changes after the reveal (#29) are
- * read-only until their issue adds a control.
+ * settings whose behaviour the room already shows end to end, the deck and the special
+ * cards (#26) among them. The timer (#27), who can reveal (#28) and changes after the
+ * reveal (#29) are read-only until their issue adds a control.
  */
 export const GROUPS: readonly SettingGroup[] = [
   {
@@ -158,6 +160,8 @@ export const GROUPS: readonly SettingGroup[] = [
         hint: (t) => t("settings.deckHint"),
         value: (t, s) => deckName(t, s.deck),
         detail: (_t, s) => baseCards(s.deck).join(", "),
+        layout: "block",
+        Control: DeckControl,
       },
       {
         key: "specials",
@@ -170,6 +174,8 @@ export const GROUPS: readonly SettingGroup[] = [
           s.specials.length === 0
             ? null
             : s.specials.map((card) => `${card} ${t(SPOKEN[card])}`).join(" · "),
+        layout: "block",
+        Control: SpecialsControl,
       },
     ],
   },
@@ -438,14 +444,24 @@ function openAtTop(box: HTMLElement | null) {
   title?.focus({ preventScroll: true });
 }
 
-/** Scrolls a focused element out from under the sticky head, where the browser left it. */
+/**
+ * Scrolls a focused element out from under the sticky head, where the browser left it, or
+ * up from below the sheet's bottom, where the focus trap's wrap from the first control to
+ * the last leaves it (Radix focuses without scrolling).
+ */
 function keepClearOfHead(box: HTMLElement | null, target: EventTarget) {
   if (!box || !(target instanceof HTMLElement) || target.closest("[data-panel-head]")) return;
   requestAnimationFrame(() => {
     const head = box.querySelector("[data-panel-head]")?.getBoundingClientRect();
     if (!head || document.activeElement !== target) return;
-    const gap = head.bottom - target.getBoundingClientRect().top;
-    if (gap > 0) box.scrollTop -= gap + 8;
+    const rect = target.getBoundingClientRect();
+    const gap = head.bottom - rect.top;
+    if (gap > 0) {
+      box.scrollTop -= gap + 8;
+      return;
+    }
+    const below = rect.bottom - box.getBoundingClientRect().bottom;
+    if (below > 0) box.scrollTop += below + 8;
   });
 }
 

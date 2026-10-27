@@ -120,9 +120,9 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       return subject ? startRound(state, subject, now) : refuse("bad_subject");
     }
     case "castVote":
-      return castVote(state, actor, command.card, command.round);
+      return castVote(state, actor, command.card, command);
     case "retractVote":
-      return retractVote(state, actor, command.round);
+      return retractVote(state, actor, command);
     case "reveal": {
       if (actor !== state.ownerId && state.settings.whoCanReveal !== "anyone") {
         return refuse("not_allowed");
@@ -291,7 +291,7 @@ function startRound(state: RoomState, subject: Subject, now: number, revote = fa
  * but never what, or after a named reveal. The protocol still strips `who` from vote
  * causes after an anonymous reveal, as defence in depth.
  */
-function castVote(state: RoomState, actor: UserId, card: unknown, made: unknown): Step {
+function castVote(state: RoomState, actor: UserId, card: unknown, made: MadeFor): Step {
   const round = state.round;
   if (!round) return refuse("no_round");
   if (otherRound(round, made)) return refuse("round_changed");
@@ -315,7 +315,7 @@ function castVote(state: RoomState, actor: UserId, card: unknown, made: unknown)
   });
 }
 
-function retractVote(state: RoomState, actor: UserId, made: unknown): Step {
+function retractVote(state: RoomState, actor: UserId, made: MadeFor): Step {
   const round = state.round;
   if (round && otherRound(round, made)) return refuse("round_changed");
   if (round?.phase !== "voting") return refuse("not_voting");
@@ -326,12 +326,19 @@ function retractVote(state: RoomState, actor: UserId, made: unknown): Step {
   });
 }
 
+/** The round a vote or retract was made for, as the command says it. */
+type MadeFor = { round?: unknown; restart?: unknown };
+
 /**
  * A vote made for another round than the current one: a command still in flight when the
- * PO started the next round. Without `made` (a command the server built) any round goes.
+ * PO started the next round, or restarted this one with a new deck (#26). Without
+ * `round` or `restart` (a command the server built) any round goes.
  */
-function otherRound(round: Round, made: unknown): boolean {
-  return made !== undefined && made !== round.number;
+function otherRound(round: Round, { round: number, restart }: MadeFor): boolean {
+  return (
+    (number !== undefined && number !== round.number) ||
+    (restart !== undefined && restart !== (round.restarts ?? 0))
+  );
 }
 
 function setFinal(state: RoomState, card: unknown): Step {
@@ -364,13 +371,17 @@ function updateSettings(state: RoomState, patch: unknown, now: number): Step {
     return done(next, { type: "settingsUpdated" });
   }
   // A new deck or new specials during Voting restart the round: same subject and number.
+  // It starts over as any round does, timer included: a new deadline when the room has a
+  // timer, none otherwise (a timer the PO started by hand stops).
   const restarted: Round = {
-    ...round,
+    ...withoutDeadline(round),
     deck: canonicalDeck(settings.deck),
     specials: [...settings.specials],
     votes: {},
     startedAt: now,
+    restarts: (round.restarts ?? 0) + 1,
   };
+  if (settings.timer.seconds !== null) restarted.deadlineAt = now + settings.timer.seconds * 1000;
   return {
     ...done(
       withRound(next, restarted),

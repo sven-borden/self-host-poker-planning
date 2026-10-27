@@ -51,11 +51,14 @@ export const de: Catalog = {
   },
   decks: {
     fib: "Fibonacci",
-    mfib: "Fibonacci, modifiziert",
+    mfib: "Modifizierte Fibonacci-Folge",
     tshirt: "T-Shirt-Größen",
     pow2: "Zweierpotenzen",
     seq: "1 bis 10",
     custom: "Eigenes Kartendeck",
+    named: "„{{deck}}“",
+    // After „mit“ and „zu“, the only places a deck is named inside a sentence: dative.
+    customInSentence: "einem eigenen Kartendeck",
   },
   room: {
     title: "Raum {{code}}",
@@ -164,6 +167,63 @@ export const de: Catalog = {
     observersCountRefused:
       "Mit den Beobachtern sind mehr als {{max, number}} Personen hier. Beobachter zählen wieder, sobald es {{max, number}} oder weniger sind.",
   },
+  deckField: {
+    inUse: "Aktiv",
+    use: "{{deck}} verwenden",
+    customLabel: "Karten, durch Kommas getrennt",
+    customHint:
+      "Bis zu {{max, number}} Karten mit je höchstens {{length, number}} Zeichen, auch Emoji. Das Komma trennt die Karten, schreiben Sie Dezimalzahlen daher mit Punkt: 0.5.",
+    customCount_one: "{{count, number}} Karte",
+    customCount_other: "{{count, number}} Karten",
+    useCustom: "Diese Karten verwenden",
+    fromNextRound: "Neue Karten gelten ab Runde {{round, number}}.",
+    restartsRound:
+      "Neue Karten starten Runde {{round, number}} neu: Die Stimmen werden gelöscht, das Thema bleibt.",
+    deckQuestion_one:
+      "Ein neues Kartendeck startet Runde {{round, number}} neu. Die bisher abgegebene Stimme wird gelöscht, das Thema bleibt.",
+    deckQuestion_other:
+      "Ein neues Kartendeck startet Runde {{round, number}} neu. Die {{count, number}} bisher abgegebenen Stimmen werden gelöscht, das Thema bleibt.",
+    specialsQuestion_one:
+      "Neue Sonderkarten starten Runde {{round, number}} neu. Die bisher abgegebene Stimme wird gelöscht, das Thema bleibt.",
+    specialsQuestion_other:
+      "Neue Sonderkarten starten Runde {{round, number}} neu. Die {{count, number}} bisher abgegebenen Stimmen werden gelöscht, das Thema bleibt.",
+    restartWith: "Mit {{deck}} neu starten",
+    restartSpecials: "Mit den neuen Sonderkarten neu starten",
+    cancel: "Abbrechen",
+    deck_empty: "Geben Sie mindestens eine Karte ein.",
+    deck_too_many_cards:
+      "Das sind {{count, number}} Karten; ein Kartendeck hat höchstens {{max, number}}.",
+    card_empty: "Karte {{position, number}} ist leer. Entfernen Sie das überzählige Komma.",
+    card_invalid:
+      "Karte {{position, number}} enthält Zeichen, die sich nicht anzeigen lassen. Geben Sie sie neu ein.",
+    card_too_long: "„{{card}}“ ist zu lang: Eine Karte hat höchstens {{max, number}} Zeichen.",
+    card_duplicate: "„{{card}}“ steht zweimal im Kartendeck. Behalten Sie eine.",
+    card_same_value:
+      "„{{card}}“ hat denselben Wert wie „{{other}}“. Behalten Sie nur eine der beiden.",
+    card_special:
+      "„{{card}}“ ist eine Sonderkarte. Schalten Sie sie unter „Sonderkarten“ ein, statt sie einzugeben.",
+    rangeOpen: "Zahlenfolge erzeugen",
+    rangeStart: "Start",
+    rangeEnd: "Ende",
+    rangeStep: "Schritt",
+    rangeHint:
+      "Zahlen, mit Komma oder Punkt als Dezimalzeichen. Die Karten landen im Feld darüber, wo Sie sie noch ändern können.",
+    rangeFill: "Karten einfügen",
+    rangeFilled_one:
+      "{{count, number}} Karte eingefügt. Prüfen Sie sie und verwenden Sie sie dann.",
+    rangeFilled_other:
+      "{{count, number}} Karten eingefügt. Prüfen Sie sie und verwenden Sie sie dann.",
+    range_not_finite: "Geben Sie für Start, Ende und Schritt je eine Zahl ein, etwa 0,5 oder 0.5.",
+    range_step_not_positive: "Der Schritt muss größer als 0 sein.",
+    range_end_before_start: "Das Ende darf nicht kleiner als der Start sein.",
+    range_too_many_cards:
+      "Diese Folge ergibt mehr als {{max, number}} Karten. Wählen Sie einen größeren Schritt oder eine kürzere Folge.",
+    range_label_too_long:
+      "Manche Werte bräuchten mehr als {{max, number}} Zeichen, etwa 0,125 oder 10000. Verwenden Sie weniger Nachkommastellen oder kleinere Zahlen.",
+    specialUnsure: "Unsicher",
+    specialCoffee: "Pause nötig",
+    specialInfinite: "Zu groß zum Schätzen",
+  },
   table: {
     seats: "Personen am Tisch",
     observers: "Beobachter",
@@ -232,6 +292,9 @@ export const de: Catalog = {
     consensusOn: "Konsens bei {{card}}.",
     agreementShort: "Einigkeit {{agreement, number(style: percent; maximumFractionDigits: 0)}}",
     tie: "Gleichstand",
+    moreCards: "+{{count, number}}",
+    cardsTie_one: "{{count, number}} Karte gleichauf",
+    cardsTie_other: "{{count, number}} Karten gleichauf",
     suggestedAgreement:
       "Vorschlag: {{card}}. Einigkeit: {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
     mostVotedAgreement:
@@ -297,8 +360,14 @@ export const de: Catalog = {
     poVotesOff: "Der Product Owner stimmt nicht mehr mit ab.",
     observersCountOn: "Beobachter belegen jetzt einen der {{max, number}} Plätze.",
     observersCountOff: "Beobachter belegen keinen der {{max, number}} Plätze mehr.",
-    deckChanged: "Der Product Owner hat das Kartendeck geändert: {{deck}}.",
-    specialsChanged: "Der Product Owner hat die Sonderkarten geändert.",
+    deckChanged: "Der Product Owner wechselt ab der nächsten Runde zu {{deck}}.",
+    specialsChanged: "Der Product Owner ändert die Sonderkarten ab der nächsten Runde.",
+    deckRestarted: "Der Product Owner hat Runde {{round, number}} mit {{deck}} neu gestartet.",
+    specialsRestarted:
+      "Der Product Owner hat Runde {{round, number}} mit neuen Sonderkarten neu gestartet.",
+    voteAgain: "Stimmen Sie erneut ab.",
+    deckNow: "Der Product Owner hat zu {{deck}} gewechselt.",
+    specialsNow: "Der Product Owner hat die Sonderkarten geändert.",
     timerChanged: "Der Product Owner hat das Zeitlimit geändert.",
     revealAnyone: "Alle, die abstimmen, können die Karten jetzt aufdecken.",
     revealOwner: "Nur der Product Owner kann die Karten jetzt aufdecken.",

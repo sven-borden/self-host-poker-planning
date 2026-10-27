@@ -13,6 +13,10 @@ constants and `computeResults`.
 - Any breaking change to a message bumps `PROTOCOL_VERSION`. Adding a cause type or an
   ack error code is breaking too: the schemas are closed unions, so one unknown member
   fails the whole parse on an older client.
+- Not breaking: an optional field on an outbound view, and an optional field on an
+  inbound command that the server checks only when present. `castVote` and
+  `retractVote`'s `restart` (#26) is one: a tab from before it sends none and keeps its
+  room through the deploy; the web app always sends it (`hand-state.test.ts`).
 - Inbound objects (commands, their payloads, `enter`) are strict: an unknown field
   answers `bad_payload`. Outbound schemas are lenient.
 - `"sideEffects": false` (here and in `@pp/domain`): the web bundles only what it

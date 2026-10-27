@@ -18,6 +18,17 @@ export function deckName(t: TFunction, deck: RoomSettingsView["deck"]): string {
   return deck.kind === "preset" ? t(DECK_NAMES[deck.id] as "decks.fib") : t("decks.custom");
 }
 
+/**
+ * The deck named inside a sentence: a preset's name in the language's quotes ("Restart
+ * with “T-shirt sizes”"), a custom deck as a phrase ("with a custom deck"), so a
+ * name never reads as a word of the sentence.
+ */
+export function deckInSentence(t: TFunction, deck: RoomSettingsView["deck"]): string {
+  return deck.kind === "preset"
+    ? t("decks.named", { deck: deckName(t, deck) })
+    : t("decks.customInSentence");
+}
+
 /** The settings, in the order the panel lists them and the live region says them. */
 export const SETTING_KEYS = [
   "deck",

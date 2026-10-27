@@ -76,6 +76,17 @@ describe("wire commands", () => {
     });
   });
 
+  it("take a vote and a retract without their restart, as a tab from before #26 sends them", () => {
+    expect(
+      toDomainCommand({ id: "1", type: "castVote", payload: { card: "5", round: 1 } }),
+    ).toStrictEqual({ ok: true, id: "1", command: { type: "castVote", card: "5", round: 1 } });
+    expect(toDomainCommand({ id: "1", type: "retractVote", payload: { round: 1 } })).toStrictEqual({
+      ok: true,
+      id: "1",
+      command: { type: "retractVote", round: 1 },
+    });
+  });
+
   it("accept ids of letters, digits, dash and underscore, up to the cap", () => {
     const id = `aZ09_-${"x".repeat(WIRE_LIMITS.commandId - 6)}`;
     expect(toDomainCommand({ id, type: "reveal" })).toMatchObject({ ok: true, id });
@@ -165,6 +176,11 @@ describe("wire commands", () => {
     ["a round 0", { id: "1", type: "retractVote", payload: { round: 0 } }],
     ["a fractional round", { id: "1", type: "castVote", payload: { card: "5", round: 1.5 } }],
     ["a round as text", { id: "1", type: "retractVote", payload: { round: "1" } }],
+    [
+      "a negative restart",
+      { id: "1", type: "castVote", payload: { card: "5", round: 1, restart: -1 } },
+    ],
+    ["a fractional restart", { id: "1", type: "retractVote", payload: { round: 1, restart: 0.5 } }],
     [
       "a name past the wire cap",
       {

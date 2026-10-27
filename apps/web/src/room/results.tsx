@@ -60,6 +60,13 @@ function useResultsMotion(root: { current: HTMLElement | null }, motion: RevealM
   }, [root]);
 }
 
+/**
+ * The most tied cards the centre and the panel show (#26 review): a custom deck can tie
+ * 16 ways, which would cover the side cards on a phone. The rest is "+12" in the centre,
+ * "16 cards tie" in the panel; the distribution and the screen reader's sentence say all.
+ */
+export const MAX_TIED_SHOWN = 4;
+
 /** On a phone, a centre that also holds the final estimate (#32) shrinks its cards to chips. */
 const CHIP =
   "in-data-[variant=phone]:h-[18px] in-data-[variant=phone]:w-auto in-data-[variant=phone]:min-w-[15px] in-data-[variant=phone]:rounded-[3px] in-data-[variant=phone]:px-[3px] in-data-[variant=phone]:text-[11px]";
@@ -169,6 +176,8 @@ function Centre({
   const sentence = summarySentence(t, summary);
   const cards =
     summary.kind === "tie" ? summary.cards : summary.kind === "none" ? [] : [summary.card];
+  const shown = cards.slice(0, MAX_TIED_SHOWN);
+  const more = cards.length - shown.length;
   return (
     <p
       ref={root}
@@ -193,10 +202,19 @@ function Centre({
       ) : (
         <>
           <span className="sr-only">{sentence}</span>
-          <span data-show className="flex flex-wrap justify-center gap-1">
-            {cards.map((card) => (
+          <span data-show className="flex flex-wrap items-center justify-center gap-1">
+            {shown.map((card) => (
               <MiniCard key={card} value={card} className={cn("shadow-md", compact && CHIP)} />
             ))}
+            {more > 0 ? (
+              <span
+                aria-hidden="true"
+                data-tie-more
+                className="text-[12px]/tight font-semibold tabular-nums in-data-[variant=phone]:text-[10px]/tight"
+              >
+                {t("results.moreCards", { count: more })}
+              </span>
+            ) : null}
           </span>
           {summary.kind === "consensus" ? (
             <span
@@ -224,7 +242,12 @@ function Centre({
 }
 
 /** A statistic as the panel shows it, and as a screen reader says it when that differs. */
-type Stat = { key: string; caption: string; value: { shown: string; spoken?: string } | null };
+type Stat = {
+  key: string;
+  caption: string;
+  /** `parts`: cards shown each whole on one line ("M · L"), wrapping only between them. */
+  value: { shown: string; spoken?: string; parts?: readonly string[] } | null;
+};
 
 /**
  * The results panel under the table (docs/03-design-brief.md, "Results"): a labelled
@@ -265,7 +288,13 @@ function Panel({ model, motion }: { model: ResultsModel; motion: RevealMotion })
                 ? null
                 : model.mostVoted.length === 1
                   ? { shown: model.mostVoted.join("") }
-                  : { shown: model.mostVoted.join(" · "), spoken: format.list(model.mostVoted) },
+                  : model.mostVoted.length > MAX_TIED_SHOWN
+                    ? { shown: t("results.cardsTie", { count: model.mostVoted.length }) }
+                    : {
+                        shown: model.mostVoted.join(" · "),
+                        spoken: format.list(model.mostVoted),
+                        parts: model.mostVoted,
+                      },
           },
         ]),
     {
@@ -319,16 +348,37 @@ function Panel({ model, motion }: { model: ResultsModel; motion: RevealMotion })
             key={stat.key}
             data-stat={stat.key}
             className={cn(
-              "flex flex-col-reverse items-center gap-1 text-center",
+              "flex min-w-0 flex-col-reverse items-center gap-1 text-center",
               stats.length === 3 && stat.key === "spread" && "col-span-2 sm:col-span-1",
             )}
           >
             <dt className={CAPTION}>{stat.caption}</dt>
-            <dd className="m-0 font-display text-[28px]/none font-extrabold whitespace-nowrap tabular-nums [font-stretch:110%] phone:text-[24px]/none">
+            {/* A tie of up to four cards wraps between them, never inside one; more say
+                how many tie (#26: up to 20 in a custom deck). */}
+            <dd
+              className={cn(
+                "m-0 font-display text-[28px]/none font-extrabold tabular-nums [font-stretch:110%] phone:text-[24px]/none",
+                stat.key === "mostVoted" ? "max-w-full text-balance" : "whitespace-nowrap",
+              )}
+            >
               {stat.value === null ? (
                 <>
                   <span aria-hidden="true">—</span>
                   <span className="sr-only">{t("results.noValue")}</span>
+                </>
+              ) : stat.value.parts !== undefined ? (
+                <>
+                  <span aria-hidden="true" data-tie-parts>
+                    {stat.value.parts.map((card, i, all) => (
+                      <span key={card}>
+                        <span className="whitespace-nowrap">
+                          {i < all.length - 1 ? `${card}\u{a0}·` : card}
+                        </span>
+                        {i < all.length - 1 ? " " : null}
+                      </span>
+                    ))}
+                  </span>
+                  <span className="sr-only">{stat.value.spoken}</span>
                 </>
               ) : stat.value.spoken === undefined ? (
                 stat.value.shown

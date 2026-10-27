@@ -201,6 +201,7 @@ function roundView(round: Round, order: readonly UserId[], viewer: UserId): Roun
     number: round.number,
     subject: subjectView(round.subject),
     startedAt: round.startedAt,
+    ...(round.restarts ? { restarts: round.restarts } : {}),
     ...(round.deadlineAt !== undefined ? { deadlineAt: round.deadlineAt } : {}),
     deck: deckView(round.deck),
     specials: [...round.specials],

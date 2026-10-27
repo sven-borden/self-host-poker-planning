@@ -4,6 +4,7 @@
  * checked at runtime too (the protocol's zod schemas are the first line, this is the last).
  */
 import type { ErrorCode } from "./commands.ts";
+import { validateCustomDeck } from "./custom-deck.ts";
 import {
   cardLength,
   type DeckSpec,
@@ -12,7 +13,6 @@ import {
   SPECIAL_CARDS,
   type SpecialCard,
   UNITS_PER_CHARACTER,
-  validateCustomDeck,
 } from "./decks.ts";
 import {
   MAX_NAME_LENGTH,

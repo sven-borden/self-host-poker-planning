@@ -88,6 +88,8 @@ const secondsArb = fc.integer({ min: 5, max: 60 });
  * votes land; the others meet `round_changed`, or match a later round.
  */
 const roundArb = fc.constantFrom(1, 1, 1, 2, 3);
+/** Mostly the first start of a round; sometimes a press made after a deck change (#26). */
+const restartArb = fc.constantFrom(0, 0, 0, 1);
 
 /** Every command a client may send, weighted towards the ones that move a round. */
 export const clientCommandArb: fc.Arbitrary<ClientCommand> = fc.oneof(
@@ -109,11 +111,16 @@ export const clientCommandArb: fc.Arbitrary<ClientCommand> = fc.oneof(
       type: fc.constant("castVote" as const),
       card: fc.constantFrom(...CARD_POOL),
       round: roundArb,
+      restart: restartArb,
     }),
   },
   {
     weight: 2,
-    arbitrary: fc.record({ type: fc.constant("retractVote" as const), round: roundArb }),
+    arbitrary: fc.record({
+      type: fc.constant("retractVote" as const),
+      round: roundArb,
+      restart: restartArb,
+    }),
   },
   { weight: 3, arbitrary: fc.constant({ type: "reveal" as const }) },
   {

@@ -222,6 +222,7 @@ export function CardFlight({
       style={{ left: hand.left, top: hand.top, width: hand.width, height: hand.height }}
     >
       <div
+        data-card-box
         className={cn(
           CARD_FACE,
           "grid size-full place-items-center rounded-[7px] text-[20px]/none shadow-md",

@@ -277,6 +277,7 @@ function Picker({ choice, name, selected, describedBy, onPick }: PickerProps) {
               />
               <span
                 aria-hidden="true"
+                data-card-box
                 className={cn(
                   CARD_FACE,
                   "relative grid h-11 w-8 place-items-center rounded-[6px] text-[15px]/none shadow-sm",

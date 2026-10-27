@@ -20,6 +20,8 @@ export interface Confirmed {
   round: RoundKey;
   /** The voting round's number, or null outside Voting. */
   number: number | null;
+  /** How many times a deck change restarted it (#26), or null outside Voting. */
+  restart: number | null;
 }
 
 export interface Wish {
@@ -31,6 +33,8 @@ export interface Wish {
    * if the PO started the next round while it was on the wire.
    */
   number: number;
+  /** The round's restarts, sent too: a deck change keeps the number (#26). */
+  restart: number;
 }
 
 export interface HandState {
@@ -43,8 +47,8 @@ export interface HandState {
 }
 
 export type VoteCommand =
-  | { type: "castVote"; payload: { card: string; round: number } }
-  | { type: "retractVote"; payload: { round: number } };
+  | { type: "castVote"; payload: { card: string; round: number; restart: number } }
+  | { type: "retractVote"; payload: { round: number; restart: number } };
 
 export const SETTLED: HandState = { wish: null, sending: false, sent: null };
 
@@ -57,8 +61,13 @@ export function roundKey(room: RoomView): RoundKey {
 /** The viewer's confirmed card in the current voting round, from the snapshot. */
 export function confirmedOf(room: RoomView | undefined): Confirmed {
   const round = room ? roundKey(room) : null;
-  if (round === null) return { card: null, round: null, number: null };
-  return { card: room?.round?.yourVote ?? null, round, number: room?.round?.number ?? null };
+  if (round === null) return { card: null, round: null, number: null, restart: null };
+  return {
+    card: room?.round?.yourVote ?? null,
+    round,
+    number: room?.round?.number ?? null,
+    restart: room?.round?.restarts ?? 0,
+  };
 }
 
 /** The card the hand shows as the viewer's vote: the wish for this round, else the server's. */
@@ -73,9 +82,10 @@ export function shownCard(state: HandState, confirmed: Confirmed): string | null
  * Outside Voting nothing changes (the hand is disabled there anyway).
  */
 export function press(state: HandState, card: string, confirmed: Confirmed): HandState {
-  if (confirmed.round === null || confirmed.number === null) return state;
+  const { round, number, restart } = confirmed;
+  if (round === null || number === null || restart === null) return state;
   const wanted = shownCard(state, confirmed) === card ? null : card;
-  return { ...state, wish: { card: wanted, round: confirmed.round, number: confirmed.number } };
+  return { ...state, wish: { card: wanted, round, number, restart } };
 }
 
 const sameWish = (a: Wish | null, b: Wish | null) =>
@@ -102,8 +112,11 @@ export function nextStep(
   }
   const command: VoteCommand =
     wish.card === null
-      ? { type: "retractVote", payload: { round: wish.number } }
-      : { type: "castVote", payload: { card: wish.card, round: wish.number } };
+      ? { type: "retractVote", payload: { round: wish.number, restart: wish.restart } }
+      : {
+          type: "castVote",
+          payload: { card: wish.card, round: wish.number, restart: wish.restart },
+        };
   return { state: { ...state, sending: true, sent: wish }, command };
 }
 
