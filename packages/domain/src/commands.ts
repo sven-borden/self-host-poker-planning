@@ -1,7 +1,8 @@
 /**
  * What `apply` takes and returns: commands, causes and error codes (architecture, section 4).
  */
-import type { Card, CustomDeckErrorCode } from "./decks.ts";
+import type { CustomDeckErrorCode } from "./custom-deck.ts";
+import type { Card } from "./decks.ts";
 import type { Role, RoomState, Round, SettingsPatch, Subject, UserId } from "./room.ts";
 
 /**
