@@ -41,28 +41,80 @@ export function initials(name: string): string {
   return ((letters(first)[0] ?? "") + (letters(last)[0] ?? "")).toLocaleUpperCase();
 }
 
+/** What an avatar shows: its initials and its colour (1 to 8). */
+export interface AvatarLook {
+  initials: string;
+  colour: number;
+}
+
+/**
+ * Looks that tell everyone at a table apart (#17): no two people share both initials and
+ * colour, and nobody shares a colour while 8 or fewer people are there. People are taken
+ * in join order, so a newcomer never changes how the others look: each one keeps their
+ * own colour (`avatarColour`) when it is free, else takes the least used colour after it
+ * that nobody with the same initials has. Past 8 people with the same initials, a number
+ * replaces the second letter ("A2").
+ */
+export function avatarLooks(
+  people: readonly { id: string; name: string }[],
+): Map<string, AvatarLook> {
+  const looks = new Map<string, AvatarLook>();
+  const taken = new Set<string>();
+  const uses = new Array<number>(AVATAR_BACKGROUNDS.length).fill(0);
+  const key = (look: AvatarLook) => `${look.colour}:${look.initials}`;
+  for (const { id, name } of people) {
+    if (looks.has(id)) {
+      continue;
+    }
+    const own = avatarColour(id);
+    const base = initials(name);
+    let look: AvatarLook | undefined;
+    for (let n = 1; !look; n++) {
+      const text = n === 1 ? base : `${Array.from(base)[0] ?? "?"}${n}`;
+      let best: AvatarLook | undefined;
+      for (let step = 0; step < AVATAR_BACKGROUNDS.length; step++) {
+        const colour = ((own - 1 + step) % AVATAR_BACKGROUNDS.length) + 1;
+        const candidate = { initials: text, colour };
+        if (taken.has(key(candidate))) {
+          continue;
+        }
+        if (!best || (uses[colour - 1] ?? 0) < (uses[best.colour - 1] ?? 0)) {
+          best = candidate;
+        }
+      }
+      look = best;
+    }
+    looks.set(id, look);
+    taken.add(key(look));
+    uses[look.colour - 1] = (uses[look.colour - 1] ?? 0) + 1;
+  }
+  return looks;
+}
+
 interface AvatarProps {
   id: string;
   name: string;
   /** Diameter in whole pixels. */
   size: number;
+  /** Set by the table, so that nobody looks like somebody else (`avatarLooks`). */
+  look?: AvatarLook | undefined;
   className?: string;
 }
 
 /** Decorative: the seat or list item around it carries the name for screen readers. */
-export function Avatar({ id, name, size, className }: AvatarProps) {
+export function Avatar({ id, name, size, look, className }: AvatarProps) {
   return (
     <span
       aria-hidden="true"
       data-avatar
       className={cn(
         "grid shrink-0 place-items-center rounded-full font-display leading-none font-bold text-on-avatar ring-2 ring-surface select-none",
-        AVATAR_BACKGROUNDS[avatarColour(id) - 1],
+        AVATAR_BACKGROUNDS[(look?.colour ?? avatarColour(id)) - 1],
         className,
       )}
       style={{ width: size, height: size, fontSize: Math.round(size * 0.36) }}
     >
-      {initials(name)}
+      {look?.initials ?? initials(name)}
     </span>
   );
 }

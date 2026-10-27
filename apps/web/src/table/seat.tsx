@@ -1,9 +1,10 @@
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, CrownIcon, MoonIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover.tsx";
 import { useT } from "../i18n/hooks.ts";
 import type { TFunction } from "../i18n/i18n.ts";
-import { Avatar } from "./avatar.tsx";
+import { cn } from "../lib/utils.ts";
+import { Avatar, type AvatarLook } from "./avatar.tsx";
 import { cardLabel, isSpecialCard } from "./cards.tsx";
 import type { SeatGeometry, SeatPlace } from "./layout.ts";
 
@@ -15,14 +16,51 @@ export type SeatStatus =
   /** After reveal: the card played, or null when the person did not vote. */
   | { kind: "revealed"; card: string | null };
 
-export interface TablePerson {
+/** Who someone is at the table, beside their state in the round (#17). */
+export interface PersonFlags {
+  /** Gone for longer than the grace period: dimmed, with a moon badge. */
+  away?: boolean | undefined;
+  /** The product owner: a crown badge on the avatar. */
+  owner?: boolean | undefined;
+  /** The viewer: a ring around the avatar. */
+  you?: boolean | undefined;
+  /** Initials and colour, unique at the table (`avatarLooks`). */
+  look?: AvatarLook | undefined;
+}
+
+export interface TablePerson extends PersonFlags {
   id: string;
   name: string;
   status: SeatStatus;
 }
 
-/** "Ana, voted", "Ben, thinking", "Cleo, card 5", or just the name in the lobby. */
-export function seatLabel(t: TFunction, { name, status }: TablePerson): string {
+/** What sets a person apart, in words for screen readers: ["you", "product owner", "away"]. */
+export function flagWords(t: TFunction, person: PersonFlags): string[] {
+  const words: string[] = [];
+  if (person.you) {
+    words.push(t("table.you"));
+  }
+  if (person.owner) {
+    words.push(t("table.owner"));
+  }
+  if (person.away) {
+    words.push(t("table.away"));
+  }
+  return words;
+}
+
+/** The name with what sets the person apart, for screen readers: "Ana, you, away". */
+export function nameWithFlags(t: TFunction, person: { name: string } & PersonFlags): string {
+  return [person.name, ...flagWords(t, person)].join(", ");
+}
+
+/**
+ * "Ana, voted", "Ben, product owner, away, thinking", "Cleo, card 5", or the name and its
+ * flags alone in the lobby.
+ */
+export function seatLabel(t: TFunction, person: TablePerson): string {
+  const name = nameWithFlags(t, person);
+  const { status } = person;
   switch (status.kind) {
     case "present":
       return name;
@@ -53,16 +91,83 @@ function statusText(t: TFunction, status: SeatStatus): string | null {
   }
 }
 
-/** The "voted" badge: a check in a green disc, so the state never rests on colour alone. */
-function VotedBadge({ size }: { size: number }) {
+interface BadgesProps {
+  voted?: boolean | undefined;
+  owner?: boolean | undefined;
+  away?: boolean | undefined;
+  /** The disc's diameter in pixels. */
+  size: number;
+}
+
+/**
+ * The avatar's badges, each a shape in a disc so that no state rests on colour alone: a
+ * check (voted) bottom right, a crown (product owner) top left, a moon (away) top right.
+ * Each overhangs the avatar by 4 px, inside the seat's halo (`AVATAR_HALO`). The parent
+ * must be positioned.
+ */
+export function AvatarBadges({ voted, owner, away, size }: BadgesProps) {
+  const icon = { width: size - 6, height: size - 6 };
+  const disc = "absolute grid place-items-center rounded-full ring-2 ring-surface";
+  const box = { width: size, height: size };
   return (
-    <span
-      aria-hidden="true"
-      data-badge="voted"
-      className="absolute -right-1 -bottom-1 grid place-items-center rounded-full bg-good text-surface ring-2 ring-surface"
-      style={{ width: size, height: size }}
-    >
-      <CheckIcon width={size - 6} height={size - 6} strokeWidth={3.5} />
+    <>
+      {owner ? (
+        <span
+          aria-hidden="true"
+          data-badge="owner"
+          className={cn(disc, "-top-1 -left-1 bg-brass-soft text-brass-ink")}
+          style={box}
+        >
+          <CrownIcon {...icon} strokeWidth={2.75} />
+        </span>
+      ) : null}
+      {away ? (
+        <span
+          aria-hidden="true"
+          data-badge="away"
+          className={cn(disc, "-top-1 -right-1 bg-surface-2 text-ink-2")}
+          style={box}
+        >
+          <MoonIcon {...icon} strokeWidth={2.75} />
+        </span>
+      ) : null}
+      {voted ? (
+        <span
+          aria-hidden="true"
+          data-badge="voted"
+          className={cn(disc, "-right-1 -bottom-1 bg-good text-surface")}
+          style={box}
+        >
+          <CheckIcon {...icon} strokeWidth={3.5} />
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The avatar with its badges. Away, it fades and loses its colour (the moon badge and the
+ * label say so too); the viewer's gets a spruce ring outside its own, 4 px out at most.
+ */
+function SeatAvatar({ person, size, badge }: { person: TablePerson; size: number; badge: number }) {
+  return (
+    <span className="relative block">
+      <Avatar
+        id={person.id}
+        name={person.name}
+        size={size}
+        look={person.look}
+        className={cn(
+          person.away && "opacity-45 grayscale",
+          person.you && "outline-2 outline-offset-2 outline-spruce",
+        )}
+      />
+      <AvatarBadges
+        voted={person.status.kind === "voted"}
+        owner={person.owner}
+        away={person.away}
+        size={badge}
+      />
     </span>
   );
 }
@@ -70,7 +175,13 @@ function VotedBadge({ size }: { size: number }) {
 /** The name and state in a popover, for seats that cannot show the whole name. */
 function SeatPopover({ person, side }: { person: TablePerson; side: SeatPlace["label"] }) {
   const t = useT();
-  const state = statusText(t, person.status);
+  const state = [
+    person.owner ? t("table.ownerTag") : null,
+    person.away ? t("table.awayTag") : null,
+    statusText(t, person.status),
+  ]
+    .filter((part) => part !== null)
+    .join(" · ");
   return (
     <PopoverContent
       side={side === "above" ? "top" : "bottom"}
@@ -79,7 +190,7 @@ function SeatPopover({ person, side }: { person: TablePerson; side: SeatPlace["l
       <p className="m-0 font-semibold break-words">
         <bdi>{person.name}</bdi>
       </p>
-      {state ? <p className="m-0 text-xs text-ink-2">{state}</p> : null}
+      {state !== "" ? <p className="m-0 text-xs text-ink-2">{state}</p> : null}
     </PopoverContent>
   );
 }
@@ -127,16 +238,21 @@ interface SeatProps {
 export function Seat({ person, place, geometry }: SeatProps) {
   const t = useT();
   const label = seatLabel(t, person);
-  const voted = person.status.kind === "voted";
   const avatar = geometry.avatar;
   const badge = avatar >= 40 ? 17 : 15;
   const [nameRef, truncated] = useTruncated(person.name, geometry.label?.width ?? 0);
+  const marks = {
+    "data-away": person.away || undefined,
+    "data-you": person.you || undefined,
+    "data-owner": person.owner || undefined,
+  };
 
   if (!geometry.label) {
     const size = geometry.target;
     return (
       <li
         data-seat
+        {...marks}
         className="absolute"
         style={{
           left: `calc(${place.x}% - ${size / 2}px)`,
@@ -153,10 +269,7 @@ export function Seat({ person, place, geometry }: SeatProps) {
               data-seat-part="avatar"
               className="grid size-full cursor-pointer place-items-center rounded-full"
             >
-              <span className="relative">
-                <Avatar id={person.id} name={person.name} size={avatar} />
-                {voted ? <VotedBadge size={badge} /> : null}
-              </span>
+              <SeatAvatar person={person} size={avatar} badge={badge} />
             </button>
           </PopoverTrigger>
           <SeatPopover person={person} side={place.label} />
@@ -169,16 +282,18 @@ export function Seat({ person, place, geometry }: SeatProps) {
   const above = place.label === "above";
   const parts = (
     <>
-      <span data-seat-part="avatar" aria-hidden="true" className="relative">
-        <Avatar id={person.id} name={person.name} size={avatar} />
-        {voted ? <VotedBadge size={badge} /> : null}
+      <span data-seat-part="avatar" aria-hidden="true">
+        <SeatAvatar person={person} size={avatar} badge={badge} />
       </span>
       <span
         ref={nameRef}
         data-seat-part="name"
         aria-hidden="true"
         dir="auto"
-        className="block w-full truncate text-center font-semibold text-ink"
+        className={cn(
+          "block w-full truncate text-center font-semibold",
+          person.away ? "text-ink-2" : person.you ? "text-spruce" : "text-ink",
+        )}
         style={{
           height: labelHeight,
           lineHeight: `${labelHeight}px`,
@@ -194,6 +309,7 @@ export function Seat({ person, place, geometry }: SeatProps) {
   return (
     <li
       data-seat
+      {...marks}
       className="absolute"
       style={{
         width,

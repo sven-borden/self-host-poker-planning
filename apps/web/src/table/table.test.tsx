@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { changeLanguage, fixedT, loadLanguage } from "../i18n/i18n.ts";
-import { Avatar, avatarColour, initials } from "./avatar.tsx";
+import { Avatar, avatarColour, avatarLooks, initials } from "./avatar.tsx";
 import { cardLabel, HandCard, labelEms, labelScale, MiniCard, SlotCard } from "./cards.tsx";
 import type { TablePerson } from "./seat.tsx";
 import { TableStage } from "./table-stage.tsx";
@@ -239,5 +239,94 @@ describe("cards", () => {
     const { container } = render(<SlotCard face="up" value="8" size={{ width: 36, height: 50 }} />);
     const style = (container.firstElementChild as HTMLElement).style;
     expect([style.width, style.height]).toEqual(["36px", "50px"]);
+  });
+});
+
+describe("presence, the PO and the viewer (#17)", () => {
+  const people: TablePerson[] = [
+    { ...person("me", "Mia", { kind: "voted" }), you: true },
+    { ...person("po", "Pia", { kind: "thinking" }), owner: true },
+    { ...person("aw", "Ana", { kind: "voted" }), away: true },
+  ];
+
+  it("says who is the viewer, the PO and away, and badges each with a shape", () => {
+    render(<TableStage variant="desktop" people={people} />);
+    expect(screen.getByText("Mia, you, voted")).toBeDefined();
+    expect(screen.getByText("Pia, product owner, thinking")).toBeDefined();
+    expect(screen.getByText("Ana, away, voted")).toBeDefined();
+    const seat = (id: number) => document.querySelectorAll("[data-seat]")[id];
+    expect(seat(0)?.hasAttribute("data-you")).toBe(true);
+    expect(seat(1)?.querySelector('[data-badge="owner"] svg')).not.toBeNull();
+    expect(seat(2)?.hasAttribute("data-away")).toBe(true);
+    expect(seat(2)?.querySelector('[data-badge="away"] svg')).not.toBeNull();
+    expect(seat(2)?.querySelector('[data-badge="voted"] svg')).not.toBeNull();
+    expect(seat(2)?.querySelector("[data-avatar]")?.className).toContain("opacity-45");
+    expect(seat(0)?.querySelector("[data-avatar]")?.className).toContain("outline-spruce");
+    // An away voter's card stays face down: away says nothing about the vote.
+    expect(document.querySelectorAll('[data-face="down"]')).toHaveLength(2);
+  });
+
+  it("puts the PO and away in the popover of a seat that shows initials only", async () => {
+    const crowd = Array.from({ length: 11 }, (_, i) => ({
+      ...person(`p${i}`, `Person ${i}`, { kind: "thinking" as const }),
+      owner: i === 2,
+      away: i === 2,
+    }));
+    render(<TableStage people={crowd} variant="phone" />);
+    const seat = screen.getByRole("button", { name: "Person 2, product owner, away, thinking" });
+    await act(async () => {
+      fireEvent.click(seat);
+    });
+    expect((await screen.findByRole("dialog")).textContent).toBe(
+      "Person 2Product owner · Away · Thinking",
+    );
+  });
+
+  it("writes out away and the PO in the observers' row", () => {
+    render(
+      <TableStage
+        variant="desktop"
+        people={people}
+        observers={[
+          { id: "o1", name: "Olivia", away: true, owner: true },
+          { id: "o2", name: "Oskar", you: true },
+        ]}
+      />,
+    );
+    const row = screen.getByRole("list", { name: "Observers" });
+    const [olivia, oskar] = within(row).getAllByRole("listitem");
+    expect(olivia?.textContent).toBe("OlOlivia, product owner, awayProduct owner · Away");
+    expect(olivia?.hasAttribute("data-away")).toBe(true);
+    expect(oskar?.textContent).toBe("OsOskar, you");
+  });
+});
+
+describe("avatarLooks", () => {
+  it("keeps each person's own colour when free, and tells twins apart", () => {
+    const looks = avatarLooks([
+      { id: "user-1", name: "Ana Lima" },
+      { id: "user-2", name: "Ana Lima" },
+    ]);
+    expect(looks.get("user-1")).toEqual({ initials: "AL", colour: avatarColour("user-1") });
+    expect(looks.get("user-2")?.initials).toBe("AL");
+    expect(looks.get("user-2")?.colour).not.toBe(looks.get("user-1")?.colour);
+  });
+
+  it("gives 8 people 8 colours, and never two people the same look", () => {
+    const eight = Array.from({ length: 8 }, (_, i) => ({ id: `same-${i}`, name: `N${i}` }));
+    expect(new Set([...avatarLooks(eight).values()].map((l) => l.colour)).size).toBe(8);
+    const twins = Array.from({ length: 32 }, (_, i) => ({ id: `t${i}`, name: "Ana" }));
+    const looks = [...avatarLooks([...twins, twins[0] as { id: string; name: string }]).values()];
+    expect(looks).toHaveLength(32);
+    expect(new Set(looks.map((l) => `${l.colour}${l.initials}`)).size).toBe(32);
+    expect(looks.filter((l) => l.initials === "An")).toHaveLength(8);
+    expect(looks.at(-1)?.initials).toBe("A4");
+  });
+
+  it("is what the avatar draws when given", () => {
+    render(<Avatar id="x" name="Ana" size={40} look={{ initials: "A2", colour: 3 }} />);
+    const avatar = document.querySelector("[data-avatar]");
+    expect(avatar?.textContent).toBe("A2");
+    expect(avatar?.className).toContain("bg-av3");
   });
 });

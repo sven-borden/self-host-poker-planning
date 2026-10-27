@@ -1,54 +1,89 @@
-import { MAX_MEMBERS, MAX_PARTICIPANTS } from "@pp/domain";
 import type { ParticipantView, RoomView } from "@pp/protocol";
-import type { TablePerson } from "../table/seat.tsx";
+import { type AvatarLook, avatarLooks } from "../table/avatar.tsx";
+import type { PersonFlags, SeatStatus, TablePerson } from "../table/seat.tsx";
 import type { Observer } from "../table/table-stage.tsx";
 
-// From the server's snapshot to the table's props (#16). Pure: the room page renders what
-// these return and decides nothing. #17 adds presence, the voted badge, the PO badge and
-// the viewer highlight in `toTablePerson` and `toObserver`, which see the whole room.
+// From the server's snapshot to the table's props (#16, #17). Pure: the room page renders
+// what these return and decides nothing. Before reveal the snapshot says only who voted
+// (`round.voted`), never what: that is all a seat can show.
 
 export interface TableData {
   /** Voters in join order, the viewer first (seated at the bottom) when they vote. */
   people: TablePerson[];
   /** Observers in join order, for the row under the table. */
   observers: Observer[];
+  /** Initials and colours, unique among everyone in the room (`avatarLooks`). */
+  looks: Map<string, AvatarLook>;
 }
 
-/** One voter as a seat. Only `present` for now; #17 adds away and voted. */
-export function toTablePerson(participant: ParticipantView, _room: RoomView): TablePerson {
-  return { id: participant.id, name: participant.name, status: { kind: "present" } };
+/**
+ * Where a voter stands in the round: present in the lobby; thinking or voted while
+ * Voting; after a named reveal, their card (or none). After an anonymous reveal no card
+ * belongs to anyone, so a seat shows only that its person voted. #19 builds the flip on
+ * the `revealed` status.
+ */
+export function seatStatus(participant: ParticipantView, room: RoomView): SeatStatus {
+  const round = room.round;
+  if (round === null) return { kind: "present" };
+  const voted = round.voted.includes(participant.id);
+  if (round.phase === "voting" || round.anonymous) return { kind: voted ? "voted" : "thinking" };
+  const vote = round.votes.find((v) => v.who === participant.id);
+  return { kind: "revealed", card: vote?.card ?? null };
+}
+
+/** Away, product owner, the viewer, and the look the table gave them. */
+export function personFlags(
+  participant: ParticipantView,
+  room: RoomView,
+  looks?: Map<string, AvatarLook>,
+): PersonFlags {
+  return {
+    away: participant.away,
+    owner: participant.isOwner,
+    you: participant.id === room.you,
+    look: looks?.get(participant.id),
+  };
+}
+
+/** One voter as a seat. */
+export function toTablePerson(
+  participant: ParticipantView,
+  room: RoomView,
+  looks?: Map<string, AvatarLook>,
+): TablePerson {
+  return {
+    id: participant.id,
+    name: participant.name,
+    status: seatStatus(participant, room),
+    ...personFlags(participant, room, looks),
+  };
 }
 
 /** One observer in the row under the table. */
-export function toObserver(participant: ParticipantView, _room: RoomView): Observer {
-  return { id: participant.id, name: participant.name };
+export function toObserver(
+  participant: ParticipantView,
+  room: RoomView,
+  looks?: Map<string, AvatarLook>,
+): Observer {
+  return { id: participant.id, name: participant.name, ...personFlags(participant, room, looks) };
 }
 
 /**
  * The seats and the observers' row. The snapshot lists people in join order. The viewer
  * sits at the bottom and the others follow clockwise in join order, starting with whoever
- * joined after the viewer, so everyone sees the same order around the table.
+ * joined after the viewer, so everyone sees the same order around the table. Looks are
+ * given in join order too, so everyone sees the same initials and colours.
  */
 export function tableData(room: RoomView): TableData {
+  const looks = avatarLooks(room.participants);
   const voters = room.participants.filter((p) => p.role === "voter");
   const mine = voters.findIndex((p) => p.id === room.you);
   const seated = mine > 0 ? [...voters.slice(mine), ...voters.slice(0, mine)] : voters;
   return {
-    people: seated.map((p) => toTablePerson(p, room)),
+    people: seated.map((p) => toTablePerson(p, room, looks)),
     observers: room.participants
       .filter((p) => p.role === "observer")
-      .map((p) => toObserver(p, room)),
+      .map((p) => toObserver(p, room, looks)),
+    looks,
   };
-}
-
-/**
- * Whether nobody can join any more, as the snapshot shows it: 16 people who count
- * (observers count unless the room says otherwise), or the hard cap of members. When
- * observers do not count, an observer can still join a room whose 16 seats are taken.
- * The server stays the judge (`room_full`); this only spares a form that cannot succeed.
- */
-export function isRoomFull(room: RoomView): boolean {
-  const members = room.participants.length;
-  if (members >= MAX_MEMBERS) return true;
-  return room.settings.observersCount && members >= MAX_PARTICIPANTS;
 }

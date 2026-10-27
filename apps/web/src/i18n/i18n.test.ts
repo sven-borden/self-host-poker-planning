@@ -130,9 +130,17 @@ describe("catalogs", () => {
   });
 
   // Strings that read the same in that language on purpose: the product's name, a list
-  // built from placeholders, and words both languages share.
+  // built from placeholders, and words both languages share ("product owner" is the
+  // Scrum role's name in French, as the French copy already says).
   const SAME_AS_ENGLISH: Record<"fr" | "de", readonly string[]> = {
-    fr: ["app.name", "table.seatCardWord", "common.notifications", "decks.fib"],
+    fr: [
+      "app.name",
+      "table.seatCardWord",
+      "common.notifications",
+      "decks.fib",
+      "table.owner",
+      "table.ownerTag",
+    ],
     de: ["app.name", "table.seatCardWord", "theme.system", "dev.hand", "decks.fib"],
   };
 

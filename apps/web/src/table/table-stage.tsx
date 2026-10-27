@@ -4,11 +4,11 @@ import { cn } from "../lib/utils.ts";
 import { Avatar } from "./avatar.tsx";
 import { SlotCard, type SlotFace } from "./cards.tsx";
 import { layoutTable, type TableVariant, variantFor } from "./layout.ts";
-import { Seat, type SeatStatus, type TablePerson } from "./seat.tsx";
+import { flagWords, type PersonFlags, Seat, type SeatStatus, type TablePerson } from "./seat.tsx";
 import { useRoomWidth } from "./use-room-width.ts";
 import "./table.css";
 
-export interface Observer {
+export interface Observer extends PersonFlags {
   id: string;
   name: string;
 }
@@ -140,16 +140,60 @@ export function TableStage({
             className="m-0 flex list-none flex-wrap justify-center gap-x-4 gap-y-2 p-0"
           >
             {observers.map((observer) => (
-              <li key={observer.id} data-observer className="flex items-center gap-1.5">
-                <Avatar id={observer.id} name={observer.name} size={24} />
-                <span dir="auto" className="max-w-32 truncate text-[12px] text-ink-2">
-                  <bdi>{observer.name}</bdi>
-                </span>
-              </li>
+              <ObserverItem key={observer.id} observer={observer} />
             ))}
           </ul>
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * One observer in the row under the table. The row has room for words, so what sets the
+ * person apart is written out after the name ("Away", "Product owner"), and the avatar
+ * fades when they are away; the viewer's name is in spruce with a ring on the avatar.
+ */
+function ObserverItem({ observer }: { observer: Observer }) {
+  const t = useT();
+  const words = flagWords(t, observer);
+  const tags = [
+    observer.owner ? t("table.ownerTag") : null,
+    observer.away ? t("table.awayTag") : null,
+  ].filter((tag) => tag !== null);
+  return (
+    <li
+      data-observer
+      data-away={observer.away || undefined}
+      data-you={observer.you || undefined}
+      data-owner={observer.owner || undefined}
+      className="flex items-center gap-1.5"
+    >
+      <Avatar
+        id={observer.id}
+        name={observer.name}
+        size={24}
+        look={observer.look}
+        className={cn(
+          observer.away && "opacity-45 grayscale",
+          observer.you && "outline-2 outline-offset-2 outline-spruce",
+        )}
+      />
+      <span
+        dir="auto"
+        className={cn(
+          "max-w-32 truncate text-[12px]",
+          observer.you && !observer.away ? "font-semibold text-spruce" : "text-ink-2",
+        )}
+      >
+        <bdi>{observer.name}</bdi>
+      </span>
+      {words.length > 0 ? <span className="sr-only">, {words.join(", ")}</span> : null}
+      {tags.length > 0 ? (
+        <span aria-hidden="true" className="font-mono text-[10.5px] tracking-[0.06em] text-ink-2">
+          {tags.join(" · ")}
+        </span>
+      ) : null}
+    </li>
   );
 }

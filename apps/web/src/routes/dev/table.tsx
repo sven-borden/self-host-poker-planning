@@ -1,6 +1,7 @@
 import { cardValue } from "@pp/domain";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useT } from "../../i18n/hooks.ts";
+import { avatarLooks } from "../../table/avatar.tsx";
 import { cardLabel, HandCard, MiniCard } from "../../table/cards.tsx";
 import type { TablePerson } from "../../table/seat.tsx";
 import { TableStage } from "../../table/table-stage.tsx";
@@ -8,7 +9,9 @@ import { TableStage } from "../../table/table-stage.tsx";
 // A test bench for the table (#13), not linked from the UI and not indexed. The route is
 // split into its own chunk, so nothing here weighs on the room route's budget; the search
 // is parsed in the component for that reason (a validateSearch would ship in the entry).
-// /dev/table?n=1..16&state=lobby|voting|revealed&observers=0..4
+// /dev/table?n=1..16&state=lobby|voting|revealed&observers=0..4&away=0|1
+// The first person is the viewer and the second the PO (the first when alone). With
+// away=1, every fourth person (index 3, 7, 11, 15) and the second observer are away.
 
 const STATES = ["lobby", "voting", "revealed"] as const;
 type DevState = (typeof STATES)[number];
@@ -28,6 +31,7 @@ function useBenchSearch() {
     n: wholeNumber(search.n, 1, 16, 8),
     state: STATES.find((state) => state === search.state) ?? ("voting" as DevState),
     observers: wholeNumber(search.observers, 0, 4, 0),
+    away: wholeNumber(search.away, 0, 1, 0) === 1,
   };
 }
 
@@ -94,12 +98,19 @@ const DECK = [
 
 function DevTable() {
   const t = useT();
-  const { n, state, observers } = useBenchSearch();
+  const { n, state, observers, away } = useBenchSearch();
   // Every third person is still thinking (or did not vote, after reveal).
   const voted = (i: number) => i % 3 !== 2;
-  const people: TablePerson[] = NAMES.slice(0, n).map((name, i) => ({
-    id: `user-${i}`,
+  const seated = NAMES.slice(0, n).map((name, i) => ({ id: `user-${i}`, name }));
+  const watching = OBSERVERS.slice(0, observers).map((name, i) => ({ id: `observer-${i}`, name }));
+  const looks = avatarLooks([...seated, ...watching]);
+  const people: TablePerson[] = seated.map(({ id, name }, i) => ({
+    id,
     name,
+    you: i === 0,
+    owner: i === Math.min(1, n - 1),
+    away: away && i % 4 === 3,
+    look: looks.get(id),
     status:
       state === "lobby"
         ? { kind: "present" }
@@ -128,7 +139,11 @@ function DevTable() {
       <TableStage
         className="mt-6"
         people={people}
-        observers={OBSERVERS.slice(0, observers).map((name, i) => ({ id: `observer-${i}`, name }))}
+        observers={watching.map((observer, i) => ({
+          ...observer,
+          away: away && i === 1,
+          look: looks.get(observer.id),
+        }))}
       >
         {state === "voting" ? (
           <p className="m-0">{t("table.votedSoFar", { count: votes, total: n })}</p>
