@@ -147,26 +147,42 @@ export function recordFrames(page: Page): string[] {
   page.on("response", async (response) => {
     if (!new URL(response.url()).pathname.startsWith("/socket.io/")) return;
     if (response.request().method() !== "GET") return;
-    frames.push(await response.text().catch(() => ""));
+    // A body the browser lost is a frame nobody scanned: packetsIn fails on it.
+    frames.push(await response.text().catch(() => UNREADABLE));
   });
   return frames;
 }
 
+const UNREADABLE = "(a polling body the browser could not read)";
+
 /**
  * Every JSON packet in raw Socket.IO frames, as parsed: an event is an array
- * (`["snapshot", {…}]`), an ack the array of its arguments (`[{ ok: true, … }]`).
+ * (`["snapshot", {…}]`), an ack the array of its arguments (`[{ ok: true, … }]`), a
+ * handshake an object. Engine.io's control packets (close, ping, pong, upgrade, noop and
+ * their probes) carry nothing; any other frame that does not parse throws, so a scan of
+ * these packets never skips a frame it cannot read.
  */
 export function packetsIn(frames: readonly string[]): unknown[] {
   const found: unknown[] = [];
   for (const raw of frames) {
     // Long-polling packs several packets into one body, separated by U+001E.
     for (const frame of raw.split("\u{1e}")) {
-      const start = frame.search(/[[{]/);
-      if (start < 0) continue;
+      // Engine.io's type comes first: 0 open (JSON), or 4 a message, which holds a
+      // Socket.IO packet (its type, a namespace, an ack id, then JSON); 1, 2, 3, 5 and 6
+      // are control packets.
+      const json =
+        /^0(.*)$/su.exec(frame)?.[1] ?? /^4[0-6](?:\/[^,]*,)?\d*(.*)$/su.exec(frame)?.[1];
+      if (json === undefined) {
+        if (/^[12356](probe)?$/u.test(frame)) continue;
+        // Only the start of it: a frame may hold the room code further on.
+        throw new Error(`Not an engine.io packet: ${frame.slice(0, 16)}…`);
+      }
+      // A Socket.IO connect or disconnect without data.
+      if (json === "") continue;
       try {
-        found.push(JSON.parse(frame.slice(start)));
+        found.push(JSON.parse(json));
       } catch {
-        // Not a JSON packet (a handshake or a ping).
+        throw new Error(`A packet that is not JSON: ${frame.slice(0, 16)}…`);
       }
     }
   }
