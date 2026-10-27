@@ -189,6 +189,7 @@ export const en = {
     waiting: "Waiting for the PO",
     revealed: "Cards revealed",
     reveal: "Reveal cards",
+    revealKey: "Key R, while the focus is on the table or your cards",
   },
   results: {
     cards: "Cards played",

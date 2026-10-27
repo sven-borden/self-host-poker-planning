@@ -17,6 +17,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../stores/room-store.ts";
 import { RoomView } from "./room-view.tsx";
+import { isRevealKey } from "./round-centre.tsx";
 
 // The hand and the table's centre on the room page (#18), against a fake server that runs
 // the real domain: each command goes through `apply`, and the snapshot it produced is in
@@ -460,30 +461,70 @@ describe("the reveal (#19)", () => {
     expect(sent).toEqual([]);
   });
 
-  it("reveals on R alone, never while typing or with a modifier", async () => {
+  it("reveals on R alone, only on the table or the hand (WCAG 2.1.4)", async () => {
     await renderRoom(ownerRound());
-    const field = document.createElement("input");
-    const popover = document.createElement("div");
-    popover.setAttribute("role", "dialog");
-    popover.append(document.createElement("button"));
-    document.body.append(field, popover);
+    const table = document.querySelector("[data-room-table]") as HTMLElement;
+    /** Elements the page could hold inside the table, where R must not reveal. */
+    const inside = (html: string) => {
+      const holder = document.createElement("div");
+      holder.innerHTML = html;
+      table.append(holder);
+      return holder;
+    };
+    const field = inside("<input>").firstElementChild as Element;
+    const widgets = [
+      "<div role='menu'><button>x</button></div>",
+      "<div role='menubar'><button>x</button></div>",
+      "<ul role='listbox'><li tabindex='0'>x</li></ul>",
+      "<div role='dialog'><button>x</button></div>",
+      "<div role='alertdialog'><button>x</button></div>",
+    ].map((html) => inside(html).querySelector("button, li") as Element);
+    // Out of scope: the page itself and the header (its Language and Theme menus).
+    const header = document.createElement("button");
+    document.body.append(header);
     try {
-      press("r", {}, field);
-      press("r", {}, popover.firstElementChild as Element);
-      press("R", { ctrlKey: true });
-      press("r", { metaKey: true });
-      press("r", { altKey: true });
-      press("R", { shiftKey: true });
-      press("r", { repeat: true });
-      press("e");
-      expect(sent).toEqual([]);
       press("r");
+      press("r", {}, header);
+      press("r", {}, field);
+      for (const widget of widgets) press("r", {}, widget);
+      const button = revealButton() as HTMLElement;
+      press("R", { ctrlKey: true }, button);
+      press("r", { metaKey: true }, button);
+      press("r", { altKey: true }, button);
+      press("R", { shiftKey: true }, button);
+      press("r", { repeat: true }, button);
+      press("r", { isComposing: true }, button);
+      press("e", {}, button);
+      expect(sent).toEqual([]);
+
+      // In scope: the centre's button, a seat, a card of the hand.
+      const seen: boolean[] = [];
+      const record = (event: KeyboardEvent) => {
+        seen.push(isRevealKey(event));
+        event.preventDefault();
+      };
+      document.addEventListener("keydown", record, { capture: true });
+      press("r", {}, button);
+      press("R", {}, document.querySelector("[data-seat] button") as Element);
+      press("r", {}, card("5"));
+      document.removeEventListener("keydown", record, { capture: true });
+      expect(seen).toEqual([true, true, true]);
+      expect(sent).toEqual([]);
+
+      press("r", {}, card("5"));
       await waitFor(() => expect(server.round?.phase).toBe("revealed"));
       expect(sent).toEqual([{ type: "reveal" }]);
     } finally {
-      field.remove();
-      popover.remove();
+      header.remove();
     }
+  });
+
+  it("says on the button where R works", async () => {
+    await renderRoom(ownerRound());
+    expect(revealButton()?.getAttribute("aria-keyshortcuts")).toBe("R");
+    expect(revealButton()?.getAttribute("title")).toBe(
+      "Key R, while the focus is on the table or your cards",
+    );
   });
 
   it("shows a refused reveal, but not one the last vote made moot", async () => {

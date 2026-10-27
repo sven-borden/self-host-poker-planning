@@ -293,7 +293,7 @@ test("an anonymous round reveals itself when everyone voted, and ties no card to
   }
 });
 
-test("R reveals for the PO, never while typing, and reduced motion only cross-fades (AC 3)", async ({
+test("R reveals for the PO on the table or the hand only, and reduced motion only cross-fades (AC 3)", async ({
   page,
   baseURL,
 }) => {
@@ -323,15 +323,30 @@ test("R reveals for the PO, never while typing, and reduced motion only cross-fa
     await page.getByRole("button", { name: "Cancel" }).click();
     await expect(page.getByRole("button", { name: "Change your name" })).toBeFocused();
 
-    // With the focus nowhere in particular, R reveals; Ctrl+R would reload, so not that.
+    // R acts only where the focus is on the table or the hand (WCAG 2.1.4): not on the
+    // page itself, nor in the header's open Language menu.
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await expect
       .poll(() => page.evaluate(() => document.activeElement === document.body))
       .toBe(true);
+    await page.keyboard.press("r");
+    await page.getByRole("button", { name: /^Language: English$/ }).click();
+    await expect(page.getByRole("menu")).toBeVisible();
+    await page.keyboard.press("r");
+    await page.waitForTimeout(300);
+    await expect(status(page)).toHaveText("1/2 voted so far");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+
+    // On a card of the hand, R reveals; Ctrl+R would reload, so not that.
+    await expect(revealButton(page)).toHaveAttribute("title", /table or your cards/);
+    await handCard(page, "5").focus();
     await recordAnimations(page);
     await page.keyboard.press("r");
-    await expect(page.getByRole("button", { name: "Next round" })).toBeFocused();
     await expect(page.locator("[data-face='up']")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Next round" })).toBeVisible();
+    // The focus was on a card, which stays: only a focus the reveal took away moves.
+    await expect(handCard(page, "5")).toBeFocused();
     await expect(tableLive(page)).toContainText("Cards revealed.");
 
     // Reduced motion: the back fades off the face in 120 ms, nothing turns.

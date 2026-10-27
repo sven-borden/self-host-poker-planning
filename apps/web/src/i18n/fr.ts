@@ -139,6 +139,7 @@ export const fr: Catalog<"many"> = {
     waiting: "En attente du PO",
     revealed: "Cartes révélées",
     reveal: "Révéler les cartes",
+    revealKey: "Touche R, quand le focus est sur la table ou sur vos cartes",
   },
   results: {
     cards: "Cartes jouées",

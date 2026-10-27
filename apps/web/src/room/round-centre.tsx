@@ -94,32 +94,41 @@ const NOT_TYPING = new Set([
   "image",
 ]);
 
-/** Typing in a field, or inside a dialog or popover over the table. */
-function isTyping(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable || target.closest("[role='dialog'], [role='alertdialog']")) {
-    return true;
-  }
+/** Where R reveals: the table (its centre included) and the hand. */
+const REVEAL_SCOPE = "[data-room-table], [data-room-hand]";
+
+/** Where R belongs to something else: menus, listboxes, dialogs and popovers. */
+const OTHER_WIDGETS =
+  "[role='menu'], [role='menubar'], [role='listbox'], [role='dialog'], [role='alertdialog']";
+
+/** Typing in a field, where R is a letter. */
+function isField(target: HTMLElement): boolean {
+  if (target.isContentEditable) return true;
   if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
   return target instanceof HTMLInputElement && !NOT_TYPING.has(target.type);
 }
 
 /**
- * The key R alone reveals (docs/03-design-brief.md, "Accessibility"): no modifier, not a
- * held key's repeats, not inside a field where it is a letter or in a dialog or popover
- * (a seat's), not while an input method composes, and not when something else already
- * used the key.
+ * The key R alone reveals (docs/03-design-brief.md, "Accessibility"), but only while the
+ * focus is on the table, its centre or the hand: a single-key shortcut scoped to the
+ * part of the page it acts on (WCAG 2.1.4), so R on the header, the page or the PO's
+ * panel does nothing. Never with a modifier, a held key's repeats, inside a field where
+ * it is a letter, in a menu, listbox, dialog or popover (a seat's), while an input method
+ * composes, or when something else already used the key.
  */
 export function isRevealKey(event: KeyboardEvent): boolean {
   if (event.key !== "r" && event.key !== "R") return false;
   if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return false;
   if (event.repeat || event.isComposing || event.defaultPrevented) return false;
-  return !isTyping(event.target);
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || isField(target)) return false;
+  return target.closest(REVEAL_SCOPE) !== null && target.closest(OTHER_WIDGETS) === null;
 }
 
 /**
  * "Reveal cards", for the PO while Voting (#19): always allowed, whoever has voted. The
- * key R does the same while the button is on screen. A refusal shows under the table;
+ * key R does the same while the button is on screen and the focus is on the table or the
+ * hand (`isRevealKey`); the button's title says so. A refusal shows under the table;
  * `not_voting` says nothing, since the round revealed itself in the meantime (the last
  * vote) or a new one began. When the button leaves with the voting round while it has the
  * focus (pressed, or the last vote revealed the round), the focus goes to "Next round".
@@ -171,6 +180,7 @@ function RevealButton({ onFailure }: { onFailure: (code: string | null) => void 
       data-reveal
       variant="outline"
       aria-keyshortcuts="R"
+      title={t("round.revealKey")}
       aria-disabled={busy || undefined}
       onClick={() => void reveal()}
       className={CENTRE_BUTTON}

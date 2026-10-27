@@ -138,6 +138,7 @@ export const de: Catalog = {
     waiting: "Warten auf den PO",
     revealed: "Karten aufgedeckt",
     reveal: "Karten aufdecken",
+    revealKey: "Taste R, solange der Fokus auf dem Tisch oder Ihren Karten liegt",
   },
   results: {
     cards: "Gespielte Karten",
