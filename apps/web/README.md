@@ -115,12 +115,36 @@ server sends and never decides the outcome of a round.
   lands) and back on a retract, with the Web Animations API (see "Motion" below);
   `flightKeyframes` is pure. `round-centre.tsx` (`RoundCentre`) fills the table's centre:
   "5/8 voted so far" while Voting (`voteCount`: voters, less a PO who does not vote, less
-  people away who have not voted), in the lobby a minimal `StartRound` button for the PO
-  (`startRound` without a subject, "Start voting") and "Waiting for the PO" for the
-  others, and after a reveal the result (#20, below) with, for the PO, `StartRound`'s
-  "Next round" under it (the seam #21 replaces with its subject field). A refused
-  start or reveal shows under the table, and clears when the round or its phase changes.
-  Copy: `round.*` and `hand.*`.
+  people away who have not voted), in the lobby "Start voting" for the PO
+  (`StartRound`, `[data-start-round]`) and "Waiting for the PO" for the others, and
+  after a reveal the result (#20, below) with, for the PO, "Next round" under it. A
+  voting round offers the PO no start: the domain would abandon it (PO default, #21). A
+  refused start or reveal shows under the table, and clears when the round or its phase
+  changes. Copy: `round.*` and `hand.*`.
+  The next round (#21): `next-round.tsx` holds `useNextRound` (in `Seated`) and the PO's
+  field, `NextSubject` (`[data-next-subject]`, "Subject of the next round", above the
+  table in every phase, so the table never jumps and the PO can prepare the next ticket
+  while the team votes). The centre's button, and Enter in the field in the lobby or
+  after a reveal (not while Voting), call the same `start`: `draftSubject` (`subject.ts`,
+  pure) turns the draft into `{ kind: "none" }`, a title (the domain's `cleanSubject`),
+  or a link (text that starts with a scheme and `//`, or a `javascript:`, `data:`,
+  `vbscript:`, `file:` or `blob:` one), sent as `{ kind: "link", url }` without a key;
+  a refusal (`titleTooLong`, `linkTooLong`, `badLink`, or the domain's `bad_subject`)
+  shows under the field with `aria-invalid`, takes the focus there and cuts nothing.
+  The server's `bad_subject` shows there too; other refusals under the table. A started
+  round clears the draft and moves the focus to the hand, from the field too.
+  `round-subject.tsx` (`RoundSubject`, `[data-round-subject]`) shows everyone the round
+  above the table: "Round 3", "Round 3" and the title in `<bdi>`, or "Round 3" and the
+  link (`[data-subject-link]`, `target="_blank"`, `rel="noopener noreferrer"`, the full
+  URL in `title`, "(opens in a new tab)" for screen readers) as the server's key
+  (`[data-subject-key]`: "ABC-123", or "#12345" for an Azure DevOps id, `keyLabel`) or
+  as `shortUrl` (no scheme, `www.`, query or fragment, at most 40 characters). Only a
+  link `cleanSubject` accepts (`http(s)`, no credentials) becomes an `<a>` (`safeHref`);
+  anything else shows as text. The live region says "Voting started: ABC-123.", the
+  title, or "Voting started: Round 3." (`subjectName`; a link without a key reads as the
+  number); of two new rounds in one batch, the later. Copy: `round.number`,
+  `round.subject*`, `round.titleTooLong`, `round.linkTooLong`, `round.badLink`,
+  `round.opensInNewTab`, `live.roundStarted`.
   The reveal (#19): while Voting the PO's centre adds `RevealButton` ("Reveal cards",
   `[data-reveal]`), which sends `reveal` through the `commandSender()` taken at the
   press; the key R does the same (`isRevealKey`: only while the focus is inside
@@ -257,7 +281,10 @@ server sends and never decides the outcome of a round.
   keep Motion within budget, measured by #18's review: one lazy boundary for every
   Motion component (room route 167.6 kB), or a dynamic `import("motion/mini")` inside the
   effect (3.2 kB lazy). #20's results use `Element.animate` in their own lazy chunk
-  (`results` 2.7 kB; the room route grew 0.3 kB with the English copy);
+  (`results` 2.7 kB; the room route grew 0.3 kB with the English copy). #21's subject
+  field and display add 1.4 kB to the lazy `seated` chunk (11.2 kB); the room route
+  grew 0.7 kB (168.6 kB): the English copy, and the domain's `cleanSubject` with its key
+  detection, which share a module with the join form's `cleanName`;
   check the budget before reaching for `m` in a lazy chunk (ADR-008). An animated
   component wraps its `m.div` elements in `<MotionFeatures>`
   (`<MotionFeatures layout>` when it needs layout animations): the features chunk
