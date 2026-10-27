@@ -65,6 +65,38 @@ export const de: Catalog = {
     offline:
       "Die Verbindung zum Server wurde unterbrochen. Laden Sie die Seite neu, um es erneut zu versuchen.",
     backHome: "Zurück zur Startseite",
+    tableHeading: "Der Tisch",
+  },
+  join: {
+    title: "Nehmen Sie Platz",
+    lede: "Wählen Sie den Namen, den das Team am Tisch sieht.",
+    nameLabel: "Ihr Name",
+    nameHint: "Bis zu {{max, number}} Zeichen. Beim nächsten Mal ist er schon eingetragen.",
+    roleLabel: "Ihre Rolle",
+    voter: "Abstimmen",
+    voterHint: "Spielt in jeder Runde eine Karte",
+    observer: "Beobachten",
+    observerHint: "Schaut zu, ohne abzustimmen",
+    submit: "Raum betreten",
+    joining: "Raum wird betreten…",
+    seatsFull:
+      "Alle {{max, number}} Plätze am Tisch sind besetzt. Treten Sie als Beobachter bei oder warten Sie, bis jemand geht.",
+    fullTitle: "Dieser Raum ist voll",
+    fullBody:
+      "In diesem Raum sind bereits {{max, number}} Personen. Sobald jemand geht, können Sie auf dieser Seite beitreten.",
+  },
+  you: {
+    title: "Sie",
+    roleVoter: "Am Tisch, Sie stimmen ab",
+    roleObserver: "Sie beobachten, ohne abzustimmen",
+    rename: "Namen ändern",
+    save: "Speichern",
+    saving: "Wird gespeichert…",
+    cancel: "Abbrechen",
+    toObserver: "Zum Beobachten wechseln",
+    toVoter: "Zum Abstimmen wechseln",
+    leave: "Raum verlassen",
+    leaving: "Raum wird verlassen…",
   },
   table: {
     seats: "Personen am Tisch",

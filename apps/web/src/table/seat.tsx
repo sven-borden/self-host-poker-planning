@@ -76,7 +76,9 @@ function SeatPopover({ person, side }: { person: TablePerson; side: SeatPlace["l
       side={side === "above" ? "top" : "bottom"}
       className="w-auto max-w-60 px-3 py-2 text-sm"
     >
-      <p className="m-0 font-semibold break-words">{person.name}</p>
+      <p className="m-0 font-semibold break-words">
+        <bdi>{person.name}</bdi>
+      </p>
       {state ? <p className="m-0 text-xs text-ink-2">{state}</p> : null}
     </PopoverContent>
   );
@@ -182,7 +184,7 @@ export function Seat({ person, place, geometry }: SeatProps) {
           fontSize: labelHeight >= 16 ? 12 : 11,
         }}
       >
-        {person.name}
+        <bdi>{person.name}</bdi>
       </span>
     </>
   );
