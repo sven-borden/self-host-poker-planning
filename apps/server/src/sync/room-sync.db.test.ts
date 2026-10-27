@@ -1,9 +1,9 @@
 /**
  * The room sync against Postgres with real guests (Better Auth sessions, the real
  * handshake): join latency (AC 1), a burst past the message limit (AC 3), secrecy on the
- * raw WebSocket frames, idempotent ids, a revoked session, and the deadline timeout on one
- * and on two server instances sharing the database. The restart (AC 2) is
- * `restart.db.test.ts`.
+ * raw WebSocket frames, idempotent ids, a revoked session, one session flooding a room
+ * from many sockets, and the deadline timeout on one and on two server instances sharing
+ * the database. The restart (AC 2) is `restart.db.test.ts`.
  */
 import { performance } from "node:perf_hooks";
 import { apply, type Command, createRoom, type RoomState } from "@pp/domain";
@@ -80,6 +80,8 @@ function client(guest: Guest, instance = main()): TestClient {
   clients.push(c);
   return c;
 }
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function step(state: RoomState, actor: string, command: Command, now = Date.now()): RoomState {
   const result = apply(state, command, { actor, now });
@@ -168,8 +170,10 @@ describe("a burst past the message limit (AC 3)", () => {
     await b.waitFor((s) => s.version === highest);
     expect(b.latest()?.room.round?.yourVote).toBe(stored?.state.round?.votes[bob.id]?.card);
     // And the socket goes on working once the bucket refills.
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await sleep(300);
     expect((await b.cmd("retractVote")).ok).toBe(true);
+    // Bob's bucket is shared by all his sockets, later tests' too: let it fill up again.
+    await sleep(2000);
   });
 });
 
@@ -189,7 +193,9 @@ describe("secrecy on the real frames", () => {
       frames.filter((frame) => !frame.includes('"phase":"revealed"'));
     const observer = votingFrames(c.frames);
     const voter = votingFrames(b.frames);
-    expect(snapshotsIn(observer).length).toBeGreaterThanOrEqual(3);
+    // The enter's snapshot and Ada's vote; Bob's vote revealed the round.
+    expect(snapshotsIn(observer)).toHaveLength(2);
+    expect(snapshotsIn(voter)).toHaveLength(2);
     for (const frame of observer) {
       expect(frame).not.toContain('"13"');
       expect(frame).not.toContain('"5"');
@@ -230,7 +236,8 @@ describe("secrecy on the real frames", () => {
         ),
       );
     const seen = normalise(first);
-    expect(seen.length).toBeGreaterThanOrEqual(3);
+    // The enter's snapshot, Ada's vote, and Bob's vote that revealed the round.
+    expect(seen).toHaveLength(3);
     expect(normalise(swapped)).toStrictEqual(seen);
     const revealed = snapshotsIn(first.frames).at(-1);
     expect(revealed?.room.round).toMatchObject({ phase: "revealed", anonymous: true });
@@ -266,6 +273,86 @@ describe("commands", () => {
     expect(out.ok).toBe(true);
     expect(d.socket.connected).toBe(true);
     expect(await d.enter(code)).toEqual({ ok: false, code: "unauthenticated" });
+  });
+});
+
+describe("one session flooding a room from many sockets", () => {
+  it("gets at most 8 sockets and one bucket, and honest commands keep their latency", async () => {
+    const mallory = await signInGuest(main().base, ORIGIN);
+    const code = await insert(votingRoom());
+    const honest = client(bob);
+    await honest.enter(code);
+
+    /** Bob's votes, one after the other: each one's latency, and every ack. */
+    async function vote(times: number, label: string) {
+      const ms: number[] = [];
+      const acks = [];
+      for (let i = 0; i < times; i++) {
+        const sent = performance.now();
+        acks.push(await honest.cmd("castVote", { card: i % 2 ? "3" : "5" }, `${label}-${i}`));
+        ms.push(performance.now() - sent);
+        await sleep(50);
+      }
+      return { max: Math.max(...ms), acks };
+    }
+    const quiet = await vote(5, "quiet");
+
+    // Mallory tries 40 sockets: 8 connect, the rest are refused at the handshake.
+    const attempts = Array.from({ length: 40 }, () => client(mallory));
+    const outcomes = await Promise.all(
+      attempts.map(
+        (c) =>
+          new Promise<string>((resolve) => {
+            c.socket.once("connect", () => resolve("connected"));
+            c.socket.once("connect_error", (error) => resolve(error.message));
+          }),
+      ),
+    );
+    expect(outcomes.filter((o) => o === "connected")).toHaveLength(8);
+    expect(outcomes.filter((o) => o === "rate_limited")).toHaveLength(32);
+    const flood = attempts.filter((c) => c.socket.connected);
+    await Promise.all(flood.map((c) => c.enter(code)));
+
+    // Each socket sends timeUp (open to anyone) at what a socket's own bucket used to allow.
+    let stop = false;
+    let accepted = 0;
+    const pending: Promise<unknown>[] = [];
+    const send = (c: TestClient) =>
+      pending.push(
+        c.cmd("timeUp").then(
+          (ack) => {
+            if (ack.ok) accepted += 1;
+          },
+          () => {},
+        ),
+      );
+    const pumps = flood.map(async (c) => {
+      for (let i = 0; i < 20; i++) send(c);
+      while (!stop) {
+        await sleep(100);
+        send(c);
+      }
+    });
+    await sleep(500);
+    const loaded = await vote(10, "flood");
+    stop = true;
+    await Promise.all(pumps);
+    const drainStarted = performance.now();
+    await Promise.all(pending);
+    const drained = performance.now() - drainStarted;
+    console.info(
+      `flood: honest max ${quiet.max.toFixed(1)} ms quiet, ${loaded.max.toFixed(1)} ms flooded; ` +
+        `${accepted} of ${pending.length} timeUp accepted; backlog answered ${drained.toFixed(0)} ms after`,
+    );
+    expect([...quiet.acks, ...loaded.acks].every((ack) => ack.ok)).toBe(true);
+    expect(loaded.max).toBeLessThan(500);
+    expect(drained).toBeLessThan(1000);
+    // One bucket for all 8: a burst of 20 and 10 a second, not 8 times that.
+    expect(accepted).toBeLessThan(20 + 10 * 3);
+    // Bob's first vote is still remembered: sent again, it is answered, not applied again.
+    const before = (await main().database.store.loadRoom(code))?.version;
+    expect(await honest.cmd("castVote", { card: "5" }, "quiet-0")).toEqual(quiet.acks[0]);
+    expect((await main().database.store.loadRoom(code))?.version).toBe(before);
   });
 });
 
