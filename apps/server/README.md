@@ -1,16 +1,19 @@
 # @pp/server
 
 The Node server: Hono for `/api/*` and the built web app, Socket.IO for the room channel,
-both on one Node HTTP server; Better Auth (#10) and Drizzle (#7) plug in next. It owns
-every round and, in production, serves the built web app.
+both on one Node HTTP server, and Postgres through Drizzle; Better Auth (#10) plugs in
+next. It owns every round and, in production, serves the built web app. The database
+driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 
 ## Layout
 
-- `src/main.ts`: the only start path. Calls `run(process.env, processHooks(process))`.
-- `src/run.ts`: validates the config, runs the `setup` hook, listens, installs the
-  SIGTERM/SIGINT handler and exits. A bad config, a failed `setup` or a failed listen logs
+- `src/main.ts`: the only start path. Calls
+  `run(process.env, { ...processHooks(process), setup: setupDatabase })`.
+- `src/run.ts`: validates the config, installs the SIGTERM/SIGINT handler, runs the
+  `setup` hook, listens and exits. A signal during `setup` aborts it through the
+  `AbortSignal` it receives, logs one line and exits 0. A bad config, a failed `setup` or a failed listen logs
   one fatal line and exits 1; so does an uncaught exception or unhandled rejection
-  (`processHooks(process)` wires them). `setup(config, logger)` resolves with
+  (`processHooks(process)` wires them). `setup(config, logger, signal)` resolves with
   `{ deps, dispose? }`: `deps` reach `createServer` (#7 `checkDb`, #10 `registerApi` and
   `socketMiddleware`, W1 `handlers`); `dispose` (#7: end the pool) runs after the server
   has closed and before exit, inside the 10 s limit.
@@ -26,6 +29,26 @@ every round and, in production, serves the built web app.
 - `src/client-ip.ts`: `clientIp(request, config.trustProxy)`, the client address for the
   rate limits (architecture section 8). Takes a Node request (`c.env.incoming` in Hono,
   `socket.request` in Socket.IO). Never logged.
+- `src/database.ts`: `setupDatabase(config, logger, signal)`, the `setup` hook: waits
+  for Postgres (30 s in all), takes the migration lock with `pg_try_advisory_lock`
+  (60 s at most, a log line every 5 s), migrates on that one session
+  (`lock_timeout` 10 s), opens the `pg` pool and returns
+  `{ deps: { checkDb }, dispose, database }`. `database` holds `db` (Drizzle), `store`
+  and `runner` for the hooks that build on it. `openDatabase(url, logger, options)` and
+  `migrateDatabase(...)` are the same steps for tests.
+- `src/db/schema.ts`: the tables `room` and `round_history` (architecture section 6).
+- `src/db/rooms.ts`: `createRoomStore(db)`: `insertRoom`, `loadRoom`, `commitRoom` (the
+  compare-and-set, with the history row of a revealed round in the same transaction).
+- `src/db/runner.ts`: `createCommandRunner(store)`: `run(code, step)`, the per-room
+  queue, reload and retry on a lost commit (3 retries, then `conflict`), no write when
+  the step returns the loaded state itself.
+- `src/db/history.ts`: `historyRow(roomId, ended)`, pure: named rounds keep who, name
+  and card; anonymous rounds the cards alone, in display order.
+- `src/db/errors.ts`: `guard(step, call)` and `DatabaseError`: a database failure is
+  reduced to its code, so no driver message, SQL parameter or connection detail reaches
+  a log.
+- `drizzle/`: the generated SQL migrations and drizzle-kit's snapshots; `drizzle.config.ts`
+  points drizzle-kit at the schema.
 
 ## Rules
 
@@ -45,7 +68,8 @@ every round and, in production, serves the built web app.
   `pnpm dev` needs `BASE_URL=http://localhost:5173` (Vite forwards the Origin unchanged);
   the built server on its own needs `BASE_URL=http://localhost:3000`.
 - `pnpm dev` runs `tsx watch` with `--env-file-if-exists=../../.env` (copy the root
-  `.env.example`). Without a database the server still starts until #7.
+  `.env.example`). It needs a Postgres at `DATABASE_URL` (see below); without one it
+  retries for 30 s and exits 1.
 - `pnpm build` bundles `src/main.ts` with tsdown into `dist/main.mjs`. The `@pp/*`
   workspace packages are bundled in (they ship TypeScript source); npm dependencies stay
   external, so the Docker image installs production dependencies next to `dist/`.
@@ -68,3 +92,45 @@ every round and, in production, serves the built web app.
 - Tests use port 0 and close every server and socket they open (Vitest must exit on its
   own). `src/test-support.ts` collects log lines in memory.
 - Import siblings with their `.ts` extension.
+
+## Database
+
+- Change the schema in `src/db/schema.ts`, then generate a migration with a name that
+  says what it does: `pnpm --filter @pp/server db:generate --name add_room_brand`. Commit
+  the SQL and the `meta/` files together; never edit an applied migration. Run
+  `pnpm format` afterwards if Biome reflows the JSON. Migrations are additive and safe on
+  a live database mid-deploy: a new column is nullable or has a default; nothing is
+  renamed or dropped while an older instance may still run.
+- The server applies pending migrations at every start, before it listens. The folder is
+  `apps/server/drizzle`, found from `src/` (tsx) and from `dist/` (bundle); the Docker
+  image copies it next to `dist/` or sets `MIGRATIONS_DIR`.
+- `live` is the room's whole state and changes only through `apply` and
+  `runner.run(code, step)` (or `store.commitRoom` with the version it loaded). Never
+  write `live` directly, never put the password hash in it.
+- Only `guard`ed calls touch the database: log `DatabaseError`s, never a driver error.
+- Every `pg` client needs an `error` listener, including one checked out of the pool for
+  a transaction: `pg` emits `error` when its backend dies, and an unhandled one crashes
+  the process. The pool in `openDatabase` adds one to every client it opens; a client
+  made elsewhere (a test, a script) adds its own. `db/connection-loss.db.test.ts` checks
+  it.
+- drizzle orders migrations by the journal's `when`, not by hash: it applies an entry
+  only when its `when` is newer than the newest applied one. After merging main into a
+  branch that adds a migration, delete your migration (the SQL file, its snapshot and
+  its journal entry) and generate it again, so it comes last with the newest `when`.
+  Never merge `_journal.json` by hand. `db/journal.test.ts` fails on a `when` that does
+  not increase with `idx`, or on an entry without its SQL file.
+
+### Local Postgres for `pnpm test:db`
+
+The `*.db.test.ts` files run against a real Postgres 17 (CI has a service). Each test
+file creates its own database and drops it at the end, so the user needs `CREATEDB`, and
+`connection-loss.db.test.ts` creates a role, so `CREATEROLE` too (the image's superuser
+has both). With Docker (Git Bash needs `MSYS_NO_PATHCONV=1` in front):
+
+```sh
+docker run --rm -d --name pp-postgres -p 55432:5432   -e POSTGRES_USER=pp -e POSTGRES_PASSWORD=pp -e POSTGRES_DB=pp_test postgres:17
+DATABASE_URL=postgres://pp:pp@localhost:55432/pp_test pnpm test:db
+docker stop pp-postgres
+```
+
+The same container serves `pnpm dev` with that `DATABASE_URL` in `.env`.

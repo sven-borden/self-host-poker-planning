@@ -7,19 +7,25 @@
     "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
     "build": "tsdown",
     "start": "node --enable-source-maps dist/main.mjs",
+    "db:generate": "drizzle-kit generate",
     "test": "vitest run --root ../.. --project=server"
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",
     "@pp/domain": "workspace:*",
     "@pp/protocol": "workspace:*",
+    "drizzle-orm": "0.45.4",
     "hono": "4.13.14",
+    "pg": "8.23.1",
     "pino": "10.4.0",
     "socket.io": "4.8.4",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
+    "drizzle-kit": "0.31.11",
+    "fast-check": "4.10.2",
     "socket.io-client": "4.8.4",
     "tsdown": "0.23.2",
     "tsx": "4.23.15"

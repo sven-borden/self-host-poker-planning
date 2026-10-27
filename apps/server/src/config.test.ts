@@ -25,6 +25,7 @@ describe("loadConfig", () => {
       gitCommit: undefined,
       appVersion: undefined,
       staticDir: undefined,
+      migrationsDir: undefined,
     });
     expect(Object.isFrozen(config)).toBe(true);
   });
@@ -40,6 +41,7 @@ describe("loadConfig", () => {
       GIT_COMMIT: "0a14f15",
       APP_VERSION: "1.2.0+build.7",
       STATIC_DIR: "/app/public",
+      MIGRATIONS_DIR: "/app/drizzle",
       UNRELATED: "ignored",
     });
     expect(config).toEqual({
@@ -52,6 +54,7 @@ describe("loadConfig", () => {
       gitCommit: "0a14f15",
       appVersion: "1.2.0+build.7",
       staticDir: "/app/public",
+      migrationsDir: "/app/drizzle",
     });
   });
 
