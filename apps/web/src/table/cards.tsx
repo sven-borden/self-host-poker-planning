@@ -63,7 +63,8 @@ const NARROW_WIDTH = 0.73;
  */
 export function labelFit(value: string, room: number): { scale: number; narrow: boolean } {
   const scale = labelScale(value, room);
-  if (scale >= NARROW_BELOW) return { scale, narrow: false };
+  // An emoji comes from another font, which has no width axis: it only shrinks.
+  if (scale >= NARROW_BELOW || PICTOGRAPH.test(value)) return { scale, narrow: false };
   return { scale: labelScale(value, room / NARROW_WIDTH), narrow: true };
 }
 

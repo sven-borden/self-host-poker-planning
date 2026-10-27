@@ -261,6 +261,8 @@ describe("cards", () => {
   it("narrows a long label rather than shrinking it below 80 % (#22)", () => {
     expect(labelFit("13", 1.4545)).toEqual({ scale: 1, narrow: false });
     expect(labelFit("100", 1.88)).toEqual({ scale: 0.87, narrow: false });
+    // An emoji's font has no width axis.
+    expect(labelFit("👍🏽👍", 1.4).narrow).toBe(false);
     // The dense phone slot: 16 px of room in an 11 px font.
     const dense = 16 / 11;
     expect(labelFit("XXL", dense)).toEqual({ scale: 0.664, narrow: true });
