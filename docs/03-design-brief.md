@@ -113,7 +113,8 @@ Positions are percentages of the stage, so one formula serves every width:
   brass-ink) when at least three votes agree, or "Nothing to count." when no card
   counts. A deck without numbers suggests its most voted card; when the top count is
   shared it shows the tied cards with "Tie", as the panel shows "M · L", never one card
-  of the tie. The figure is labelled as the team's agreement, the panel's word, because
+  of the tie: at most four, then "+12" for the rest (#26: a custom deck can tie 16 ways,
+  which would cover the side cards on a phone). The figure is labelled as the team's agreement, the panel's word, because
   that is what it measures: the share of the most voted card, not support for the
   suggestion. Votes 3, 3 and 13 suggest 5, which nobody played, with "Agreement 67%"
   (PO decision, 2026-10-27). Since #32 the PO's centre is everyone's: "Next round" moved
@@ -301,9 +302,11 @@ As built (#22), for 640 px and below (the `phone:` variant) unless stated:
   touches its neighbours at 328 px (`layout.test.ts`). Its label gets an 11 px font and
   1 px a side instead. Any card label that would shrink below 80 % of its size uses
   Archivo's width axis at 70 % instead of 110 % and grows back: "13", "XL" and "XS" show
-  at 11 px, "100" at 10 px, "XXL" at 7 px, and "XXL" in the PO's tie chip at 8.5 px. The
-  slot is a glance; the seat's popover says the card in words and the results' columns
-  repeat every card at 24 px.
+  at 11 px, "100" at 10 px, "XXL" at 7 px, and "XXL" in the PO's tie chip at 8.5 px. No
+  label is drawn under 7 px (#26): a custom label that still does not fit at 7 px
+  ("WWWW", "ÆÆÆÆ", two emoji) is clipped on this slot alone, centred. The slot is a
+  glance; the seat's popover says the card in words and the results' columns repeat
+  every card whole.
 - **A phone on its side** (844 × 390) is wider than 640 px, so it gets the desktop table
   and header in a compact form (the `squat` variant, 480 px tall or less: a smaller name,
   tighter gaps, and the PO's subject field in its phone form, the label inside and the
@@ -385,7 +388,7 @@ As built (#25):
   stays." while Voting), then a radio group of bordered rows: Fibonacci, Modified
   Fibonacci, T-shirt sizes, Powers of 2, 1 to 10, each with its cards in small mono
   under its name, and "Custom deck". The deck the room plays says "In use" at the row's
-  end. Choosing only moves the choice: a "Use T-shirt sizes" button under the group
+  end. Choosing only moves the choice: a "Use “T-shirt sizes”" button under the group
   applies it, so arrow keys never send a change (or ask to restart) on their way to the
   deck wanted; after it the focus stays on the chosen radio. "Custom deck" opens a text
   field, "Cards, separated by commas", whose hint gives the limits (20 cards of up to 4
@@ -394,28 +397,39 @@ As built (#25):
   ("4 cards"), and the first fault in plain words with the octagon icon, naming the card
   ("“Large” is too long: a card holds at most 4 characters.", "Card 2 is empty. Remove
   the extra comma.", "“1.0” has the same value as “1”.") and ringing its mini card in
-  `--bad`; an empty field says nothing until the PO tries to use it. A trailing comma is
+  `--bad`; an empty field says nothing until the PO tries to use it, and once the PO has
+  tried (Enter or the button) the fault is an alert, so a screen reader hears it. The
+  preview stops at 20 cards; the count says them all. A trailing comma is
   not an empty card. "Generate a range" (a disclosure with a chevron) shows Start, End
   and Step, prefilled 0, 5 and 0.5 in the reader's notation; they accept a comma or a
   point, being numbers rather than labels. "Fill in the cards" puts the cards in the
   field, says "5 cards filled in. Check them, then use them." politely, and a range the
   deck cannot hold says why in an alert. "Use these cards" (or Enter in the field)
-  applies the deck, or focuses the field when it has a fault.
+  applies the deck, or focuses the field when it has a fault; on the room's own deck it
+  is disabled (`aria-disabled`) and asks nothing.
 - **The special cards (#26)** are three rows, each a mini card, its meaning ("Not
   sure", "Need a break", "Too big to estimate") and a switch, in a group labelled
   "Special cards". A change applies like the deck's.
 - **The restart question (#26).** During Voting, once someone has voted, a new deck or
   new special cards ask first, inline under the control, in a `--surface-2` box with a
   `--warn` border and a restart icon: "Changing the deck restarts round 4. The 3 votes
-  cast so far are cleared; the subject stays." with "Restart with T-shirt sizes" and
+  cast so far are cleared; the subject stays." ("The vote cast so far is cleared" for
+  one) with "Restart with “T-shirt sizes”" or "Restart with a custom deck" and
   "Cancel" ("Changing the special cards …", "Restart with the new special cards"). It
   takes the focus as a group named by the question. Cancel gives the focus back to the
   apply button or the switch; the restart sends the change and leaves the focus on the
-  chosen deck or the switch. With no vote cast the change applies at once (the round
-  still restarts, with nothing to clear).
-- **What everyone else hears.** "The product owner changed the deck to T-shirt sizes
+  chosen deck or the switch. The question is about one deck: editing the cards, or
+  choosing another deck, takes it away. When it goes with the focus inside it (the
+  votes went, the deck moved), the focus goes to the apply button, never the dialog.
+  With no vote cast the change applies at once (the round still restarts, with nothing
+  to clear). A restart starts the round over, timer included: the room's timer starts
+  anew, and a timer the PO started by hand stops.
+- **Deck names in sentences** are quoted for a preset ("“T-shirt sizes”", « Fibonacci
+  modifié », „T-Shirt-Größen“) and a phrase for a custom deck ("a custom deck", « un jeu
+  personnalisé », „einem eigenen Kartendeck“, after „mit“ and „zu“).
+- **What everyone else hears.** "The product owner changed the deck to “T-shirt sizes”
   from the next round." in the lobby or after the reveal; "The product owner restarted
-  round 4 with T-shirt sizes. Vote again." during Voting, without "Vote again." for an
+  round 4 with “T-shirt sizes”. Vote again." during Voting, without "Vote again." for an
   observer, and no "Voting started" for the restart. Every voter's hand empties into the
   new deck; a vote sent before the restart is refused and rolls back silently.
 
@@ -433,6 +447,14 @@ As built (#25):
 - **Back**: brass diagonal stripes framed by the card face colour.
 - **Specials**: `?` unsure, `☕` break, `∞` too big; never counted in statistics.
 - **Mini cards** (results): 28 × 39 px.
+- **Labels** (#26): a label is fitted by its width as drawn, measured in the page in
+  Archivo ExtraBold at the card's width axis (cached per label). It narrows to 70 %
+  width before it would shrink below 80 %, then shrinks, never under 7 px. On every card
+  but the dense phone slot (see "Phones") every label of up to four characters fits
+  whole at 7 px or more; on that slot one that does not is clipped, and its accessible
+  name, the seat's popover, the results and the hand show it whole. Before the font has
+  loaded, an estimate stands in: 0.72 em a digit, 1 em for ½, ¼, ¾ and any letter, 0.8
+  em for a lowercase ASCII letter other than m and w, 1.3 em an emoji.
 
 ## Results
 
@@ -454,8 +476,10 @@ a spruce bar (at most 56 px,
 and highest in named rounds; screen readers hear "5: 2 votes". On phones the columns
 narrow to 24 px, 2 px apart, so the eleven cards of the modified Fibonacci deck fit one
 row at 360 px. Spreads never break ("XS–XXL"): on a phone a deck without numbers puts
-the spread on its own row. A tie of many cards for most voted wraps between its cards
-(#26: a custom deck's six-way tie). A custom word keeps its label at 7 px or more on a phone's slot: lowercase letters but m and w count 0.8 em when a label is fitted. Special cards sit beside it under "Not counted", with a note
+the spread on its own row. A tie for most voted of up to four cards wraps between its
+cards, never inside one (each card and its dot stay on one line); above four the panel
+says "16 cards tie" and the distribution shows each (#26). Special cards sit beside it
+under "Not counted", with a note
 that they don't count toward these numbers. The "Not at the table" row marks a lowest
 or highest card with the seats' arrow and says it in the label. If the results' code
 cannot load (an old build gone after a redeploy), the centre says the result as a
