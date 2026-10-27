@@ -66,6 +66,10 @@ const roundFields = {
   subject: subjectSchema,
   startedAt: z.number(),
   deadlineAt: z.number().optional(),
+  /** When the running timer started (#27); the ring drains over `deadlineAt - timerStartedAt`. */
+  timerStartedAt: z.number().optional(),
+  /** A deadline that passed without a reveal (#27): "Time is up" until the reveal. */
+  timeUpAt: z.number().optional(),
   deck: deckSpecSchema,
   specials: z.array(specialCardSchema),
   /** Who has a card on the table, in participant order (never in voting order). */

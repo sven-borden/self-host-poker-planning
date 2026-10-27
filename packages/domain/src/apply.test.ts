@@ -723,9 +723,9 @@ describe("rounds", () => {
 
   it("starts the room's timer with every round", () => {
     const before = room({ settings: { timer: { seconds: 60, revealAtEnd: true } } });
-    expect(
-      ok(send(before, { type: "startRound", subject: { kind: "none" } })).round?.deadlineAt,
-    ).toBe(T0 + 60_000);
+    expect(ok(send(before, { type: "startRound", subject: { kind: "none" } })).round).toMatchObject(
+      { deadlineAt: T0 + 60_000, timerStartedAt: T0 },
+    );
   });
 
   it("casts, changes and retracts a vote without revealing it in the cause", () => {
@@ -1015,7 +1015,26 @@ describe("timer", () => {
     expect(first).toMatchObject({ ok: true, causes: [{ type: "timeUp" }] });
     expect(first.state.round?.phase).toBe("voting");
     expect(first.state.round?.deadlineAt).toBeUndefined();
+    expect(first.state.round?.timeUpAt).toBe(T0);
     expect(send(first.state, { type: "timeUp" }, OUT, T0 + 1).state).toBe(first.state);
+  });
+
+  it("keeps time up on the round until a new timer or the reveal (#27)", () => {
+    const up = ok(
+      send(timed({ timer: { seconds: null, revealAtEnd: false } }), { type: "timeUp" }, OUT, T0),
+    );
+    // Nothing to stop or extend: time up is not a running timer.
+    expect(send(up, { type: "stopTimer" }, PO, T0 + 1).state).toBe(up);
+    expect(send(up, { type: "extendTimer", seconds: 30 }, PO, T0 + 1)).toMatchObject({
+      ok: false,
+      error: "no_timer",
+    });
+    const again = ok(send(up, { type: "startTimer", seconds: 30 }, PO, T0 + 1));
+    expect(again.round).toMatchObject({ deadlineAt: T0 + 1 + 30_000, timerStartedAt: T0 + 1 });
+    expect(again.round && "timeUpAt" in again.round).toBe(false);
+    const shown = ok(send(up, { type: "reveal" }, PO, T0 + 2));
+    expect(shown.round?.phase).toBe("revealed");
+    expect(shown.round && "timeUpAt" in shown.round).toBe(false);
   });
 
   it("does nothing without a running deadline", () => {
@@ -1031,15 +1050,24 @@ describe("timer", () => {
   it("starts, restarts, extends and stops the timer", () => {
     const started = send(room(), { type: "startTimer", seconds: 5 });
     expect(started.causes).toEqual([{ type: "timerStarted" }]);
-    expect(ok(started).round?.deadlineAt).toBe(T0 + 5_000);
+    expect(ok(started).round).toMatchObject({ deadlineAt: T0 + 5_000, timerStartedAt: T0 });
     const restarted = send(started.state, { type: "startTimer", seconds: 3600 }, PO, T0 + 1_000);
-    expect(ok(restarted).round?.deadlineAt).toBe(T0 + 1_000 + 3_600_000);
+    expect(ok(restarted).round).toMatchObject({
+      deadlineAt: T0 + 1_000 + 3_600_000,
+      timerStartedAt: T0 + 1_000,
+    });
     const extended = send(restarted.state, { type: "extendTimer", seconds: 30 }, PO, T0 + 2_000);
     expect(extended.causes).toEqual([{ type: "timerExtended" }]);
-    expect(ok(extended).round?.deadlineAt).toBe(T0 + 1_000 + 3_600_000 + 30_000);
+    // An extension keeps the start: the ring's whole grows with it.
+    expect(ok(extended).round).toMatchObject({
+      deadlineAt: T0 + 1_000 + 3_600_000 + 30_000,
+      timerStartedAt: T0 + 1_000,
+    });
     const stopped = send(extended.state, { type: "stopTimer" }, PO, T0 + 3_000);
     expect(stopped.causes).toEqual([{ type: "timerStopped" }]);
     expect(ok(stopped).round?.deadlineAt).toBeUndefined();
+    const off = ok(stopped).round;
+    expect(off && "timerStartedAt" in off).toBe(false);
     expect(send(stopped.state, { type: "stopTimer" }).state).toBe(stopped.state);
     const lobby = room({ round: null });
     expect(send(lobby, { type: "stopTimer" }).state).toBe(lobby);

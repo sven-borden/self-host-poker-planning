@@ -81,6 +81,16 @@ export type Round = {
   revealedAt?: number;
   /** Set while a timer runs (Voting only). */
   deadlineAt?: number;
+  /**
+   * When the running timer started (#27): the round's start, or the PO's `startTimer`.
+   * The countdown ring shows the time left out of `deadlineAt - timerStartedAt`.
+   */
+  timerStartedAt?: number;
+  /**
+   * The deadline that passed while the room does not reveal at the end (#27): everyone
+   * sees "Time is up" until the reveal or a new timer. Voting only.
+   */
+  timeUpAt?: number;
   final?: Card;
 };
 

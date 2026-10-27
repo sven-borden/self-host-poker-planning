@@ -202,6 +202,8 @@ function roundView(round: Round, order: readonly UserId[], viewer: UserId): Roun
     subject: subjectView(round.subject),
     startedAt: round.startedAt,
     ...(round.deadlineAt !== undefined ? { deadlineAt: round.deadlineAt } : {}),
+    ...(round.timerStartedAt !== undefined ? { timerStartedAt: round.timerStartedAt } : {}),
+    ...(round.timeUpAt !== undefined ? { timeUpAt: round.timeUpAt } : {}),
     deck: deckView(round.deck),
     specials: [...round.specials],
     voted: voters.map(([id]) => id),

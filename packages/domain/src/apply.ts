@@ -92,7 +92,11 @@ export function apply(state: RoomState, command: Command, ctx: ApplyContext): Ap
         causes: [{ type: "revealed", by: "timer" }],
       };
     }
-    return { state: withRound(s, withoutDeadline(round)), causes: [{ type: "timeUp" }] };
+    // Time is up stays on the round, so a page that loads now still says it (#27).
+    return {
+      state: withRound(s, { ...withoutTimer(round), timeUpAt: round.deadlineAt }),
+      causes: [{ type: "timeUp" }],
+    };
   }
 }
 
@@ -142,12 +146,14 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       if (!isTimerSeconds(command.seconds)) return refuse("bad_seconds");
       const deadlineAt = now + command.seconds * 1000;
       if (round.deadlineAt === deadlineAt) return done(state);
-      return done(withRound(state, { ...round, deadlineAt }), { type: "timerStarted" });
+      return done(withRound(state, { ...withoutTimer(round), deadlineAt, timerStartedAt: now }), {
+        type: "timerStarted",
+      });
     }
     case "stopTimer": {
       const round = state.round;
       if (round?.deadlineAt === undefined) return done(state);
-      return done(withRound(state, withoutDeadline(round)), { type: "timerStopped" });
+      return done(withRound(state, withoutTimer(round)), { type: "timerStopped" });
     }
     case "extendTimer": {
       const round = state.round;
@@ -276,7 +282,10 @@ function startRound(state: RoomState, subject: Subject, now: number, revote = fa
     votes: {},
     startedAt: now,
   };
-  if (settings.timer.seconds !== null) round.deadlineAt = now + settings.timer.seconds * 1000;
+  if (settings.timer.seconds !== null) {
+    round.deadlineAt = now + settings.timer.seconds * 1000;
+    round.timerStartedAt = now;
+  }
   const step = done(
     withRound(state, round),
     revote ? { type: "roundStarted", number, revote: true } : { type: "roundStarted", number },
@@ -477,13 +486,16 @@ function omit<T>(record: Record<string, T>, key: string): Record<string, T> {
   return Object.fromEntries(Object.entries(record).filter(([k]) => k !== key));
 }
 
-function withoutDeadline(round: Round): Round {
+/** The round without a timer: no deadline, no start, no "time is up". */
+function withoutTimer(round: Round): Round {
   const next = { ...round };
   delete next.deadlineAt;
+  delete next.timerStartedAt;
+  delete next.timeUpAt;
   return next;
 }
 
 /** The round revealed at `at`; a running timer stops. */
 function reveal(round: Round, at: number): Round {
-  return { ...withoutDeadline(round), phase: "revealed", revealedAt: at };
+  return { ...withoutTimer(round), phase: "revealed", revealedAt: at };
 }
