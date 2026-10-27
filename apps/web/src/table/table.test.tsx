@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { changeLanguage, fixedT, loadLanguage } from "../i18n/i18n.ts";
 import { Avatar, avatarColour, avatarLooks, initials } from "./avatar.tsx";
 import {
@@ -283,21 +283,36 @@ describe("cards", () => {
     }
   });
 
-  it("clips a label that does not fit at 7 px on the dense phone slot only, centred", () => {
-    const { container } = render(
-      <>
-        <SlotCard face="up" value="WWWW" size={{ width: 20, height: 28 }} />
-        <SlotCard face="up" value="XL" size={{ width: 20, height: 28 }} />
-        <SlotCard face="up" value="WWWW" size={{ width: 27, height: 38 }} />
-      </>,
-    );
-    const [dense, fits, wider] = [...container.querySelectorAll("[data-face='up']")];
-    expect(dense?.querySelector("[data-clipped]")?.textContent).toBe("WWWW");
-    expect(dense?.querySelector<HTMLElement>("[data-label-clip]")?.className).toContain(
-      "overflow-hidden",
-    );
-    expect(fits?.querySelector("[data-clipped]")).toBeNull();
-    expect(wider?.querySelector("[data-clipped]")).toBeNull();
+  it("clips a label that does not fit its card as drawn, centred, with the whole label in its title", () => {
+    // jsdom has no layout: the drawn label is as wide as its text in 5 px a character,
+    // the card 18 px inside its border.
+    const offset = vi
+      .spyOn(HTMLElement.prototype, "offsetWidth", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.hasAttribute("data-card-value") ? (this.textContent?.length ?? 0) * 5 : 0;
+      });
+    const client = vi
+      .spyOn(HTMLElement.prototype, "clientWidth", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.hasAttribute("data-face") ? 18 : 0;
+      });
+    try {
+      const { container } = render(
+        <>
+          <SlotCard face="up" value="WWWW" size={{ width: 20, height: 28 }} />
+          <SlotCard face="up" value="XL" size={{ width: 20, height: 28 }} />
+        </>,
+      );
+      const [wide, fits] = [...container.querySelectorAll("[data-face='up']")];
+      expect(wide?.querySelector("[data-clipped]")?.textContent).toBe("WWWW");
+      const clip = wide?.querySelector<HTMLElement>("[data-label-clip]");
+      expect(clip?.className).toContain("overflow-hidden");
+      expect(clip?.title).toBe("WWWW");
+      expect(fits?.querySelector("[data-clipped]")).toBeNull();
+    } finally {
+      offset.mockRestore();
+      client.mockRestore();
+    }
   });
 
   it("sizes slot cards in whole pixels from the layout", () => {

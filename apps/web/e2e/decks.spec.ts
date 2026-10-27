@@ -477,7 +477,7 @@ const labelSizes = (scope: Locator) =>
 
 /**
  * The cards whose label leaves its card or wraps (as `table.spec.ts` checks the bench). A
- * label clipped on the dense phone slot is measured by its clip box, which must stay inside.
+ * label clipped on its card is measured by its clip box, which must stay inside.
  */
 const spills = (page: Page) =>
   page.evaluate(() =>
@@ -682,15 +682,26 @@ test("16 people play the widest custom labels at 360 px: none under 7 px, none s
     ];
     expect(drawn.filter(({ px }) => px < 7)).toEqual([]);
     expect(await spills(page)).toEqual([]);
-    // Only the dense 20 by 28 slot clips, and only a label that does not fit at 7 px.
+    // A label that does not fit its fixed-size card at 7 px, as drawn in this system's
+    // fonts, is clipped on that card (a slot, a results column, a mini card), never in the
+    // hand; its whole text is in its title and in an accessible name or words nearby.
     const clipped = await page.locator("[data-clipped]").evaluateAll((values) =>
-      values.map((value) => ({
-        card: value.textContent,
-        slot: value.closest("[data-face='up']")?.getBoundingClientRect().width ?? 0,
-      })),
+      values.map((value) => {
+        const card = value.textContent ?? "";
+        const said = [...document.querySelectorAll("[aria-label], .sr-only")].some((element) =>
+          (element.getAttribute("aria-label") ?? element.textContent ?? "").includes(card),
+        );
+        return {
+          card,
+          title: value.closest("[data-label-clip]")?.getAttribute("title") ?? null,
+          inHand: value.closest("[data-hand-card]") !== null,
+          said,
+        };
+      }),
     );
-    expect(clipped.length).toBeGreaterThan(0);
-    for (const { card, slot } of clipped) expect(slot, `${card}`).toBeLessThanOrEqual(20.5);
+    for (const { card, title, inHand, said } of clipped) {
+      expect({ title, inHand, said }, card).toEqual({ title: card, inHand: false, said: true });
+    }
     expect(clipped.map(({ card }) => card)).not.toContain("Huge");
 
     // The centre shows four tied cards and "+12", clear of every slot card.

@@ -1,6 +1,6 @@
 import { cardLength } from "@pp/domain";
 import { CoffeeIcon, InfinityIcon } from "lucide-react";
-import { type ComponentProps, type RefObject, useLayoutEffect, useRef } from "react";
+import { type ComponentProps, type RefObject, useLayoutEffect, useRef, useState } from "react";
 import type { TFunction } from "../i18n/i18n.ts";
 import { cn } from "../lib/utils.ts";
 import { measuredEms, useLabelFonts } from "./label-width.ts";
@@ -101,25 +101,54 @@ export function labelFit(
   return { scale: scaleFor(room, width), narrow: true, width };
 }
 
+/** The card a label is drawn on: its width is the room the label has. */
+const CARD_BOX = "[data-hand-card], [data-face], [data-mini-card], [data-card-box]";
+
+/**
+ * Whether the drawn label is wider than its card's content box, measured after layout
+ * on the real element: whatever font the system drew it in (Archivo has no Cyrillic, so
+ * "щщщщ" comes from a fallback without a width axis), the check holds. Layout widths,
+ * not boxes, so a card mid-turn (a transform) measures the same.
+ */
+function overflows(label: HTMLElement): boolean {
+  const card = label.closest<HTMLElement>(CARD_BOX) ?? label.parentElement;
+  if (!card || card.clientWidth === 0) return false;
+  const style = getComputedStyle(card);
+  const room =
+    card.clientWidth -
+    (Number.parseFloat(style.paddingLeft) || 0) -
+    (Number.parseFloat(style.paddingRight) || 0);
+  return label.offsetWidth > room;
+}
+
 /**
  * A card's face value, in the font size of its parent, fitted into `room` ems of that size
- * on one line (narrowed first when it is long, `labelFit`), never under 7 px. Given the
- * parent's size in pixels (`fontPx`, the dense phone slot), a label that still does not
- * fit at 7 px is clipped there, centred (`data-clipped`); everywhere else every label
- * fits whole. ☕ and ∞ are drawn as icons: emoji and missing glyphs would render in
- * another font, colour or size on every system.
+ * on one line (narrowed first when it is long, `labelFit`), never under 7 px. A label that
+ * still does not fit its card at that size, as drawn, is clipped on that card, centred
+ * (`data-clipped`, the whole label in a `title`); the card's accessible name, the seat's
+ * popover and the results' words say it whole. ☕ and ∞ are drawn as icons: emoji and
+ * missing glyphs would render in another font, colour or size on every system.
  */
-export function CardValue({
-  value,
-  room,
-  fontPx,
-}: {
-  value: string;
-  room: number;
-  /** The parent's font size in pixels, where a label may be clipped (the dense slot). */
-  fontPx?: number;
-}) {
+export function CardValue({ value, room }: { value: string; room: number }) {
   useLabelFonts();
+  const ref = useRef<HTMLSpanElement>(null);
+  const [clipped, setClipped] = useState(false);
+
+  // After every layout, and whenever the card's size changes without a render (a
+  // breakpoint): measure the drawn label against its card.
+  useLayoutEffect(() => {
+    const label = ref.current;
+    if (!label) return;
+    const check = () => setClipped(overflows(label));
+    check();
+    if (typeof ResizeObserver === "undefined") return;
+    const card = label.closest(CARD_BOX);
+    if (!card) return;
+    const observer = new ResizeObserver(check);
+    observer.observe(card);
+    return () => observer.disconnect();
+  });
+
   if (value === "☕" || value === "∞") {
     const Icon = value === "☕" ? CoffeeIcon : InfinityIcon;
     return (
@@ -133,11 +162,10 @@ export function CardValue({
       />
     );
   }
-  const { scale, narrow, width } = labelFit(value, room);
-  const clipped =
-    fontPx !== undefined && Math.max(MIN_LABEL_PX, scale * fontPx) * width > room * fontPx + 0.5;
+  const { scale, narrow } = labelFit(value, room);
   const label = (
     <span
+      ref={ref}
       aria-hidden="true"
       data-card-value
       data-narrow={narrow || undefined}
@@ -152,13 +180,14 @@ export function CardValue({
     </span>
   );
   if (!clipped) return label;
-  // Centred in the room and cut at both edges: justify-content centres an overflowing item.
+  // Cut at both edges of the card's content box: justify-content centres an overflowing
+  // item. The label keeps its own width, so the next check still sees it overflow.
   return (
     <span
       aria-hidden="true"
       data-label-clip
-      className="flex justify-center overflow-hidden"
-      style={{ width: `${room}em` }}
+      title={value}
+      className="flex max-w-full min-w-0 justify-center overflow-hidden"
     >
       {label}
     </span>
@@ -332,13 +361,9 @@ export function SlotCard({ face, value, size, turnDelay = 0, className }: SlotCa
       )}
       style={{ ...box, fontSize }}
     >
-      {/* The inner width less 2 px a side (1 px on the dense phone slot), where a label
-          that does not fit at 7 px is clipped: the seat's popover and the results say it. */}
-      <CardValue
-        value={value ?? ""}
-        room={inner / fontSize}
-        fontPx={small ? fontSize : undefined}
-      />
+      {/* The inner width less 2 px a side (1 px on the dense phone slot). A label that does
+          not fit at 7 px is clipped: the seat and its popover say it whole. */}
+      <CardValue value={value ?? ""} room={inner / fontSize} />
       <Cover radius={radius} cover={cover} />
     </div>
   );
