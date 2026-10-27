@@ -34,6 +34,8 @@ export const de: Catalog = {
     deckLabel: "Kartendeck",
     submit: "Raum erstellen",
     creating: "Raum wird erstellt…",
+    notAllowed:
+      "Der Server hat diese Anfrage abgelehnt: Seine eingestellte Adresse ist nicht die, die Sie verwenden. Bitten Sie die Betreiberin oder den Betreiber, BASE_URL zu prüfen.",
   },
   decks: {
     fib: "Fibonacci",

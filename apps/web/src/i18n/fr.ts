@@ -34,6 +34,8 @@ export const fr: Catalog<"many"> = {
     deckLabel: "Jeu de cartes",
     submit: "Créer la salle",
     creating: "Création de la salle…",
+    notAllowed:
+      "Le serveur a refusé cette demande : son adresse configurée n’est pas celle que vous utilisez. Demandez à la personne qui l’héberge de vérifier BASE_URL.",
   },
   decks: {
     fib: "Fibonacci",

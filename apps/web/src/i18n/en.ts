@@ -88,6 +88,8 @@ export const en = {
     deckLabel: "Deck",
     submit: "Create the room",
     creating: "Creating the room…",
+    notAllowed:
+      "The server did not accept this request: its configured address is not the one you used. Ask whoever runs it to check BASE_URL.",
   },
   decks: {
     fib: "Fibonacci",

@@ -1,7 +1,13 @@
-import { MAX_ROOM_NAME_LENGTH, PRESET_DECK_IDS, PRESET_DECKS, type PresetDeckId } from "@pp/domain";
+import {
+  cleanRoomName,
+  MAX_ROOM_NAME_LENGTH,
+  PRESET_DECK_IDS,
+  PRESET_DECKS,
+  type PresetDeckId,
+} from "@pp/domain";
 import { useNavigate } from "@tanstack/react-router";
 import { OctagonXIcon } from "lucide-react";
-import { type FormEvent, useId, useState } from "react";
+import { type FormEvent, useId, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { errorMessage } from "../i18n/errors.ts";
@@ -23,6 +29,13 @@ export const DECK_NAMES = {
 /** The default deck of a new room (ADR-011). */
 const DEFAULT_DECK: PresetDeckId = "fib";
 
+/**
+ * The name input takes this many code units: a little over 60 characters of text, with room
+ * for emoji and for accents typed as separate marks. A paste of any size is cut here, long
+ * before the server's body limit.
+ */
+const NAME_INPUT_MAX_UNITS = MAX_ROOM_NAME_LENGTH * 4;
+
 /** What went wrong, for the reader: the server's code, or the browser's own trouble. */
 function failureMessage(t: TFunction, error: unknown): string {
   const code =
@@ -31,6 +44,8 @@ function failureMessage(t: TFunction, error: unknown): string {
       : "unknown";
   if (code === "network") return t("common.network");
   if (code === COOKIES_BLOCKED) return t("identity.cookiesBlocked");
+  // The server refuses an Origin that is not its BASE_URL: a setup mistake, not the room's.
+  if (code === "not_allowed") return t("createRoom.notAllowed");
   return errorMessage(t, code);
 }
 
@@ -47,21 +62,34 @@ export function CreateRoomCard({ className }: { className?: string }) {
   const [name, setName] = useState("");
   const [deck, setDeck] = useState<PresetDeckId>(DEFAULT_DECK);
   const [busy, setBusy] = useState(false);
+  const nameInput = useRef<HTMLInputElement>(null);
   const [failure, setFailure] = useState<{ message: string; nameRefused: boolean } | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // The button stays focusable while busy (aria-disabled), so a second submit lands here.
     if (busy) return;
-    setBusy(true);
     setFailure(null);
+    // The server's own rule, checked here: a refused name costs no creation from the limit.
+    if (name.trim() !== "" && cleanRoomName(name) === null) {
+      refuse({ code: "bad_room_name" });
+      return;
+    }
+    setBusy(true);
     try {
       const code = await createRoom({ name, deck });
       await navigate({ to: "/r/$code", params: { code } });
     } catch (error) {
-      const nameRefused = Reflect.get(Object(error), "code") === "bad_room_name";
-      setFailure({ message: failureMessage(t, error), nameRefused });
+      refuse(error);
       setBusy(false);
     }
+  }
+
+  /** Shows what went wrong; a refused name gets the focus, so it can be fixed at once. */
+  function refuse(error: unknown) {
+    const nameRefused = Reflect.get(Object(error), "code") === "bad_room_name";
+    setFailure({ message: failureMessage(t, error), nameRefused });
+    if (nameRefused) nameInput.current?.focus();
   }
 
   return (
@@ -75,17 +103,21 @@ export function CreateRoomCard({ className }: { className?: string }) {
       <p className="mt-2 text-ink-2">{t("createRoom.lede")}</p>
       <form className="mt-6 flex flex-col gap-6" onSubmit={submit} noValidate>
         <div className="flex flex-col gap-2">
-          <div className="flex items-baseline justify-between gap-3">
-            <label htmlFor={ids.name} className="font-medium">
-              {t("createRoom.nameLabel")}
-            </label>
+          {/* "Optional" sits inside the label, so a screen reader announces it with the name. */}
+          <label
+            htmlFor={ids.name}
+            className="flex items-baseline justify-between gap-3 font-medium"
+          >
+            {t("createRoom.nameLabel")}
             <span className="font-mono text-xs tracking-[0.06em] text-ink-2 uppercase">
               {t("createRoom.optional")}
             </span>
-          </div>
+          </label>
           <Input
+            ref={nameInput}
             id={ids.name}
             name="name"
+            maxLength={NAME_INPUT_MAX_UNITS}
             value={name}
             onChange={(event) => setName(event.target.value)}
             autoComplete="off"
@@ -133,7 +165,13 @@ export function CreateRoomCard({ className }: { className?: string }) {
             {failure.message}
           </p>
         )}
-        <Button type="submit" size="lg" className="w-full sm:w-auto sm:self-start" disabled={busy}>
+        {/* aria-disabled, not disabled: a disabled button drops the focus to the page. */}
+        <Button
+          type="submit"
+          size="lg"
+          className="w-full sm:w-auto sm:self-start aria-disabled:pointer-events-none aria-disabled:opacity-50"
+          aria-disabled={busy || undefined}
+        >
           {busy ? t("createRoom.creating") : t("createRoom.submit")}
         </Button>
       </form>
