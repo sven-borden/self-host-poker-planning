@@ -172,7 +172,7 @@ test("the PO records the suggestion with one press and changes it by keyboard; a
     for (const viewer of [page, ben.page, olga.page, cleo.page]) {
       await expect(centreFinal(viewer)).toHaveAttribute("data-centre-final", "5");
       await expect(centreFinal(viewer).locator(".sr-only")).toHaveText("Final estimate: 5.");
-      await saidOnce(viewer, "The PO recorded 5 as the final estimate.");
+      await saidOnce(viewer, "The product owner recorded 5 as the final estimate.");
     }
     const decided = await rowWithFinal(code, 1, "5");
     expect(decided?.votes).toMatchObject({ kind: "named" });
@@ -193,7 +193,7 @@ test("the PO records the suggestion with one press and changes it by keyboard; a
     await page.keyboard.press("Enter");
     for (const viewer of [page, ben.page, olga.page, cleo.page]) {
       await expect(centreFinal(viewer)).toHaveAttribute("data-centre-final", "8");
-      await saidOnce(viewer, "The PO changed the final estimate to 8.");
+      await saidOnce(viewer, "The product owner changed the final estimate to 8.");
     }
     await rowWithFinal(code, 1, "8");
     // Then the next steps, in order.
@@ -256,7 +256,7 @@ test("with a tie the PO picks: nothing preselected, the tied cards marked", asyn
     await expect(pick(page, "L, tied")).toBeChecked();
     await page.getByRole("button", { name: "Record L" }).click();
     await expect(centreFinal(ben.page)).toHaveAttribute("data-centre-final", "L");
-    await saidOnce(ben.page, "The PO recorded L as the final estimate.");
+    await saidOnce(ben.page, "The product owner recorded L as the final estimate.");
     await rowWithFinal(code, 1, "L");
   } finally {
     po.close();
@@ -287,7 +287,7 @@ test("Vote again keeps the subject, a title or a link with its key, clears the v
     await expect(centreStatus(page)).toHaveText("0/3 voted so far");
     await expect(hand(page).locator("[aria-pressed='true']")).toHaveCount(0);
     await expect(page.locator("[data-seat] [data-badge='voted']")).toHaveCount(0);
-    await saidOnce(page, "The PO started a new vote on the same subject.");
+    await saidOnce(page, "The product owner started a new vote on the same subject.");
     // A vote again needs no confirmation and focuses the hand, like "Next round".
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(hand(page).locator("[tabindex='0']")).toBeFocused();

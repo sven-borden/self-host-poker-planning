@@ -154,7 +154,7 @@ Positions are percentages of the stage, so one formula serves every width:
   its caption), and on phones both cards shrink to 18 px chips, the stack at most 76 px
   wide, and the label shortens to "Final" ("Finale", "Final"): "Endgültige Schätzung" on
   two lines made the stack 76 px wide and touched the side cards at 10 seats. A final recorded on screen pops in (crossfade under reduced motion). The live
-  region says "The PO recorded 8 as the final estimate." or "The PO changed the final
+  region says "The product owner recorded 8 as the final estimate." or "The product owner changed the final
   estimate to 13.", once, to everyone. Measured clear of every card at 4, 8, 10 and 16
   seats, in English, French and German, on desktop and at 360 px, for the PO and a voter
   (`final-estimate.spec.ts`): on phones 68 to 71 px wide and 47 px tall (suggestion) or
@@ -164,7 +164,8 @@ Positions are percentages of the stage, so one formula serves every width:
   subject (the title, or the link with its key) and starts a new round with the next
   number, the votes cleared and the timer as at any start; the revealed round stays in
   the history with its votes, so it asks for no confirmation. The live region says "The
-  PO started a new vote on the same subject." The focus goes to the hand, as after
+  product owner started a new vote on the same subject." (or "a new anonymous vote" when the
+  room is anonymous, as a next round says "anonymous"). The focus goes to the hand, as after
   "Next round".
 - Observers sit off the table (a small row under it) so voters keep the seats.
 - The others follow the viewer clockwise in join order, starting with whoever joined

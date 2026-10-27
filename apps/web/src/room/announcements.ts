@@ -253,7 +253,7 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
     case "settings":
       return events.flatMap((e) => (e.setting ? [settingSentence(t, e.setting)] : [])).join(" ");
     case "roundStarted":
-      if (first?.revote) return t("live.revote");
+      if (first?.revote) return t(first.round?.anonymous ? "live.revoteAnonymous" : "live.revote");
       return t(first?.round?.anonymous ? "live.roundStartedAnonymous" : "live.roundStarted", {
         subject: first?.round ? subjectName(t, first.round) : "",
       });

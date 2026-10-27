@@ -210,11 +210,11 @@ describe("the final estimate and the re-vote (#32)", () => {
       const { run, revealed } = revealedStory(viewer);
       const recorded = run("me", { type: "setFinal", card: "8" });
       expect(said(liveEvents(recorded.room, recorded.causes, revealed.room))).toBe(
-        "The PO recorded 8 as the final estimate.",
+        "The product owner recorded 8 as the final estimate.",
       );
       const changed = run("me", { type: "setFinal", card: "13" });
       expect(said(liveEvents(changed.room, changed.causes, recorded.room))).toBe(
-        "The PO changed the final estimate to 13.",
+        "The product owner changed the final estimate to 13.",
       );
     }
   });
@@ -223,11 +223,20 @@ describe("the final estimate and the re-vote (#32)", () => {
     const { run, revealed } = revealedStory();
     const again = run("me", { type: "revote" });
     expect(said(liveEvents(again.room, again.causes, revealed.room))).toBe(
-      "The PO started a new vote on the same subject.",
+      "The product owner started a new vote on the same subject.",
     );
     // A next round with the same title is a next round.
     const next = run("me", { type: "startRound", subject: { kind: "title", text: "Login" } });
     expect(said(liveEvents(next.room, next.causes, again.room))).toBe("Voting started: Login.");
+  });
+
+  it("says that a re-vote is anonymous, as a next round does", () => {
+    const { run } = revealedStory();
+    const quiet = run("me", { type: "updateSettings", patch: { revealNames: false } });
+    const again = run("me", { type: "revote" });
+    expect(said(liveEvents(again.room, again.causes, quiet.room))).toBe(
+      "The product owner started a new anonymous vote on the same subject.",
+    );
   });
 
   it("says two finals in one batch once, with the later card, and drops one a new round made moot", () => {
@@ -238,7 +247,7 @@ describe("the final estimate and the re-vote (#32)", () => {
       liveEvents(first.room, first.causes, revealed.room),
       liveEvents(second.room, second.causes, first.room),
     );
-    expect(said(batch)).toBe("The PO recorded 5 as the final estimate.");
+    expect(said(batch)).toBe("The product owner recorded 5 as the final estimate.");
     const next = run("me", { type: "startRound", subject: { kind: "none" } });
     expect(said(mergeEvents(batch, liveEvents(next.room, next.causes, second.room)))).toBe(
       "Voting started: Round 2.",
@@ -252,10 +261,10 @@ describe("the final estimate and the re-vote (#32)", () => {
     const recorded = run("me", { type: "setFinal", card: "8" });
     const events = liveEvents(recorded.room, recorded.causes, revealed.room);
     expect(describeEvents(fixedT("fr"), events)).toBe(
-      "Le PO a enregistré 8 comme estimation finale.",
+      "Le product owner a enregistré 8 comme estimation finale.",
     );
     expect(describeEvents(fixedT("de"), events)).toBe(
-      "Der PO hat 8 als endgültige Schätzung festgehalten.",
+      "Der Product Owner hat 8 als endgültige Schätzung festgehalten.",
     );
   });
 });
