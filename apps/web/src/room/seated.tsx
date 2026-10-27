@@ -2,12 +2,14 @@ import type { ParticipantView, RoomView as RoomSnapshotView } from "@pp/protocol
 import { OctagonXIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useT } from "../i18n/hooks.ts";
+import { cn } from "../lib/utils.ts";
 import { cardLabel } from "../table/cards.tsx";
 import { Hand } from "../table/hand.tsx";
 import { revealSettleMs } from "../table/reveal-motion.ts";
 import { TableStage } from "../table/table-stage.tsx";
 import { type Box, CardFlight, type Flight, type InAir } from "./card-flight.tsx";
 import { failureMessage } from "./failure.ts";
+import { inSight, useHandDock } from "./hand-dock.ts";
 import { confirmedOf, shownCard, withShownVote } from "./hand-state.ts";
 import { LiveAnnouncer } from "./live-announcer.tsx";
 import { NextSubject, useNextRound } from "./next-round.tsx";
@@ -98,6 +100,13 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
   };
   const [flight, setFlight] = useState<Flight | null>(null);
   const flights = useRef(0);
+  const handPanel = useRef<HTMLDivElement>(null);
+  // While the team votes, an upright phone docks the hand at the bottom of the screen,
+  // within thumb reach whatever part of the table is in view (#22), when the screen leaves
+  // the table, "Reveal cards" and the viewer's seat clear above it (`useHandDock`). Only
+  // while voting: the results, which come with the reveal, sit above the hand and must
+  // never be covered.
+  const docked = useHandDock(hand.kind === "cards" && hand.playable, handPanel);
   /** An interrupted flight's card, for the next one to start from. */
   const inAir = useRef<InAir | null>(null);
 
@@ -114,8 +123,15 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
       .querySelector("[data-room-table] [data-slot-card][data-you]")
       ?.getBoundingClientRect();
     const from = element.getBoundingClientRect();
-    // Nothing laid out (a seat beyond the table's 16, or a test without layout): no trip.
-    if (!slot || slot.width === 0 || from.width === 0) {
+    const dock = docked ? (handPanel.current?.getBoundingClientRect() ?? null) : null;
+    // Nothing laid out (a seat beyond the table's 16, or a test without layout), or a slot
+    // out of sight (scrolled away, or under the docked hand): no trip, the card only lifts.
+    if (
+      !slot ||
+      slot.width === 0 ||
+      from.width === 0 ||
+      !inSight(slot, document.documentElement.clientHeight, dock)
+    ) {
       setFlight(null);
       return;
     }
@@ -140,7 +156,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
   const news = vote.news;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 phone:gap-3">
       {me.isOwner ? (
         <NextSubject
           next={next}
@@ -168,7 +184,18 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
         ) : null}
       </section>
       {hand.kind === "cards" ? (
-        <div data-room-hand className="rounded-xl border border-line bg-surface pb-3">
+        <div
+          ref={handPanel}
+          data-room-hand
+          data-hand-dock={docked || undefined}
+          className={cn(
+            // On a phone the padding clears the home indicator, docked or not, so the
+            // panel measures the same in both states (`useHandDock`).
+            "rounded-xl border border-line bg-surface pb-3 phone:pb-[max(0.5rem,env(safe-area-inset-bottom))]",
+            // Docked, it is a sheet on the bottom edge.
+            "thumb:data-hand-dock:sticky thumb:data-hand-dock:bottom-0 thumb:data-hand-dock:z-20 thumb:data-hand-dock:rounded-b-none thumb:data-hand-dock:border-b-0 thumb:data-hand-dock:shadow-panel",
+          )}
+        >
           <Hand
             cards={hand.cards}
             selected={shown.round?.yourVote ?? null}
@@ -176,7 +203,15 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
             describedBy={ids.hint}
             onPick={pick}
           />
-          <p id={ids.hint} className="m-0 px-4 text-center text-sm text-ink-2">
+          {/* Docked, the hint is for screen readers only: the dock stays one card high in every language. */}
+          <p
+            id={ids.hint}
+            data-hand-hint
+            className={cn(
+              "m-0 px-4 text-center text-sm text-ink-2 phone:text-xs",
+              docked && "sr-only",
+            )}
+          >
             {hint}
           </p>
           {vote.error !== null && vote.error.round === (room.round?.number ?? null) ? (
@@ -215,6 +250,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
         onFocused={onFocused}
         onLeaving={onLeaving}
         votes={hand.kind !== "owner"}
+        namesake={[...people, ...observers].find((person) => person.id === me.id)?.namesake}
       />
     </div>
   );

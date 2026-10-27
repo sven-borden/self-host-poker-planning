@@ -2,7 +2,15 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { afterEach, describe, expect, it } from "vitest";
 import { changeLanguage, fixedT, loadLanguage } from "../i18n/i18n.ts";
 import { Avatar, avatarColour, avatarLooks, initials } from "./avatar.tsx";
-import { cardLabel, HandCard, labelEms, labelScale, MiniCard, SlotCard } from "./cards.tsx";
+import {
+  cardLabel,
+  HandCard,
+  labelEms,
+  labelFit,
+  labelScale,
+  MiniCard,
+  SlotCard,
+} from "./cards.tsx";
 import type { TablePerson } from "./seat.tsx";
 import { TableStage } from "./table-stage.tsx";
 
@@ -245,7 +253,24 @@ describe("cards", () => {
     render(<MiniCard value="XXXL" />);
     const value = document.querySelector<HTMLElement>("[data-card-value]");
     expect(value?.className).toContain("whitespace-nowrap");
-    expect(value?.style.fontSize).toBe("0.423em");
+    // At 42 % it would be 5 px on a phone's chip: it narrows to 70 % width and grows.
+    expect(value?.style.fontSize).toBe("0.579em");
+    expect(value?.style.fontStretch).toBe("70%");
+  });
+
+  it("narrows a long label rather than shrinking it below 80 % (#22)", () => {
+    expect(labelFit("13", 1.4545)).toEqual({ scale: 1, narrow: false });
+    expect(labelFit("100", 1.88)).toEqual({ scale: 0.87, narrow: false });
+    // An emoji's font has no width axis.
+    expect(labelFit("👍🏽👍", 1.4).narrow).toBe(false);
+    // The dense phone slot: 16 px of room in an 11 px font.
+    const dense = 16 / 11;
+    expect(labelFit("XXL", dense)).toEqual({ scale: 0.664, narrow: true });
+    expect(labelFit("100", dense).scale * 11).toBeGreaterThan(10);
+    expect(labelFit("XL", dense).scale * 11).toBeGreaterThan(10);
+    for (const value of ["XS", "XL", "XXL", "100", "½"]) {
+      expect(labelFit(value, dense).scale * 11, value).toBeGreaterThanOrEqual(7);
+    }
   });
 
   it("sizes slot cards in whole pixels from the layout", () => {
@@ -322,6 +347,29 @@ describe("presence, the PO and the viewer (#17)", () => {
     expect(olivia?.textContent).toBe("OlOlivia, product owner, awayProduct owner · Away");
     expect(olivia?.hasAttribute("data-away")).toBe(true);
     expect(oskar?.textContent).toBe("OsOskar, you");
+  });
+
+  it("shows the second of a name numbered, on the seat, in its popover and in the observers' row (#22)", async () => {
+    render(
+      <TableStage
+        variant="desktop"
+        people={[
+          person("a1", "Ana Lima", { kind: "thinking" }),
+          { ...person("a2", "Ana Lima", { kind: "thinking" }), namesake: 2 },
+        ]}
+        observers={[{ id: "o3", name: "Ana Lima", namesake: 3 }]}
+      />,
+    );
+    const names = [...document.querySelectorAll("[data-seat-part=name] bdi")].map(
+      (name) => name.textContent,
+    );
+    expect(names).toEqual(["Ana Lima", "Ana Lima (2)"]);
+    const row = screen.getByRole("list", { name: "Observers" });
+    expect(within(row).getByRole("listitem").textContent).toContain("Ana Lima (3)");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Ana Lima (2), thinking" }));
+    });
+    expect((await screen.findByRole("dialog")).textContent).toBe("Ana Lima (2)Thinking");
   });
 });
 

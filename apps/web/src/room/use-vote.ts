@@ -12,6 +12,7 @@ import {
   type VoteCommand,
   type Wish,
 } from "./hand-state.ts";
+import { voteTick } from "./haptics.ts";
 
 type Sender = (command: VoteCommand) => Promise<CommandResult>;
 
@@ -85,6 +86,7 @@ export function useVote(): Vote {
     if (acked === null || round?.number !== acked.number) return;
     if ((round.yourVote ?? null) !== acked.card) return;
     said.current += 1;
+    if (acked.card !== null) voteTick();
     setNews({
       id: said.current,
       what: acked.card === null ? { kind: "retracted" } : { kind: "voted", card: acked.card },

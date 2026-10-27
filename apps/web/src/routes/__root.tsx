@@ -18,6 +18,14 @@ const Toaster = lazy(() =>
   import("../components/ui/sonner.tsx").then((module) => ({ default: module.Toaster })),
 );
 
+/**
+ * The page's side gutters: 16 px, or more beside a notch on a phone held sideways. In
+ * portrait the insets are 0, so the table's `PHONE_MAX_ROOM` (608 px of a 640 px
+ * viewport) still holds.
+ */
+const GUTTERS =
+  "pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))]";
+
 export const Route = createRootRoute({
   component: RootLayout,
   notFoundComponent: NotFound,
@@ -34,8 +42,11 @@ function RootLayout() {
       >
         {t("app.skipToContent")}
       </a>
-      <header className="border-b border-line bg-surface">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-2">
+      {/* Inside the safe areas: the page runs under a notch or a home indicator (viewport-fit=cover). */}
+      <header className="border-b border-line bg-surface pt-[env(safe-area-inset-top)]">
+        <div
+          className={`mx-auto flex max-w-5xl items-center justify-between gap-4 py-2 phone:py-1 ${GUTTERS}`}
+        >
           <Link
             to="/"
             className="flex min-h-11 items-center gap-2.5 rounded-md font-display text-base font-[760] [font-stretch:110%]"
@@ -52,7 +63,9 @@ function RootLayout() {
       <main
         id="main"
         tabIndex={-1}
-        className="mx-auto max-w-5xl px-4 py-12 outline-none sm:py-20 lg:py-10"
+        // The room page starts close under the header on phones and short screens (#22):
+        // the table and the hand need the height.
+        className={`mx-auto max-w-5xl py-12 outline-none sm:py-20 lg:py-10 phone:has-[[data-room-page]]:pt-2 squat:has-[[data-room-page]]:pt-3 ${GUTTERS}`}
       >
         <Outlet />
       </main>
@@ -101,7 +114,7 @@ function IdentityToasts() {
  */
 function RootError() {
   return (
-    <main id="main" className="mx-auto max-w-5xl px-4 py-12 sm:py-20 lg:py-10">
+    <main id="main" className={`mx-auto max-w-5xl py-12 sm:py-20 lg:py-10 ${GUTTERS}`}>
       <ErrorPage />
     </main>
   );

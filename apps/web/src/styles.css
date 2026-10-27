@@ -29,6 +29,21 @@
 @custom-variant phone (@media (max-width: 640px));
 
 /*
+ * A phone held upright (#22): narrow and tall enough for the hand to dock at the bottom
+ * of the screen while the team votes. A phone on its side (844 × 390) is neither, so its
+ * hand stays in the page and covers nothing.
+ */
+@custom-variant thumb (@media (max-width: 640px) and (min-height: 520px));
+/* The hand docks only where the table also fits above it (src/room/hand-dock.ts). */
+
+/*
+ * A short screen, such as a phone on its side: the page around the table gets compact.
+ * Registered after `phone`, so its rules come later in the stylesheet and win where both
+ * match (a small phone on its side, 568 × 320): a short phone gets the squat rules.
+ */
+@custom-variant squat (@media (max-height: 480px));
+
+/*
  * Tailwind's palette is switched off: only the design tokens exist as colours, so
  * `bg-red-500` or `text-white` generate nothing. `transparent`, `current` and `inherit`
  * are built in and stay available.
@@ -161,6 +176,19 @@
   :focus-visible {
     outline: 2px solid var(--brass);
     outline-offset: 2px;
+  }
+
+  /*
+   * While the hand is docked at the bottom of a phone (#22), whatever takes the focus or
+   * is scrolled to (a seat, "Reveal cards") stops above the hand instead of under it: the
+   * scroll padding is the dock's height (`--hand-dock`, set by useHandDock). The dock is
+   * sticky, so it keeps its own place at the end of the flow and nothing has to be padded
+   * for the page to scroll everything above it clear.
+   */
+  @media (max-width: 640px) and (min-height: 520px) {
+    :root:has([data-hand-dock]) {
+      scroll-padding-bottom: var(--hand-dock, 10rem);
+    }
   }
 
   /* Reduced motion: no travel, only short cross-fades (design brief, motion spec). */

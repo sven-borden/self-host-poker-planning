@@ -365,3 +365,22 @@ describe("the results' motion", () => {
     expect(delays.every((timing) => (timing.delay ?? 0) >= 920)).toBe(true);
   });
 });
+
+describe("namesakes in the results (#22)", () => {
+  it("number the second of a name among the lowest and highest, as the seats do", () => {
+    const base = revealed("fib", ["1", "5", "8"]);
+    const room: RoomView = {
+      ...base,
+      participants: base.participants.map((p) =>
+        p.id === "p0" || p.id === "p2" ? { ...p, name: "Ana" } : p,
+      ),
+    };
+    expect(resultsModel(room)?.extremes).toEqual([
+      { extreme: "low", card: "1", names: [{ name: "Ana" }] },
+      { extreme: "high", card: "8", names: [{ name: "Ana", namesake: 2 }] },
+    ]);
+    const { region } = panel(room);
+    const highest = region.querySelector("[data-extreme='high']");
+    expect(highest?.textContent).toContain("Ana (2)");
+  });
+});

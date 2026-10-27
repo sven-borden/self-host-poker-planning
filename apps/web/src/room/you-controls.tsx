@@ -7,6 +7,7 @@ import { Input } from "../components/ui/input.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { type CommandResult, commandSender, sendCommand } from "../realtime/room-connection.ts";
 import { Avatar, type AvatarLook } from "../table/avatar.tsx";
+import { shownName } from "../table/seat.tsx";
 import { codeOf, failureMessage } from "./failure.ts";
 import { NAME_INPUT_MAX_UNITS } from "./join-form.tsx";
 import { saveName } from "./save-name.ts";
@@ -25,6 +26,8 @@ interface YouControlsProps {
   onLeaving: (leaving: boolean) => void;
   /** False for a PO at the table in a room where the PO does not vote (`poVotes` off). */
   votes?: boolean;
+  /** Which one of their name the viewer is, when someone who joined earlier has it (#22). */
+  namesake?: number | undefined;
 }
 
 /**
@@ -40,6 +43,7 @@ export function YouControls({
   onFocused,
   onLeaving,
   votes = true,
+  namesake,
 }: YouControlsProps) {
   const t = useT();
   const ids = { heading: useId(), name: useId(), hint: useId(), error: useId() };
@@ -204,7 +208,7 @@ export function YouControls({
             <Avatar id={me.id} name={me.name} size={36} look={look} />
             <div className="flex min-w-0 flex-col">
               <span data-you-name dir="auto" className="truncate font-semibold">
-                <bdi>{me.name}</bdi>
+                <bdi>{shownName(t, { name: me.name, namesake })}</bdi>
               </span>
               <span data-you-role={me.role} className="text-sm text-ink-2">
                 {me.role === "observer"

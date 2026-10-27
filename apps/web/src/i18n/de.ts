@@ -124,6 +124,7 @@ export const de: Catalog = {
     seatNoVote: "{{name}}, keine Stimme",
     seatCard: "{{name}}, Karte {{card}}",
     seatCardWord: "{{name}}, {{card}}",
+    nameNumbered: "{{name}} ({{number, number}})",
     votedSoFar_one: "{{count, number}}/{{total, number}} hat bisher abgestimmt",
     votedSoFar_other: "{{count, number}}/{{total, number}} haben bisher abgestimmt",
     you: "Sie",

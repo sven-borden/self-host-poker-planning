@@ -1,11 +1,18 @@
 import { fileURLToPath } from "node:url";
-import { type Browser, type BrowserContext, expect, type Page, test } from "@playwright/test";
+import {
+  type Browser,
+  type BrowserContext,
+  devices,
+  expect,
+  type Page,
+  test,
+} from "@playwright/test";
 import { io, type Socket } from "socket.io-client";
 import { PROTOCOL_VERSION } from "../../../packages/protocol/src/version.ts";
 
 // Shared by the specs that run against the real server and Postgres (join.spec.ts,
-// presence.spec.ts): guests driven over the protocol from Node, a client address per
-// person, and the room page's common steps.
+// presence.spec.ts, mobile.spec.ts): guests driven over the protocol from Node, a client
+// address per person, the room page's common steps, and phones (#22).
 
 export const SHOTS = fileURLToPath(new URL("../tmp/screenshots/", import.meta.url));
 export const ROOM_PATH = /\/r\/([1-9A-HJ-NP-Za-km-z]{10})$/;
@@ -214,3 +221,77 @@ export async function recordAnimations(page: Page, { reload = false } = {}) {
 
 export const animated = (page: Page) =>
   page.evaluate(() => (window as unknown as { __animated: Animated[] }).__animated);
+
+type Device = "iPhone 13" | "iPhone SE" | "Pixel 7";
+
+export interface Phone {
+  context: BrowserContext;
+  page: Page;
+  /** Every `navigator.vibrate` pattern the page asked for. */
+  vibrations: () => Promise<number[]>;
+  /** Uncaught errors on the page. */
+  errors: string[];
+}
+
+/**
+ * A phone: a device descriptor (viewport, touch, mobile, user agent) in the configured
+ * Chromium or Edge, or a bare phone-sized viewport. The iPhone has no `navigator.vibrate`,
+ * as in Safari; elsewhere each call is recorded.
+ */
+export async function phone(
+  browser: Browser,
+  device: Device | { width: number; height: number },
+): Promise<Phone> {
+  const options =
+    typeof device === "string"
+      ? (({ defaultBrowserType: _, ...descriptor }) => descriptor)(devices[device])
+      : { viewport: device, isMobile: true, hasTouch: true, deviceScaleFactor: 2 };
+  const context = await browser.newContext({
+    ...options,
+    locale: "en-US",
+    extraHTTPHeaders: ownAddress(),
+  });
+  const ios = typeof device === "string" && device.startsWith("iPhone");
+  await context.addInitScript((noVibrate: boolean) => {
+    const calls: number[] = [];
+    Object.assign(window, { __vibrations: calls });
+    if (noVibrate) {
+      Reflect.deleteProperty(Navigator.prototype, "vibrate");
+      return;
+    }
+    Object.defineProperty(Navigator.prototype, "vibrate", {
+      configurable: true,
+      value: (pattern: number | Iterable<number>) => {
+        calls.push(...(typeof pattern === "number" ? [pattern] : pattern));
+        return true;
+      },
+    });
+  }, ios);
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  return {
+    context,
+    page,
+    errors,
+    vibrations: () =>
+      page.evaluate(() => (window as unknown as { __vibrations: number[] }).__vibrations),
+  };
+}
+
+/** The viewer's hand, and one card in it by its name. */
+export const hand = (page: Page) => page.getByRole("toolbar", { name: "Your cards" });
+export const handCard = (page: Page, label: string) =>
+  hand(page).getByRole("button", { name: label, exact: true });
+
+/** Guests who join as voters over the protocol, named in order. */
+export async function guestsJoin(base: string, code: string, names: readonly string[]) {
+  const guests: Guest[] = [];
+  for (const name of names) {
+    const guest = await newGuest(base);
+    guests.push(guest);
+    expect(await guest.enter(code)).toMatchObject({ ok: true });
+    expect(await guest.cmd("join", { name, role: "voter" })).toMatchObject({ ok: true });
+  }
+  return guests;
+}

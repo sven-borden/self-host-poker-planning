@@ -63,7 +63,8 @@ export function RoomView() {
 
   return (
     <>
-      <RoomStatus />
+      {/* The connection and the people count sit in the header (`RoomPresence`). */}
+      <RoomStatus presence={false} />
       <p role="status" data-room-notice className="sr-only">
         {notice}
       </p>

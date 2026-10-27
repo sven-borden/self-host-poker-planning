@@ -5,7 +5,14 @@ import { Avatar } from "./avatar.tsx";
 import { SlotCard, type SlotFace } from "./cards.tsx";
 import { layoutTable, type TableVariant, variantFor } from "./layout.ts";
 import { FLIP_STAGGER_MS, revealSettleMs } from "./reveal-motion.ts";
-import { flagWords, type PersonFlags, Seat, type SeatStatus, type TablePerson } from "./seat.tsx";
+import {
+  flagWords,
+  type PersonFlags,
+  Seat,
+  type SeatStatus,
+  shownName,
+  type TablePerson,
+} from "./seat.tsx";
 import { useRoomWidth } from "./use-room-width.ts";
 import "./table.css";
 
@@ -205,7 +212,7 @@ function ObserverItem({ observer }: { observer: Observer }) {
           observer.you && !observer.away ? "font-semibold text-spruce" : "text-ink-2",
         )}
       >
-        <bdi>{observer.name}</bdi>
+        <bdi>{shownName(t, observer)}</bdi>
       </span>
       {words.length > 0 ? <span className="sr-only">, {words.join(", ")}</span> : null}
       {tags.length > 0 ? (

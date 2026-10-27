@@ -4,6 +4,7 @@ import { formatList } from "../i18n/format.ts";
 import { languageOf, type TFunction } from "../i18n/i18n.ts";
 import { localeFor } from "../i18n/language.ts";
 import type { Extreme } from "../table/seat.tsx";
+import { namesakes } from "./namesakes.ts";
 
 // What a revealed round says (#20), read from the server's `round.results`: the domain's
 // `computeResults` over the round's votes (a named round's `votes`, the departed and the
@@ -31,6 +32,12 @@ export interface ResultColumn {
   extreme?: Extreme;
 }
 
+/** A name as the room shows it (`shownName`): with its number when someone else has it. */
+export interface PersonName {
+  name: string;
+  namesake?: number;
+}
+
 export interface ResultsModel {
   anonymous: boolean;
   /** A numeric deck: average and median; otherwise the most voted card. */
@@ -51,9 +58,10 @@ export interface ResultsModel {
   summary: RevealSummary;
   /**
    * Named rounds with a spread: who played the lowest and the highest card, in the order
-   * the round lists its votes. A name is null for a departed vote the server kept no name for.
+   * the round lists its votes, each with its number when it shares its name (`namesakes`).
+   * A name is null for a departed vote the server kept no name for.
    */
-  extremes: Array<{ extreme: Extreme; card: string; names: Array<string | null> }>;
+  extremes: Array<{ extreme: Extreme; card: string; names: Array<PersonName | null> }>;
 }
 
 /** The lowest or the highest card of a named round whose cards differ; never anonymous. */
@@ -137,12 +145,18 @@ export function resultsModel(room: RoomView): ResultsModel | null {
 
   const extremes: ResultsModel["extremes"] = [];
   if (!round.anonymous && results.spread !== null) {
-    const people = new Map(room.participants.map((p) => [p.id, p.name]));
+    const numbers = namesakes(room.participants);
+    const people = new Map(
+      room.participants.map((p): [string, PersonName] => {
+        const namesake = numbers.get(p.id);
+        return [p.id, namesake === undefined ? { name: p.name } : { name: p.name, namesake }];
+      }),
+    );
     for (const column of columns) {
       if (!column.extreme) continue;
       const names = round.votes
         .filter((vote) => vote.card === column.card)
-        .map((vote) => people.get(vote.who) ?? vote.name ?? null);
+        .map((vote) => people.get(vote.who) ?? (vote.name ? { name: vote.name } : null));
       extremes.push({ extreme: column.extreme, card: column.card, names });
     }
   }

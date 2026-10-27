@@ -7,6 +7,7 @@ import { errorMessage } from "../../i18n/errors.ts";
 import { useT } from "../../i18n/hooks.ts";
 import { RiseIn } from "../../motion/motion.tsx";
 import { openRoom } from "../../realtime/room-connection.ts";
+import { RoomPresence } from "../../room/room-status.tsx";
 import { RoomView } from "../../room/room-view.tsx";
 import { fetchRoomHeader, RoomApiError, type RoomHeader } from "../../rooms/api.ts";
 import { RoomNotFound } from "../../rooms/room-not-found.tsx";
@@ -138,32 +139,45 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
   }
 
   return (
-    <RiseIn className="flex flex-col gap-10">
-      <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
+    // The header names the room, then gives its code, the connection and the people count
+    // on one line (`RoomPresence`). On a phone (#22) it is compact: the name one size
+    // smaller, the copy-link button an icon beside it (its name stays "Copy the link"), and
+    // the code's label for screen readers only, so the code, the connection and the
+    // count share the line under them.
+    <RiseIn data-room-page className="flex flex-col gap-10 phone:gap-2 squat:gap-3">
+      <header className="flex items-start justify-between gap-3 sm:items-end sm:gap-5 phone:grid phone:grid-cols-[minmax(0,1fr)_auto] phone:items-center phone:gap-y-1">
+        {/* On a phone its two lines join the grid: the name beside the button, then the line under both. */}
+        <div className="min-w-0 phone:contents">
           {/* overflow-hidden: whatever the name stacks above or below its letters stays inside. */}
-          <h1 className="overflow-hidden py-1 text-3xl font-[760] break-words [font-stretch:110%] sm:text-4xl">
+          <h1 className="overflow-hidden py-1 text-3xl font-[760] break-words [font-stretch:110%] sm:text-4xl squat:text-2xl phone:col-start-1 phone:row-start-1 phone:py-0.5 phone:text-xl">
             {header.name !== null ? (
               <bdi>{header.name}</bdi>
             ) : (
               t("room.title", { code: header.code })
             )}
           </h1>
-          <dl className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <dt className="font-mono text-xs tracking-[0.08em] text-ink-2 uppercase">
-              {t("room.codeLabel")}
-            </dt>
-            <dd
-              data-room-code
-              className="m-0 rounded-md bg-surface-2 px-2 py-0.5 font-mono text-sm"
-            >
-              {header.code}
-            </dd>
-          </dl>
+          <div className="mt-4 flex flex-wrap items-baseline gap-x-4 gap-y-1 squat:mt-1 phone:col-span-2 phone:mt-0 phone:text-sm">
+            <dl className="m-0 flex items-baseline gap-x-3">
+              <dt className="font-mono text-xs tracking-[0.08em] text-ink-2 uppercase phone:sr-only">
+                {t("room.codeLabel")}
+              </dt>
+              <dd
+                data-room-code
+                className="m-0 rounded-md bg-surface-2 px-2 py-0.5 font-mono text-sm"
+              >
+                {header.code}
+              </dd>
+            </dl>
+            <RoomPresence />
+          </div>
         </div>
-        <Button variant="outline" className="sm:shrink-0" onClick={copyLink}>
+        <Button
+          variant="outline"
+          className="shrink-0 phone:col-start-2 phone:row-start-1 phone:size-11 phone:has-[>svg]:px-0"
+          onClick={copyLink}
+        >
           <LinkIcon aria-hidden />
-          {t("room.copyLink")}
+          <span className="phone:sr-only">{t("room.copyLink")}</span>
         </Button>
       </header>
       {note && (
@@ -187,7 +201,7 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
         </div>
       )}
       {/* The room itself: the join form, or the table and the viewer's controls (#16). */}
-      <div data-room-slot className="flex flex-col gap-6">
+      <div data-room-slot className="flex flex-col gap-6 phone:gap-3">
         <RoomView />
       </div>
     </RiseIn>

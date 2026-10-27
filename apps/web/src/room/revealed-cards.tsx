@@ -3,7 +3,8 @@ import { useId } from "react";
 import { useT } from "../i18n/hooks.ts";
 import type { TFunction } from "../i18n/i18n.ts";
 import { cardLabel, isSpecialCard, MiniCard } from "../table/cards.tsx";
-import { type Extreme, ExtremeMark, extremeWord } from "../table/seat.tsx";
+import { type Extreme, ExtremeMark, extremeWord, shownName } from "../table/seat.tsx";
+import { namesakes } from "./namesakes.ts";
 import { extremeOf } from "./results-view.ts";
 
 /** A named vote whose person has no seat; `name` is unknown for an old departed vote. */
@@ -25,9 +26,11 @@ type OffTableVote = {
  * none to anyone, or in `PlayedCards` when the results cannot load.
  */
 export function RevealedCards({ room }: { room: RoomView }) {
+  const t = useT();
   const round = room.round;
   if (round?.phase !== "revealed" || round.anonymous) return null;
   const people = new Map(room.participants.map((p) => [p.id, p]));
+  const numbers = namesakes(room.participants);
   const offTable = round.votes.flatMap((vote): OffTableVote[] => {
     const person = people.get(vote.who);
     if (person?.role === "voter") return [];
@@ -35,7 +38,11 @@ export function RevealedCards({ room }: { room: RoomView }) {
       {
         who: vote.who,
         card: vote.card,
-        name: vote.name ?? person?.name,
+        // Someone still in the room goes by the name the seats show (numbered); someone
+        // who left, by the name the server kept.
+        name: person
+          ? shownName(t, { name: person.name, namesake: numbers.get(person.id) })
+          : vote.name,
         extreme: extremeOf(round, vote.card),
       },
     ];
