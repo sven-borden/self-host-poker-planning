@@ -21,15 +21,16 @@ const STEPS = [
 /**
  * The landing page (#24): what the tool is, how a round goes, "Create a room" (#14) and
  * "Join with a code". On phones it reads top to bottom: the pitch, the two ways in, then
- * the steps. From 1024 px the creation card stands on the right and the steps and the
- * join field sit under the pitch, so the page fits one screen.
+ * the steps. From 1024 px the creation card stands on the right, with the join card and
+ * then the steps under the pitch: both ways in fit above the fold at 1440 × 900, the join
+ * field at 1366 × 768, and the steps come last at every width.
  */
 function Home() {
   const t = useT();
   const format = useFormat();
   const stepsHeading = useId();
   return (
-    <RiseIn className="grid gap-10 [grid-template-areas:'intro'_'create'_'join'_'how'] lg:grid-cols-[minmax(0,1fr)_minmax(0,27rem)] lg:grid-rows-[auto_auto_1fr] lg:gap-x-14 lg:[grid-template-areas:'intro_create'_'how_create'_'join_create']">
+    <RiseIn className="grid gap-10 [grid-template-areas:'intro'_'create'_'join'_'how'] lg:grid-cols-[minmax(0,1fr)_minmax(0,27rem)] lg:grid-rows-[auto_auto_1fr] lg:gap-x-14 lg:[grid-template-areas:'intro_create'_'join_create'_'how_create']">
       <div className="[grid-area:intro]">
         <p className="font-mono text-xs tracking-[0.08em] text-ink-2 uppercase">
           {t("app.tagline")}
