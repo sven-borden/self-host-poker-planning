@@ -90,6 +90,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   monotonic, re-synced after a sleep). The server reveals at the deadline, exactly once,
   even after a restart; pages ping `timeUp` as a fallback. A deck restart restarts the
   timer. The room route loads 172.9 kB.
+- PO powers from #30: in any seat's or observer's popover the PO can hand over the role
+  or remove someone, each asked first. Everyone else can claim the role once the PO has
+  left, or has been away for 120 s (`ownerClaimableAt`, on the server's clock). A
+  removed person is back on the join form at once, with a notice, and may join again.
+  The room route loads 173.3 kB.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -100,17 +105,18 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#30 (PP-030)** PO powers: hand over, claim when the PO is gone or away for 120 s,
-  remove someone. PR #91 reviewed (no blocker); the fixer in `../pp-wt-30` merges `main`
-  and moves the claim banner onto #27's `serverTime()`.
 - **#28 (PP-028)** reveal modes: who can reveal ("anyone" means anyone who votes, never
   an observer: today the domain lets an observer reveal), a voter's "Reveal cards" and
-  `R`, the revealer named in the live region. Building in `../pp-wt-28`.
+  `R`, the revealer named in the live region. Building in `../pp-wt-28`; it merges
+  `main` (with #30) before its PR.
+- **#31 (PP-031)** room password: argon2id, access granted on the server per session
+  user (a kick or a password change drops grants), limits on failed tries, the PO's row
+  in the panel and a password field on the join screen. Building in `../pp-wt-31`.
 
 ## Next
 
-- W2 order, by dependencies: #29 (change after reveal) needs #28; #31 (password) needs
-  #30. They start as #28 and #30 merge.
+- W2 order, by dependencies: #29 (change after reveal) needs #28 and starts when it
+  merges. Then W2 is complete and W3 (#33–#41) begins.
   - PO decision for #28: switching anonymity never re-projects the round on the table;
     it applies from the next round, as #25 does, since names already seen cannot be
     hidden and an anonymous round must never gain them.
@@ -120,7 +126,6 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 - Notes to carry into the briefs:
   - #29: change after reveal never applies to anonymous rounds. The panel's `locked`
     toggle shows why.
-  - #31: the header GET shows a password room's name.
   - #39 (scale-out): a kick must close the person's sockets on every instance; today
     only on the one that ran it.
   - Later: a person removed while their socket was down comes back to the join form
