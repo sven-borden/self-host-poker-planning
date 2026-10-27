@@ -317,6 +317,9 @@ test("an anonymous round is marked for everyone, and an open panel still says th
   // On a phone the chip shares the round's line.
   await cleo.page.setViewportSize({ width: 360, height: 780 });
   await expect(cleo.page.locator("[data-round-anonymous]")).toBeVisible();
+  await cleo.page
+    .locator("[data-round-subject]")
+    .evaluate((line) => line.scrollIntoView({ block: "start" }));
   await cleo.page.screenshot({ path: `${SHOTS}round-anonymous-360-light.png` });
   await ben.context.close();
   await cleo.context.close();
