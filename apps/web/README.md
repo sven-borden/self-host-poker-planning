@@ -157,30 +157,43 @@ server sends and never decides the outcome of a round.
   distribution into the counted columns (the cards in `results.core`, deck order) and
   the `uncounted` ones (specials, or a card outside the deck), finds a tie for most voted
   in the counts, and in a named round with a spread names the lowest and highest voters
-  (`extremes`); `extremeOf(round, card)` also marks the seats (`seatStatus` gives
-  `revealed {card, extreme}`; never in an anonymous round); `revealSummary` and
-  `summarySentence` give the centre and the live region "Consensus on 8.", "Suggested
-  5, agreement 60%.", "Most voted M, agreement 50%." (a deck without numbers) or
-  "Nothing to count.". `results.tsx` is a chunk of its own (`results-chunk.tsx`:
-  `loadResults`, `prefetchResults` and the `React.lazy` wrappers, which fall back to
-  "Cards revealed" and no panel when the chunk cannot load, so an old chunk gone after a
-  redeploy never breaks the room), which `Seated` prefetches as soon as a round is on: `CentreResult` (`[data-centre-status="revealed"]`, `[data-centre-result]` =
-  `consensus`, `suggested` or `none`; the card as a mini card and the agreement, or a
-  `Consensus` pill (`[data-pop]`, with a `[data-pulse]` ring); for the PO a one-line
-  `compact` form that shrinks the card to a chip on phones, above "Next round"; a
-  sentence in `.sr-only`; "Cards revealed" while the chunk loads) and `ResultsPanel`
+  (`extremes`; the domain's spread, by value on a numeric deck); `extremeOf(round, card)`
+  also marks the seats (`seatStatus` gives `revealed {card, extreme}`) and the "Not at
+  the table" row, never in an anonymous round; `revealSummary` and `summarySentence`
+  give the centre and the live region "Consensus on 8.", "Suggested 5. Agreement 60%.",
+  "Most voted M. Agreement 67%." or "Tie between M and L. Agreement 50%." (a deck
+  without numbers, whose top count is shared) or "Nothing to count.". The agreement is
+  the team's (the share of the most voted card), not the suggestion's support.
+  `results.tsx` is a chunk of its own, loaded by `results-chunk.tsx` without
+  `React.lazy`: `prefetchResults` (`Seated`, as soon as a round is on) imports the
+  module itself, so a reveal draws it at once with no Suspense fallback;
+  `CentreResult` and `ResultsPanel` there render the loaded module, or, while it loads
+  or when it cannot, `CentreFallback` (the result as a sentence,
+  `[data-centre-fallback]`) and, once the load failed in an anonymous round,
+  `PlayedCards` ("Cards played", the round's cards in deck order, the only place they
+  show). A failed load is forgotten, so the next reveal tries again; an old chunk gone
+  after a redeploy never hides a round. The module holds `CentreResult`
+  (`[data-centre-status="revealed"]`, `[data-centre-result]` = `consensus`,
+  `suggested`, `tie` or `none`; the card as a mini card with `[data-centre-caption]`
+  "Agreement 67%" under it, the tied cards with "Tie", or a `Consensus` pill
+  (`[data-pop]`, with a `[data-pulse]` ring); for the PO a `compact` form above "Next
+  round" that shrinks the card to a chip on phones, the agreement beside it on two
+  lines, the pill or "Tie" under it, at most 76 px wide; a sentence in `.sr-only`) and `ResultsPanel`
   (`[data-results-panel="named|anonymous"]`, a region labelled "Results": a `<dl>` of
   statistics, `[data-stat=average|median|mostVoted|agreement|spread]`, numbers formatted
   by `useFormat` in the reader's region, "—" with "no value" for screen readers; the
   `[data-extremes]` list; the columns `[data-distribution]`, each `[data-column]` with
   its count, a `[data-bar]` (`.pp-bar`, `CanvasText` in forced colours) and a mini card,
-  read as "5: 3 votes"; the special cards under "Not counted" with a note). In an
+  read as "5: 3 votes"; narrower on phones, so eleven columns fit one row at 360 px; the
+  special cards under "Not counted" with a note; each list's visible caption is
+  `aria-hidden` and names the list, so it is read once). In an
   anonymous round the columns replace #19's "Cards played" row: one presentation, in
   deck order, keyed by card, with nothing that points at a person. Motion
   (`results-motion.ts`, `Element.animate`): only when `Seated` saw the reveal
   (`liveReveal`), from `revealSettleMs` (the last flip's end, `650 + (n - 1) × 90` ms
   for `n` face-up cards, or 350 ms after an anonymous reveal): the columns rise 500 ms,
-  60 ms apart, the numbers fade in, the consensus pops (400 ms) with one ring pulse;
+  60 ms apart and their counts drop in, the centre's result fades in, the consensus pops
+  (400 ms) with one ring pulse; the panel's numbers, lists and cards show at once;
   `TableStage` gives each seat the same `settle`, and a lowest or highest badge
   (`ExtremeMark`, an arrow in a spruce disc, bottom right of the avatar) pops in then.
   Under reduced motion each is a 120 ms cross-fade at once. Copy: `results.*`,
