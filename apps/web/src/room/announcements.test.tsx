@@ -192,6 +192,124 @@ describe("liveEvents", () => {
   });
 });
 
+describe("settings (#25)", () => {
+  /** Ana's view of a room whose PO ("me") changes settings. */
+  function anasRoom() {
+    const { run } = story("ana");
+    run("me", { type: "join", name: "Me", role: "voter" });
+    const seated = run("ana", { type: "join", name: "Ana", role: "voter" });
+    return { run, seated };
+  }
+
+  it("says each change in plain words to everyone but the PO", () => {
+    const { run, seated } = anasRoom();
+    const anonymous = run("me", { type: "updateSettings", patch: { revealNames: false } });
+    expect(said(liveEvents(anonymous.room, anonymous.causes, seated.room))).toBe(
+      "The PO turned on anonymous voting from the next round.",
+    );
+    const several = run("me", {
+      type: "updateSettings",
+      patch: { poVotes: false, observersCount: false, revealWhenAllVoted: false },
+    });
+    expect(said(liveEvents(several.room, several.causes, anonymous.room))).toBe(
+      "The cards now wait for a reveal, even once everyone has voted. The PO no longer votes. Observers no longer take one of the 16 places.",
+    );
+    const deck = run("me", {
+      type: "updateSettings",
+      patch: { deck: { kind: "preset", id: "tshirt" }, whoCanReveal: "anyone" },
+    });
+    expect(said(liveEvents(deck.room, deck.causes, several.room))).toBe(
+      "The PO changed the deck: T-shirt sizes. Anyone who votes can now reveal the cards.",
+    );
+    const rest = run("me", {
+      type: "updateSettings",
+      patch: {
+        specials: [],
+        timer: { seconds: 60 },
+        allowChangeAfterReveal: true,
+        revealNames: true,
+        poVotes: true,
+        observersCount: true,
+        revealWhenAllVoted: true,
+        whoCanReveal: "po",
+        deck: { kind: "custom", cards: ["1", "2"] },
+      },
+    });
+    expect(said(liveEvents(rest.room, rest.causes, deck.room))).toBe(
+      [
+        "The PO changed the deck: Custom deck.",
+        "The PO changed the special cards.",
+        "The PO changed the timer.",
+        "The cards now turn over once everyone has voted.",
+        "Only the PO can reveal the cards now.",
+        "The PO turned off anonymous voting from the next round.",
+        "Votes can now change after the reveal.",
+        "The PO now votes too.",
+        "Observers now take one of the 16 places.",
+      ].join(" "),
+    );
+    const back = run("me", { type: "updateSettings", patch: { allowChangeAfterReveal: false } });
+    expect(said(liveEvents(back.room, back.causes, rest.room))).toBe(
+      "Votes can no longer change after the reveal.",
+    );
+  });
+
+  it("says nothing to the PO, whose own switch says it", () => {
+    const { run } = story("me");
+    const seated = run("me", { type: "join", name: "Me", role: "voter" });
+    const changed = run("me", { type: "updateSettings", patch: { revealNames: false } });
+    expect(liveEvents(changed.room, changed.causes, seated.room)).toEqual([]);
+  });
+
+  it("says a change before the round it restarts, and a change a reconnect brings", () => {
+    const { run, seated } = anasRoom();
+    const started = run("me", { type: "startRound", subject: { kind: "none" } });
+    const restarted = run("me", {
+      type: "updateSettings",
+      patch: { deck: { kind: "preset", id: "mfib" } },
+    });
+    expect(said(liveEvents(restarted.room, restarted.causes, started.room))).toBe(
+      "The PO changed the deck: Modified Fibonacci. Voting started: Round 1.",
+    );
+    // A reconnect's snapshot has no causes; the settings it shows are still news.
+    expect(said(liveEvents(restarted.room, [], seated.room))).toContain(
+      "The PO changed the deck: Modified Fibonacci.",
+    );
+  });
+
+  it("says a setting changed twice in a batch once, or not at all when it came back", () => {
+    const { run, seated } = anasRoom();
+    const on = run("me", { type: "updateSettings", patch: { revealNames: false } });
+    const off = run("me", { type: "updateSettings", patch: { revealNames: true } });
+    const poOff = run("me", { type: "updateSettings", patch: { poVotes: false } });
+    const first = liveEvents(on.room, on.causes, seated.room);
+    const cancelled = mergeEvents(first, liveEvents(off.room, off.causes, on.room));
+    expect(cancelled).toEqual([]);
+    const batch = mergeEvents(
+      mergeEvents(first, liveEvents(poOff.room, poOff.causes, off.room)),
+      liveEvents(off.room, off.causes, on.room),
+    );
+    expect(said(batch)).toBe("The PO no longer votes.");
+    expect(said(mergeEvents([], first))).toBe(
+      "The PO turned on anonymous voting from the next round.",
+    );
+  });
+
+  it("speaks French and German", async () => {
+    await loadLanguage("fr");
+    await loadLanguage("de");
+    const { run, seated } = anasRoom();
+    const changed = run("me", { type: "updateSettings", patch: { revealNames: false } });
+    const events = liveEvents(changed.room, changed.causes, seated.room);
+    expect(describeEvents(fixedT("fr"), events)).toBe(
+      "Le PO a activé le vote anonyme à partir du tour suivant.",
+    );
+    expect(describeEvents(fixedT("de"), events)).toBe(
+      "Der PO hat die anonyme Abstimmung ab der nächsten Runde eingeschaltet.",
+    );
+  });
+});
+
 describe("batching", () => {
   const ev = (kind: LiveEvent["kind"], who: string): LiveEvent => ({ kind, who, name: who });
 
