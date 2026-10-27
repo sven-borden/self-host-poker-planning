@@ -212,11 +212,30 @@ export function newCommandId(): string {
  * `{ ok: false, code }` to translate with `errorMessage`. It waits for the room to be
  * live. A lost ack (the connection dropped) and `busy` (nothing was stored) send the same
  * command again with the same id, which the server answers once.
+ *
+ * A command belongs to the room open when it was called: once that room is closed (the
+ * page left it or moved to another code), a send still waiting for the room or for a
+ * retry resolves `offline` and never reaches the next room.
  */
-export async function sendCommand(command: CommandInput): Promise<CommandResult> {
+export function sendCommand(command: CommandInput): Promise<CommandResult> {
+  return send(active, command);
+}
+
+/**
+ * Binds commands to the room open now, for a command that is sent after an `await`: the
+ * returned function sends to that room as `sendCommand` would, or resolves `offline` at
+ * once when the page has moved to another room (or none) in between. A form takes it when
+ * it is submitted, so a join or a rename never lands in a room the person did not see.
+ */
+export function commandSender(): (command: CommandInput) => Promise<CommandResult> {
+  const target = active;
+  return (command) => send(target, command);
+}
+
+async function send(target: ActiveRoom | null, command: CommandInput): Promise<CommandResult> {
   const id = newCommandId();
-  for (let send = 0; send < MAX_SENDS; send++) {
-    const room = await whenLive();
+  for (let send = 0; target && send < MAX_SENDS; send++) {
+    const room = await whenLive(target);
     if (!room) break;
     let raw: unknown;
     try {
@@ -236,13 +255,16 @@ export async function sendCommand(command: CommandInput): Promise<CommandResult>
   return { ok: false, code: "offline" };
 }
 
-/** The open room once its status is `live`; null on `error`, when closed, or after the wait. */
-function whenLive(timeoutMs = LIVE_WAIT_MS): Promise<ActiveRoom | null> {
+/**
+ * `target` once it is live; null on `error`, once `target` is no longer the open room, or
+ * after the wait.
+ */
+function whenLive(target: ActiveRoom, timeoutMs = LIVE_WAIT_MS): Promise<ActiveRoom | null> {
   return new Promise((resolve) => {
     const check = (): boolean => {
       const { status } = useRoomStore.getState();
-      if (!active || status === "error" || status === "idle") return finish(null);
-      if (status === "live" && active.socket.connected) return finish(active);
+      if (active !== target || status === "error" || status === "idle") return finish(null);
+      if (status === "live" && target.socket.connected) return finish(target);
       return false;
     };
     let unsubscribe = () => {};

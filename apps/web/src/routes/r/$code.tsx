@@ -7,7 +7,7 @@ import { errorMessage } from "../../i18n/errors.ts";
 import { useT } from "../../i18n/hooks.ts";
 import { RiseIn } from "../../motion/motion.tsx";
 import { openRoom } from "../../realtime/room-connection.ts";
-import { RoomStatus } from "../../room/room-status.tsx";
+import { RoomView } from "../../room/room-view.tsx";
 import { fetchRoomHeader, RoomApiError, type RoomHeader } from "../../rooms/api.ts";
 import { RoomNotFound } from "../../rooms/room-not-found.tsx";
 import { useRoomStore } from "../../stores/room-store.ts";
@@ -24,9 +24,9 @@ type HeaderState =
 /**
  * The room page: its header (#14), the room's name and code from `GET /api/rooms/:code`
  * and the link to share, then the room itself, followed over its socket (#15) once the
- * header says the room exists. The table and joining fill the slot (#16, #17). An unknown
- * code shows `RoomNotFound` (#24), from the header fetch here or from the socket's
- * `enter` in `RoomStatus`.
+ * header says the room exists. The slot holds the join form or the table (#16, #17). An
+ * unknown code shows `RoomNotFound` (#24), from the header fetch here or from the
+ * socket's `enter` (`RoomHeaderView`).
  */
 function RoomPage() {
   const { code } = Route.useParams();
@@ -186,10 +186,10 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
           />
         </div>
       )}
-      {/* The room itself: the connection and who is in it until the table arrives (#16, #17). */}
-      <section data-room-slot className="rounded-xl border border-line border-dashed p-6">
-        <RoomStatus />
-      </section>
+      {/* The room itself: the join form, or the table and the viewer's controls (#16). */}
+      <div data-room-slot className="flex flex-col gap-6">
+        <RoomView />
+      </div>
     </RiseIn>
   );
 }

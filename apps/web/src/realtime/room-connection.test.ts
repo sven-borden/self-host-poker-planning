@@ -3,6 +3,7 @@ import { COMMAND_ID_PATTERN, PROTOCOL_VERSION, type Snapshot, toSnapshot } from 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../stores/room-store.ts";
 import {
+  commandSender,
   isCmdAck,
   isEnterAck,
   isSnapshot,
@@ -241,6 +242,111 @@ describe("sendCommand", () => {
     const ids = fake.sent.filter((s) => s.event === "cmd").map((s) => s.payload.id);
     expect(ids).toHaveLength(3);
     expect(new Set(ids).size).toBe(1);
+  });
+
+  it("never carries a waiting command over to the next room opened", async () => {
+    const first = fakeSocket(({ event }) =>
+      event === "enter" ? { ok: true, snapshot: snapshot(1) } : { ok: true, version: 2 },
+    );
+    const closeFirst = open(first);
+    first.up();
+    await vi.waitFor(() => expect(status()).toBe("live"));
+    // The connection drops: the command waits for the room to be live again.
+    first.drop();
+    const pending = sendCommand({ type: "leave" });
+    await settle();
+    // The page leaves for another room, which goes live at once.
+    closeFirst();
+    const second = fakeSocket(({ event }) =>
+      event === "enter" ? { ok: true, snapshot: snapshot(1) } : { ok: true, version: 2 },
+    );
+    open(second);
+    second.up();
+    expect(await pending).toEqual({ ok: false, code: "offline" });
+    expect(second.sent.filter((s) => s.event === "cmd")).toEqual([]);
+    expect(first.sent.filter((s) => s.event === "cmd")).toEqual([]);
+  });
+
+  // Room A's answer comes only after the page has moved to room B, which is live by then:
+  // a lost ack, or `busy`, must not send the command again to B (#76's open point).
+  it.each([
+    ["lost", (fail: (error: Error) => void) => fail(new Error("operation has timed out"))],
+    [
+      "busy",
+      (_fail: unknown, answer: (ack: unknown) => void) => answer({ ok: false, code: "busy" }),
+    ],
+  ] as const)("sends nothing to the next room when the ack is %s", async (_, settleAck) => {
+    let answer: (ack: unknown) => void = () => {};
+    let fail: (error: Error) => void = () => {};
+    const first = fakeSocket(({ event }) =>
+      event === "enter"
+        ? { ok: true, snapshot: snapshot(1) }
+        : new Promise((resolve, reject) => {
+            answer = resolve;
+            fail = reject;
+          }),
+    );
+    const closeFirst = open(first);
+    first.up();
+    await vi.waitFor(() => expect(status()).toBe("live"));
+    const pending = sendCommand({ type: "reveal" });
+    await vi.waitFor(() => expect(first.sent.some((s) => s.event === "cmd")).toBe(true));
+    closeFirst();
+    const second = fakeSocket(({ event }) =>
+      event === "enter" ? { ok: true, snapshot: snapshot(1) } : { ok: true, version: 2 },
+    );
+    open(second);
+    second.up();
+    await vi.waitFor(() => expect(status()).toBe("live"));
+    settleAck(fail, answer);
+    expect(await pending).toEqual({ ok: false, code: "offline" });
+    expect(second.sent.filter((s) => s.event === "cmd")).toEqual([]);
+  });
+});
+
+describe("commandSender", () => {
+  const live = () =>
+    fakeSocket(({ event }) =>
+      event === "enter" ? { ok: true, snapshot: snapshot(1) } : { ok: true, version: 2 },
+    );
+
+  it("sends to the room open when it was taken", async () => {
+    const fake = live();
+    open(fake);
+    fake.up();
+    const send = commandSender();
+    expect(await send({ type: "leave" })).toEqual({ ok: true, version: 2 });
+    expect(fake.sent.filter((s) => s.event === "cmd")).toHaveLength(1);
+  });
+
+  it("answers offline at once, and sends nothing, once the page has moved to another room", async () => {
+    const first = live();
+    const closeFirst = open(first);
+    first.up();
+    await vi.waitFor(() => expect(status()).toBe("live"));
+    // Taken when the form is submitted; the page moves on while the name is being saved.
+    const send = commandSender();
+    closeFirst();
+    const second = live();
+    open(second);
+    second.up();
+    await vi.waitFor(() => expect(status()).toBe("live"));
+    expect(await send({ type: "join", payload: { name: "Ana", role: "voter" } })).toEqual({
+      ok: false,
+      code: "offline",
+    });
+    expect(second.sent.filter((s) => s.event === "cmd")).toEqual([]);
+    expect(first.sent.filter((s) => s.event === "cmd")).toEqual([]);
+  });
+
+  it("answers offline when no room was open", async () => {
+    const send = commandSender();
+    const fake = live();
+    open(fake);
+    fake.up();
+    await vi.waitFor(() => expect(status()).toBe("live"));
+    expect(await send({ type: "leave" })).toEqual({ ok: false, code: "offline" });
+    expect(fake.sent.filter((s) => s.event === "cmd")).toEqual([]);
   });
 });
 
