@@ -30,8 +30,9 @@ import {
 // play four rounds against the real server and Postgres. The PO creates a named room
 // with a deck from the landing page; a voter on a Pixel 7, a voter and an observer open
 // the link and join. Round 1 has a Jira link, a changed card and the PO's reveal; round 2
-// a title and the last vote's reveal; round 3 is anonymous and the timer reveals it;
-// round 4 is anonymous and the last vote reveals it.
+// a title and the last vote's reveal; round 3 is anonymous (the PO turns it on in her
+// settings panel, #25) and the timer reveals it; round 4 is anonymous and the last vote
+// reveals it. Every page shows both anonymous rounds' "Anonymous" chip.
 // Everyone sees the results `computeResults` gives for the votes, `round_history` holds
 // each finished round, and every frame each person receives is scanned: no card before
 // the reveal, and in the anonymous round no frame that ties a person to a card.
@@ -293,9 +294,22 @@ async function expectResults(
 }
 
 /** The next round has begun for everyone: its line, an empty count and no card picked. */
-async function expectRoundStarted(people: readonly Person[], line: string) {
+async function expectRoundStarted(people: readonly Person[], line: string, anonymous = false) {
   for (const { page } of people) {
-    await expect(subjectLine(page)).toHaveText(line);
+    // An anonymous round says so after its number, on every page (#25).
+    const chip = subjectLine(page).locator("[data-round-anonymous]");
+    await expect(chip).toHaveCount(anonymous ? 1 : 0);
+    if (anonymous) await expect(chip.locator("[title]")).toHaveText("Anonymous");
+    await expect
+      .poll(() =>
+        subjectLine(page).evaluate((element) =>
+          [...element.children]
+            .filter((child) => !child.hasAttribute("data-round-anonymous"))
+            .map((child) => child.textContent)
+            .join(""),
+        ),
+      )
+      .toBe(line);
     await expect(page.locator("[data-centre-status='voting']")).toHaveText("0/3 voted so far");
     await expect(pressedCards(page)).toHaveCount(0);
   }
@@ -445,18 +459,25 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
     }
 
     // Round 3, anonymous, with a timer: Ana and Ben vote, Cleo does not, and the server
-    // reveals the round at its deadline. The settings panel comes in W2, so the PO sets
-    // both over the protocol, as her own user; they apply from the next round.
+    // reveals the round at its deadline. The PO turns anonymity on in her settings panel
+    // (#25); the timer's control comes with #27, so she sets it over the protocol, as her
+    // own user. Both apply from the next round.
+    await ana.press(ana.page.getByRole("button", { name: "Room settings" }));
+    const settings = ana.page.getByRole("dialog", { name: "Room settings" });
+    const anonymous = settings.getByRole("switch", { name: "Anonymous voting" });
+    await ana.press(anonymous);
+    await expect(anonymous).toHaveAttribute("aria-checked", "true");
+    await expect(anonymous).not.toHaveAttribute("aria-busy", "true");
+    await ana.page.keyboard.press("Escape");
+    await expect(settings).toBeHidden();
     po = await sameUser(base, ana.context);
     expect(await po.enter(code)).toMatchObject({ ok: true });
     expect(
-      await po.cmd("updateSettings", {
-        patch: { revealNames: false, timer: { seconds: TIMER_SECONDS } },
-      }),
+      await po.cmd("updateSettings", { patch: { timer: { seconds: TIMER_SECONDS } } }),
     ).toMatchObject({ ok: true });
     const from3 = mark();
     await ana.page.getByRole("button", { name: "Next round" }).click();
-    await expectRoundStarted(everyone, "Round 3");
+    await expectRoundStarted(everyone, "Round 3", true);
     expectRevealedOnce(2, from2, "everyoneVoted");
     expect((await historyOf(code)).map((row) => row.number)).toEqual([1, 2]);
     // Ana plays the higher card first, so the people's order is not the deck's.
@@ -484,7 +505,7 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
     });
     const from4 = mark();
     await ana.page.getByRole("button", { name: "Next round" }).click();
-    await expectRoundStarted(everyone, "Round 4");
+    await expectRoundStarted(everyone, "Round 4", true);
     expectRevealedOnce(3, from3, "timer");
     const ids = participantIds(ana);
     expect(ids).toHaveLength(everyone.length);
@@ -521,9 +542,9 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
       expect(voteCauses, `${person.name} saw the last vote of round 4`).toBeGreaterThan(0);
     }
 
-    // Round 5: round 4 is history too.
+    // Round 5, anonymous too: round 4 is history.
     await ana.page.getByRole("button", { name: "Next round" }).click();
-    await expectRoundStarted(everyone, "Round 5");
+    await expectRoundStarted(everyone, "Round 5", true);
     expectRevealedOnce(4, from4, "everyoneVoted");
     const [, , , row4, ...rest] = await historyOf(code);
     expect(rest).toEqual([]);
