@@ -22,6 +22,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 - The server skeleton from #6: Hono and Socket.IO on one port, `/api/health`, the
   built web app from an allowlist, a socket Origin check, logs without secrets,
   graceful shutdown, and a `setup`/`dispose` hook for the database and auth.
+- The database from #7: Drizzle on `pg`, migrations at start under an advisory lock,
+  the room repository with compare-and-set, a per-room command runner, and history
+  rows (anonymous rounds store cards only).
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -32,15 +35,13 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#7 (PP-007)** the database: PR #72. Its review fixes are in progress: the driver
-  moves from postgres.js to `pg`, because postgres.js crashed the process when a
-  connection died inside a transaction.
+- **#10 (PP-010)** identity with Better Auth guest sessions, in `../pp-wt-10`.
+- **#11 (PP-011)** the Docker image and compose file, in `../pp-wt-11`.
 
 ## Next
 
-- #10 (identity) and #11 (Docker) start in parallel when #7 merges; they touch
-  different parts of the repo.
-- W1 needs #10: #14 needs #7, #9 and #10; #15 needs #5, #6, #7 and #10.
+- W1 takes a free slot as soon as its issues' dependencies are merged: #14 and #15
+  need #10, and #24 needs #14.
 - **W1 starts without a new go** once the W0 issues other than #12 are merged (Sven,
   2026-10-26). No W1 issue depends on #11 or #12.
 - **#12** waits for Sven's go on Coolify and DNS (see Owner items). It is asked for
