@@ -8,7 +8,9 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        // The transparent border becomes the outline in forced colours (Windows contrast
+        // themes), where the fill is dropped.
+        default: "border border-transparent bg-primary text-primary-foreground hover:bg-primary/90",
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         outline:
           "border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-line/30 dark:hover:bg-line/50",
