@@ -16,5 +16,6 @@
   },
   "scripts": {
     "test": "vitest run --root ../.. --project=protocol"
-  }
+  },
+  "sideEffects": false
 }

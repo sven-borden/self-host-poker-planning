@@ -1,12 +1,10 @@
 import {
   type ClientToServerEvents,
   type CmdAck,
-  cmdAckSchema,
   type EnterAck,
-  enterAckSchema,
   PROTOCOL_VERSION,
   type ServerToClientEvents,
-  snapshotSchema,
+  type Snapshot,
   type WireCommandInput,
 } from "@pp/protocol";
 import { ensureIdentity, retryDelay, UNAUTHENTICATED } from "../identity/identity.ts";
@@ -25,6 +23,11 @@ import {
 // the room store, which drops stale versions. Socket.IO reconnects a dropped connection on
 // its own; nothing here adds a second reconnect loop: only a refused `enter` that passes
 // on its own (`internal`, `rate_limited`, `busy`) is sent again after a backoff.
+//
+// Messages are checked by shape (`isSnapshot`, `isEnterAck`, `isCmdAck`), not with the
+// protocol's zod schemas: zod would add about 27 kB gzipped to the room route (200 kB
+// budget), and the only peer is our own server, built from the same commit, whose
+// `protocol_mismatch` answer already catches an old tab after a redeploy.
 
 export type RoomSocket = TypedSocket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -122,8 +125,7 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
       .emitWithAck("enter", { code, protocol: PROTOCOL_VERSION })
       .then(
         (raw: unknown) => {
-          const parsed = enterAckSchema.safeParse(raw);
-          onEnter(parsed.success ? parsed.data : { ok: false, code: "bad_payload" });
+          onEnter(isEnterAck(raw) ? raw : { ok: false, code: "bad_payload" });
         },
         // No answer in time, or the connection dropped: the next connect enters again;
         // a slow server still connected gets the same backoff as `internal`.
@@ -139,8 +141,7 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
   };
   const onSnapshot = (raw: unknown) => {
     if (stopped) return;
-    const parsed = snapshotSchema.safeParse(raw);
-    if (parsed.success) store().receive(parsed.data);
+    if (isSnapshot(raw)) store().receive(raw);
   };
   const onKicked = () => stop("kicked");
 
@@ -213,8 +214,7 @@ export async function sendCommand(command: CommandInput): Promise<CommandResult>
     } catch {
       continue;
     }
-    const parsed = cmdAckSchema.safeParse(raw);
-    const ack: CmdAck = parsed.success ? parsed.data : { ok: false, code: "bad_payload" };
+    const ack: CmdAck = isCmdAck(raw) ? raw : { ok: false, code: "bad_payload" };
     if (!ack.ok && ack.code === "busy" && send < MAX_SENDS - 1) {
       await sleep(50 * 2 ** send + Math.random() * 50);
       continue;
@@ -246,3 +246,32 @@ function whenLive(timeoutMs = LIVE_WAIT_MS): Promise<ActiveRoom | null> {
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+/** A snapshot of this protocol version: a number version and a room with its code. */
+export function isSnapshot(value: unknown): value is Snapshot {
+  return (
+    isObject(value) &&
+    value.protocol === PROTOCOL_VERSION &&
+    Number.isInteger(value.version) &&
+    isObject(value.room) &&
+    typeof value.room.code === "string" &&
+    Array.isArray(value.room.participants) &&
+    Array.isArray(value.causes)
+  );
+}
+
+const isRefusal = (value: Record<string, unknown>) =>
+  value.ok === false && typeof value.code === "string";
+
+export function isEnterAck(value: unknown): value is EnterAck {
+  return isObject(value) && ((value.ok === true && isSnapshot(value.snapshot)) || isRefusal(value));
+}
+
+export function isCmdAck(value: unknown): value is CmdAck {
+  return (
+    isObject(value) && ((value.ok === true && Number.isInteger(value.version)) || isRefusal(value))
+  );
+}
