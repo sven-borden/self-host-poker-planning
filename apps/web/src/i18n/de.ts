@@ -287,7 +287,8 @@ export const de: Catalog = {
     finalRecorded: "Der Product Owner hat {{card}} als endgültige Schätzung festgehalten.",
     finalChanged: "Der Product Owner hat die endgültige Schätzung auf {{card}} geändert.",
     revote: "Der Product Owner hat eine neue Abstimmung zum selben Thema gestartet.",
-    revoteAnonymous: "Der Product Owner hat eine neue, anonyme Abstimmung zum selben Thema gestartet.",
+    revoteAnonymous:
+      "Der Product Owner hat eine neue, anonyme Abstimmung zum selben Thema gestartet.",
     anonymousOn: "Ab Runde {{round, number}} wird anonym abgestimmt.",
     anonymousOff: "Ab Runde {{round, number}} wird wieder mit Namen abgestimmt.",
     autoRevealOn: "Die Karten werden jetzt aufgedeckt, sobald alle abgestimmt haben.",

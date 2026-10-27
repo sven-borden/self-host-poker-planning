@@ -73,7 +73,10 @@ export function RoundCentre({
 
 /**
  * Once the screen changed under the focus, it goes to `selector`, after a frame for React
- * to draw it, unless the person already moved it somewhere.
+ * to draw it, unless the person already moved it somewhere. The page never scrolls for it
+ * (`preventScroll`): after a reveal the table, its flips and its result stay where the
+ * person was looking, and the PO's decision docks at the bottom of the screen when it
+ * fits (#32, `decision-dock.ts`).
  */
 export function focusSoon(...selectors: string[]) {
   requestAnimationFrame(() => {
@@ -82,7 +85,7 @@ export function focusSoon(...selectors: string[]) {
     for (const selector of selectors) {
       const target = document.querySelector<HTMLElement>(selector);
       if (target) {
-        target.focus();
+        target.focus({ preventScroll: true });
         return;
       }
     }

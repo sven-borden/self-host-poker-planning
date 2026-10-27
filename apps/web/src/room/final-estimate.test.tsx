@@ -9,6 +9,7 @@ import {
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../stores/room-store.ts";
+import { PLACED_FOCUS_GUARD_MS } from "../table/hand.tsx";
 import { RoomView } from "./room-view.tsx";
 
 // The PO's final estimate and "Vote again" (#32) on the room page, against a fake server
@@ -178,6 +179,52 @@ describe("the final estimate (#32)", () => {
     const repeat = fireEvent.keyDown(button, { key: "Enter", repeat: true });
     expect(repeat).toBe(false);
     expect(fireEvent.keyDown(button, { key: "Enter" })).toBe(true);
+  });
+
+  it("ignores Enter and Space just after the page, not the person, put the focus in the bar", async () => {
+    vi.useFakeTimers({ toFake: ["performance"] });
+    try {
+      await renderRoom(revealedRound(["3", "8"]));
+      const button = recordButton() as HTMLElement;
+      // The focus came from nowhere ("Reveal cards" left with it): a second Enter on its way
+      // must not record the suggestion.
+      fireEvent.focus(button, { relatedTarget: null });
+      expect(fireEvent.keyDown(button, { key: "Enter" })).toBe(false);
+      expect(fireEvent.keyDown(button, { key: " " })).toBe(false);
+      expect(fireEvent.keyUp(button, { key: " " })).toBe(false);
+      // The same on the picker and the other buttons.
+      const nextRound = screen.getByRole("button", { name: "Next round" });
+      expect(fireEvent.keyDown(nextRound, { key: "Enter" })).toBe(false);
+      expect(fireEvent.keyDown(radio("5, suggested"), { key: " " })).toBe(false);
+      expect(fireEvent.keyUp(radio("5, suggested"), { key: " " })).toBe(false);
+      vi.advanceTimersByTime(PLACED_FOCUS_GUARD_MS);
+      expect(fireEvent.keyDown(button, { key: "Enter" })).toBe(true);
+      expect(fireEvent.keyDown(button, { key: " " })).toBe(true);
+      expect(fireEvent.keyUp(button, { key: " " })).toBe(true);
+      // The person moved the focus from another element: no wait.
+      fireEvent.focus(nextRound, { relatedTarget: button });
+      expect(fireEvent.keyDown(nextRound, { key: "Enter" })).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(sent).toEqual([]);
+  });
+
+  it('sends "Next round" pressed while a record is on its way behind it, in order', async () => {
+    await renderRoom(revealedRound(["3", "8"]));
+    fireEvent.click(recordButton() as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: "Next round" }));
+    await waitFor(() => expect(server.round?.number).toBe(2));
+    expect(sent.map((command) => command.type)).toEqual(["setFinal", "startRound"]);
+  });
+
+  it('starts one round for a double press on "Vote again"', async () => {
+    await renderRoom(revealedRound(["3", "8"]));
+    const again = screen.getByRole("button", { name: "Vote again" });
+    fireEvent.click(again);
+    fireEvent.click(again);
+    await waitFor(() => expect(server.round?.number).toBe(2));
+    expect(sent).toEqual([{ type: "revote" }]);
   });
 
   it("votes again on the same subject: a new round, the votes cleared, the focus on the hand", async () => {
