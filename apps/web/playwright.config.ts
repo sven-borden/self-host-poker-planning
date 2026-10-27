@@ -20,6 +20,8 @@ export default defineConfig({
   reporter: ci ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
     baseURL: `http://localhost:${PORT}`,
+    // The same browser language on every machine; a test that needs another says so.
+    locale: "en-US",
     browserName: "chromium",
     ...(ci ? {} : { channel: "msedge" }),
   },

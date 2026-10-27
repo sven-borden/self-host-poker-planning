@@ -117,6 +117,20 @@ codes, never sentences. Tone per language decided in #41 (OQ-2).
 **Consequences.** Every UI issue carries its French and German copy.
 **Alternatives.** English only, translation-ready (recommended in round 1); English and French.
 
+**Amended 2026-10-27 (#9 review).** Our own typed `t()` replaces i18next and
+react-i18next. Measured on the room route, gzipped: i18next costs 13.7 kB and is
+monolithic (its backends, saveMissing and nesting ship unused), react-i18next 2.9 kB and
+its use-sync-external-store shim 0.5 kB. With i18next the route built at 156.0 kB; with
+about 70 lines of `t()` on `Intl.PluralRules` behind the same API (`useT`, `useLanguage`,
+`useFormat`, `fixedT`, `changeLanguage`, `loadLanguage`, `errorMessage`) it builds at
+141.4 kB, and W1's socket.io-client will add 13.1 kB against the 200 kB budget. Keys and
+each key's placeholders stay checked by `tsc` (template-literal types); React 19's
+`useSyncExternalStore` re-renders on a language change. The catalogs keep i18next's JSON
+v4 syntax (`{{x}}`, `{{x, number}}`, `_one`/`_other`/`_many` keys), so translation
+platforms (Weblate, Crowdin) read them and a switch back stays cheap. Numbers and dates
+follow the reader's region: the first `navigator.languages` tag in the UI language
+(`de-CH` writes 6.5 and 1’234), else the bare language (French and German write 5,5).
+
 ## ADR-013: pnpm monorepo and the serial issue loop
 
 **Decision.** `apps/web`, `apps/server`, `packages/domain`, `packages/protocol`;

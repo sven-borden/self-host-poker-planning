@@ -1,5 +1,5 @@
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
-import { useT } from "../../i18n/i18n-context.tsx";
+import { useT } from "../../i18n/hooks.ts";
 import { isThemeMode, THEME_MODES, type ThemeMode } from "../../theme/theme.ts";
 import { useThemeMode } from "../../theme/use-theme-mode.ts";
 import { Button } from "../ui/button.tsx";

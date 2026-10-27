@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useId } from "react";
 import { Button } from "../components/ui/button.tsx";
-import { useT } from "../i18n/i18n-context.tsx";
+import { useT } from "../i18n/hooks.ts";
 import { RiseIn } from "../motion/motion.tsx";
 
 export const Route = createFileRoute("/")({
