@@ -17,6 +17,7 @@ import {
 import {
   MAX_LINK_LENGTH,
   MAX_NAME_LENGTH,
+  MAX_ROOM_NAME_LENGTH,
   MAX_TIMER_SECONDS,
   MAX_TITLE_LENGTH,
   MIN_TIMER_SECONDS,
@@ -56,12 +57,23 @@ const BLANK = /[\s\p{Cf}\u{2800}\p{M}]/gu;
 const WHITESPACE_RUN = /[^\S\u{FEFF}]+/gu;
 
 /**
+ * Four combining marks in a row, where up to three are allowed: "Zalgo" text, whose marks
+ * pile up and paint over the lines around it. ZWJ, ZWNJ and VS16 between the marks do not
+ * break the row, and VS16 (a mark by category) is not counted. Marks only follow their
+ * base, so a row of marks belongs to one user-perceived character and no `Intl.Segmenter`
+ * is needed.
+ */
+const TOO_MANY_MARKS = /(?:(?!\u{FE0F})\p{M}(?:\u{200C}|\u{200D}|\u{FE0F})*){4}/u;
+
+/**
  * Text with every whitespace run (tabs and line breaks too, as in a pasted ticket title)
  * collapsed into one space, trimmed and NFC-normalised, of 1 to `max` user-perceived
  * characters and at most `max × UNITS_PER_CHARACTER` code units; else `null`. Refused:
  * control characters, bidi controls and default-ignorable characters (ZWJ, ZWNJ and VS16
- * excepted, and tag characters inside an emoji flag), and text that is blank (only
- * whitespace, format characters, braille blanks and combining marks without a base). A
+ * excepted, and tag characters inside an emoji flag), text that is blank (only
+ * whitespace, format characters, braille blanks and combining marks without a base) and
+ * text with more than 3 combining marks on one character (Vietnamese, Thai and Hindi
+ * need up to 2 or 3; "Zalgo" text needs dozens). A
  * lone surrogate refuses the text: Postgres jsonb would refuse it at write time.
  * Covers names, round titles and (W1) room names.
  */
@@ -70,7 +82,7 @@ function cleanText(raw: unknown, max: number): string | null {
   const spaced = raw.replace(WHITESPACE_RUN, " ");
   const text = spaced.trim().normalize("NFC");
   if (text.length > max * UNITS_PER_CHARACTER) return null;
-  if (text.replace(BLANK, "") === "") return null;
+  if (text.replace(BLANK, "") === "" || TOO_MANY_MARKS.test(text)) return null;
   // Checked before `trim`, which would drop a U+FEFF at either end.
   const checked = spaced.replace(EMOJI_TAG_SEQUENCE, "\u{1F3F4}").replace(ALLOWED_INVISIBLE, "");
   if (UNSAFE_TEXT.test(checked)) return null;
@@ -80,6 +92,14 @@ function cleanText(raw: unknown, max: number): string | null {
 /** A display name, cleaned, or `null` (`bad_name`). */
 export function cleanName(raw: unknown): string | null {
   return cleanText(raw, MAX_NAME_LENGTH);
+}
+
+/**
+ * A room name, cleaned, or `null` (`bad_room_name`). The name is set when the room is
+ * created (`POST /api/rooms`) and lives beside `RoomState`, not in it.
+ */
+export function cleanRoomName(raw: unknown): string | null {
+  return cleanText(raw, MAX_ROOM_NAME_LENGTH);
 }
 
 /**

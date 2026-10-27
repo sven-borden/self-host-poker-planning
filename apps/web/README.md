@@ -29,6 +29,15 @@ server sends and never decides the outcome of a round.
   presentational: props in, no store. `/dev/table` (`src/routes/dev/table.tsx`, lazy,
   noindex) shows them: `?n=1..16&state=lobby|voting|revealed&observers=0..4`.
 - `src/stores/`: Zustand stores. `src/realtime/`: the typed Socket.IO client.
+- `src/rooms/`: the room API (#14). `api.ts`: `createRoom({ name, deck })` (identity
+  first, one session renewal on `unauthenticated`, a blank name left out) and
+  `fetchRoomHeader(code)`; both reject with `RoomApiError` carrying the server's code or
+  `network`. `create-room-card.tsx`: the self-contained "Create a room" card on `/`. It
+  checks the name with the domain's `cleanRoomName` before sending, keeps the focus on
+  the button through a failure (`aria-disabled`, never `disabled` while busy) and moves
+  it to the name field when the name is refused. The room page (`routes/r/$code.tsx`) shows the header (name inside `<bdi>`, code, copy
+  link with a toast, or the link to select when the clipboard is missing or refused) and
+  a `[data-room-slot]` section where the room itself goes (#15, #16).
 - `src/identity/identity.ts`: who this browser is (#10). `ensureIdentity({ force? })`
   reads `/api/auth/get-session` and, without a session, signs in as a guest
   (`/api/auth/sign-in/anonymous`); concurrent calls share one request. `setDisplayName(name)`
@@ -88,8 +97,8 @@ server sends and never decides the outcome of a round.
 - End-to-end: `pnpm --filter @pp/web test:e2e` runs Playwright (`e2e/`) against
   `vite preview`. With `DATABASE_URL` set (a Postgres the server may migrate, such as
   the one in the server README), it also starts the real server on 3000, where
-  `vite preview` forwards `/api` and `/socket.io`; `e2e/identity.spec.ts` needs it and
-  skips without it. Locally it builds first and uses the installed Microsoft Edge; in CI
+  `vite preview` forwards `/api` and `/socket.io`; `e2e/identity.spec.ts` and
+  `e2e/room.spec.ts` need it and skip without it. Locally it builds first and uses the installed Microsoft Edge; in CI
   (`web-e2e` job) it uses Chromium on the build from the step before. Screenshots go to
   `tmp/screenshots/` (gitignored). Not part of `pnpm gate`.
 - Tests: the `web` Vitest project extends `vite.config.ts` and runs in jsdom

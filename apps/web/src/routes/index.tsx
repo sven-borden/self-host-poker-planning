@@ -1,8 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useId } from "react";
-import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { RiseIn } from "../motion/motion.tsx";
+import { CreateRoomCard } from "../rooms/create-room-card.tsx";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -10,7 +9,6 @@ export const Route = createFileRoute("/")({
 
 function Home() {
   const t = useT();
-  const soonId = useId();
   return (
     <RiseIn className="max-w-2xl">
       <p className="font-mono text-xs tracking-[0.08em] text-ink-2 uppercase">{t("app.tagline")}</p>
@@ -18,15 +16,7 @@ function Home() {
         {t("home.title")}
       </h1>
       <p className="mt-5 max-w-prose text-ink-2">{t("home.lede")}</p>
-      <div className="mt-10 flex flex-col items-start gap-3">
-        {/* Enabled in W1, when the server can create rooms. */}
-        <Button size="lg" disabled aria-describedby={soonId}>
-          {t("home.createRoom")}
-        </Button>
-        <p id={soonId} className="text-sm text-ink-2">
-          {t("home.createRoomSoon")}
-        </p>
-      </div>
+      <CreateRoomCard className="mt-10" />
     </RiseIn>
   );
 }

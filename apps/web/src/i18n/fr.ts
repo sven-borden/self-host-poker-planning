@@ -25,11 +25,36 @@ export const fr: Catalog<"many"> = {
     title: "Estimez ensemble, autour d’une même table",
     lede: "Chacun choisit une carte, les cartes se retournent ensemble, puis l’équipe discute des écarts. Aucun compte requis.",
     createRoom: "Créer une salle",
-    createRoomSoon: "La création de salles arrive dans la prochaine version.",
+  },
+  createRoom: {
+    lede: "Vous en devenez le product owner. Partagez le lien et votre équipe vous rejoint, sans compte.",
+    nameLabel: "Nom de la salle",
+    optional: "Facultatif",
+    nameHint: "Visible par toute personne qui a le lien. {{max, number}} caractères au plus.",
+    deckLabel: "Jeu de cartes",
+    submit: "Créer la salle",
+    creating: "Création de la salle…",
+    notAllowed:
+      "Le serveur a refusé cette demande\u{202F}: son adresse configurée n’est pas celle que vous utilisez. Demandez à la personne qui l’héberge de vérifier BASE_URL.",
+  },
+  decks: {
+    fib: "Fibonacci",
+    mfib: "Fibonacci modifiée",
+    tshirt: "Tailles de t-shirt",
+    pow2: "Puissances de 2",
+    seq: "De 1 à 10",
   },
   room: {
     title: "Salle {{code}}",
     codeLabel: "Code de la salle",
+    loading: "Ouverture de la salle…",
+    copyLink: "Copier le lien",
+    linkCopied: "Lien copié. Envoyez-le à votre équipe.",
+    copyFailed:
+      "Votre navigateur n’a pas permis la copie. Sélectionnez le lien ci-dessous et copiez-le.",
+    linkLabel: "Lien de la salle",
+    notFoundTitle: "Salle introuvable",
+    retry: "Réessayer",
     notOpenYet:
       "Cette salle n’est pas encore ouverte : la table arrive dans une prochaine version.",
     backHome: "Retour à l’accueil",
@@ -73,6 +98,7 @@ export const fr: Catalog<"many"> = {
       "Ce site a besoin des cookies pour vous reconnaître dans une salle. Autorisez-les pour ce site, puis rechargez la page.",
   },
   common: {
+    network: "Impossible de joindre le serveur. Vérifiez votre connexion, puis réessayez.",
     close: "Fermer",
     notifications: "Notifications",
   },
@@ -119,6 +145,8 @@ export const fr: Catalog<"many"> = {
       "Les cartes spéciales (?, ☕, ∞) s’activent dans les réglages de la salle, pas dans le jeu.",
     bad_payload: "Le serveur n’a pas pu lire cette demande. Rechargez la page et réessayez.",
     protocol_mismatch: "Une nouvelle version de l’application est disponible. Rechargez la page.",
+    bad_room_name:
+      "Un nom de salle compte de {{min, number}} à {{max, number}} caractères visibles. Raccourcissez-le, ou laissez le champ vide.",
     room_not_found:
       "Cette salle n’existe pas, ou elle a été supprimée après une longue période sans activité. Vérifiez le lien.",
     password_required: "Cette salle est protégée par un mot de passe. Saisissez-le pour entrer.",

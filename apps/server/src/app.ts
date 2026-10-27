@@ -72,11 +72,12 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
     await next();
     c.header("x-request-id", requestId);
     c.header("X-Content-Type-Options", "nosniff");
-    // Path only: the query string may carry anything, and bodies, cookies and auth
-    // headers are never logged.
+    // Path only, without a room code (a bearer capability, like a session token): the
+    // query string may carry anything, and bodies, cookies and auth headers are never
+    // logged.
     const line = {
       method: c.req.method,
-      path: c.req.path,
+      path: loggedPath(c.req.path, c.req.routePath),
       status: c.res.status,
       ms: Math.round(performance.now() - started),
     };
@@ -135,6 +136,40 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
     mountWebApp(app, deps.staticDir);
   }
   return app;
+}
+
+/** A room code's shape in any case: 10 letters and digits, which no static route has. */
+const CODE_SHAPED = /^[0-9a-z]{10}$/i;
+/** The routes whose next segment is a room code, in lower case. */
+const ROOM_ROUTES: readonly string[] = ["r", "api/rooms"];
+
+/**
+ * A request path as it is logged. A room code is a bearer capability: it never reaches a
+ * log (a room is named by its id). Where a route matched, its pattern is logged
+ * (`/r/:code`), never the raw path. The web app's history fallback and the 404 match
+ * only a wildcard, so the raw path is normalised instead: percent-encoding decoded, `//`
+ * collapsed, the trailing slash dropped, and the segment after `/r` or `/api/rooms` (any
+ * case) and every code-shaped segment (anywhere, any case) becomes `:code`.
+ */
+export function loggedPath(path: string, route?: string): string {
+  if (route && !route.includes("*")) return route;
+  let decoded = path;
+  // A few passes, so `%2550` cannot hide a code behind a double encoding.
+  for (let pass = 0; pass < 3; pass++) {
+    try {
+      decoded = decodeURIComponent(decoded);
+    } catch {
+      break;
+    }
+  }
+  const segments = decoded.split("/").filter((segment) => segment !== "");
+  const logged = segments.map((segment, index) =>
+    ROOM_ROUTES.includes(segments.slice(0, index).join("/").toLowerCase()) ||
+    CODE_SHAPED.test(segment)
+      ? ":code"
+      : segment,
+  );
+  return `/${logged.join("/")}`;
 }
 
 /** Runs the database check; a rejection or no answer within `ms` counts as `"error"`. */

@@ -5,7 +5,8 @@
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { cleanName, cleanSubject } from "./apply-input.ts";
+import { cleanName, cleanRoomName, cleanSubject } from "./apply-input.ts";
+import { MAX_ROOM_NAME_LENGTH } from "./room.ts";
 
 /** Default-ignorable and bidi control characters that must never pass inside a name. */
 const HIDDEN = [
@@ -89,6 +90,48 @@ describe("cleanName", () => {
     expect(cleanName("🏴\u{E0067}\u{E0062}")).toBeNull();
   });
 
+  it("keeps Vietnamese, Hindi and Thai names, which stack up to three marks", () => {
+    for (const name of [
+      "Nguy\u{1EC5}n Th\u{1ECB} Minh Khai",
+      // The same name typed with combining marks (NFD) is stored precomposed.
+      "Nguye\u{302}\u{303}n Thi\u{323} Minh Khai",
+      "\u{928}\u{92E}\u{938}\u{94D}\u{924}\u{947}",
+      "\u{915}\u{94D}\u{937}\u{924}\u{94D}\u{930}\u{93F}\u{92F}",
+      "\u{939}\u{93F}\u{928}\u{94D}\u{926}\u{940}",
+      "\u{E17}\u{E35}\u{E48}\u{E19}\u{E35}\u{E48}",
+      "x\u{300}\u{301}\u{302}",
+    ]) {
+      expect(cleanName(name), JSON.stringify(name)).toBe(name.normalize("NFC"));
+    }
+  });
+
+  it("refuses more than three combining marks on one character, in a name, a room name and a title", () => {
+    const zalgo = `a${"\u{300}\u{301}\u{302}\u{303}\u{304}\u{305}\u{306}\u{307}".repeat(2)}`;
+    expect(cleanName(zalgo)).toBeNull();
+    expect(cleanRoomName(zalgo.repeat(60))).toBeNull();
+    expect(cleanRoomName("Sprint ".concat(zalgo))).toBeNull();
+    expect(cleanSubject({ kind: "title", text: zalgo })).toBeNull();
+    expect(cleanName("x\u{300}\u{301}\u{302}\u{303}")).toBeNull();
+    // A joiner between the marks does not hide them.
+    expect(cleanName("x\u{300}\u{200D}\u{301}\u{200C}\u{302}\u{200D}\u{303}")).toBeNull();
+    // VS16 does not hide them either, and does not count as a mark.
+    expect(cleanName("q\u{300}\u{FE0F}\u{301}\u{FE0F}\u{302}\u{FE0F}\u{303}")).toBeNull();
+    expect(cleanName("q\u{FE0F}\u{FE0F}\u{FE0F}\u{FE0F}")).not.toBeNull();
+    // The marks of two characters are counted apart.
+    expect(cleanName("x\u{300}\u{301}\u{302}y\u{300}\u{301}\u{302}")).not.toBeNull();
+  });
+
+  it("applies the same rules to a room name, up to 60 characters", () => {
+    expect(MAX_ROOM_NAME_LENGTH).toBe(60);
+    expect(cleanRoomName("  Sprint 42\trefinement\n")).toBe("Sprint 42 refinement");
+    expect(cleanRoomName("x".repeat(MAX_ROOM_NAME_LENGTH))).toBe("x".repeat(60));
+    expect(cleanRoomName("x".repeat(MAX_ROOM_NAME_LENGTH + 1))).toBeNull();
+    expect(cleanRoomName("Team\u{202E}lagel")).toBeNull();
+    expect(cleanRoomName("\u{3164}")).toBeNull();
+    expect(cleanRoomName(42)).toBeNull();
+    expect(cleanRoomName("Équipe 👩\u{200D}💻")).toBe("Équipe 👩\u{200D}💻");
+  });
+
   it("applies the same rules to a round title", () => {
     expect(cleanSubject({ kind: "title", text: "Login\u{200B} page" })).toBeNull();
     expect(cleanSubject({ kind: "title", text: "\u{2800}" })).toBeNull();
@@ -116,6 +159,42 @@ describe("cleanName properties", () => {
         expect(Array.from(name).length).toBeGreaterThan(0);
         expect(cleanName(name)).toBe(name);
       }),
+    );
+  });
+
+  it("accepts up to three combining marks on a base and refuses four or more", () => {
+    const marks = fc
+      .integer({ min: 0x300, max: 0x36f })
+      .filter((code) => code !== 0x34f && code !== 0x344)
+      .map((code) => String.fromCodePoint(code));
+    fc.assert(
+      fc.property(fc.array(marks, { minLength: 1, maxLength: 12 }), (row) => {
+        // "q" has no precomposed form, so NFC leaves the marks alone (U+0344 splits in two, U+034F is invisible).
+        const name = cleanName(`q${row.join("")}`);
+        if (row.length <= 3) expect(name).toBe(`q${row.join("")}`.normalize("NFC"));
+        else expect(name).toBeNull();
+      }),
+    );
+  });
+
+  it("keeps Vietnamese names whatever the order of their marks", () => {
+    const syllables = [
+      "Nguy\u{1EC5}n",
+      "Th\u{1ECB}",
+      "Minh",
+      "Khai",
+      "Tr\u{1EA7}n",
+      "\u{110}\u{1EE9}c",
+    ];
+    fc.assert(
+      fc.property(
+        fc.array(fc.constantFrom(...syllables), { minLength: 1, maxLength: 4 }),
+        fc.constantFrom<"NFC" | "NFD">("NFC", "NFD"),
+        (parts, form) => {
+          const typed = parts.join(" ").normalize(form);
+          expect(cleanName(typed)).toBe(typed.normalize("NFC"));
+        },
+      ),
     );
   });
 

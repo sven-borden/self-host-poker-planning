@@ -111,6 +111,11 @@ input, 100 % branch coverage enforced by the gate. Commands are a flat union
 itself (`===`), so the server can skip the write. Error codes are one snake_case union
 (`ErrorCode`); causes never carry a card value except the public `finalSet`.
 
+Creating a room is not a command: `POST /api/rooms` (section 8) stores
+`createRoom({ ownerId })` with the chosen preset deck as the room's first state
+(version 1), the creator as PO and nobody inside; the PO then enters through `join`
+like everyone else (#16).
+
 States: **Lobby** (`round === null`) → **Voting** → **Revealed** → next round →
 **Voting**. A finished round is written to history when the next round starts, when
 the final estimate is set, or when the room goes idle.
@@ -145,7 +150,7 @@ in Voting until the next command arrives. Not built in #3.
 
 | Command | Who | Rule (error codes) |
 |---|---|---|
-| `join {name, role}` | anyone admitted | name with whitespace runs (tabs, line breaks) collapsed to one space and trimmed, 1–32 chars and at most 512 code units, no lone surrogate (`bad_name`; titles follow the same rules with 200 chars); `already_joined`; `room_full` past 16 counted or 32 in all |
+| `join {name, role}` | anyone admitted | name with whitespace runs (tabs, line breaks) collapsed to one space and trimmed, 1–32 chars and at most 512 code units, no lone surrogate, at most 3 combining marks in a row (`bad_name`; titles follow the same rules with 200 chars); `already_joined`; `room_full` past 16 counted or 32 in all |
 | `leave` | self | removes the person (and their vote while Voting); a leaving PO keeps ownership |
 | `rename {name}` | self | as `join` |
 | `setRole {role}` | self | voter → observer drops the vote while Voting; observer → voter checks capacity when observers do not count |
@@ -377,27 +382,50 @@ password, no social provider before W5.
 
 ## 8. Rooms, access and security
 
-- Room code: 10 characters of base58 from `crypto.randomBytes` (about 58 bits). URL `/r/:code`.
+- Room code: 10 characters of base58 (no 0, O, I or l) from `crypto.randomBytes`, about
+  58.6 bits, drawn by rejection sampling (bytes from 232 up are dropped, so no character
+  is favoured). URL `/r/:code`. The `code` column is unique: on a clash the server draws
+  again, up to 5 times, then answers `internal`. A code is a bearer capability, so it
+  never reaches a log line, an error message, Sentry or Umami (section 11).
+- Room API: `POST /api/rooms` (a session, this origin, a JSON body `{ name?, deck? }`,
+  strict, `deck` a preset id, Fibonacci by default) answers 201 `{ code }`; the creator
+  is the PO. `GET /api/rooms/:code` answers `{ code, name }` to anyone holding the code,
+  never the room's state, or 404 `room_not_found` (a malformed code is not looked up).
+  Both are limited per client address: 20 creations in 10 minutes, 120 header reads a
+  minute, the read counted before its database query.
+  Errors are `{ code }` with an `AckErrorCode`: `unauthenticated` 401, `not_allowed`
+  403, `bad_payload` 400 (a body that does not parse), 413 (over 16 KB) or 415 (not
+  JSON), `bad_room_name` 400, `rate_limited` 429, `internal` 500.
 - Password (optional): argon2id hash. A correct entry sets a signed, httpOnly
   room-access cookie for that room; attempts limited per IP and per room.
-- Limits: names 32 characters, subjects 200, custom cards 4 characters × 20, payloads
-  16 KB.
+- Limits: names 32 characters, room names 60, subjects 200, custom cards 4 characters
+  × 20, payloads 16 KB.
 - Text (names, round titles, room names: the domain's `cleanText`): control characters,
   bidi controls and default-ignorable code points are refused (zero-width space, soft
   hyphen, LRM, Hangul fillers, U+FEFF …), except ZWJ, ZWNJ and VS16, and tag characters
   inside an emoji flag. Text that is blank once cleaned (whitespace, format characters,
-  the braille blank, combining marks without a base) is refused. The web app renders
+  the braille blank, combining marks without a base) is refused, and so is a character
+  with more than 3 combining marks in a row (ZWJ, ZWNJ and VS16 between them do not
+  break the row): Vietnamese, Thai and Hindi stack up to 3, "Zalgo" text paints over the
+  lines around it. Nothing is stripped silently (`bad_name`, `bad_subject`,
+  `bad_room_name`). The web app renders
   every user-provided name inside `<bdi>` (W1), so a right-to-left name cannot reorder
   the text around it. HTTP rate limits on room creation, join and password; per-socket command rate
   limit.
 - Client address for every rate limit: `clientIp(request, TRUST_PROXY)`, the entry
   `TRUST_PROXY` places from the right of `X-Forwarded-For` (each proxy appends the
-  address it received the request from), else the socket address. Never logged.
+  address it received the request from), else the socket address. Never logged. The
+  address is turned into a key: an IPv4-mapped IPv6 address (`::ffff:192.0.2.1`) is the
+  IPv4 address, any other IPv6 address its /64 network (`2001:db8:0:1::`), because a client
+  on a /64 can take a new address for every request; a zone id is dropped.
 - Identity limits (Better Auth's limiter, keyed on that same address, which the server
   passes in a header of its own after dropping any client copy): anonymous sign-in 60 per
   address and minute, so a team of 30 behind one office address joins at once; every
   other auth endpoint 100 per 10 s; display name changes 10 per user and 60 per address
-  a minute. Answer: 429 `rate_limited`. The counters live in the process (per instance
+  a minute; room creation 20 per address in 10 minutes, so an office behind one
+  address creates rooms freely while a loop gets two a minute; room header reads 120 per
+  address and minute. Answer: 429
+  `rate_limited` with `Retry-After`. The counters live in the process (per instance
   with #39), at most 50,000 at once: expired ones are swept every 30 s, and when full the
   oldest tenth goes.
 - Headers: strict CSP (no inline scripts), HSTS, `X-Content-Type-Options`,
@@ -434,8 +462,14 @@ language, and an unknown code gets a generic one.
 
 ## 11. Observability
 
-- pino JSON logs on stdout (request id, connection id, room code, no secrets, no vote
-  values). Each HTTP request gets an id (an incoming `x-request-id` is kept when it is at
+- pino JSON logs on stdout (request id, connection id, room id, no secrets, no vote
+  values). A room code is a bearer capability: anyone holding it enters a room that has
+  no password. Treat it like a session token: never in a log line, an error message,
+  Sentry or Umami; logs name a room by its id. The request log writes the matched route
+  (`/r/:code`); for a path that matched only the web app's fallback or the 404 it
+  writes a normalised path (decoded, `//` collapsed, case ignored) with the segment
+  after `/r` or `/api/rooms` and every code-shaped segment replaced by `:code`.
+  Every later issue follows the rule. Each HTTP request gets an id (an incoming `x-request-id` is kept when it is at
   most 64 safe characters) echoed in `x-request-id`; each socket gets a random connection
   id. Never logged: bodies, cookies, session tokens, the signing secret, auth headers,
   query strings, config values, client addresses; the logger redacts cookies, auth headers and `auth` payloads as a backstop.

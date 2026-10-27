@@ -2,6 +2,7 @@ import {
   MAX_CARD_LENGTH,
   MAX_DECK_CARDS,
   MAX_NAME_LENGTH,
+  MAX_ROOM_NAME_LENGTH,
   MAX_TIMER_SECONDS,
   MIN_TIMER_SECONDS,
 } from "@pp/domain";
@@ -23,6 +24,7 @@ type CodesWithValues = {
 /** The values each limit-stating message needs; tsc fails when one is missing or wrong. */
 export const ERROR_VALUES: { [C in CodesWithValues]: Params<Key<C>> } = {
   bad_name: { min: 1, max: MAX_NAME_LENGTH },
+  bad_room_name: { min: 1, max: MAX_ROOM_NAME_LENGTH },
   bad_seconds: { min: MIN_TIMER_SECONDS, max: MAX_TIMER_SECONDS / 60 },
   deck_too_many_cards: { max: MAX_DECK_CARDS },
   card_too_long: { max: MAX_CARD_LENGTH },

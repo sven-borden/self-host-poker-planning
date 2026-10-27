@@ -1,11 +1,13 @@
 /**
  * The `setup` hook `main.ts` hands to `run()`: the database (#7), then identity (#10) on
- * its pool. W1 adds the room handlers here. Opens nothing at import time.
+ * its pool, then the room API (#14). W1 adds the room handlers here. Opens nothing at import time.
  */
-import { createAuth, memoryRateLimit, registerAuthApi, sessionMiddleware } from "./auth.ts";
+import { createAuth, registerAuthApi, sessionMiddleware } from "./auth.ts";
 import type { Config } from "./config.ts";
 import { type Database, setupDatabase } from "./database.ts";
 import type { Logger } from "./logger.ts";
+import { memoryRateLimit } from "./rate-limit.ts";
+import { registerRoomApi } from "./rooms.ts";
 import type { Setup } from "./run.ts";
 
 export async function setupServer(
@@ -16,7 +18,7 @@ export async function setupServer(
   const opened = await setupDatabase(config, logger, signal);
   const { database } = opened;
   // Building the auth instance queries nothing; if it throws, release the pool first.
-  // One limiter for Better Auth's endpoints and the app's own (`/api/me/name`).
+  // One limiter for Better Auth's endpoints and the app's own (`/api/me/name`, rooms).
   const limiter = memoryRateLimit();
   let auth: ReturnType<typeof createAuth>;
   try {
@@ -30,7 +32,10 @@ export async function setupServer(
     auth,
     deps: {
       ...opened.deps,
-      registerApi: (app) => registerAuthApi(app, { auth, db: database.db, config, limiter }),
+      registerApi: (app) => {
+        registerAuthApi(app, { auth, db: database.db, config, limiter });
+        registerRoomApi(app, { auth, rooms: database.store, config, limiter });
+      },
       socketMiddleware: [sessionMiddleware(auth)],
     },
     dispose: opened.dispose,

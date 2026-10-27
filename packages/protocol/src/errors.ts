@@ -11,6 +11,11 @@ export const PROTOCOL_ERROR_CODES = [
   /** The client speaks another `PROTOCOL_VERSION`: it reloads. */
   "protocol_mismatch",
   "room_not_found",
+  /**
+   * `POST /api/rooms`: the room name is blank, too long or holds hidden characters. HTTP
+   * only, never in a socket ack, so adding it changed no socket message.
+   */
+  "bad_room_name",
   /** The room has a password and this browser holds no access cookie for it. */
   "password_required",
   "unauthenticated",
