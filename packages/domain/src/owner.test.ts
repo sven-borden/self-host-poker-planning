@@ -2,7 +2,9 @@
  * Exactly one product owner at any time (#30, AC 1), as a property over random sequences
  * of the commands that move the role or the people: `transferOwner`, `claimOwner`,
  * `kick`, `leave`, `join` and the server's `presence`, with time running on by up to
- * three minutes a step, so claims meet both sides of the two minutes.
+ * three minutes a step, so claims meet both sides of the two minutes. The room starts
+ * with all four people in it, and every sequence is long (`size: "max"`), so hand-overs,
+ * claims on an away PO and hand-overs to someone who left all happen many times a run.
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -30,8 +32,27 @@ const commandArb: fc.Arbitrary<Command> = fc.oneof(
 const stepArb = fc.record({
   actor: personArb,
   command: commandArb,
-  dt: fc.constantFrom(0, 1_000, 60_000, OWNER_CLAIM_AFTER_MS - 1, OWNER_CLAIM_AFTER_MS, 180_000),
+  dt: fc.constantFrom(
+    0,
+    1_000,
+    60_000,
+    OWNER_CLAIM_AFTER_MS - 1_000,
+    OWNER_CLAIM_AFTER_MS - 1,
+    OWNER_CLAIM_AFTER_MS,
+    180_000,
+  ),
 });
+
+/** The four people in the room, Ana the owner, as a room is once everyone came in. */
+function fullRoom(): RoomState {
+  let state = createRoom({ ownerId: "ua" });
+  PEOPLE.forEach((who, i) => {
+    const role = i % 2 === 0 ? "voter" : "observer";
+    const command: Command = { type: "join", name: `P${i}`, role };
+    state = apply(state, command, { actor: who, now: T0 }).state;
+  });
+  return state;
+}
 
 /** The owner as `state` holds them: in the room or not, and since when away. */
 function ownerOf(state: RoomState) {
@@ -40,11 +61,24 @@ function ownerOf(state: RoomState) {
     : undefined;
 }
 
+/** Whether the role is free to take: its holder left, or has been away for two minutes. */
+function claimable(state: RoomState, now: number) {
+  const owner = ownerOf(state);
+  return (
+    owner === undefined ||
+    (owner.awaySince !== undefined && now - owner.awaySince >= OWNER_CLAIM_AFTER_MS)
+  );
+}
+
 describe("the product owner (#30)", () => {
+  it("starts in a full room", () => {
+    expect(Object.keys(fullRoom().participants)).toEqual([...PEOPLE]);
+  });
+
   it("is exactly one person at any time, and changes only by a hand-over or a fair claim", () => {
     fc.assert(
-      fc.property(fc.array(stepArb, { maxLength: 60 }), (steps) => {
-        let state = createRoom({ ownerId: "ua" });
+      fc.property(fc.array(stepArb, { minLength: 10, maxLength: 60, size: "max" }), (steps) => {
+        let state = fullRoom();
         let now = T0;
         for (const { actor, command, dt } of steps) {
           now += dt;
@@ -52,8 +86,13 @@ describe("the product owner (#30)", () => {
           const before = state;
           const result = apply(before, command, { actor: sender, now });
           state = result.state;
-          // One id, always one of the people: never empty, never two.
-          expect(PEOPLE).toContain(state.ownerId);
+          // Never stuck, never two: everyone else in the room can take the role exactly
+          // when its holder left or has been away for two minutes, and not a moment before.
+          for (const who of Object.keys(state.participants)) {
+            if (who === state.ownerId) continue;
+            const probe = apply(state, { type: "claimOwner" }, { actor: who, now });
+            expect(probe.ok).toBe(claimable(state, now));
+          }
           const changes = result.causes.filter((c) => c.type === "ownerChanged");
           if (state.ownerId === before.ownerId) {
             expect(changes).toEqual([]);
@@ -77,11 +116,7 @@ describe("the product owner (#30)", () => {
             // A claim: the old owner had left, or had been away for two minutes.
             expect(command.type).toBe("claimOwner");
             expect(state.ownerId).toBe(actor);
-            const old = ownerOf(before);
-            if (old !== undefined) {
-              expect(old.awaySince).toBeDefined();
-              expect(now - (old.awaySince ?? now)).toBeGreaterThanOrEqual(OWNER_CLAIM_AFTER_MS);
-            }
+            expect(claimable(before, now)).toBe(true);
           }
         }
       }),
