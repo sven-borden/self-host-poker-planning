@@ -25,6 +25,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 - The database from #7: Drizzle on `pg`, migrations at start under an advisory lock,
   the room repository with compare-and-set, a per-room command runner, and history
   rows (anonymous rounds store cards only).
+- The Docker image and compose file from #11: 219 MB, non-root, with a healthcheck.
+  `docker compose up` serves the app on port 3000, and a `docker` CI job tests the
+  image.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -35,8 +38,8 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#10 (PP-010)** identity with Better Auth guest sessions, in `../pp-wt-10`.
-- **#11 (PP-011)** the Docker image and compose file, in `../pp-wt-11`.
+- **#10 (PP-010)** identity with Better Auth guest sessions: PR #74 in review, CI
+  green.
 
 ## Next
 
@@ -44,8 +47,8 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   need #10, and #24 needs #14.
 - **W1 starts without a new go** once the W0 issues other than #12 are merged (Sven,
   2026-10-26). No W1 issue depends on #11 or #12.
-- **#12** waits for Sven's go on Coolify and DNS (see Owner items). It is asked for
-  when #11 merges.
+- **#12** waits for Sven's go (asked on 2026-10-27, when #11 was ready). DNS needs
+  nothing: `*.borden.ch` already points to his Synology.
 
 ## Order
 
@@ -68,8 +71,10 @@ issues are merged.
 
 ## Owner items (only Sven)
 
-- **#12**: go for the Coolify application, the Postgres resource with backups, the
-  env vars and the `poker.borden.ch` DNS record.
+- **#12**: go for the Coolify project, the Postgres resource with backups and the
+  application. Sven sets the two secrets himself, runtime-only. He also adds WebSocket
+  headers to the Synology reverse-proxy rule, and can let Coolify's Traefik trust the
+  Synology so rate limits see real client addresses.
 - **#38**: pick the Azure service (OQ-1).
 - **#41**: French and German tone (OQ-2).
 - **#56**: licence and pricing model for branding (OQ-3).
