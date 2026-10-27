@@ -12,11 +12,21 @@ import { dockFits } from "./hand-dock.ts";
 /** A phone: the `phone:` variant in styles.css. There only the action row docks. */
 export const PHONE_QUERY = "(max-width: 640px)";
 
-/** What must stay in sight above the docked bar: the table's centre, and its result. */
-const KEPT_CLEAR =
-  "[data-room-table] [data-centre], [data-room-table] [data-centre-status='revealed']";
+/** What must stay in sight above the docked bar: the result in the table's centre. */
+const KEPT_CLEAR = "[data-room-table] [data-centre] [data-centre-status='revealed']";
 
-/** The lowest edge of the table's centre and its result, from the page's top. */
+/**
+ * The docking part's height once docked. On a desktop the bar's hint ("Pick the final
+ * estimate…") is for screen readers only while docked, so in the page its row is taken off.
+ */
+function dockHeight(part: HTMLElement, docked: boolean): number {
+  const hint = part.querySelector<HTMLElement>("[data-decision-hint]");
+  if (docked || hint === null || !part.contains(hint)) return part.offsetHeight;
+  const gap = Number.parseFloat(getComputedStyle(part).rowGap) || 0;
+  return part.offsetHeight - hint.offsetHeight - gap;
+}
+
+/** The lowest edge of the result in the table's centre, from the page's top. */
 function clearBottom(): number {
   let bottom = 0;
   for (const element of document.querySelectorAll(KEPT_CLEAR)) {
@@ -27,11 +37,12 @@ function clearBottom(): number {
 
 /**
  * Whether the decision docks: `bar` on a desktop, `actions` on a phone, when the screen
- * leaves the centre and its result clear above it at the top of the page (`dockFits`).
- * Measured again whenever the page, the docking part or the centre changes size (a
+ * leaves the result in the centre clear above it at the top of the page (`dockFits`).
+ * Measured again whenever the page, the docking part or the result changes size (a
  * rotation, a recorded final, a larger text size, fonts). The docking part's padding and
- * border are the same docked or not and a sticky element moves nothing around it, so the
- * measure cannot flip the state back and forth. While docked, the page's
+ * border are the same docked or not, its hint is taken off when it is not docked
+ * (`dockHeight`), and a sticky element moves nothing around it, so the measure cannot
+ * flip the state back and forth. While docked, the page's
  * `--decision-dock` holds its height, the scroll padding that keeps a focused control
  * above it (WCAG 2.4.11).
  */
@@ -57,9 +68,8 @@ export function useDecisionDock(
       for (const centre of document.querySelectorAll(KEPT_CLEAR)) observer?.observe(centre);
       observer?.observe(element);
       setPart(element);
-      setDocked(
-        dockFits(clearBottom(), element.offsetHeight, document.documentElement.clientHeight),
-      );
+      const height = dockHeight(element, element.closest("[data-decision-dock]") !== null);
+      setDocked(dockFits(clearBottom(), height, document.documentElement.clientHeight));
     }
     measure();
     observer?.observe(document.body);

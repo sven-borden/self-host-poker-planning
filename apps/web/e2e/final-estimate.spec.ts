@@ -10,6 +10,7 @@ import {
   join,
   newPerson,
   ownAddress,
+  type Phone,
   packetsIn,
   phone,
   recordFrames,
@@ -89,7 +90,7 @@ async function rowWithFinal(code: string, number: number, final: string) {
 
 /**
  * The PO's flow by keyboard only, from "Reveal cards" with the focus: Enter reveals and the
- * focus lands on "Record <suggested>"; Enter records it; Shift+Tab goes back to the picker,
+ * focus lands on "Record <suggested>"; Enter, a moment later, records it; Shift+Tab goes back to the picker,
  * an arrow key picks the next card, Tab and Enter record it; Tab reaches "Next round", then
  * "Vote again".
  */
@@ -98,6 +99,9 @@ async function poByKeyboard(page: Page, suggested: string, next: string) {
   await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: `Record ${suggested}` })).toBeFocused();
   await expect(pick(page, `${suggested}, suggested`)).toBeChecked();
+  // A deliberate press, past the wait after the page placed the focus (a double Enter on
+  // "Reveal cards" never records: see the test below).
+  await page.waitForTimeout(400);
   await page.keyboard.press("Enter");
   await expect(recordButton(page)).toHaveText("Recorded");
   await expect(recordButton(page)).toBeFocused();
@@ -251,7 +255,23 @@ test("with a tie the PO picks: nothing preselected, the tied cards marked", asyn
     await shoot(page, "final-po-tie");
     await shoot(ben.page, "final-voter-tie");
 
+    // The keyboard focus on a card nobody picked: an outline around the card, never the
+    // pick's brass ring, in normal and forced colours.
     await page.setViewportSize({ width: 1280, height: 900 });
+    await recordButton(page).focus();
+    await page.keyboard.press("Shift+Tab");
+    await expect(picker(page).getByRole("radio").last()).toBeFocused();
+    const ring = await picker(page)
+      .locator("label:has(input:focus-visible)")
+      .evaluate((label) => getComputedStyle(label).outlineStyle);
+    expect(ring).toBe("solid");
+    await page.locator("[data-decision]").screenshot({ path: `${SHOTS}final-tie-focus.png` });
+    await page.emulateMedia({ forcedColors: "active" });
+    await page
+      .locator("[data-decision]")
+      .screenshot({ path: `${SHOTS}final-tie-focus-forced.png` });
+    await page.emulateMedia({ forcedColors: "none" });
+
     await page.locator("[data-final-card='L']").click();
     await expect(pick(page, "L, tied")).toBeChecked();
     await page.getByRole("button", { name: "Record L" }).click();
@@ -473,6 +493,232 @@ test("the PO's flow by keyboard only on a phone", async ({ browser, baseURL }) =
   }
 });
 
+/** A round for the PO on `page`: started, the guests' votes in, everyone voted. */
+async function votedRound(
+  page: Page,
+  guests: readonly Guest[],
+  cards: readonly string[],
+  round: number,
+) {
+  await page.getByRole("button", { name: round === 1 ? "Start voting" : "Next round" }).click();
+  await vote(guests, cards, round);
+  await expect(centreStatus(page)).toContainText(`${guests.length}/${guests.length} voted so far`);
+}
+
+test("a double Enter on Reveal cards records nothing, at 40, 120 and 250 ms; a double Enter on Record records once, and Next round at once after it keeps the final", async ({
+  page,
+  context,
+  baseURL,
+}) => {
+  test.setTimeout(120_000);
+  const base = baseURL ?? "";
+  const code = await createRoom(page);
+  await join(page, "Ana");
+  const po = await sameUser(base, context);
+  const guests = await guestsJoin(base, code, ["Ben", "Cleo", "Dan"]);
+  try {
+    expect(await po.enter(code)).toMatchObject({ ok: true });
+    expect(
+      await po.cmd("updateSettings", { patch: { revealWhenAllVoted: false, poVotes: false } }),
+    ).toMatchObject({ ok: true });
+    await expect(seats(page).locator("[data-seat]")).toHaveCount(4);
+    let round = 0;
+    for (const gap of [40, 120, 250]) {
+      round += 1;
+      await votedRound(page, guests, ["3", "5", "8"], round);
+      // 3, 5 and 8 suggest 5. The second Enter comes while the focus moves to "Record 5".
+      await page.getByRole("button", { name: "Reveal cards" }).focus();
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(gap);
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("button", { name: "Record 5" })).toBeFocused();
+      await page.waitForTimeout(500);
+      await expect(recordButton(page), `a second Enter after ${gap} ms`).toHaveText("Record 5");
+      await expect(centreFinal(page)).toHaveCount(0);
+      expect((await historyOf(code)).filter((row) => row.number === round)).toEqual([]);
+    }
+
+    // A double Enter on "Record 5" records once; "Next round" right after it starts the
+    // next round, and the row keeps the final.
+    round += 1;
+    await votedRound(page, guests, ["3", "5", "8"], round);
+    await page.getByRole("button", { name: "Reveal cards" }).click();
+    await expect(page.getByRole("button", { name: "Record 5" })).toBeFocused();
+    // Past the wait after the page placed the focus there.
+    await page.waitForTimeout(400);
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(40);
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("button", { name: "Next round" })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(centreStatus(page)).toHaveText("0/3 voted so far");
+    const rows = await historyOf(code);
+    expect(rows.map((row) => [row.number, JSON.parse(row.text).final ?? null])).toEqual([
+      [1, null],
+      [2, null],
+      [3, null],
+      [4, "5"],
+    ]);
+    const live = (await tableLive(page).textContent()) ?? "";
+    expect(live).not.toContain("changed the final estimate");
+  } finally {
+    po.close();
+    for (const guest of guests) guest.close();
+  }
+});
+
+/** Where the reveal left the PO's page: its scroll, the centre, the docked part. */
+async function afterReveal(page: Page) {
+  return page.evaluate(() => {
+    const box = (element: Element | null) => element?.getBoundingClientRect() ?? null;
+    const centre = box(document.querySelector("[data-centre] [data-centre-status='revealed']"));
+    const docked = document.querySelector("[data-decision-dock]") !== null;
+    const phone = matchMedia("(max-width: 640px)").matches;
+    const part = box(document.querySelector(phone ? "[data-decision-actions]" : "[data-decision]"));
+    return {
+      scrollY: window.scrollY,
+      viewport: document.documentElement.clientHeight,
+      docked,
+      centreTop: Math.round(centre?.top ?? -1),
+      centreBottom: Math.round(centre?.bottom ?? -1),
+      partTop: Math.round(part?.top ?? -1),
+      partHeight: Math.round(part?.height ?? -1),
+      padding: getComputedStyle(document.documentElement).scrollPaddingBottom,
+    };
+  });
+}
+
+const DESKTOPS = [
+  { width: 1024, height: 768 },
+  { width: 1280, height: 800 },
+  { width: 1440, height: 900 },
+  { width: 1920, height: 1080 },
+] as const;
+
+test("the reveal never scrolls the PO's page: the result stays in view, and the docked bar keeps Next round in sight while the PO types the next subject", async ({
+  page,
+  context,
+  browser,
+  baseURL,
+}) => {
+  test.setTimeout(240_000);
+  const base = baseURL ?? "";
+  const found: Array<Record<string, unknown>> = [];
+  const code = await createRoom(page);
+  await join(page, "Ana");
+  const po = await sameUser(base, context);
+  const guests = await guestsJoin(base, code, ["Ben", "Cleo", "Dan", "Eve", "Finn", "Gus"]);
+  const phones: Phone[] = [];
+  try {
+    expect(await po.enter(code)).toMatchObject({ ok: true });
+    expect(
+      await po.cmd("updateSettings", { patch: { revealWhenAllVoted: false, poVotes: false } }),
+    ).toMatchObject({ ok: true });
+    await expect(seats(page).locator("[data-seat]")).toHaveCount(7);
+    let round = 0;
+    for (const size of DESKTOPS) {
+      round += 1;
+      await page.setViewportSize(size);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await votedRound(page, guests, ["3", "5", "5", "8", "3", "13"], round);
+      // The PO reveals by keyboard, at the top of the page.
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.getByRole("button", { name: "Reveal cards" }).focus();
+      const before = await page.evaluate(() => window.scrollY);
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("button", { name: "Record 5" })).toBeFocused();
+      await page.waitForTimeout(1_500);
+      const at = `${size.width} × ${size.height}`;
+      const after = await afterReveal(page);
+      found.push({ at, ...after });
+      expect(after.scrollY, `${at}: the reveal scrolled`).toBe(before);
+      await expect(centreStatus(page), `${at}: the result`).toBeInViewport({ ratio: 1 });
+      expect(after.docked, `${at}: the bar docks`).toBe(true);
+      expect(after.partTop, `${at}: the bar over the result`).toBeGreaterThanOrEqual(
+        after.centreBottom,
+      );
+      expect(after.padding, `${at}: scroll padding`).toBe(`${after.partHeight}px`);
+      if (size.width === 1024 || size.width === 1440) {
+        await page.screenshot({ path: `${SHOTS}final-dock-po-${size.width}x${size.height}.png` });
+      }
+      // The PO types the next subject: "Next round" stays in sight.
+      await subjectField(page).click();
+      await page.keyboard.type("PAY-2 Signup");
+      await expect(page.getByRole("button", { name: "Next round" })).toBeInViewport({
+        ratio: 1,
+      });
+      await expect(centreStatus(page)).toBeInViewport({ ratio: 1 });
+      if (size.width === 1440) {
+        await page.screenshot({ path: `${SHOTS}final-dock-po-typing-1440x900.png` });
+      }
+      await subjectField(page).fill("");
+    }
+
+    // The phones: each PO in a room of their own, the action row docked when it fits.
+    for (const device of ["iPhone SE", "iPhone 13", "Pixel 7"] as const) {
+      const ana = await phone(browser, device);
+      phones.push(ana);
+      const room = await createRoom(ana.page);
+      await join(ana.page, "Ana");
+      const owner = await sameUser(base, ana.context);
+      const team = await guestsJoin(base, room, ["Ben", "Cleo", "Dan"]);
+      try {
+        expect(await owner.enter(room)).toMatchObject({ ok: true });
+        expect(
+          await owner.cmd("updateSettings", {
+            patch: { revealWhenAllVoted: false, poVotes: false },
+          }),
+        ).toMatchObject({ ok: true });
+        await expect(seats(ana.page).locator("[data-seat]")).toHaveCount(4);
+        await ana.page.getByRole("button", { name: "Start voting" }).tap();
+        await vote(team, ["3", "5", "8"], 1);
+        await expect(centreStatus(ana.page)).toContainText("3/3 voted so far");
+        // The PO looks at the table, its centre in the middle of the screen.
+        await centreStatus(ana.page).evaluate((centre) =>
+          centre.scrollIntoView({ block: "center" }),
+        );
+        const before = await ana.page.evaluate(() => window.scrollY);
+        await ana.page.getByRole("button", { name: "Reveal cards" }).tap();
+        await expect(ana.page.getByRole("button", { name: "Record 5" })).toBeFocused();
+        await ana.page.waitForTimeout(1_500);
+        const after = await afterReveal(ana.page);
+        found.push({ at: device, ...after });
+        expect(after.scrollY, `${device}: the reveal scrolled`).toBe(before);
+        await expect(centreStatus(ana.page), `${device}: the result`).toBeInViewport({
+          ratio: 1,
+        });
+        if (after.docked) {
+          expect(after.partTop, `${device}: the actions over the result`).toBeGreaterThanOrEqual(
+            after.centreBottom,
+          );
+          await expect(ana.page.getByRole("button", { name: "Next round" })).toBeInViewport({
+            ratio: 1,
+          });
+        }
+        if (device !== "Pixel 7") {
+          const name = device.toLowerCase().replace(" ", "-");
+          await ana.page.screenshot({ path: `${SHOTS}final-dock-po-${name}.png` });
+        }
+        // The picker stays in the page and wraps: nothing scrolls sideways.
+        const overflow = await ana.page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        expect(overflow).toBeLessThanOrEqual(0);
+        expect(ana.errors).toEqual([]);
+      } finally {
+        owner.close();
+        for (const guest of team) guest.close();
+      }
+    }
+  } finally {
+    console.log(`decision dock: ${JSON.stringify(found)}`);
+    po.close();
+    for (const guest of guests) guest.close();
+    for (const one of phones) await one.context.close();
+  }
+});
+
 /** The centre and the PO's decision against the table's cards, and the page's width. */
 async function clearance(page: Page) {
   return page.evaluate(() => {
@@ -483,15 +729,25 @@ async function clearance(page: Page) {
     const centreElement = document.querySelector("[data-centre] [data-centre-status='revealed']");
     if (!centreElement) throw new Error("no revealed centre");
     const centre = box(centreElement);
-    const decision = document.querySelector("[data-decision]");
     const stage = document.querySelector("[data-room-table] [data-stage]");
-    const bar = decision ? box(decision) : null;
+    // The bar's parts in the page; a docked part covers the table by design (it docks
+    // only below the centre and its result), so it is measured against the centre.
+    const docked = document.querySelector("[data-decision-dock]") !== null;
+    const phone = matchMedia("(max-width: 640px)").matches;
+    const dock = docked
+      ? document.querySelector(phone ? "[data-decision-actions]" : "[data-decision]")
+      : null;
+    const parts = [
+      ...document.querySelectorAll("[data-final-picker], [data-decision-actions]"),
+    ].filter((part) => dock === null || !dock.contains(part));
+    const bars = parts.map(box);
     return {
       width: Math.round(centre.width),
       height: Math.round(centre.height),
       touching: cards.filter((card) => overlaps(card, centre)).length,
-      barOnCards: bar ? cards.filter((card) => overlaps(card, bar)).length : 0,
-      barOnTable: bar && stage ? overlaps(bar, box(stage)) : false,
+      barOnCards: bars.flatMap((bar) => cards.filter((card) => overlaps(card, bar))).length,
+      barOnTable: stage ? bars.some((bar) => overlaps(bar, box(stage))) : false,
+      dockOnCentre: dock ? box(dock).top < centre.bottom : false,
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     };
   });
@@ -592,6 +848,7 @@ test("the picker and the centre with a final stay clear of every card at 4, 8, 1
       expect(size.touching, `${at}: centre against a card`).toBe(0);
       expect(size.barOnCards, `${at}: decision against a card`).toBe(0);
       expect(size.barOnTable, `${at}: decision on the table`).toBe(false);
+      expect(size.dockOnCentre, `${at}: docked decision on the centre`).toBe(false);
       expect(size.overflow, `${at}: sideways scroll`).toBeLessThanOrEqual(0);
       if (size.size === "phone") expect(size.width, `${at}: centre width`).toBeLessThanOrEqual(76);
     }

@@ -106,9 +106,9 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
   function onFocus(event: FocusEvent<HTMLDivElement>) {
     // No element lost the focus to the bar: the page moved it here (after the reveal), or
     // the person came from nowhere. A key still on its way is not meant for the bar.
-    if (event.relatedTarget === null) {
-      guardUntil.current = performance.now() + PLACED_FOCUS_GUARD_MS;
-    }
+    // The person moving it (Tab, a click from another control) lifts the wait.
+    guardUntil.current =
+      event.relatedTarget === null ? performance.now() + PLACED_FOCUS_GUARD_MS : 0;
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -140,7 +140,8 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
       onKeyDown={onKeyDown}
       onKeyUp={onKeyUp}
       className={cn(
-        "mt-4 flex flex-wrap items-end justify-center gap-x-6 gap-y-2 rounded-xl border border-transparent px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+        // One row on a desktop, 60 px tall, so it docks above the result even at 1024 × 768.
+        "mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-xl border border-transparent px-4 pt-2 pb-[max(0.375rem,env(safe-area-inset-bottom))]",
         docked && DOCKED,
         "phone:contents",
       )}
@@ -155,7 +156,12 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
       {selected === null ? (
         <p
           id={ids.hint}
-          className="order-last m-0 w-full text-center text-sm text-ink-2 phone:mt-2"
+          data-decision-hint
+          className={cn(
+            "order-last m-0 w-full text-center text-sm text-ink-2 phone:mt-2",
+            // Docked on a desktop, the hint is for screen readers only: the bar stays one row.
+            docked && "min-[641px]:sr-only",
+          )}
         >
           {t("final.pick")}
         </p>
@@ -223,9 +229,9 @@ interface PickerProps {
 
 /**
  * A native radio group with a visible label: arrow keys move and pick, Tab leaves it. Each
- * radio covers its card, so a tap or a click lands on the input itself. Cards are 36 × 48
- * (32 × 44 on phones, a whole touch target, 8 px apart) and wrap into rows when the deck is
- * long, never scrolling sideways. The suggested card and the tied cards say so to screen
+ * radio covers its card, so a tap or a click lands on the input itself. Cards are 32 × 44,
+ * a whole touch target, 8 px apart, and wrap into rows when the deck is long, never
+ * scrolling sideways. The suggested card and the tied cards say so to screen
  * readers; a tie is marked on the cards as well. The pick lifts with a brass ring on the
  * card; the keyboard focus is an outline around the whole card (its label), in the ink
  * colour, so the two never look alike and the focus stays visible in forced colours, also
@@ -235,10 +241,11 @@ function Picker({ choice, name, selected, describedBy, onPick }: PickerProps) {
   const t = useT();
   return (
     <fieldset data-final-picker aria-describedby={describedBy} className="m-0 min-w-0 border-0 p-0">
-      <legend className="mb-2 w-full p-0 text-center text-sm font-medium">
+      {/* Floated, the legend sits beside the cards on a desktop; above them on a phone. */}
+      <legend className="float-left mr-3 p-0 text-sm/11 font-medium phone:float-none phone:mr-0 phone:mb-2 phone:w-full phone:text-center phone:leading-normal">
         {t("final.label")}
       </legend>
-      <div className="flex flex-wrap justify-center gap-1.5 pt-1.5 phone:gap-2">
+      <div className="flex flex-wrap justify-center gap-2 phone:pt-1.5">
         {choice.cards.map((card) => {
           const tied = choice.tied.includes(card);
           const label = cardLabel(t, card);
@@ -272,7 +279,7 @@ function Picker({ choice, name, selected, describedBy, onPick }: PickerProps) {
                 aria-hidden="true"
                 className={cn(
                   CARD_FACE,
-                  "relative grid h-12 w-9 place-items-center rounded-[6px] text-[15px]/none shadow-sm phone:h-11 phone:w-8",
+                  "relative grid h-11 w-8 place-items-center rounded-[6px] text-[15px]/none shadow-sm",
                   "transition-[translate] duration-200 ease-standard peer-hover:-translate-y-0.5",
                   // The pick: lifted (the label), with the hand's brass ring (an outline, kept
                   // in forced colours).
