@@ -6,13 +6,18 @@
  *
  * Nothing here connects or listens: `createAuth` only builds the instance, which queries
  * the pool on its first request. Secrets: the signing secret and session tokens never
- * reach a log line; Better Auth's own log calls keep their message and drop their
- * arguments (errors, objects).
+ * reach a log line, stdout or stderr. A database error's message carries the query's
+ * parameters (a session token), so:
+ * - Better Auth's logger goes through pino with a fixed message, its error code at most;
+ * - `onAPIError.throw` keeps better-call from printing `# SERVER_ERROR` dumps and Better
+ *   Auth from printing its own 4xx lines; the handler logs a thrown error's code only;
+ * - `sessionUser` turns any failure into a `DatabaseError` holding a code.
  */
 import type { IncomingMessage } from "node:http";
 import { cleanName } from "@pp/domain";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { isAPIError } from "better-auth/api";
 import { anonymous } from "better-auth/plugins";
 import { eq } from "drizzle-orm";
 import type { Hono } from "hono";
@@ -21,7 +26,7 @@ import type { AppEnv } from "./app.ts";
 import { clientIp } from "./client-ip.ts";
 import type { Config } from "./config.ts";
 import { authSchema, user } from "./db/auth-schema.ts";
-import { guard } from "./db/errors.ts";
+import { errorCode, guard } from "./db/errors.ts";
 import type { Db } from "./db/rooms.ts";
 import type { Logger } from "./logger.ts";
 import { MAX_PAYLOAD_BYTES, type SocketMiddleware } from "./realtime.ts";
@@ -37,6 +42,9 @@ export const AUTH_BASE_PATH = "/api/auth";
 export const CLIENT_IP_HEADER = "x-pp-client-ip";
 
 const DAY_SECONDS = 24 * 60 * 60;
+
+/** A Better Auth log message that is an error code, safe to keep in a log line. */
+const AUTH_LOG_CODE = /^[A-Z][A-Z0-9_]{2,63}$/;
 
 /**
  * Anonymous sign-ins per client address: a team behind one office address opening the
@@ -123,10 +131,22 @@ export function authOptions(config: Config, db: Db, logger: Logger) {
     },
     disabledPaths: DISABLED_AUTH_PATHS,
     telemetry: { enabled: false },
+    // Better Auth logs errors with the error object as an argument, sometimes as the
+    // message: only a message that is one of its error codes (`INTERNAL_SERVER_ERROR`)
+    // is kept, as `code`, and nothing else.
     logger: {
       level: "warn",
-      log: (level, message) => log[level](message),
+      disableColors: true,
+      log: (level, message) =>
+        log[level](
+          typeof message === "string" && AUTH_LOG_CODE.test(message) ? { code: message } : {},
+          "better-auth reported a problem",
+        ),
     },
+    // Errors are thrown to `registerAuthApi` instead of being printed: better-call would
+    // print a thrown error whole to stderr (`# SERVER_ERROR`), and Better Auth its 4xx
+    // messages. An APIError still becomes its own response.
+    onAPIError: { throw: true },
     databaseHooks: {
       user: {
         create: {
@@ -152,9 +172,18 @@ export function createAuth(config: Config, db: Db, logger: Logger) {
 
 export type Auth = ReturnType<typeof createAuth>;
 
-/** The session behind a request's cookies, or null. Rejects when the database fails. */
+/**
+ * The session behind a request's cookies, or null (a refusal of Better Auth's, 4xx, counts
+ * as no session). Any other failure rejects with a `DatabaseError` holding its code only:
+ * Better Auth's error carries the driver's error, whose message holds the session token.
+ */
 export async function sessionUser(auth: Auth, headers: Headers): Promise<SocketUser | null> {
-  const result = await auth.api.getSession({ headers, query: { disableRefresh: true } });
+  const result = await guard("read session", () =>
+    auth.api.getSession({ headers, query: { disableRefresh: true } }).catch((error: unknown) => {
+      if (isAPIError(error) && error.statusCode < 500) return null;
+      throw error;
+    }),
+  );
   if (!result) return null;
   return {
     id: result.user.id,
@@ -178,7 +207,15 @@ export function registerAuthApi(
     const headers = new Headers(c.req.raw.headers);
     headers.delete(CLIENT_IP_HEADER);
     if (ip) headers.set(CLIENT_IP_HEADER, ip);
-    const response = await auth.handler(new Request(c.req.raw, { headers }));
+    let response: Response;
+    try {
+      response = await auth.handler(new Request(c.req.raw, { headers }));
+    } catch (error) {
+      // Never the error itself: its message or its cause's can hold a session token.
+      c.var.log.error({ code: errorCode(error) }, "auth request failed");
+      c.header("Cache-Control", "no-store");
+      return c.json({ code: "internal" }, 500);
+    }
     // The server answers with codes, never sentences: Better Auth's plain "Not Found", its
     // English throttle message and its 5xx bodies become the app's codes.
     if (response.status === 404) return c.notFound();

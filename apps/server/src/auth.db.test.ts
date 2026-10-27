@@ -1,15 +1,27 @@
 /**
  * Identity against a real Postgres: guest sign-in and its cookie, the display name, the
- * rate limit, the socket handshake, a lost connection, and that neither the signing
- * secret nor a session token reaches a log line.
+ * rate limit, the socket handshake, a lost connection, a database that refuses
+ * connections, and that neither the signing secret nor a session token reaches a log
+ * line, stdout or stderr (console and both streams are captured for the whole file).
  */
+import { format } from "node:util";
 import { userIdSchema } from "@pp/protocol";
+import pg from "pg";
 import { io as connect, type Socket } from "socket.io-client";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  type MockInstance,
+  vi,
+} from "vitest";
 import { ANONYMOUS_SIGN_IN_LIMIT, CLIENT_IP_HEADER, createAuth, memoryRateLimit } from "./auth.ts";
 import type { Config } from "./config.ts";
 import { APP_NAME, type Database } from "./database.ts";
-import { createTestDatabase, type TestDatabase, testClient } from "./db/test-db.ts";
+import { createTestDatabase, serverUrl, type TestDatabase, testClient } from "./db/test-db.ts";
 import { createServer, type PokerServer } from "./server.ts";
 import { setupServer } from "./setup.ts";
 import { collectLogs, testConfig, VALID_ENV } from "./test-support.ts";
@@ -27,12 +39,31 @@ let database: Database;
 const servers: PokerServer[] = [];
 const sockets: Socket[] = [];
 
+/** Whatever reached console or process.stdout/stderr: our pino lines go to `logs`. */
+const printed: string[] = [];
+const captures: MockInstance[] = [];
+
 const crashes: unknown[] = [];
 const onCrash = (error: unknown) => {
   crashes.push(error);
 };
 
 beforeAll(async () => {
+  for (const method of ["log", "info", "warn", "error", "debug", "trace"] as const) {
+    captures.push(
+      vi.spyOn(console, method).mockImplementation((...args: unknown[]) => {
+        printed.push(format(...args));
+      }),
+    );
+  }
+  for (const stream of [process.stdout, process.stderr]) {
+    captures.push(
+      vi.spyOn(stream, "write").mockImplementation((chunk: unknown) => {
+        printed.push(String(chunk));
+        return true;
+      }),
+    );
+  }
   process.on("uncaughtException", onCrash);
   process.on("unhandledRejection", onCrash);
   t = await createTestDatabase();
@@ -56,6 +87,7 @@ afterAll(async () => {
   await t?.drop();
   process.off("uncaughtException", onCrash);
   process.off("unhandledRejection", onCrash);
+  for (const capture of captures.splice(0)) capture.mockRestore();
   expect(crashes).toEqual([]);
 });
 
@@ -401,14 +433,76 @@ describe("a backend terminated in the middle of an anonymous sign-in", () => {
   });
 });
 
+describe("a database that fails", () => {
+  /** A handshake, a name update, a sign-in and a session read: each answers internal. */
+  async function everythingFails(cookie: string, ip: string) {
+    expect(await handshake({ cookie, origin: ORIGIN })).toEqual({
+      ok: false,
+      message: "internal",
+    });
+    expect(
+      await call("/api/me/name", { method: "POST", cookie, body: { name: "Ada" } }),
+    ).toMatchObject({ status: 500, json: { code: "internal" } });
+    const refused = await signIn({ "x-forwarded-for": ip });
+    expect(refused).toMatchObject({ status: 500, json: { code: "internal" }, cookie: "" });
+    expect(await call("/api/auth/get-session", { cookie })).toMatchObject({
+      status: 500,
+      json: { code: "internal" },
+    });
+  }
+
+  it("keeps the token out of every output when a query fails with it as a parameter", async () => {
+    const { cookie } = await signIn({ "x-forwarded-for": "198.51.100.63" });
+    // Drizzle puts a failed query's parameters (the session token) into its message.
+    await admin.query('alter table "session" rename to "session_away"');
+    try {
+      await everythingFails(cookie, "198.51.100.64");
+    } finally {
+      await admin.query('alter table "session_away" rename to "session"');
+    }
+    expect((await sessionOf(cookie))?.user.id).toBeDefined();
+  });
+
+  it("answers internal while connections are refused, then recovers", async () => {
+    const { cookie } = await signIn({ "x-forwarded-for": "198.51.100.60" });
+    expect(cookie).not.toBe("");
+    const name = new URL(t.url).pathname.slice(1);
+    // Another database, so that terminating every backend of this one spares it.
+    const dba = new pg.Client({ connectionString: serverUrl(), application_name: "pp-test" });
+    dba.on("error", () => {});
+    await dba.connect();
+    const linesBefore = logs.lines.length;
+    try {
+      await dba.query(`alter database "${name}" allow_connections false`);
+      await dba.query("select pg_terminate_backend(pid) from pg_stat_activity where datname = $1", [
+        name,
+      ]);
+      await everythingFails(cookie, "198.51.100.61");
+    } finally {
+      await dba.query(`alter database "${name}" allow_connections true`);
+      await dba.end();
+    }
+    // Each failure left a pino line with a code, never a driver message.
+    const failures = logs.lines.slice(linesBefore).filter((line) => line.level === 50);
+    expect(failures.length).toBeGreaterThanOrEqual(4);
+    expect((await signIn({ "x-forwarded-for": "198.51.100.62" })).status).toBe(200);
+  });
+});
+
 describe("the logs", () => {
-  it("never carry the signing secret, a session token or a cookie", () => {
+  it("never carry the signing secret, a session token or a cookie, and nothing is printed", () => {
     const text = logs.raw.join("");
     expect(logs.raw.length).toBeGreaterThan(0);
+    // Nothing of Better Auth's or better-call's reaches console, stdout or stderr: the
+    // server's own lines are pino's, collected in `logs`.
+    expect(printed).toEqual([]);
     expect(text).not.toContain(VALID_ENV.BETTER_AUTH_SECRET);
     expect(seen.length).toBeGreaterThan(20);
     for (const value of seen) {
-      if (value) expect(text).not.toContain(value);
+      if (!value) continue;
+      expect(text).not.toContain(value);
+      // The token alone, without its signature.
+      expect(text).not.toContain(decodeURIComponent(value).split(".")[0]);
     }
     expect(text).not.toContain(COOKIE);
   });
