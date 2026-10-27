@@ -48,7 +48,7 @@ const REASONS = {
   STATIC_DIR: "must be a folder path",
   MIGRATIONS_DIR: "must be a folder path",
   BETTER_AUTH_SECRET:
-    "must be at least 32 characters, such as the output of openssl rand -base64 32",
+    "must be at least 32 random characters, such as the output of openssl rand -base64 32",
 } as const;
 type Variable = keyof typeof REASONS;
 const VARIABLES = Object.keys(REASONS) as Variable[];
@@ -58,6 +58,13 @@ function parsesAsUrl(value: string, protocols: readonly string[]): URL | undefin
   const url = new URL(value);
   return protocols.includes(url.protocol) ? url : undefined;
 }
+
+/**
+ * Secrets that are not secret: the placeholder older copies of `.env.example` carried, and
+ * any value made of one repeated character (`xxxx…`).
+ */
+const PLACEHOLDER_SECRET = "replace-with-32-or-more-random-characters";
+const isRealSecret = (value: string) => value !== PLACEHOLDER_SECRET && !/^(.)\1*$/su.test(value);
 
 const integer = (min: number, max: number) =>
   z
@@ -103,7 +110,7 @@ const schema = z.object({
     .optional(),
   STATIC_DIR: z.string().min(1).optional(),
   MIGRATIONS_DIR: z.string().min(1).optional(),
-  BETTER_AUTH_SECRET: z.string().min(32),
+  BETTER_AUTH_SECRET: z.string().min(32).refine(isRealSecret),
 });
 
 export class ConfigError extends Error {

@@ -82,11 +82,25 @@ describe("loadConfig", () => {
     const short = `${SECRET}-short`;
     const error = configError({ ...VALID_ENV, BETTER_AUTH_SECRET: short });
     expect(error.variables).toEqual(["BETTER_AUTH_SECRET"]);
-    expect(error.message).toContain("BETTER_AUTH_SECRET must be at least 32 characters");
+    expect(error.message).toContain("BETTER_AUTH_SECRET must be at least 32 random characters");
     expect(error.message).not.toContain(short);
-    expect(loadConfig({ ...VALID_ENV, BETTER_AUTH_SECRET: "x".repeat(32) }).betterAuthSecret).toBe(
+    const secret = "0123456789abcdef0123456789abcdef";
+    expect(loadConfig({ ...VALID_ENV, BETTER_AUTH_SECRET: secret }).betterAuthSecret).toBe(secret);
+  });
+
+  it("refuses the old placeholder and a secret of one repeated character, without echoing it", () => {
+    for (const fake of [
+      "replace-with-32-or-more-random-characters",
       "x".repeat(32),
-    );
+      "0".repeat(64),
+      "\u{1F600}".repeat(32),
+    ]) {
+      const error = configError({ ...VALID_ENV, BETTER_AUTH_SECRET: fake });
+      expect(error.variables).toEqual(["BETTER_AUTH_SECRET"]);
+      expect(error.message).toBe(
+        "Invalid configuration: BETTER_AUTH_SECRET must be at least 32 random characters, such as the output of openssl rand -base64 32. See .env.example.",
+      );
+    }
   });
 
   it("treats an empty value as unset", () => {
