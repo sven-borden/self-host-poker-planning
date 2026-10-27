@@ -124,6 +124,7 @@ export const fr: Catalog<"many"> = {
     password_required: "Cette salle est protégée par un mot de passe. Saisissez-le pour entrer.",
     unauthenticated: "Votre session a expiré. Rechargez la page pour continuer.",
     rate_limited: "Trop de tentatives. Patientez un instant, puis réessayez.",
+    busy: "La salle était occupée un instant. Réessayez.",
     internal: "Une erreur s’est produite sur le serveur. Réessayez dans un instant.",
     unknown: "Une erreur s’est produite. Réessayez ou rechargez la page.",
   },

@@ -50,6 +50,7 @@ const errors = {
   password_required: "This room has a password. Enter it to join.",
   unauthenticated: "Your session has ended. Reload the page to continue.",
   rate_limited: "Too many attempts. Wait a moment, then try again.",
+  busy: "The room was busy for a moment. Try again.",
   internal: "Something went wrong on the server. Try again in a moment.",
   /** Any code this version does not know yet. */
   unknown: "Something went wrong. Try again, or reload the page.",

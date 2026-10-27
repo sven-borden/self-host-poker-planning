@@ -123,6 +123,7 @@ export const de: Catalog = {
     password_required: "Dieser Raum hat ein Passwort. Geben Sie es ein, um beizutreten.",
     unauthenticated: "Ihre Sitzung ist abgelaufen. Laden Sie die Seite neu, um fortzufahren.",
     rate_limited: "Zu viele Versuche. Warten Sie einen Moment und versuchen Sie es dann erneut.",
+    busy: "Der Raum war kurz beschäftigt. Versuchen Sie es erneut.",
     internal: "Auf dem Server ist etwas schiefgelaufen. Versuchen Sie es gleich noch einmal.",
     unknown: "Etwas ist schiefgelaufen. Versuchen Sie es erneut oder laden Sie die Seite neu.",
   },
