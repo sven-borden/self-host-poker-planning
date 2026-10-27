@@ -172,7 +172,9 @@ in Voting until the next command arrives. Not built in #3.
 ## 5. Sync protocol
 
 Socket.IO with typed event maps from `packages/protocol` (`ClientToServerEvents`,
-`ServerToClientEvents`); every payload is validated with zod on both ends.
+`ServerToClientEvents`). The server validates every inbound payload with the protocol's
+zod schemas; the web checks the server's messages by shape (`isSnapshot`, `isEnterAck`,
+`isCmdAck`), not with zod, which would cost the room route about 27 kB gzipped.
 `PROTOCOL_VERSION` is 2 (2 added the `busy` ack code, #15; 1 was the first deploy).
 
 | Event | Direction | Payload | Ack |
@@ -248,14 +250,20 @@ Socket.IO with typed event maps from `packages/protocol` (`ClientToServerEvents`
 Server: `apps/server/src/sync/room-sync.ts` (the `handlers` of `createRealtime`). Web:
 `apps/web/src/realtime/room-connection.ts` and `stores/room-store.ts`.
 
-- **Message limit**: a token bucket per socket, 10 messages a second with bursts of 20,
-  for `enter` and `cmd` alike, before any parsing. Past it: `rate_limited`; the socket
-  and the room stay up.
+- **Message limit**: one token bucket per person, shared by all their sockets, 10
+  messages a second with bursts of 20, for `enter` and `cmd` alike, before any parsing.
+  Past it: `rate_limited`; the socket and the room stay up. A person holds at most 8
+  sockets: the next handshake is refused with `rate_limited`. The bucket outlives the
+  person's last socket until it would be full again, so reconnecting does not refill it.
 - **Enter**: the session is checked again (`sessionChecker`; a socket outlives a
   sign-out or a deleted user) → `unauthenticated`; the socket joins the room's channel
-  `room:<code>` *before* the room is loaded, so a commit in between reaches it; then
-  `room_not_found` or `{ ok: true, snapshot }` for this viewer (also for someone who has
-  not joined: `you: null`). One room per socket (`socket.data.room`).
+  `room:<id>` (never the code, a bearer capability) *before* the room is loaded when this
+  instance knows the id, so a commit in between reaches it; otherwise it loads, joins and
+  loads again. Then `room_not_found` or `{ ok: true, snapshot }` for this viewer (also
+  for someone who has not joined: `you: null`). One room per socket: a socket's enters
+  run one after the other, a failed one leaves the channel it joined, an enter stops when
+  the socket disconnects mid-way, and `socket.data.room` is set only after every check.
+  A command sent during an enter waits for it.
 - **Command**: bucket → `toDomainCommand` (`bad_payload`) → entered room
   (`room_not_found`) → idempotency → `runner.run(code, s => apply(s, cmd, { actor, now }))`
   (per-room queue, load, apply, compare-and-set, retry) → broadcast → ack. Each socket of
@@ -263,9 +271,15 @@ Server: `apps/server/src/sync/room-sync.ts` (the `handlers` of `createRealtime`)
   client holds the new snapshot when its command resolves. A refused command acks the
   domain code, and whatever the run stored anyway (a timer reveal resolved first) is
   broadcast. A `kicked` cause sends `kicked` to that person's sockets and closes them.
-- **Idempotency**: the last 5000 results by (user, room, command id) in an LRU in
-  process memory; a repeated id (in flight or done) gets the same ack and runs once.
-  `busy` is not remembered. A restart or another instance forgets it.
+- **Idempotency**: the last 100 results of each person (by room id and command id), for
+  the 1000 people who sent a command last, in process memory; one person's flood evicts
+  only their own results. A repeated id (in flight or done) gets the same ack and runs
+  once. `busy` is not remembered. A restart or another instance forgets it, so on
+  shutdown the server stops taking socket messages, waits up to 5 s until every message
+  it took is answered, and only then closes the connections.
+- **Session**: a command checks the session again once the last check is a minute old;
+  when it is gone it answers `unauthenticated` and closes the connection, and the
+  client's reconnect meets the handshake's check.
 - **Database failure**: a `DatabaseError` may hide a commit that landed. The server
   reloads the room, broadcasts it, acks `internal`, and never runs the command again.
 - **Versions**: each socket remembers the version it holds and never gets the same or an

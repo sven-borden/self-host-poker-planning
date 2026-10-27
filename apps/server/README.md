@@ -41,13 +41,18 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 - `src/app.ts`: `createApp(config, deps)`, the Hono app: request ids and logs,
   `/api/health`, the hooks for more API routes, the JSON `/api` 404, the web app.
 - `src/realtime.ts`: `createRealtime(httpServer, options)`, Socket.IO typed with
-  `@pp/protocol`'s event maps; takes a token from the socket's bucket
-  (`sync/token-bucket.ts`, 10 a second, bursts of 20, else `rate_limited`), then parses
-  every payload before a handler sees it. `SocketData` holds `user`, `sessionId` and
-  `room`. Handlers may have `attach(io)` and `disconnect(socket)`.
+  `@pp/protocol`'s event maps; takes a token from the sender's bucket, one per person
+  for all their sockets (`sync/token-bucket.ts`, 10 a second, bursts of 20, else
+  `rate_limited`), then parses every payload before a handler sees it. A person holds at
+  most `MAX_SOCKETS_PER_USER` (8) sockets; the next handshake gets `rate_limited`.
+  `SocketData` holds `user`, `sessionId` and `room` (`{ id, code }`). Handlers may have
+  `attach(io)` and `disconnect(socket)`. `drainRealtime(io, ms)` stops taking messages and
+  waits for the answers owed.
 - `src/sync/`: the realtime path of a room (#15), see "Rooms over the socket" below.
 - `src/server.ts`: `createServer(config, deps)` puts both on one HTTP server and returns
-  `{ app, httpServer, io, listen(), close() }`.
+  `{ app, httpServer, io, listen(), close() }`. `close()` stops accepting connections,
+  drains the socket messages already taken (`DRAIN_TIMEOUT_MS`, 5 s), then closes the
+  engine, so no ack is lost to a redeploy.
 - `src/client-ip.ts`: `clientIp(request, config.trustProxy)`, the client address for the
   rate limits (architecture section 8). Takes a Node request (`c.env.incoming` in Hono,
   `socket.request` in Socket.IO). Never logged. It answers a key: an IPv4-mapped IPv6
@@ -124,16 +129,21 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 `handlers` of `createRealtime`.
 
 - `enter { code, protocol }`: checks the session again (`sessionChecker`: a socket outlives
-  a sign-out), joins the Socket.IO room `room:<code>` **before** loading (so no commit is
-  missed), records `socket.data.room` and answers the viewer's `toSnapshot`. A stranger
+  a sign-out), joins the Socket.IO room `room:<id>` (never the code) **before** loading
+  when the id is known here, else loads, joins and loads again (so no commit is missed),
+  records `socket.data.room` once every check passed and answers the viewer's
+  `toSnapshot`. A socket's enters run one after the other; a failed one leaves the channel
+  it joined; one whose socket disconnected mid-way stops. Logs name the room by its id. A stranger
   gets a snapshot with `you: null`. Refusals: `protocol_mismatch` (from `parseEnter`),
   `room_not_found`, `unauthenticated`; a database failure answers `internal`.
 - `cmd { id, type, payload }`: `runner.run(code, state => apply(state, command, { actor:
   user.id, now }))`. The flow of every command, and what to keep when adding one:
-  1. The socket's bucket, then `toDomainCommand` (`bad_payload`).
-  2. No entered room: `room_not_found`.
-  3. `ackKey(user, room, id)` in the `RecentAcks` LRU (5000): the same id gets the same
-     answer (also while it runs) and runs once. `busy` and a thrown step are forgotten,
+  1. The person's bucket, then `toDomainCommand` (`bad_payload`). A command sent during
+     an `enter` waits for it.
+  2. No entered room: `room_not_found`. A session last checked over a minute ago is
+     checked again; gone: `unauthenticated`, and the connection closes.
+  3. `ackKey(roomId, id)` in the person's `RecentAcks` (100 per person, 1000 people): the
+     same id gets the same answer (also while it runs) and runs once. `busy` and a thrown step are forgotten,
      so the same id may run again. Process memory only: a restart forgets it.
   4. Success: every socket of the room gets its own snapshot with the projected
      `causes`, **then** the ack `{ ok: true, version }`. A refusal acks the domain code;

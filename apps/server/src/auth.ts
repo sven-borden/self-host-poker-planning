@@ -237,6 +237,7 @@ export function sessionChecker(db: Db): (sessionId: string) => Promise<boolean> 
   };
 }
 
+/** The app's error codes for Better Auth's 4xx and 5xx answers (never its sentences). */
 export type AuthErrorCode =
   | "bad_payload"
   | "unauthenticated"
