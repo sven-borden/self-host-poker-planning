@@ -172,3 +172,27 @@ then French uses vous and German uses Sie.
 - **French typography**: a narrow no-break space (U+202F) before `:`, `;`, `!` and `?`,
   and typographic apostrophes (’); guillemets as « x » with U+202F inside. German quotes
   as „x“. Unit tests check these rules and reject straight quotes and "..." everywhere.
+
+## Landing, missing rooms and errors
+
+- **Landing page** (`/`): one screen that says what the tool is and how a round goes:
+  the pitch, four steps (create a room, share the link, vote, reveal) numbered on small
+  card faces, the "Create a room" card and "Join with a code". From 1024 px the creation
+  card stands on the right; on phones the order is pitch, create, join, steps.
+- **Join with a code** takes a bare code or a pasted room link (this site's or a full
+  `https://…/r/CODE`), ignores spaces anywhere, checks the shape in the browser and opens
+  `/r/:code`. A refused entry says why and keeps the focus in the field. It offers no
+  history of earlier codes.
+- **A missing room** shows the table with its seats empty, drawn from the tokens, never
+  stock art. The server cannot tell an unknown code from a deleted room, so the page
+  names both: a mistyped or cut link, or a room deleted after `ROOM_TTL_DAYS` days
+  without activity (the server states the number). The way back is another code or a
+  new room; there is no retry, since nothing will make the room appear.
+- **The code is never echoed** on that page, in its text or in the tab title. A code is a
+  bearer capability (architecture, section 11): a screenshot or a shared screen of an
+  error would spread it, and the address bar already shows what was typed. The room's
+  own page shows its code, because there it is meant to be shared.
+- **The error page** (anything a page throws, or a chunk that cannot load) says that
+  something went wrong and offers a reload and the home page. It never shows the error,
+  its stack or the address. The same table carries one face-down card.
+- **Tab titles** read "Page · Poker Planning" on these pages, and never hold a code.

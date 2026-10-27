@@ -59,7 +59,10 @@ canonical: `.` is the decimal mark and the domain never localises (the UI may sh
 (runtime validation of names, subjects, seconds and settings patches) (#3).
 `cleanRoomName` applies the same text rules to a room name (1 to
 `MAX_ROOM_NAME_LENGTH`, 60), which the server takes when it creates a room (#14). All of
-them refuse more than 3 combining marks in a row on one character. The rules
+them refuse more than 3 combining marks in a row on one character. `room-code.ts` holds
+the shape of a room code (`ROOM_CODE_ALPHABET`, base58; `ROOM_CODE_LENGTH`, 10;
+`ROOM_CODE_PATTERN`; `isRoomCode`), shared by the server, which draws codes, and the web
+app, which checks a typed one (#24). The rules
 are in `docs/02-architecture.md`, section 4.
 
 - Never mutate the input; return the input object itself when nothing changed.

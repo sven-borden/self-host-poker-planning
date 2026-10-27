@@ -32,12 +32,24 @@ server sends and never decides the outcome of a round.
 - `src/rooms/`: the room API (#14). `api.ts`: `createRoom({ name, deck })` (identity
   first, one session renewal on `unauthenticated`, a blank name left out) and
   `fetchRoomHeader(code)`; both reject with `RoomApiError` carrying the server's code or
-  `network`. `create-room-card.tsx`: the self-contained "Create a room" card on `/`. It
+  `network`; a `room_not_found` error carries the server's `retentionDays`.
+  `create-room-card.tsx`: the self-contained "Create a room" card on `/`. It
   checks the name with the domain's `cleanRoomName` before sending, keeps the focus on
   the button through a failure (`aria-disabled`, never `disabled` while busy) and moves
   it to the name field when the name is refused. The room page (`routes/r/$code.tsx`) shows the header (name inside `<bdi>`, code, copy
   link with a toast, or the link to select when the clipboard is missing or refused) and
   a `[data-room-slot]` section where the room itself goes (#15, #16).
+- Landing, joining, missing rooms and errors (#24): `routes/index.tsx` is the landing
+  page (pitch, four steps, the create card, the join card; CSS grid areas reorder them
+  from `lg`). `rooms/room-input.ts`: `parseRoomInput(raw)` turns a code or a pasted link
+  into `{ ok, code }` or `{ ok: false, reason: "empty" | "malformed" }` with the domain's
+  `isRoomCode`; spaces anywhere are dropped. `rooms/join-room-card.tsx`: "Join with a
+  code" (no `name`, autocomplete off, so no history). `rooms/room-not-found.tsx`: what the
+  room page shows for `room_not_found`; it never shows the code. `components/shell/`:
+  `error-page.tsx` (the router's `defaultErrorComponent`, and the root's own error
+  component inside a bare `<main>`), `empty-table.tsx` (the token-drawn illustration) and
+  `use-page-title.ts` (`usePageTitle(page)` sets "page · Poker Planning" and restores the
+  title on unmount; never pass a code).
 - `src/identity/identity.ts`: who this browser is (#10). `ensureIdentity({ force? })`
   reads `/api/auth/get-session` and, without a session, signs in as a guest
   (`/api/auth/sign-in/anonymous`); concurrent calls share one request. `setDisplayName(name)`
@@ -74,8 +86,8 @@ server sends and never decides the outcome of a round.
   page load. Biome refuses `import { motion } from "motion/react"`. Every animation has a
   reduced-motion variant (120 ms cross-fade, no travel).
 - Budget: `pnpm build` ends with `scripts/check-budget.ts`, which reads the Vite manifest
-  and fails when the room route's initial JavaScript (entry, room route chunk and their
-  static imports) exceeds 200 kB gzipped. Lazy chunks (Motion features, the toaster, the
+  and fails when the initial JavaScript of the room route or of the landing page (entry,
+  route chunk and their static imports) exceeds 200 kB gzipped. Lazy chunks (Motion features, the toaster, the
   French and German catalogs) do not count.
 - Nothing connects at module load: `createSocket()` returns an unconnected socket.
   `connectWhenIdentified(socket)` connects it once `ensureIdentity({ retry: true })`
@@ -98,7 +110,7 @@ server sends and never decides the outcome of a round.
   `vite preview`. With `DATABASE_URL` set (a Postgres the server may migrate, such as
   the one in the server README), it also starts the real server on 3000, where
   `vite preview` forwards `/api` and `/socket.io`; `e2e/identity.spec.ts` and
-  `e2e/room.spec.ts` need it and skip without it. Locally it builds first and uses the installed Microsoft Edge; in CI
+  `e2e/room.spec.ts` and `e2e/landing.spec.ts` need it and skip without it. Locally it builds first and uses the installed Microsoft Edge; in CI
   (`web-e2e` job) it uses Chromium on the build from the step before. Screenshots go to
   `tmp/screenshots/` (gitignored). Not part of `pnpm gate`.
 - Tests: the `web` Vitest project extends `vite.config.ts` and runs in jsdom
