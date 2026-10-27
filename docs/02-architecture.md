@@ -383,8 +383,12 @@ transaction as the commit, so a lost commit writes nothing. So is the revealed r
 the table once the PO recorded its final estimate (#32, `historyRound` in
 `db/history.ts`): every step that changes that round (the final set or changed, a vote
 changed after the reveal, a departed voter's name kept) writes its row, so the decision
-is stored when it is made, even if nobody starts another round, and `finished_at` is the
-decision's time until the round's end (the next round or a re-vote) writes the row again. Writing the same round again
+is stored when it is made, even if nobody starts another round. `finished_at` is the
+end of the round (the next round or a re-vote writes the row again); while the round is
+still on the table it is the time of the row's last write, which a vote changed or a
+voter leaving after the final also moves, so it is not the decision's time. The round
+still on the table may already have a history row: the history panel (#33) must not show
+it twice, beside the live round. Writing the same round again
 (`room_id`, `number`) updates its row, so a retry or a later rewrite (for example by an
 idle job) never duplicates it. `votes` is `{ kind: "named", votes: [{ who, name, card,
 changedAfterReveal? }] }`, people still in the room by joining order, then those who

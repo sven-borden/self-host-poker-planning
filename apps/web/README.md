@@ -127,11 +127,18 @@ server sends and never decides the outcome of a round.
   (`[data-final-picker]`, "Final estimate"; `finalChoice` in `results-view.ts` gives
   the cards, the preselected suggestion and the tied cards), "Record 8"
   (`[data-record-final]`, `setFinal`), "Next round" (`[data-start-round]`, the same
-  `useNextRound.start`) and "Vote again" (`[data-revote]`, `revote`). The reveal moves
-  the PO's focus to "Record 8" (`focusAfterReveal` in `round-centre.tsx`). The centre's
-  final is `CentreFinal` in `results.tsx` (`[data-centre-final]`); the live region's
-  `final` events and the re-vote's sentence are in `announcements.ts`. Copy: `final.*`,
-  `round.revote`, `live.final*`, `live.revote`.
+  `useNextRound.start`) and "Vote again" (`[data-revote]`, `revote`), the three in
+  `[data-decision-actions]`. The reveal moves the PO's focus to "Record 8"
+  (`focusAfterReveal` in `round-centre.tsx`; `focusSoon` never scrolls), and the bar
+  ignores Enter and Space for `PLACED_FOCUS_GUARD_MS` after such a placed focus. While
+  its place is out of view the bar docks at the bottom of the screen (`useDecisionDock`
+  in `decision-dock.ts`, `[data-decision-dock]`, `--decision-dock` for the scroll
+  padding): the whole bar on a desktop, the action row alone on a phone, where the bar
+  is `display: contents`; only when the result in the centre stays in sight above it.
+  The centre's final is `CentreFinal` in `results.tsx` (`[data-centre-final]`), and the
+  fallback's sentence says it too; the live region's `final` events and the re-vote's
+  sentences are in `announcements.ts`. Copy: `final.*`, `round.revote`, `live.final*`,
+  `live.revote*`.
   The next round (#21): `next-round.tsx` holds `useNextRound` (in `Seated`) and the PO's
   field, `NextSubject` (`[data-next-subject]`, "Subject of the next round", above the
   table in every phase, so the table never jumps and the PO can prepare the next ticket

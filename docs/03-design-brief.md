@@ -99,8 +99,8 @@ Positions are percentages of the stage, so one formula serves every width:
   (the button wraps), so they overflow the 68 × 60 box onto the felt, centred, without
   reaching a card even with 16 seats.
   Nobody else gets a button. After the reveal the PO's focus moves to "Record 8", the
-  final estimate's button under the table (#32), when it was on the button (or nowhere);
-  to the picker when nothing is preselected. A named reveal turns the seats' cards face up; the
+  final estimate's button under the table (#32), when it was on the button (or nowhere),
+  without scrolling the page; to the picker when nothing is preselected. A named reveal turns the seats' cards face up; the
   seats then read "Ana, card 5". An anonymous reveal leaves each voter's seat with its
   voted badge and an empty outline (the card went to the row), and a "Cards played" row
   of mini cards under the table holds every card in the deck's order, with nothing that
@@ -140,14 +140,39 @@ Positions are percentages of the stage, so one formula serves every width:
 - The final estimate (#32). Recording is explicit: nothing is recorded by itself, so the
   history shows decisions, not guesses. After a reveal the PO's decision sits right
   under the table (and above the results): a radio group labelled "Final estimate" with
-  the round's deck without the specials as small cards (36 × 48 px, 32 × 44 on phones,
-  wrapping on a long deck), then "Record 8", "Next round" (outline) and "Vote again"
-  (ghost), in that order for the keyboard too. The suggested card (or a consensus) is
-  preselected, so one press records it; on a tie, or when nothing counts, nothing is,
-  the tied cards wear a small "Tie" mark, "Record" waits, and a line asks the PO to pick.
-  Arrow keys move the pick; the pick lifts with the hand's brass ring. Once recorded the
-  button reads "Recorded" (a check) until the PO picks another card, which changes the
-  final while the round stays revealed. A held key's repeats never record or start.
+  the round's deck without the specials as small cards (32 × 44 px, whole touch targets,
+  8 px apart, wrapping into rows on a long deck, never scrolling sideways), then "Record
+  8", "Next round" (outline) and "Vote again" (ghost), in that order for the keyboard
+  too. On a desktop it is one row, 60 px tall: the label beside the cards, then the three
+  buttons. The suggested card (or a consensus) is preselected, so one press records it;
+  on a tie, or when nothing counts, nothing is, the tied cards wear a small "Tie" mark,
+  "Record" waits, and a line asks the PO to pick. "Tie" means only the results' tie (a
+  deck without numbers whose top count is shared): on a number deck split votes (3, 3,
+  13, 13) preselect the suggested card, as the centre shows it. Arrow keys move the
+  pick; the pick lifts with the hand's brass ring on the card, and the keyboard focus is
+  an ink outline around the whole card, 2 px out, so the two never look alike and the
+  focus shows in forced colours on a card nobody picked. Once recorded the button reads
+  "Recorded" (a check) until the PO picks another card, which changes the final while
+  the round stays revealed. A held key's repeats never record or start, and Enter and
+  Space do nothing for 300 ms after the page itself put the focus in the bar (as in the
+  hand, #21), so a double Enter on "Reveal cards" never records the suggestion. "Next
+  round" pressed while a record is on its way follows it.
+- The PO's bar docks (PO decision, 2026-10-27). While its place under the table is out of
+  view it sticks to the bottom of the screen (`position: sticky`, a surface with a top
+  border and the panel shadow, padded above the safe area), as #22 docks the hand: on a
+  desktop the whole bar, on a phone only the action row ("Record 8", "Next round", "Vote
+  again" in one row of three), since a docked picker would hide too much; the picker
+  stays in the page under the table. It docks only when the result in the table's centre
+  stays in sight above it at the top of the page; otherwise it stays in the page. While
+  docked the page's `scroll-padding-bottom` is its height, so no focused control hides
+  under it (WCAG 2.4.11). Every focus the page places uses `preventScroll`: the reveal
+  never scrolls the page, the flips and the result happen where the PO was looking, and
+  on a desktop "Next round" stays in sight while the PO types the next subject. Docked,
+  the desktop bar's "pick" line is for screen readers only, so the bar stays one row.
+  Measured at 1024 × 768, 1280 × 800, 1440 × 900 and 1920 × 1080 and on the iPhone SE,
+  iPhone 13 and Pixel 7 (`final-estimate.spec.ts`): it docks on all of them, the result
+  ends 19 px above it at 1024 × 768 (6 px with a recorded final), and the phone's action
+  row is 62 px tall.
   Everyone's centre, named or anonymous rounds alike, then shows the final under the
   result, set apart from the suggestion: its mini card with a 2 px brass outline beside
   "Final estimate", said as "Final estimate: 8."; the result turns compact (card beside
@@ -159,7 +184,8 @@ Positions are percentages of the stage, so one formula serves every width:
   seats, in English, French and German, on desktop and at 360 px, for the PO and a voter
   (`final-estimate.spec.ts`): on phones 68 to 71 px wide and 47 px tall (suggestion) or
   59 px (consensus pill); on desktop 113 to 140 px wide (German widest) and 84 px tall.
-  The bar under the table never meets the table or a card, and no page scrolls sideways.
+  The bar in the page never meets the table or a card, docked it never covers the
+  result, and no page scrolls sideways.
 - "Vote again" (#32): the PO's secondary action beside "Next round". It keeps the
   subject (the title, or the link with its key) and starts a new round with the next
   number, the votes cleared and the timer as at any start; the revealed round stays in
@@ -258,6 +284,9 @@ As built (#22), for 640 px and below (the `phone:` variant) unless stated:
   the top of the page without scrolling, in English, French and German and with a
   two-line title; at 150 % text, at 390 × 664 (an iPhone 13 in Safari) and on an iPhone
   SE the hand stays in the page (`e2e/mobile.spec.ts`).
+- **The PO's decision** (#32) docks its action row at the bottom edge after a reveal, the
+  way the hand docks while voting, when the result in the centre stays in sight above it;
+  the picker stays under the table (see "The table").
 - **Results** stack under the table, then the hand, then the "You" panel.
 - **Seats.** Initials only above 10 people, in 44 px targets (#13). Initials and colours
   are unique at the table (#17); two people with the same name share initials in two
