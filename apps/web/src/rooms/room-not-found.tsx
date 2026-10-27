@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { PlusIcon } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { EmptyTable } from "../components/shell/empty-table.tsx";
 import { usePageTitle } from "../components/shell/use-page-title.ts";
 import { buttonVariants } from "../components/ui/button.tsx";
@@ -20,11 +21,20 @@ import { JoinRoomCard } from "./join-room-card.tsx";
 export function RoomNotFound({ retentionDays }: { retentionDays?: number | undefined }) {
   const t = useT();
   usePageTitle(t("room.notFoundTitle"));
+  const heading = useRef<HTMLHeadingElement>(null);
+  // Each time the page comes (also after another unknown code typed here), the heading
+  // takes the focus, so a screen reader announces the page instead of staying silent on
+  // a focus lost to <body>.
+  useEffect(() => heading.current?.focus(), []);
   return (
     <RiseIn data-room-not-found className="flex max-w-2xl flex-col gap-10">
       <div>
         <EmptyTable />
-        <h1 className="mt-6 text-3xl font-[760] [font-stretch:110%] sm:text-4xl">
+        <h1
+          ref={heading}
+          tabIndex={-1}
+          className="mt-6 text-3xl font-[760] outline-none [font-stretch:110%] sm:text-4xl"
+        >
           {t("room.notFoundTitle")}
         </h1>
         <p className="mt-4 text-ink-2">{t("roomGone.lede")}</p>

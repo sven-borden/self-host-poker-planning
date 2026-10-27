@@ -239,6 +239,25 @@ describe("the missing room", () => {
     expect(router.state.location.pathname).toBe(`/r/${CODE}`);
     expect(document.title).toBe("Poker Planning");
   });
+  it("moves the focus to its heading, again after another unknown code", async () => {
+    const OTHER = "Unknown456";
+    serve({
+      [`GET /api/rooms/${UNKNOWN}`]: NOT_FOUND,
+      [`GET /api/rooms/${OTHER}`]: NOT_FOUND,
+    });
+    const router = await renderAt(`/r/${UNKNOWN}`);
+    const first = await screen.findByRole("heading", { level: 1, name: "Room not found" });
+    expect(document.activeElement).toBe(first);
+    const field = screen.getByRole("textbox", { name: "Room code or link" });
+    act(() => field.focus());
+    fireEvent.change(field, { target: { value: OTHER } });
+    fireEvent.click(screen.getByRole("button", { name: "Join" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/r/${OTHER}`));
+    const again = await screen.findByRole("heading", { level: 1, name: "Room not found" });
+    await waitFor(() => expect(document.activeElement).toBe(again));
+    expect(again.getAttribute("tabindex")).toBe("-1");
+  });
+
   it("replaces the room with the same page when the socket's enter finds no room", async () => {
     serve({ [`GET /api/rooms/${CODE}`]: () => json({ code: CODE, name: "Gone soon" }) });
     await renderAt(`/r/${CODE}`);
