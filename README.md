@@ -77,7 +77,18 @@ from the bundled database; to use your own Postgres, run the image alone with
     Buildtime": a build argument in scope of a `RUN` stays readable in `docker history`.
     The Dockerfile declares no `ARG` that could carry a secret, so keep secrets at runtime;
   - leave Coolify's own HTTP health check off: it runs curl or wget inside the container
-    and the image has neither. The image's `HEALTHCHECK` is used.
+    and the image has neither. The image's `HEALTHCHECK` is used;
+  - add a Postgres 17 database resource (not public, with a daily backup) and set
+    `DATABASE_URL` to its internal URL;
+  - with Coolify's GitHub App as the source, every push to `main` deploys. Watch paths
+    such as `!docs/**`, `!*.md`, `!**/*.md`, `!.github/**`, `!**/*.test.ts`,
+    `!**/*.test.tsx` and `!apps/web/e2e/**` skip pushes that cannot change the image. A
+    deploy takes about three minutes: Coolify waits out the image's 120 s start period
+    before its first health check, then swaps the containers without downtime;
+  - when another proxy ends TLS in front of Coolify (a NAS or a router), keep Coolify's
+    domain on `http://`, set `BASE_URL` to the public `https://` origin, and give the
+    front proxy's rule for the host the WebSocket headers and a certificate. See
+    "Behind a reverse proxy" above for `TRUST_PROXY`.
 - **Upgrading**: `git pull`, then `docker compose up -d --build`. The new container
   applies pending migrations before it listens; rooms, even rounds in progress, live in
   Postgres and survive, and browsers reconnect by themselves.
