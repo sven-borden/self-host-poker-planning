@@ -95,7 +95,8 @@ test("the live region says who voted, never the card (AC 3)", async ({
     expect(await ben.cmd("startRound", { subject: { kind: "none" } })).toMatchObject({ ok: true });
     expect(await ana.cmd("castVote", { card: "13", round: 1 })).toMatchObject({ ok: true });
 
-    await expect(live(page)).toHaveText("Ana voted.");
+    // The new round (#18) and the vote, usually in one batch, the round first.
+    await expect(live(page)).toHaveText(/^(Voting started\. )?Ana voted\.$/);
     const anaSeat = seats(page).locator("[data-seat]").filter({ hasText: "Ana" });
     await expect(anaSeat).toContainText("Ana, voted");
     await expect(anaSeat.locator('[data-badge="voted"]')).toHaveCount(1);
