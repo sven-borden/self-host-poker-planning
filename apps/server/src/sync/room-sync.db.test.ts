@@ -413,6 +413,10 @@ describe("the room settings (#25)", () => {
 });
 
 describe("the deck (#26)", () => {
+  // These tests send Ada's commands in a burst; her session's bucket (20, 10 a second) is
+  // shared with the tests after them, so let it refill.
+  afterEach(() => sleep(2_000));
+
   it("refuses a deck change from a voter and an observer, and brings every custom-deck code to the PO", async () => {
     const code = await insert(votingRoom());
     const [a, b, c] = [client(ada), client(bob), client(cy)];
