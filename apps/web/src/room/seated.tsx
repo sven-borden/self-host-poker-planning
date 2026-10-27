@@ -15,8 +15,7 @@ import { useVote } from "./use-vote.ts";
 import { YouControls } from "./you-controls.tsx";
 
 /** The card's trip from the hand to the seat: Motion's `m`, in a chunk of its own. */
-const loadFlight = () => import("./card-flight.tsx");
-const CardFlight = lazy(loadFlight);
+const CardFlight = lazy(() => import("./card-flight.tsx"));
 
 /** A flight that never reports its end (its chunk did not load) stops hiding the slot. */
 const FLIGHT_TIMEOUT_MS = 1500;
@@ -61,8 +60,8 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
   const flights = useRef(0);
 
   useEffect(() => {
-    // Fetched beside the hand, so the first vote does not wait for it.
-    loadFlight().catch(() => {});
+    // Motion's features, fetched beside the hand, so the first vote does not wait.
+    import("../motion/features.ts").catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -155,7 +154,8 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           {t("hand.ownerDoesNotVote")}
         </p>
       ) : null}
-      {flight !== null ? (
+      {hand.kind === "cards" ? (
+        // Mounted with the hand, so its chunk is in before the first vote.
         <Suspense fallback={null}>
           <CardFlight flight={flight} onDone={() => setFlight(null)} />
         </Suspense>

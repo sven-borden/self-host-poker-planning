@@ -46,7 +46,14 @@ type Animation = Pick<HTMLMotionProps<"div">, "initial" | "animate" | "transitio
 
 const mid = (a: number, b: number) => (a + b) / 2;
 
-export default function CardFlight({ flight, onDone }: { flight: Flight; onDone: () => void }) {
+export default function CardFlight({
+  flight,
+  onDone,
+}: {
+  flight: Flight | null;
+  onDone: () => void;
+}) {
+  if (flight === null) return null;
   return (
     <MotionFeatures>
       <Ghost key={flight.id} flight={flight} onDone={onDone} />

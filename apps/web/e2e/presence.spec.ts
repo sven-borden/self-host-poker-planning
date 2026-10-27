@@ -6,9 +6,11 @@ import {
   newGuest,
   newPerson,
   ownAddress,
+  recordFrames,
   sameUser,
   seats,
   shoot,
+  snapshotsIn,
 } from "./support.ts";
 
 // The live table (#17) in real browsers, against the real server and Postgres: closing a
@@ -31,53 +33,8 @@ test.beforeEach(async ({ page }) => {
   await page.setExtraHTTPHeaders(ownAddress());
 });
 
-/** What these tests read of a snapshot; the schemas stay out of the e2e build. */
-interface Snapshot {
-  version: number;
-  room: { round: unknown };
-  causes: { type: string }[];
-}
-
 const live = (page: Page) => page.locator("[data-table-live]");
 const awaySeats = (page: Page) => seats(page).locator("[data-seat][data-away]");
-
-/** Every message frame the page receives, over the websocket or long-polling. */
-function recordFrames(page: Page): string[] {
-  const frames: string[] = [];
-  page.on("websocket", (socket) =>
-    socket.on("framereceived", ({ payload }) => frames.push(String(payload))),
-  );
-  page.on("response", async (response) => {
-    if (!new URL(response.url()).pathname.startsWith("/socket.io/")) return;
-    if (response.request().method() !== "GET") return;
-    frames.push(await response.text().catch(() => ""));
-  });
-  return frames;
-}
-
-/** The snapshots in raw Socket.IO frames: `snapshot` events and `enter` acks. */
-function snapshotsIn(frames: readonly string[]): Snapshot[] {
-  const found: Snapshot[] = [];
-  const visit = (value: unknown) => {
-    if (typeof value !== "object" || value === null) return;
-    if ("room" in value && "version" in value) found.push(value as Snapshot);
-    else if ("snapshot" in value) visit((value as { snapshot: unknown }).snapshot);
-  };
-  for (const raw of frames) {
-    // Long-polling packs several packets into one body, separated by U+001E.
-    for (const frame of raw.split("\u{1e}")) {
-      const start = frame.search(/[[{]/);
-      if (start < 0) continue;
-      try {
-        const parsed: unknown = JSON.parse(frame.slice(start));
-        for (const item of Array.isArray(parsed) ? parsed : [parsed]) visit(item);
-      } catch {
-        // Not a JSON packet (a handshake or a ping).
-      }
-    }
-  }
-  return found;
-}
 
 test("closing a tab marks the person away within 20 s, and back on return (AC 1)", async ({
   page,
