@@ -143,6 +143,7 @@ describe("catalogs", () => {
       "table.owner",
       "table.ownerTag",
       "results.consensus",
+      "results.moreCards",
     ],
     de: [
       "app.name",
@@ -154,6 +155,7 @@ describe("catalogs", () => {
       "results.median",
       "deckField.rangeStart",
       "final.short",
+      "results.moreCards",
     ],
   };
 

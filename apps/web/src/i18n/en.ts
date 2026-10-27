@@ -336,6 +336,10 @@ export const en = {
     consensusOn: "Consensus on {{card}}.",
     agreementShort: "Agreement {{agreement, number(style: percent; maximumFractionDigits: 0)}}",
     tie: "Tie",
+    // More tied cards than the centre shows: "+12".
+    moreCards: "+{{count, number}}",
+    cardsTie_one: "{{count, number}} card ties",
+    cardsTie_other: "{{count, number}} cards tie",
     suggestedAgreement:
       "Suggested {{card}}. Agreement {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
     mostVotedAgreement:

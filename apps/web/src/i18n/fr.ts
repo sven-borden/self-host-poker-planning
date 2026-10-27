@@ -298,6 +298,10 @@ export const fr: Catalog<"many"> = {
     consensusOn: "Consensus sur {{card}}.",
     agreementShort: "Accord {{agreement, number(style: percent; maximumFractionDigits: 0)}}",
     tie: "Égalité",
+    moreCards: "+{{count, number}}",
+    cardsTie_one: "{{count, number}} carte à égalité",
+    cardsTie_many: "{{count, number}} cartes à égalité",
+    cardsTie_other: "{{count, number}} cartes à égalité",
     suggestedAgreement:
       "Carte suggérée : {{card}}. Accord : {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
     mostVotedAgreement:

@@ -292,6 +292,9 @@ export const de: Catalog = {
     consensusOn: "Konsens bei {{card}}.",
     agreementShort: "Einigkeit {{agreement, number(style: percent; maximumFractionDigits: 0)}}",
     tie: "Gleichstand",
+    moreCards: "+{{count, number}}",
+    cardsTie_one: "{{count, number}} Karte gleichauf",
+    cardsTie_other: "{{count, number}} Karten gleichauf",
     suggestedAgreement:
       "Vorschlag: {{card}}. Einigkeit: {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
     mostVotedAgreement:
