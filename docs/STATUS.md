@@ -68,6 +68,12 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   results checked against hand-written sentences, and every frame scanned for leaks.
   A failure keeps the trace and each person's frames, with room codes masked.
 - **W0 and W1 are complete.**
+- The room settings panel from #25: "Room settings" for the PO, read-only "Room rules"
+  for everyone else (a lazy sheet). The PO can change observers count, anonymous voting
+  (from the next round), reveal when everyone has voted and the PO votes too; the deck,
+  specials, timer, who can reveal and change after reveal are shown read-only until
+  their issue. Anonymous rounds carry an "Anonymous" chip. Later settings plug in
+  through the contract in the web README. The room route loads 171.0 kB.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -78,17 +84,16 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#25 (PP-025)** the room settings panel: "Room settings" for the PO, read-only
-  "Room rules" for everyone else, and an "Anonymous" chip on anonymous rounds. PR #87
-  is open, and a fixer is working on the review's findings in `../pp-wt-25`.
 - **#32 (PP-032)** the final estimate and "Vote again". Building in `../pp-wt-32`.
+- **#26 (PP-026)** decks: presets, a custom deck, a range generator and the specials,
+  in the settings panel. Building in `../pp-wt-26`.
 
 ## Next
 
 - W2 order, by dependencies:
-  - After #25 merges: #26 (decks), #27 (timer), #28 (reveal modes) and #30 (PO
-    powers), two at a time. #29 (change after reveal) needs #28; #31 (password) needs
-    #30.
+  - #27 (timer), #28 (reveal modes) and #30 (PO powers) are unblocked; they start as
+    slots free up, two issues in flight at most. #29 (change after reveal) needs #28;
+    #31 (password) needs #30.
   - Each later setting drops its control into #25's panel (see the web README).
 - Notes to carry into the briefs:
   - #29: change after reveal never applies to anonymous rounds. The panel's `locked`
