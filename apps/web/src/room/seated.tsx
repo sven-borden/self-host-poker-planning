@@ -178,7 +178,8 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           data-hand-dock={docked || undefined}
           className={cn(
             "rounded-xl border border-line bg-surface pb-3 phone:pb-2",
-            "thumb:data-hand-dock:sticky thumb:data-hand-dock:bottom-[max(0.5rem,env(safe-area-inset-bottom))] thumb:data-hand-dock:z-20 thumb:data-hand-dock:shadow-panel",
+            // Docked, it is a sheet on the bottom edge, its last line above the home indicator.
+            "thumb:data-hand-dock:sticky thumb:data-hand-dock:bottom-0 thumb:data-hand-dock:z-20 thumb:data-hand-dock:rounded-b-none thumb:data-hand-dock:border-b-0 thumb:data-hand-dock:pb-[max(0.5rem,env(safe-area-inset-bottom))] thumb:data-hand-dock:shadow-panel",
           )}
         >
           <Hand

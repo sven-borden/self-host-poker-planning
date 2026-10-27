@@ -35,6 +35,9 @@
  */
 @custom-variant thumb (@media (max-width: 640px) and (min-height: 520px));
 
+/* A short screen, such as a phone on its side: the page around the table gets compact. */
+@custom-variant squat (@media (max-height: 480px));
+
 /*
  * Tailwind's palette is switched off: only the design tokens exist as colours, so
  * `bg-red-500` or `text-white` generate nothing. `transparent`, `current` and `inherit`

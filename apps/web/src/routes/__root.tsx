@@ -45,7 +45,7 @@ function RootLayout() {
       {/* Inside the safe areas: the page runs under a notch or a home indicator (viewport-fit=cover). */}
       <header className="border-b border-line bg-surface pt-[env(safe-area-inset-top)]">
         <div
-          className={`mx-auto flex max-w-5xl items-center justify-between gap-4 py-2 ${GUTTERS}`}
+          className={`mx-auto flex max-w-5xl items-center justify-between gap-4 py-2 phone:py-1 ${GUTTERS}`}
         >
           <Link
             to="/"
@@ -63,9 +63,9 @@ function RootLayout() {
       <main
         id="main"
         tabIndex={-1}
-        // The room page starts close under the header on phones (#22): the table and the
-        // hand need the height.
-        className={`mx-auto max-w-5xl py-12 outline-none sm:py-20 lg:py-10 phone:has-[[data-room-page]]:pt-3 ${GUTTERS}`}
+        // The room page starts close under the header on phones and short screens (#22):
+        // the table and the hand need the height.
+        className={`mx-auto max-w-5xl py-12 outline-none sm:py-20 lg:py-10 phone:has-[[data-room-page]]:pt-2 squat:has-[[data-room-page]]:pt-3 ${GUTTERS}`}
       >
         <Outlet />
       </main>
