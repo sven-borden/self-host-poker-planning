@@ -7,12 +7,12 @@
  * the database. The restart (AC 2) is `restart.db.test.ts`.
  */
 import { performance } from "node:perf_hooks";
-import { apply, type Command, createRoom, type RoomState } from "@pp/domain";
+import { apply, type Command, computeResults, createRoom, type RoomState } from "@pp/domain";
 import type { Snapshot } from "@pp/protocol";
 import { cardLeaks } from "@pp/protocol/leak-scan";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Config } from "../config.ts";
-import { createTestDatabase, type TestDatabase } from "../db/test-db.ts";
+import { createTestDatabase, testClient as dbClient, type TestDatabase } from "../db/test-db.ts";
 import { createServer, type PokerServer } from "../server.ts";
 import { setupServer } from "../setup.ts";
 import { collectLogs, testConfig, VALID_ENV } from "../test-support.ts";
@@ -342,6 +342,89 @@ describe("the reveal (#19)", () => {
       expect(stored?.state.round?.phase).toBe("revealed");
     }
   }, 30_000);
+});
+
+describe("the next round (#21)", () => {
+  async function historyOf(code: string) {
+    const stored = await main().database.store.loadRoom(code);
+    const sql = dbClient(t.url);
+    try {
+      const { rows } = await sql.query(
+        `select number, subject, votes, stats, final, row_to_json(h)::text as text
+        from round_history h where room_id = $1 order by number`,
+        [stored?.id],
+      );
+      return rows;
+    } finally {
+      await sql.end();
+    }
+  }
+
+  /** Ada and Bob vote 5 and 8, which reveals; then Ada starts the next round on the wire. */
+  async function playThenNext(anonymous: boolean, subject: object) {
+    const code = await insert(votingRoom({ anonymous }));
+    const a = client(ada);
+    const b = client(bob);
+    const c = client(cy);
+    await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
+    expect((await a.cmd("castVote", { card: "5", round: 1 })).ok).toBe(true);
+    expect((await b.cmd("castVote", { card: "8", round: 1 })).ok).toBe(true);
+    await c.waitFor((s) => s.room.round?.phase === "revealed");
+    // Before the next round, nothing is history yet.
+    expect(await historyOf(code)).toEqual([]);
+    // Bob is not the PO.
+    expect(await b.cmd("startRound", { subject })).toEqual({ ok: false, code: "not_owner" });
+    expect((await a.cmd("startRound", { subject })).ok).toBe(true);
+    const seen = await c.waitFor((s) => s.room.round?.number === 2);
+    return { code, round: seen.snapshot.room.round, causes: seen.snapshot.causes };
+  }
+
+  it("writes the finished named round to history with its subject, votes and stats (AC 2)", async () => {
+    const url = "https://acme.atlassian.net/browse/PAY-482";
+    const { code, round, causes } = await playThenNext(false, { kind: "link", url });
+    // The votes are cleared, the number went up, and the server read the key.
+    expect(round).toMatchObject({ number: 2, phase: "voting", voted: [] });
+    expect(round?.subject).toEqual({ kind: "link", url, key: "PAY-482" });
+    expect(causes).toEqual([{ type: "roundStarted", number: 2 }]);
+    const rows = await historyOf(code);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      number: 1,
+      subject: { kind: "title", text: "Login" },
+      votes: {
+        kind: "named",
+        votes: [
+          { who: ada.id, name: "Ada", card: "5" },
+          { who: bob.id, name: "Bob", card: "8" },
+        ],
+      },
+      stats: computeResults(["5", "8"], { kind: "preset", id: "fib" }),
+      final: null,
+    });
+  });
+
+  it("keeps only the cards of an anonymous round (AC 2)", async () => {
+    const { code, round } = await playThenNext(true, { kind: "title", text: "Checkout" });
+    expect(round).toMatchObject({ number: 2, subject: { kind: "title", text: "Checkout" } });
+    const [row] = await historyOf(code);
+    expect(row?.votes).toEqual({ kind: "anonymous", cards: ["5", "8"] });
+    for (const leak of [ada.id, bob.id, "Ada", "Bob"]) expect(row?.text).not.toContain(leak);
+  });
+
+  it("refuses a subject over 200 characters and a link with credentials (AC 3)", async () => {
+    const code = await insert(votingRoom());
+    const a = client(ada);
+    await a.enter(code);
+    expect(await a.cmd("reveal")).toMatchObject({ ok: true });
+    for (const subject of [
+      { kind: "title", text: "x".repeat(201) },
+      { kind: "link", url: "http://user:pass@acme.atlassian.net/browse/PAY-1" },
+      { kind: "link", url: "javascript:alert(1)" },
+    ]) {
+      expect(await a.cmd("startRound", { subject })).toEqual({ ok: false, code: "bad_subject" });
+    }
+    expect((await main().database.store.loadRoom(code))?.state.round?.number).toBe(1);
+  });
 });
 
 describe("commands", () => {
