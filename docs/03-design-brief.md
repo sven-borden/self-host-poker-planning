@@ -269,17 +269,23 @@ As built (#25):
 
 - **Where.** A button in the room header beside "Copy the link": "Room settings" with a
   sliders icon for the PO, "Room rules" with a checklist icon for everyone else (on a
-  phone, the 44 px icon alone, its name for screen readers). Everyone sees the same
-  panel; only the PO gets controls.
+  phone and up to 900 px wide, the 44 px icon alone, its name for screen readers, so a
+  long room name keeps its room). Everyone sees the same panel; only the PO gets
+  controls.
 - **The panel.** A modal sheet: from the right, up to 28 rem wide, on a wide screen; from
   the bottom on a phone (640 px or less), the screen's full width, at most 88 % of its
-  height, rounded top corners, its padding above the home indicator. `--surface` on the
+  height, rounded top corners. Both keep clear of a notch and the home indicator on
+  their open sides (safe areas); with reduced motion the sheet fades in place instead of
+  sliding. `--surface` on the
   `--scrim`. A sticky header keeps the title, one line saying what the panel is ("Each
   change reaches everyone in the room at once." or "The product owner sets how this
   room plays.") and a 44 px "Close" in sight while the settings scroll. Focus stays
   inside; Esc, "Close" or a tap on the scrim closes it and the focus returns to the
-  header's button. Opening it puts the PO on the first control and anyone else on
-  "Close".
+  header's button. It opens at its top: the PO lands on the first control when it shows
+  whole under the sticky header (on a short screen, and for anyone else, on the title).
+  No focused control ever hides under the sticky header. While it is open, the panel
+  says the table's announcements itself ("Voting started: Round 2.", "Cards revealed."),
+  since a modal hides the page from screen readers.
 - **The settings.** Three groups under small mono headings, Cards, Voting and reveal,
   People, in ADR-011's order. Each setting is one row: the label, the value or the switch
   on the right, and a one-line explanation under the label in `--ink-2`, sometimes with a
@@ -292,18 +298,29 @@ As built (#25):
   the PO votes too, observers count toward the 16 places. The deck and special cards
   (#26), the timer (#27), who can reveal (#28) and changes after the reveal (#29) show
   their value and explanation to the PO too until their issue adds the control in the
-  same row.
+  same row: a switch at the row's end, or a wider control (the deck picker, a choice of
+  who can reveal, the timer) across the row under its explanation. A setting that cannot
+  change now says why under it, with a lock (#29: never after the reveal in an
+  anonymous round).
 - **A change.** The switch moves at once and the row says "Saving…" until the server's
-  snapshot confirms it; a second press of the same switch waits. A refusal moves it back
-  and says why under the setting, with the octagon icon: turning observers back on with
+  snapshot confirms it; the switch looks unavailable meanwhile and another press of it
+  does nothing. If the connection drops, the change moves back at once and the row says
+  "Not saved: the connection dropped." until the room is back. A refusal moves it back
+  and says why under the setting, scrolled into view, with the octagon icon: turning
+  observers back on with
   more than 16 people says how many may count. Switches keep their 18 px look with a
-  44 px hit area, and the label toggles too.
+  44 px hit area, and the label toggles too. In forced colours an on switch is a
+  Highlight track, an off one an outlined Canvas track.
 - **Everyone else** sees the new values in the same snapshot, also in an open "Room
-  rules", and the table's live region says the change once, in plain words, before the
-  rest of its batch: "The PO turned on anonymous voting from the next round.", "The
-  cards now wait for a reveal, even once everyone has voted.", "The PO no longer votes.",
-  "The PO changed the deck: T-shirt sizes. Voting started: Round 1." Not to the PO, whose
-  switch says it.
+  rules", and the table's live region says the change once, in plain words, in the
+  order things happened: "The cards now wait for a reveal, even once everyone has
+  voted.", "The product owner no longer votes.", "The product owner changed the deck:
+  T-shirt sizes.", "Voting started: Round 1. Anonymous voting starts with round 2." Not
+  to the PO, whose switch says it.
+- **An anonymous round** (PO decision) is marked for everyone before anyone votes: a
+  small "Anonymous" chip with an eye-off icon follows "Round N" in the round line above
+  the table, in every phase, its hint "Cards are shown without names." on hover and for
+  screen readers; the round's start says "Voting started: Round 4, anonymous."
 
 ## Cards
 
