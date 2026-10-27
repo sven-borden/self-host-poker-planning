@@ -69,11 +69,29 @@ jobs:
       - run: pnpm test:db
 
   # The table in a real browser (#13): Playwright against `vite preview` of a fresh build.
+  # With DATABASE_URL, playwright.config.ts also starts the real server, which the identity
+  # spec (#10) needs; in CI that spec fails instead of skipping without it.
   web-e2e:
     runs-on: ubuntu-26.04
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          # Throwaway credentials for a CI-only database, not a secret.
+          POSTGRES_USER: pp
+          POSTGRES_PASSWORD: pp
+          POSTGRES_DB: pp_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pp -d pp_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       CI: "true"
+      DATABASE_URL: postgres://pp:pp@localhost:5432/pp_e2e
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
