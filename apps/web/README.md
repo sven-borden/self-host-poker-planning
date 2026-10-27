@@ -221,7 +221,15 @@ server sends and never decides the outcome of a round.
   says nothing (the last vote revealed the round meanwhile); other refusals show. When
   the button leaves with the voting round while it has the focus (a layout cleanup runs
   while it is still in the document), the focus goes to "Next round"; after R on a hand
-  card or a seat it stays where it was. The page treats the forced, automatic and timer reveals alike: they
+  card or a seat it stays where it was. Under `whoCanReveal: "anyone"` (#28) a voter's
+  centre gets the same `RevealButton` (`mayReveal` in `table-data.ts`: the PO, or a voter
+  under "anyone"; never an observer), under the timer's chip and the count; its focus
+  hand-off is `focusAfterVoterReveal` (the result in the centre, `[data-centre-status]`
+  with `tabIndex={-1}`, else the voting count when the PO took the reveal back), and the
+  centre fallback hands a focus on it to the loaded result. `centreFailureMessage` words
+  a voter's `not_allowed` as `round.revealOwnerOnly`. The live region names a voter who
+  revealed (`live.revealedBy`, from the `revealed` cause's `who`; not the PO, not the
+  viewer). The page treats the forced, automatic and timer reveals alike: they
   are one revealed snapshot. `seatStatus` gives `revealed {card}` after a named reveal
   and `voted {dealt: true}` after an anonymous one. `SlotCard` (table/cards.tsx) keeps
   a `Cover` (the brass back, `[data-cover]`, hidden at rest) mounted over a face-up or
@@ -323,9 +331,14 @@ server sends and never decides the outcome of a round.
   made while it is down; the message goes on reconnect or at the next change. Editable
   now (PO decision): `revealWhenAllVoted`, `revealNames` ("Anonymous voting", from the
   next round), `poVotes` and `observersCount`; the deck and specials (#26), the timer
-  (#27), who can reveal (#28) and changes after the reveal (#29, whose hint says it never
-  applies to an anonymous round) are read-only for the PO too until their issue adds a
-  control.
+  (#27) and who can reveal (#28: `WhoCanRevealControl` in `reveal-setting.tsx`, two
+  segments in a `role="radiogroup"`, `layout: "block"`; it applies at once, and arrow
+  keys send the choice they rest on after `ARROW_SETTLE_MS`, flushed if the panel closes
+  first). The `revealWhenAllVoted` row's `detail` tells the PO, while it is off and every
+  present voter has voted, that turning it on reveals at once (`everyoneVoted`, kept in
+  the panel so the table's helpers stay out of its chunk). Changes after the reveal (#29,
+  whose hint says it never applies to an anonymous round) is read-only for the PO too
+  until its issue adds a control.
   **Adding a control (#26 to #29).** Give the setting's field in `GROUPS` either
   `toggle: { read, write, locked? }` for an on-off setting, or a `Control` component. A
   `Control` gets `ControlProps`: `room` (the round's phase and anonymity, the people),
