@@ -22,7 +22,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Config } from "../config.ts";
 import { createTestDatabase, testClient as dbClient, type TestDatabase } from "../db/test-db.ts";
 import { createServer, type PokerServer } from "../server.ts";
-import { setupServer } from "../setup.ts";
+import { type SetupTuning, setupServer } from "../setup.ts";
 import { collectLogs, testConfig, VALID_ENV } from "../test-support.ts";
 import {
   type Guest,
@@ -47,8 +47,8 @@ let ada: Guest;
 let bob: Guest;
 let cy: Guest;
 
-async function startInstance(): Promise<Instance> {
-  const setup = await setupServer(config, logs.logger);
+async function startInstance(tuning: SetupTuning = {}): Promise<Instance> {
+  const setup = await setupServer(config, logs.logger, undefined, tuning);
   const server = createServer(config, { ...setup.deps, logger: logs.logger });
   const { port } = await server.listen();
   const instance = { ...setup, server, base: `http://localhost:${port}` };
@@ -517,34 +517,57 @@ describe("the deck (#26)", () => {
     }
   });
 
-  it("starts the round over on a restart, timer included: the room's timer anew, a timer by hand stops", async () => {
+  it("starts the round over on a restart, timer included: the room's timer anew, a timer by hand stops, a time up starts again", async () => {
     // One room without a timer setting, whose PO started a timer by hand; one with a 5 s
-    // timer. Both deadlines are close, and both rounds hold a vote.
+    // timer; one whose 5 s timer is up without a reveal. Both deadlines are close, and
+    // every round holds a vote.
     let byHand = votingRoom();
+    byHand = step(byHand, ada.id, { type: "startTimer", seconds: 60 });
     byHand = step(byHand, bob.id, { type: "castVote", card: "5" });
     let timed = votingRoom();
     timed = { ...timed, settings: { ...timed.settings, timer: { seconds: 5, revealAtEnd: true } } };
     timed = step(timed, bob.id, { type: "castVote", card: "5" });
+    let up = votingRoom();
+    up = { ...up, settings: { ...up.settings, timer: { seconds: 5, revealAtEnd: false } } };
+    up = step(up, bob.id, { type: "castVote", card: "5" });
+    up = step(withDeadline(up, tick()), ada.id, { type: "timeUp" });
+    expect(up.round?.timeUpAt).toBeDefined();
     const codes = await Promise.all([
       insert(withDeadline(byHand, Date.now() + 700)),
       insert(withDeadline(timed, Date.now() + 700)),
+      insert(up),
     ]);
-    const [a1, c1, a2, c2] = [client(ada), client(cy), client(ada), client(cy)];
+    const [a1, c1, a2, c2, a3, c3] = [
+      client(ada),
+      client(cy),
+      client(ada),
+      client(cy),
+      client(ada),
+      client(cy),
+    ];
     await Promise.all([
       a1.enter(codes[0]),
       c1.enter(codes[0]),
       a2.enter(codes[1]),
       c2.enter(codes[1]),
+      a3.enter(codes[2]),
+      c3.enter(codes[2]),
     ]);
     const tshirt = { deck: { kind: "preset", id: "tshirt" } };
     const before = Date.now();
     expect((await a1.cmd("updateSettings", { patch: tshirt })).ok).toBe(true);
     expect((await a2.cmd("updateSettings", { patch: tshirt })).ok).toBe(true);
+    expect((await a3.cmd("updateSettings", { patch: tshirt })).ok).toBe(true);
     const stopped = await c1.waitFor((s) => s.room.round?.restarts === 1);
     expect(stopped.snapshot.room.round).not.toHaveProperty("deadlineAt");
-    const anew = await c2.waitFor((s) => s.room.round?.restarts === 1);
-    expect(anew.snapshot.room.round?.deadlineAt).toBeGreaterThanOrEqual(before + 5_000);
-    // Past the old deadlines, both rounds still vote.
+    expect(stopped.snapshot.room.round).not.toHaveProperty("timerStartedAt");
+    for (const watcher of [c2, c3]) {
+      const anew = (await watcher.waitFor((s) => s.room.round?.restarts === 1)).snapshot.room.round;
+      expect(anew?.timerStartedAt).toBeGreaterThanOrEqual(before);
+      expect((anew?.deadlineAt ?? 0) - (anew?.timerStartedAt ?? 0)).toBe(5_000);
+      expect(anew).not.toHaveProperty("timeUpAt");
+    }
+    // Past the old deadlines, every round still votes.
     await sleep(1_000);
     for (const code of codes) {
       expect((await main().database.store.loadRoom(code))?.state.round?.phase).toBe("voting");
@@ -789,5 +812,41 @@ describe("the deadline timeout", () => {
     );
     expect(reveals).toEqual([{ type: "revealed", by: "timer" }]);
     expect((await main().database.store.loadRoom(code))?.version).toBe(2);
+  });
+
+  it("reveals once on the clients' timeUp pings when no timeout runs, and a ping with nothing to do stores and sends nothing", async () => {
+    // An instance without its own timeout: only the pings resolve the deadline.
+    const quiet = await startInstance({ deadlineTimeouts: false });
+    let state = votingRoom();
+    state = step(state, bob.id, { type: "castVote", card: "5" });
+    const code = await insert(withDeadline(state, Date.now() + 1_500));
+    const pages = [client(ada, quiet), client(bob, quiet), client(cy, quiet), client(ada, quiet)];
+    await Promise.all(pages.map((page) => page.enter(code)));
+    const stored = async () => (await main().database.store.loadRoom(code))?.version;
+    const frames = () => pages.reduce((n, page) => n + page.received.length, 0);
+    // Before the deadline a ping finds nothing to do.
+    const quietFrames = frames();
+    expect(await pages[0]?.cmd("timeUp")).toEqual({ ok: true, version: 1 });
+    await sleep(1_600);
+    expect(await stored()).toBe(1);
+    expect(frames()).toBe(quietFrames);
+    // Past it, four pages ping at once: one reveal, one write.
+    const acks = await Promise.all(pages.map((page) => page.cmd("timeUp")));
+    expect(acks.every((ack) => ack.ok)).toBe(true);
+    await Promise.all(
+      pages.map((page) => page.waitFor((s) => s.room.round?.phase === "revealed", 3000)),
+    );
+    await sleep(200);
+    const reveals = pages.flatMap((page) =>
+      page.received.flatMap(({ snapshot }) => snapshot.causes),
+    );
+    expect(reveals).toEqual(Array(4).fill({ type: "revealed", by: "timer" }));
+    expect(await stored()).toBe(2);
+    // A late ping finds the round revealed: nothing stored, nothing sent.
+    const after = frames();
+    expect(await pages[1]?.cmd("timeUp")).toEqual({ ok: true, version: 2 });
+    await sleep(100);
+    expect(await stored()).toBe(2);
+    expect(frames()).toBe(after);
   });
 });

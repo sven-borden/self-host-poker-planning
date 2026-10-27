@@ -87,6 +87,10 @@ type Round = {
   startedAt: number;
   revealedAt?: number;
   deadlineAt?: number;              // timer running
+  timerStartedAt?: number;          // when the running timer started (#27): the ring's whole
+                                    //   is deadlineAt - timerStartedAt; an extension keeps it
+  timeUpAt?: number;                // a deadline that passed without a reveal (#27): "Time is
+                                    //   up" until the reveal or a new timer
   final?: Card;
 };
 
@@ -132,7 +136,7 @@ abandoned or restarted voting round is not history.
 Every `apply` runs three steps:
 1. **Resolve an elapsed deadline**: if Voting and `deadlineAt <= now`, reveal (by
    `"timer"`, `revealedAt = deadlineAt`) when `timer.revealAtEnd`, otherwise clear the
-   deadline and emit `timeUp`. The deadline is cleared either way, so this happens once,
+   deadline, keep it as `timeUpAt` (#27) and emit `timeUp`. The deadline is cleared either way, so this happens once,
    whoever arrives first, and it stands even when the command is then refused.
 2. **Run the command.** Every command except `join`, `timeUp` and `presence` needs the
    actor to be a participant (`not_participant`); PO-only commands answer `not_owner`.
@@ -166,8 +170,8 @@ client that sends one gets `bad_payload`; the server's timers send it (section 9
 | `reveal` | PO, or anyone if `whoCanReveal = "anyone"` | Voting only (`not_voting`, `not_allowed`); zero votes allowed; stops the timer |
 | `setFinal {card}` | PO | Revealed only (`not_revealed`); a non-special card of the round (`bad_card`) |
 | `revote` | PO | Revealed only; a new round with the same subject; its `roundStarted` cause carries `revote: true` (#32) |
-| `startTimer {seconds}` | PO | Voting only; integer 5–3600 (`bad_seconds`); restarts a running timer; no change when the deadline stays the same |
-| `stopTimer` | PO | no-op without a timer |
+| `startTimer {seconds}` | PO | Voting only; integer 5–3600 (`bad_seconds`); restarts a running timer; no change when the deadline stays the same; sets `timerStartedAt` and clears `timeUpAt` (#27), as `startRound` does with the room's timer |
+| `stopTimer` | PO | no-op without a timer; clears the deadline and `timerStartedAt` |
 | `extendTimer {seconds}` | PO | running timer only (`no_timer`); 5–3600 |
 | `timeUp` | anyone, also non-participants | nothing beyond steps 1 and 3 (the server's own timeout sends it) |
 | `updateSettings {patch}` | PO | shallow merge, `timer` one level deep; unknown keys and bad values give `bad_settings` or the custom-deck code; turning `observersCount` on past 16 gives `room_full`; a deck or specials change during Voting restarts the round (votes cleared, same subject and number, and the timer starts over: a new deadline at `now + timer.seconds`, or none without a room timer, so a timer started by hand stops); anonymity applies from the next round; a running timer ignores `timer.seconds` |
@@ -231,8 +235,10 @@ sends it. So every tab open across that deploy kept its room instead of reloadin
   unknown cause is dropped); only `finalSet` carries a card; in an anonymous round after
   reveal no vote cause carries `who`, even one the domain sent with it (defence in depth).
 - **Projection rules** (the round view, built field by field from an allow-list):
-  - Every phase: `number`, `subject`, `startedAt`, `deadlineAt?`, `deck`, `specials`,
-    `anonymous`, `voted` (user ids in participant order) and `yourVote?` (the viewer's
+  - Every phase: `number`, `subject`, `startedAt`, `deadlineAt?`, `timerStartedAt?` and
+    `timeUpAt?` (#27; a reveal clears all three, so only a voting round carries them),
+    `deck`, `specials`, `anonymous`, `voted` (user ids in participant order) and
+    `yourVote?` (the viewer's
     own card, only for the viewer).
   - Voting: no other card anywhere.
   - Revealed: plus `revealedAt`, `final?` and `results` (`computeResults`).
@@ -554,6 +560,35 @@ password, no social provider before W5.
   clock offset and count down locally. The server also sets a timeout for the room's
   deadline (one per room per instance with sockets in it, section 5); whichever fires
   first (timeout, `timeUp` ping, any command) reveals once.
+- Clock offset (#27, `apps/web/src/realtime/server-clock.ts`): each snapshot is one sample,
+  `serverNow + roundTrip / 2 − arrival` in the page's own clock, where the round trip is
+  the last `enter`'s (sent to its snapshot back). The offset is the median of the last 9
+  samples, so one late packet does not move the ring; time left is `deadlineAt −
+  (localNow() + offset)`, never below 0, where `localNow()` is the page's monotonic clock
+  (`performance.timeOrigin + performance.now()`), not `Date.now()`: a step of the wall
+  clock moves nothing. A browser may pause that clock while the computer sleeps, which
+  raises every later sample by the time asleep: a sample more than 1 s above the median
+  starts the window over from it. A sample far below it is a snapshot that arrived late,
+  and the median outvotes it. `serverTime()`, `onClockOffset` and `useClockOffset` are
+  what any other page part that compares a server timestamp with now reads. At 0:00 the
+  page waits for the server and never reveals. Three pages with clocks at −5 s, 0 and +5 s agree within
+  about 15 ms locally (`e2e/timer.spec.ts`, AC 1 asks 0.5 s). The ring drains over
+  `deadlineAt − timerStartedAt`; a round from a server that sends no start (before #27)
+  drains over the time left when the page first saw it.
+- The client ping (#27): each page sends `timeUp` once per deadline, 1 s plus a random
+  0 to 1 s after its estimate of the deadline, if the round it shows still votes with that
+  deadline. Normally the server's timeout got there first and nothing is sent. A `timeUp`
+  that finds nothing to do returns the loaded state, so the runner writes nothing, bumps no
+  version and broadcasts nothing (`room-sync.db.test.ts`: with the timeout off through the
+  test-only `deadlineTimeouts: false`, four pings give one reveal and one write).
+- No arming at start-up (#27 decision): after a restart a room's deadline is armed again
+  by the first socket that enters it (`armDeadline` on enter), not by a scan of every room
+  at boot. The stored result is the same whoever resolves the deadline, since `apply`
+  stamps a timer reveal with `revealedAt = deadlineAt` (or keeps `timeUpAt = deadlineAt`);
+  a room nobody is in has nobody to show the reveal to, which is already the case for a
+  room whose last socket left mid-countdown; and a boot scan would make every instance
+  (#39) fire for every room. The clients reconnect within seconds, so the reveal still
+  comes at the deadline (`apps/server/src/sync/restart.db.test.ts`, AC 3).
 - Presence (#17, `apps/server/src/sync/room-sync.ts` and `sync/presence.ts`): a person
   is connected while at least one of their sockets has entered the room on this
   instance. When the last one leaves (closed, another room entered, session gone), a

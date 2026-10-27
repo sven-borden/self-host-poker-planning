@@ -128,9 +128,10 @@ export function TableStage({
           }}
         />
         {slots}
+        {/* Content taller than the box (the PO's controls on a phone) overflows it evenly. */}
         <div
           data-centre
-          className="absolute grid place-items-center text-center text-[12.5px] leading-snug text-balance text-table-ink in-data-[variant=phone]:text-[11px]"
+          className="absolute grid place-content-center place-items-center text-center text-[12.5px] leading-snug text-balance text-table-ink in-data-[variant=phone]:text-[11px]"
           style={{
             left: `calc(50% - ${layout.centre.width / 2}px)`,
             top: `calc(50% - ${layout.centre.height / 2}px)`,

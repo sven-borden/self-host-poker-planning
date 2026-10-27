@@ -9,6 +9,7 @@ import {
 } from "@pp/protocol";
 import { ensureIdentity, retryDelay, UNAUTHENTICATED } from "../identity/identity.ts";
 import { useRoomStore } from "../stores/room-store.ts";
+import { localNow, noteRoundTrip, sampleServerClock } from "./server-clock.ts";
 import {
   connectWhenIdentified,
   createSocket,
@@ -127,12 +128,20 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
 
   function enter() {
     if (stopped || !socket.connected) return;
+    const sentAt = localNow();
     socket
       .timeout(ACK_TIMEOUT_MS)
       .emitWithAck("enter", { code, protocol: PROTOCOL_VERSION })
       .then(
         (raw: unknown) => {
-          onEnter(isEnterAck(raw) ? raw : { ok: false, code: "bad_payload" });
+          const ack: EnterAck = isEnterAck(raw) ? raw : { ok: false, code: "bad_payload" };
+          if (ack.ok) {
+            // The one exchange this page times itself: its round trip corrects every sample.
+            const arrivedAt = localNow();
+            noteRoundTrip(arrivedAt - sentAt);
+            sampleServerClock(ack.snapshot.serverNow, arrivedAt);
+          }
+          onEnter(ack);
         },
         // No answer in time, or the connection dropped: the next connect enters again;
         // a slow server still connected gets the same backoff as `internal`.
@@ -148,7 +157,10 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
   };
   const onSnapshot = (raw: unknown) => {
     if (stopped) return;
-    if (isSnapshot(raw)) store().receive(raw);
+    if (!isSnapshot(raw)) return;
+    // Even a stale snapshot tells the server's time (#27, `server-clock.ts`).
+    sampleServerClock(raw.serverNow);
+    store().receive(raw);
   };
   const onKicked = () => stop("kicked");
 

@@ -1,0 +1,94 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  clockOffset,
+  JUMP_MS,
+  localNow,
+  noteRoundTrip,
+  onClockOffset,
+  resetServerClock,
+  SAMPLES,
+  sampleServerClock,
+  serverTime,
+} from "./server-clock.ts";
+
+afterEach(() => {
+  resetServerClock();
+  vi.useRealTimers();
+});
+
+describe("the server clock (#27)", () => {
+  it("is this page's clock until a snapshot arrives", () => {
+    expect(clockOffset()).toBe(0);
+    expect(serverTime(1_000)).toBe(1_000);
+  });
+
+  it("takes half the round trip off each sample's age", () => {
+    // The server's clock runs 5 s ahead; a snapshot spends half of a 200 ms round trip.
+    noteRoundTrip(200);
+    sampleServerClock(105_000 - 100, 100_000);
+    expect(clockOffset()).toBe(5_000);
+    expect(serverTime(100_000)).toBe(105_000);
+  });
+
+  it("follows the median of recent samples, so one late packet does not move it", () => {
+    for (const offset of [-5_000, -5_010, -4_990]) sampleServerClock(100_000 + offset, 100_000);
+    sampleServerClock(100_000 - 9_000, 100_000); // a snapshot that sat 4 s in a busy tab
+    expect(clockOffset()).toBe(-5_005);
+    sampleServerClock(100_000 - 5_000, 100_000);
+    expect(clockOffset()).toBe(-5_000);
+  });
+
+  it("keeps only the last samples, so a clock that jumped is followed", () => {
+    for (let i = 0; i < SAMPLES; i += 1) sampleServerClock(100_000, 100_000);
+    for (let i = 0; i < SAMPLES; i += 1) sampleServerClock(103_000, 100_000);
+    expect(clockOffset()).toBe(3_000);
+  });
+
+  it("counts on the monotonic clock: a step of the wall clock moves nothing", () => {
+    vi.useFakeTimers({ now: 100_000, toFake: ["Date", "performance"] });
+    // The server's clock runs 5 s ahead of this page's.
+    sampleServerClock(105_000);
+    expect(serverTime()).toBe(105_000);
+    // Someone sets the computer's clock 10 s forward: Date.now() steps, the estimate does not.
+    vi.setSystemTime(Date.now() + 10_000);
+    expect(localNow()).toBe(100_000);
+    expect(serverTime()).toBe(105_000);
+    vi.advanceTimersByTime(1_000);
+    sampleServerClock(106_000);
+    expect(clockOffset()).toBe(5_000);
+  });
+
+  it("starts over from a sample far above the median: this page's clock paused in a sleep", () => {
+    for (let i = 0; i < SAMPLES; i += 1) sampleServerClock(100_000 + i, 100_000 + i);
+    expect(clockOffset()).toBe(0);
+    // The computer slept 30 s and its monotonic clock paused: every sample is 30 s higher.
+    sampleServerClock(130_000, 100_000);
+    expect(clockOffset()).toBe(30_000);
+    // Just over the limit starts over too; at the limit, it is one more sample.
+    sampleServerClock(130_000 + JUMP_MS + 1, 100_000);
+    expect(clockOffset()).toBe(30_000 + JUMP_MS + 1);
+    sampleServerClock(130_000 + 2 * JUMP_MS + 1, 100_000);
+    expect(clockOffset()).toBe(30_000 + (3 * JUMP_MS) / 2 + 1);
+  });
+
+  it("tells its listeners when the offset moves, not on every sample", () => {
+    const heard = vi.fn();
+    const stop = onClockOffset(heard);
+    sampleServerClock(101_000, 100_000);
+    sampleServerClock(101_000, 100_000);
+    expect(heard).toHaveBeenCalledTimes(1);
+    stop();
+    sampleServerClock(109_000, 100_000);
+    sampleServerClock(109_000, 100_000);
+    expect(heard).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a sample or a round trip that is not a number", () => {
+    sampleServerClock(Number.NaN, 0);
+    noteRoundTrip(-1);
+    noteRoundTrip(Number.POSITIVE_INFINITY);
+    expect(clockOffset()).toBe(0);
+    sampleServerClock(1_000, 0);
+    expect(clockOffset()).toBe(1_000);
+  });
+});

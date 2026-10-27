@@ -8,6 +8,7 @@ import { LiveAnnouncer } from "./live-announcer.tsx";
 import { RoomSettingsButton } from "./settings-button.tsx";
 import { type ControlProps, GROUPS, type SettingGroup, SettingsPanel } from "./settings-panel.tsx";
 import { SETTING_KEYS } from "./settings-words.ts";
+import { ARROW_SETTLE_MS } from "./timer-setting.tsx";
 
 const mocks = vi.hoisted(() => ({ sendCommand: vi.fn(), commandSender: vi.fn() }));
 vi.mock("../realtime/room-connection.ts", () => ({
@@ -125,7 +126,7 @@ describe("the settings panel", () => {
     const dialog = await openPanel("Room settings");
     const checked = (name: string) =>
       within(dialog).getByRole("switch", { name }).getAttribute("aria-checked") === "true";
-    expect(within(dialog).getAllByRole("switch")).toHaveLength(7);
+    expect(within(dialog).getAllByRole("switch")).toHaveLength(8);
     expect(checked("Not sure")).toBe(true);
     expect(checked("Need a break")).toBe(true);
     expect(checked("Too big to estimate")).toBe(false);
@@ -133,10 +134,15 @@ describe("the settings panel", () => {
     expect(checked("Anonymous voting")).toBe(!DEFAULT_SETTINGS.revealNames);
     expect(checked("The product owner votes too")).toBe(DEFAULT_SETTINGS.poVotes);
     expect(checked("Observers take one of the 16 places")).toBe(DEFAULT_SETTINGS.observersCount);
-    // The deck is a radio group (#26); the others are read until their issue adds a control.
+    // The deck is a radio group (#26), the timer too (#27); the others are read until their issue adds a control.
     const deck = within(dialog).getByRole("radiogroup", { name: "Deck" });
     expect(within(deck).getByRole("radio", { name: "Fibonacci" })).toHaveProperty("checked", true);
-    expect(shownValue(dialog, "timer")).toBe("Off");
+    // The timer (#27): no timer, and the cards turn over when one ends.
+    expect(checked("Reveal when the timer ends")).toBe(DEFAULT_SETTINGS.timer.revealAtEnd);
+    expect(within(row(dialog, "timer")).getByRole("radio", { name: "Off" })).toHaveProperty(
+      "checked",
+      true,
+    );
     expect(shownValue(dialog, "whoCanReveal")).toBe("The product owner");
     expect(shownValue(dialog, "allowChangeAfterReveal")).toBe("Not allowed");
     const anonymous = within(dialog).getByRole("switch", { name: "Anonymous voting" });
@@ -183,6 +189,114 @@ describe("the settings panel", () => {
     expect(anonymous.getAttribute("aria-checked")).toBe("true");
     expect(anonymous.hasAttribute("aria-busy")).toBe(false);
     expect(within(row(dialog, "revealNames")).queryByText("Saving…")).toBeNull();
+  });
+
+  it("sets the timer for each round: a preset, a custom length, and the reveal at its end (#27)", async () => {
+    mocks.sendCommand.mockResolvedValue({ ok: true, version: 2 });
+    render(<RoomSettingsButton />);
+    show(newRoom(), PO);
+    const dialog = await openPanel("Room settings");
+    const timer = row(dialog, "timer");
+    expect(timer.getAttribute("data-layout")).toBe("block");
+    expect(within(timer).getByText("Timer for each round")).toBeTruthy();
+    // The hint says a change applies from the next round, as the domain does.
+    expect(timer.textContent).toContain("A change applies from the next round.");
+    const lengths = within(timer)
+      .getAllByRole("radio")
+      .map((radio) => radio.closest("label")?.textContent);
+    expect(lengths).toEqual(["Off", "30\u{a0}s", "60\u{a0}s", "2\u{a0}min", "Custom"]);
+    await act(async () =>
+      fireEvent.click(within(timer).getByRole("radio", { name: "2\u{a0}min" })),
+    );
+    expect(mocks.sendCommand).toHaveBeenLastCalledWith({
+      type: "updateSettings",
+      payload: { patch: { timer: { seconds: 120 } } },
+    });
+
+    // Custom: nothing is sent until a valid length is set.
+    const calls = mocks.sendCommand.mock.calls.length;
+    fireEvent.click(within(timer).getByRole("radio", { name: "Custom" }));
+    const field = within(timer).getByRole("textbox", { name: "Custom length" });
+    fireEvent.change(field, { target: { value: "61:00" } });
+    fireEvent.click(within(timer).getByRole("button", { name: "Set" }));
+    expect(within(timer).getByRole("alert").textContent).toContain("5 seconds to 60 minutes");
+    expect(mocks.sendCommand).toHaveBeenCalledTimes(calls);
+    fireEvent.change(field, { target: { value: "2:30" } });
+    await act(async () => fireEvent.click(within(timer).getByRole("button", { name: "Set" })));
+    expect(mocks.sendCommand).toHaveBeenLastCalledWith({
+      type: "updateSettings",
+      payload: { patch: { timer: { seconds: 150 } } },
+    });
+
+    const atEnd = within(timer).getByRole("switch", { name: "Reveal when the timer ends" });
+    expect(atEnd.getAttribute("aria-checked")).toBe("true");
+    await act(async () => fireEvent.click(atEnd));
+    expect(mocks.sendCommand).toHaveBeenLastCalledWith({
+      type: "updateSettings",
+      payload: { patch: { timer: { revealAtEnd: false } } },
+    });
+  });
+
+  it("sends a length the arrow keys stop on once they rest, a click at once, and says a wrong length each time (#27)", async () => {
+    mocks.sendCommand.mockResolvedValue({ ok: true, version: 2 });
+    render(<RoomSettingsButton />);
+    show(newRoom(), PO);
+    const dialog = await openPanel("Room settings");
+    const timer = row(dialog, "timer");
+    const radio = (name: string) => within(timer).getByRole("radio", { name });
+    const sent = () => mocks.sendCommand.mock.calls.length;
+    const before = sent();
+    // Arrow keys from Off: 30 s, then 60 s. Each shows at once; nothing is sent yet.
+    fireEvent.keyDown(radio("Off"), { key: "ArrowRight" });
+    fireEvent.click(radio("30\u{a0}s"));
+    expect(radio("30\u{a0}s")).toHaveProperty("checked", true);
+    fireEvent.keyDown(radio("30\u{a0}s"), { key: "ArrowRight" });
+    fireEvent.click(radio("60\u{a0}s"));
+    expect(radio("60\u{a0}s")).toHaveProperty("checked", true);
+    expect(sent()).toBe(before);
+    // Once they rest, the one they stopped on goes, alone.
+    await act(() => new Promise((resolve) => setTimeout(resolve, ARROW_SETTLE_MS + 50)));
+    expect(sent()).toBe(before + 1);
+    expect(mocks.sendCommand).toHaveBeenLastCalledWith({
+      type: "updateSettings",
+      payload: { patch: { timer: { seconds: 60 } } },
+    });
+    // Space or a click sends at once.
+    fireEvent.keyDown(radio("2\u{a0}min"), { key: " " });
+    await act(async () => fireEvent.click(radio("2\u{a0}min")));
+    expect(sent()).toBe(before + 2);
+
+    // The same wrong length twice is said twice: a new alert each time.
+    fireEvent.click(radio("Custom"));
+    const field = within(timer).getByRole("textbox", { name: "Custom length" });
+    fireEvent.change(field, { target: { value: "0" } });
+    fireEvent.click(within(timer).getByRole("button", { name: "Set" }));
+    const first = within(timer).getByRole("alert");
+    fireEvent.click(within(timer).getByRole("button", { name: "Set" }));
+    expect(within(timer).getByRole("alert")).not.toBe(first);
+    expect(sent()).toBe(before + 2);
+  });
+
+  it("shows a custom length as a custom choice, and the timer in words to everyone else (#27)", async () => {
+    render(<RoomSettingsButton />);
+    const custom = {
+      ...newRoom(),
+      settings: { ...DEFAULT_SETTINGS, timer: { seconds: 90, revealAtEnd: false } },
+    };
+    show(custom, PO);
+    const dialog = await openPanel("Room settings");
+    expect(within(row(dialog, "timer")).getByRole("radio", { name: "Custom" })).toHaveProperty(
+      "checked",
+      true,
+    );
+    expect(
+      within(row(dialog, "timer")).getByRole("textbox", { name: "Custom length" }),
+    ).toHaveProperty("value", "90");
+    show(custom, ANA);
+    expect(shownValue(dialog, "timer")).toBe("1 minute 30 seconds");
+    expect(row(dialog, "timer").querySelector("[data-setting-detail]")?.textContent).toBe(
+      "When it ends, everyone sees that time is up.",
+    );
   });
 
   it("says this round keeps its names when anonymity applies from the next one", async () => {
@@ -252,7 +366,7 @@ describe("the settings panel", () => {
     render(<RoomSettingsButton />);
     show(newRoom(), PO);
     const dialog = await openPanel("Room settings");
-    expect(within(dialog).getAllByRole("switch")).toHaveLength(7);
+    expect(within(dialog).getAllByRole("switch")).toHaveLength(8);
     show({ ...state, ownerId: ANA }, PO);
     expect(within(dialog).queryAllByRole("switch")).toEqual([]);
     expect(within(dialog).queryAllByRole("radio")).toEqual([]);

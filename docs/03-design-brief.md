@@ -85,8 +85,9 @@ Positions are percentages of the stage, so one formula serves every width:
 
 - A seat's point is its avatar's centre; the name sits on the side away from the table
   (above the avatar in the top half, below it elsewhere).
-- The centre of the table shows the status (`5/8 voted so far`), the timer ring, or
-  after reveal the suggested card with agreement or a **Consensus** pill.
+- The centre of the table shows the status (`5/8 voted so far`), the timer ring (#27,
+  "The timer" below), or after reveal the suggested card with agreement or a
+  **Consensus** pill.
 - Until #19 to #21 (#18): while Voting the centre says "1/2 voted so far" (people away
   count once they voted; a PO who does not vote never counts). In the lobby and after a
   reveal the PO gets one button there, drawn as a card face (warm face, card ink, 44 px
@@ -355,8 +356,8 @@ As built (#25):
   an anonymous round.
 - **Editable now (PO decision).** Only settings whose behaviour the room already shows:
   reveal when everyone has voted, anonymous voting (from the next round, said under it),
-  the PO votes too, observers count toward the 16 places, and since #26 the deck and the
-  special cards (below). The timer (#27), who can reveal (#28) and changes after the reveal (#29) show
+  the PO votes too, observers count toward the 16 places, since #26 the deck and the
+  special cards (below), and since #27 the timer (see "The timer"). Who can reveal (#28) and changes after the reveal (#29) show
   their value and explanation to the PO too until their issue adds the control in the
   same row: a switch at the row's end, or a wider control (the deck picker, a choice of
   who can reveal, the timer) across the row under its explanation. A setting that cannot
@@ -433,6 +434,73 @@ As built (#25):
   observer, and no "Voting started" for the restart. Every voter's hand empties into the
   new deck; a vote sent before the restart is refused and rolls back silently.
 
+## The timer
+
+As built (#27; ADR-011: off by default, reveal at its end on):
+
+- **The room's timer.** In the settings panel's "Voting and reveal" group, "Timer for
+  each round" spans the row: Off, 30 s, 60 s, 2 min or Custom (44 px segments, the
+  pick in spruce), and Custom opens a field for 5 s to 60 min, typed as seconds ("90")
+  or minutes and seconds ("1:30"); a wrong length says how to type it and sends nothing,
+  in an alert said on every try, the same length twice too. A click, a tap or Space sends
+  a length at once; arrow keys show each length at once and send the one they rest on for
+  400 ms, so the room does not hear every length on the way.
+  Under it the switch "Reveal when the timer ends" (on); off, everyone sees that time is
+  up and the PO reveals. The hint says a change applies from the next round, as the
+  domain does; a running timer keeps its deadline.
+- **Everyone's countdown.** While a timer runs, the centre shows the time left above the
+  count: "0:45" in bold tabular numerals (15 px on a desktop, 11 px on a phone) inside a
+  stadium ring, the table's own shape, 36 px tall on a desktop and 24 px on a phone. The
+  ring is a faint `--table-ink` track and the time left in `--brass`, drawn from the top
+  centre clockwise and draining linearly to the deadline, over the timer's whole length
+  (an extension refills part of it). It drains in steps of about a device pixel of its
+  length, never more than 20 a second, set by a timeout rather than a per-frame animation:
+  a 30 s timer restyles the page about 5 times a second, a 60 min one every 20 s. In the last 10 s the ring turns `--warn` and the
+  chip pulses at 1 Hz (scale 1.08); the text stays `--table-ink`, which reads on the felt
+  in both themes. Under reduced motion there is no pulse and no smooth drain: the ring
+  steps once a second with the text, and the colour and the text still say it. In forced
+  colours the ring is CanvasText on a GrayText track. At 0:00 the page waits for the
+  server and never shows a negative time. Once time is up in a room that does not reveal
+  at the end, the chip reads "Time is up" (10 px on a phone) inside a full `--warn` ring,
+  for everyone and after a reload, until the PO reveals or starts a new timer.
+- **The PO's controls**, by "Reveal cards" (PO decision for phones): the chip itself is a
+  button, above the count. Without a timer it reads "Timer" with a clock (the clock alone
+  on a phone, its name for screen readers); it opens a small menu: "Start a timer" with
+  30 s, 60 s and 2 min, and a "Length" field with "Start". While a timer runs, a desktop
+  flanks the chip with "Stop" and "+30 s" (card-face buttons, 32 px, 44 px to touch), and
+  the menu reads "Start again"; a phone's centre has no room beside the chip, so its menu
+  puts "+30 s" and "Stop" first; "+30 s" is named "Add 30 seconds", and pressed as the
+  timer ends it says nothing. The chip's name says its state only ("Timer, running",
+  "Timer, time is up"), since the focus comes back to it after every choice and a name
+  that changed every second would be spoken every second; the time left is in a hidden
+  `timer` beside it, which is not live. A button that leaves with the timer hands the
+  focus to the chip, and the menu gives it back to the chip when it closes; a menu that
+  leaves with the round (the timer revealed it while the PO typed a length) hands it to
+  the PO's decision, as a reveal does. R in the menu's field is a
+  letter; R on the chip reveals, as anywhere on the table.
+- **Where it fits.** The centre's content now stays centred on the table when it is
+  taller than the 68 × 60 px phone box (it used to overflow downwards), and the phone's
+  count keeps the box's 68 px whatever the chip's width. Measured clear of every card at
+  4, 8, 10 and 16 seats, in English, French and German, at 1440 and 360 px, without a
+  timer, running and with time up (`e2e/timer.spec.ts`): the PO's centre is at most
+  205 × 109 px on a desktop while a timer runs (140 × 126 px in German without one) and
+  73 × 110 px on a phone. Where the hand docks (#22), "Reveal cards", the chip and the
+  PO's seat still end above it.
+- **Clocks.** Each page estimates the server's clock from every snapshot (the median of
+  the last nine samples, corrected by half the round trip of its `enter`), so pages whose
+  clocks are 5 s apart show the same time left (measured 12 to 13 ms apart, AC 1). It
+  counts on the page's monotonic clock, so a page whose clock is stepped mid-countdown
+  keeps the same time left as the others.
+- **A restart (#26)** starts the round over, timer included: with a room timer everyone
+  hears "Timer started: 1 minute." right after the restart's sentence, and a time that
+  was up starts again.
+- **Announcements**, to everyone, the PO too, never a tick every second: "Timer started:
+  1 minute." (also after "Voting started: Round 3." when the round starts one), "30
+  seconds added.", "Timer stopped.", "10 seconds left." (once, when the page sees the
+  countdown cross it) and "Time is up.", before "Cards revealed." when the timer
+  revealed the round. Everyone else hears "The product owner changed the timer." for a
+  change in the panel.
+
 ## Cards
 
 - **Hand cards**: 50 × 72 px (phone 44 × 64), warm face, numeral centred, corner
@@ -505,7 +573,7 @@ interruptible and disabled under `prefers-reduced-motion` (120 ms cross-fades in
 | Anonymous reveal | slot cards shrink to 0.6 and fade (350 ms); mini cards deal into the results row, 70 ms stagger (#19: the row starts as the seats' cards are gone, at 350 ms; each card drops 12 px and fades in over 320 ms; a card whose vote came with the reveal never lay on its seat, so only the row shows it) |
 | Results | columns rise 500 ms, 60 ms stagger, starting after the last flip (#20: or 350 ms after an anonymous reveal, once the seats' cards are gone; the centre's result fades in 300 ms then, and the lowest and highest seats' arrows pop in 300 ms; the panel's numbers show at once, so no empty panel waits for the flips) |
 | Consensus | pill pops (400 ms) and one soft ring pulse; no confetti storm |
-| Timer | ring drains linearly; last 10 s turns `--warn` and pulses at 1 Hz |
+| Timer | ring drains linearly, in steps of about a device pixel (at most 20 a second); last 10 s turns `--warn` and pulses at 1 Hz (#27: the chip scales to 1.08 and back each second; under reduced motion no pulse, and the ring steps once a second) |
 | Seat join / leave | fade and scale from 0.9, 220 ms |
 
 ## Accessibility
