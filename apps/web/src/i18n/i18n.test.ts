@@ -128,6 +128,52 @@ describe("catalogs", () => {
       expect(text, `fr: ${key}`).not.toMatch(/[\p{L}\p{N}}][:;!?]/u);
     }
   });
+
+  // Strings that read the same in that language on purpose: the product's name, a list
+  // built from placeholders, and words both languages share.
+  const SAME_AS_ENGLISH: Record<"fr" | "de", readonly string[]> = {
+    fr: ["app.name", "table.seatCardWord", "common.notifications"],
+    de: ["app.name", "table.seatCardWord", "theme.system", "dev.hand"],
+  };
+
+  it.each(["fr", "de"] as const)(
+    "translates every %s string that is not allowlisted",
+    (language) => {
+      const english = new Map(leaves(en));
+      const same = leaves(CATALOGS[language])
+        .filter(([key, value]) => english.get(key) === value)
+        .map(([key]) => key);
+      expect(same.sort()).toEqual([...SAME_AS_ENGLISH[language]].sort());
+    },
+  );
+
+  it.each(LANGUAGES)("uses typographic apostrophes, quotes and ellipses in %s", (language) => {
+    for (const [key, value] of leaves(CATALOGS[language])) {
+      const text = String(value).replace(/{{[^}]*}}/g, "{{}}");
+      expect(text, `${language}: ${key}: straight apostrophe, use ’`).not.toMatch(/'/);
+      expect(text, `${language}: ${key}: straight quote`).not.toMatch(/"/);
+      expect(text, `${language}: ${key}: three dots, use …`).not.toMatch(/\.\.\./);
+    }
+  });
+
+  it("puts a narrow no-break space inside French guillemets", () => {
+    for (const [key, value] of leaves(fr)) {
+      const text = String(value);
+      expect(text, `fr: ${key}`).not.toMatch(/«(?! )|(?<! )»/);
+      expect(text, `fr: ${key}: use « » in French`).not.toMatch(/[“”„]/);
+    }
+  });
+
+  it("quotes German as „so“", () => {
+    for (const [key, value] of leaves(de)) {
+      const text = String(value);
+      expect(text, `de: ${key}: use „…“ in German`).not.toMatch(/[”«»]/);
+      const opening = text.match(/„/g)?.length ?? 0;
+      const closing = text.match(/“/g)?.length ?? 0;
+      expect(closing, `de: ${key}: every „ closes with “`).toBe(opening);
+      expect(text, `de: ${key}: “ before „`).not.toMatch(/^[^„]*“/);
+    }
+  });
 });
 
 describe("translation", () => {
