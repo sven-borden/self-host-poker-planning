@@ -880,7 +880,7 @@ describe("rounds", () => {
     }
   });
 
-  it("lets a voter reveal under \"anyone\" while the PO does not vote (#28)", () => {
+  it('lets a voter reveal under "anyone" while the PO does not vote (#28)', () => {
     const before = room({ settings: { whoCanReveal: "anyone", poVotes: false } });
     expect(send(before, { type: "reveal" }, A).causes).toEqual([
       { type: "revealed", by: "manual", who: A },

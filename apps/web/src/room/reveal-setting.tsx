@@ -66,14 +66,14 @@ export function WhoCanRevealControl({
   };
 
   return (
-    <fieldset
+    <div
       id={id}
+      role="radiogroup"
       aria-labelledby={labelId}
       aria-describedby={describedBy}
       aria-busy={pending || undefined}
-      role="radiogroup"
       data-who-can-reveal
-      className="m-0 flex min-w-0 flex-wrap gap-2 border-0 p-0"
+      className="flex min-w-0 flex-wrap gap-2"
       onKeyDown={(event) => {
         arrowed.current = event.key.startsWith("Arrow");
       }}
@@ -100,6 +100,6 @@ export function WhoCanRevealControl({
           {t(choice.label)}
         </label>
       ))}
-    </fieldset>
+    </div>
   );
 }

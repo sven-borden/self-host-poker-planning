@@ -241,7 +241,9 @@ describe("who revealed (#28)", () => {
     const last = auto.run("ben", { type: "castVote", card: "13" });
     expect(last.causes).toContainEqual({ type: "revealed", by: "everyoneVoted" });
     expect(
-      said(liveEvents(last.room, last.causes, auto.voting.room).filter((e) => e.kind === "revealed")),
+      said(
+        liveEvents(last.room, last.causes, auto.voting.room).filter((e) => e.kind === "revealed"),
+      ),
     ).toBe("Cards revealed. Consensus on 13.");
   });
 

@@ -81,14 +81,26 @@ export function CentreFallback({ room }: { room: RoomView }) {
   const round = room.round;
   if (round?.phase !== "revealed") {
     return (
-      <p ref={self} data-centre-status="revealed" data-centre-fallback tabIndex={-1} className={FALLBACK}>
+      <p
+        ref={self}
+        data-centre-status="revealed"
+        data-centre-fallback
+        tabIndex={-1}
+        className={FALLBACK}
+      >
         {t("round.revealed")}
       </p>
     );
   }
   const final = round.final ?? null;
   return (
-    <p ref={self} data-centre-status="revealed" data-centre-fallback tabIndex={-1} className={FALLBACK}>
+    <p
+      ref={self}
+      data-centre-status="revealed"
+      data-centre-fallback
+      tabIndex={-1}
+      className={FALLBACK}
+    >
       {summarySentence(t, revealSummary(round))}
       {final !== null ? (
         <>

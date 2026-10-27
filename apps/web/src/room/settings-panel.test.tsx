@@ -361,10 +361,14 @@ describe("the settings panel", () => {
   it("says beforehand, to the PO only, that turning the automatic reveal on reveals now (#28)", async () => {
     render(<RoomSettingsButton />);
     const off = { ...newRoom(), settings: { ...DEFAULT_SETTINGS, revealWhenAllVoted: false } };
-    const started = apply(off, { type: "startRound", subject: { kind: "none" } }, {
-      actor: PO,
-      now: 1,
-    });
+    const started = apply(
+      off,
+      { type: "startRound", subject: { kind: "none" } },
+      {
+        actor: PO,
+        now: 1,
+      },
+    );
     if (!started.ok) throw new Error(started.error);
     const one = apply(started.state, { type: "castVote", card: "3" }, { actor: PO, now: 2 });
     if (!one.ok) throw new Error(one.error);
