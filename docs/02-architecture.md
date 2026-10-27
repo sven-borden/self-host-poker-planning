@@ -516,15 +516,22 @@ password, no social provider before W5.
   grace timer of 15 s (`PRESENCE_GRACE_MS`) starts for that person and room; a socket of
   theirs that enters again cancels it, so reloads and network blips change nothing and
   store nothing. When it fires, the server runs `presence { who, connected: false }`
-  through the runner and broadcasts; an entering socket of a person the room shows as
-  away runs `presence { who, connected: true }`. Each run decides at its turn in the
-  room's queue, from the sockets actually there, so a return during a run is not lost.
-  PO claim opens after 120 s away.
+  through the runner and broadcasts. Every entering socket of a participant runs the
+  back step, which sends `presence { who, connected: true }` when the stored state shows
+  them away and stores nothing otherwise: the enter's own load may have read the room
+  before an away run committed, so it never decides alone. Each run decides at its turn
+  in the room's queue, from the stored state and the sockets actually there, so a return
+  during a run is not lost. An away run that fails (database error, lost
+  compare-and-set) starts the grace again, at most 3 times in a row. PO claim opens
+  after 120 s away.
 - After a restart the timers are gone: the first socket of a room on an instance starts
-  a grace for everyone the room shows as connected who has no socket there. A room's
-  timers are dropped when its last socket leaves the instance, and all of them on
-  shutdown; the people still shown connected then get their grace from the next first
-  socket.
+  a grace for everyone the room shows as connected who has no socket there. That grace
+  is 60 s (`PRESENCE_RESTART_GRACE_MS`, a PO decision of 2026-10-27), not 15 s: every
+  client reconnects at once and some take longer than a reload, and a person marked
+  away while the others voted would reveal the round without them. A normal disconnect
+  keeps 15 s. A room's timers are dropped when its last socket leaves the instance, and
+  all of them on shutdown; the people still shown connected then get their grace from
+  the next first socket.
 - Two instances (#39): each judges presence from its own sockets only, so a person whose
   sockets sit on the other instance can be marked away by this one's first-socket timers,
   until they enter again. The adapter in #39 must share presence (or route a room's

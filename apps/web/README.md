@@ -69,10 +69,16 @@ server sends and never decides the outcome of a round.
   `table-data.ts` maps the snapshot to the table (#17): voters in join order, rotated so
   the viewer sits at the bottom, observers in the row. `seatStatus` gives `thinking` or
   `voted` while Voting (from `round.voted` only: no card exists before reveal), the card
-  after a named reveal (`revealed`, which #19 flips) and `voted` after an anonymous one;
+  after a named reveal (`revealed`, which #19 flips); after an anonymous one `voted`, or
+  `revealed` with no card for someone who did not vote (who voted is public);
   `personFlags` gives `away`, `owner`, `you` and the `look` from `avatarLooks` (table/
   avatar.tsx), computed over all participants in join order so every viewer sees the same
-  initials and colours and no two people look alike. `isRoomFull` lives in
+  initials and colours and no two people look alike. The first person in join order
+  with each id colour (`avatarColour`) keeps it; only those who gave way are resolved
+  after, so a rename changes no colour (up to 8 people) and a leave moves only people
+  who gave way. Every seat is a popover button (`data-seat-trigger`, or the 44 px
+  initials-only one) whose name is an sr-only span inside it; the popover says the whole
+  name and what the badges mean. `isRoomFull` lives in
   `room-full.ts`, so the room route does not pull the table's code. The live region:
   `announcements.ts` turns a snapshot's causes into events (joins, leaves and kicks, away,
   back, first votes of others; never the viewer's own, never a card), merges a batch

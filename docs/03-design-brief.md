@@ -97,21 +97,28 @@ Positions are percentages of the stage, so one formula serves every width:
   free" is announced politely. When observers do not count and only the seats are
   taken, a voter is told so on the card and can join as an observer. Under the table a
   "You" panel renames, switches between voter and observer, and leaves the room.
-- With more than 10 people on a phone, seats show initials only; names on tap. A name
-  cut off at its width opens the same way.
+- With more than 10 people on a phone, seats show initials only; names on tap. Every
+  seat opens the same way, on tap or by keyboard: a popover with the whole name and what
+  its badges mean ("Product owner · Away · Voted"). Every seat is a button whatever its
+  state, so the focus never drops when someone votes or goes away.
 - Seat states (#17). Badges sit on the avatar, never under the name (a chip there breaks
   the geometry), each a shape in a disc overhanging by 4 px, inside the seat's halo:
   the check (voted, `--good`) bottom right, a crown (the PO, `--brass-soft` with
   `--brass-ink`) top left, a moon (away, `--surface-2` with `--ink-2`) top right. Away:
-  the avatar fades to 45 % and turns grey, and the name turns `--ink-2` (still 4.5:1);
-  the seat's label says "away" and its popover "Away". The viewer: a 2 px `--spruce`
+  the avatar's disc turns `--surface-2` with a dashed `--line-strong` edge and its
+  initials `--ink-2`, at full opacity (about 6:1 in both themes: on a dense phone table
+  the initials are the only name), and the name turns `--ink-2` (still 4.5:1); the dashed
+  edge also marks it in forced colours. The seat's label says "away" and its popover
+  "Away". The viewer: a 2 px `--spruce`
   outline 2 px outside the avatar's ring (an outline, so forced colours keep it) and the
   name in `--spruce`. The observers' row writes "Product owner" and "Away" after the
   name. A voter's face-down card stays in the slot while they are away.
-- Avatars (#17): initials and colour are unique at the table, given in join order: a
-  person keeps the colour drawn from their id when it is free, else takes the least used
-  one after it that nobody with the same initials has; up to 8 people get 8 different
-  colours, and past 8 twins the second letter becomes a number ("A2").
+- Avatars (#17): initials and colour are unique at the table. Colours come from the id:
+  the first person in join order with each colour keeps it, whatever the others do; the
+  people who gave way then take, in join order, the least used colour after their own
+  that nobody with the same initials has. So a rename changes no colour, and a leave
+  moves only people who gave way. Up to 8 people get 8 different colours, and past 8
+  twins the second letter becomes a number ("A2").
 - The table picks its variant from the width its container gives it, not from the
   viewport, so any page can host it.
 - #13 proves the geometry for 1–16 people in every room from 328 px (a 360 px phone)

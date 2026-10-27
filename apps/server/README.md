@@ -168,14 +168,21 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   (`PRESENCE_GRACE_MS`, 15 s; `presenceGraceMs` in tests) for that person and room, unless
   the room's last socket left (then `forgetIfEmpty` drops every timer of the room) or the
   person is not a participant of the newest state seen (`members`). An entering socket
-  cancels its person's grace and, when the loaded state shows them away or not
-  connected, or a run is marking them away right now (`goingAway`), runs
-  `presence { connected: true }`. The grace's end runs `presence { connected: false }`.
-  Both steps decide inside the runner, at their turn in the room's queue, from the
-  sockets actually here (`runAsServer` takes a step that may return null). The room's
-  first socket on this instance (`watched`) starts a grace for everyone shown connected
-  without a socket here: the restart case. `close()` drops every timer and starts no new
-  one. Log lines: "presence: away" and "presence: back" with the room's id, never a name.
+  of a participant cancels its person's grace and always runs the back step
+  (`backStep`), which sends `presence { connected: true }` only when the stored state
+  shows them away: the enter's own load may predate an away run that committed since,
+  and for someone shown connected it stores nothing. The grace's end runs
+  `presence { connected: false }`. Both steps decide inside the runner, at their turn in
+  the room's queue, from the stored state and the sockets actually here (`runAsServer`
+  hands the step the state; it may return null). An away run that fails (a database
+  error, or every attempt lost the compare-and-set) starts the grace again, at most
+  `MAX_AWAY_RETRIES` (3) times in a row (`awayFailures`); a return ends the series. The
+  room's first socket on this instance (`watched`) starts a grace of
+  `PRESENCE_RESTART_GRACE_MS` (60 s; `presenceRestartGraceMs` in tests) for everyone
+  shown connected without a socket here: the restart case, where every client
+  reconnects at once. `close()` drops every timer and starts no new one. Log lines:
+  "presence: away", "presence: back" and "presence: away given up" with the room's id,
+  never a name.
 - A server-only command needs no new path: add it to the domain's `Command` (and to
   `ServerCommandType`, so the wire union leaves it out and `toDomainCommand` refuses it
   from a client) and to `OPEN` if non-participants may send it, then run it with
@@ -187,8 +194,11 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   frames); `room-sync.db.test.ts` with real guests on Postgres (join latency, the burst,
   secrecy on raw frames with `@pp/protocol/leak-scan`, two instances);
   `presence.db.test.ts` (the grace, a reload inside it, coming back, the round settled by
-  someone going away, the restart case, presence frames through the leak scan, and no
-  name or code in the logs); `presence.test.ts` (the timers, fake clock);
+  someone going away, the restart case and its longer grace, presence frames through the
+  leak scan, and no name or code in the logs); `presence-races.db.test.ts` (an enter
+  whose load read the room before an away run committed, with a held load; failed away
+  runs retried and the bound, with a runner that fails on demand); `presence.test.ts`
+  (the timers, fake clock);
   `restart.db.test.ts` runs the built `dist/main.mjs` (build it first; CI does).
 
 ## Identity
