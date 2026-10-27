@@ -205,21 +205,21 @@ describe("settings (#25)", () => {
     const { run, seated } = anasRoom();
     const anonymous = run("me", { type: "updateSettings", patch: { revealNames: false } });
     expect(said(liveEvents(anonymous.room, anonymous.causes, seated.room))).toBe(
-      "The PO turned on anonymous voting from the next round.",
+      "Anonymous voting starts with round 1.",
     );
     const several = run("me", {
       type: "updateSettings",
       patch: { poVotes: false, observersCount: false, revealWhenAllVoted: false },
     });
     expect(said(liveEvents(several.room, several.causes, anonymous.room))).toBe(
-      "The cards now wait for a reveal, even once everyone has voted. The PO no longer votes. Observers no longer take one of the 16 places.",
+      "The cards now wait for a reveal, even once everyone has voted. The product owner no longer votes. Observers no longer take one of the 16 places.",
     );
     const deck = run("me", {
       type: "updateSettings",
       patch: { deck: { kind: "preset", id: "tshirt" }, whoCanReveal: "anyone" },
     });
     expect(said(liveEvents(deck.room, deck.causes, several.room))).toBe(
-      "The PO changed the deck: T-shirt sizes. Anyone who votes can now reveal the cards.",
+      "The product owner changed the deck: T-shirt sizes. Anyone who votes can now reveal the cards.",
     );
     const rest = run("me", {
       type: "updateSettings",
@@ -237,14 +237,14 @@ describe("settings (#25)", () => {
     });
     expect(said(liveEvents(rest.room, rest.causes, deck.room))).toBe(
       [
-        "The PO changed the deck: Custom deck.",
-        "The PO changed the special cards.",
-        "The PO changed the timer.",
+        "The product owner changed the deck: Custom deck.",
+        "The product owner changed the special cards.",
+        "The product owner changed the timer.",
         "The cards now turn over once everyone has voted.",
-        "Only the PO can reveal the cards now.",
-        "The PO turned off anonymous voting from the next round.",
+        "Only the product owner can reveal the cards now.",
+        "Voting is named again from round 1.",
         "Votes can now change after the reveal.",
-        "The PO now votes too.",
+        "The product owner now votes too.",
         "Observers now take one of the 16 places.",
       ].join(" "),
     );
@@ -269,11 +269,45 @@ describe("settings (#25)", () => {
       patch: { deck: { kind: "preset", id: "mfib" } },
     });
     expect(said(liveEvents(restarted.room, restarted.causes, started.room))).toBe(
-      "The PO changed the deck: Modified Fibonacci. Voting started: Round 1.",
+      "The product owner changed the deck: Modified Fibonacci. Voting started: Round 1.",
     );
     // A reconnect's snapshot has no causes; the settings it shows are still news.
     expect(said(liveEvents(restarted.room, [], seated.room))).toContain(
-      "The PO changed the deck: Modified Fibonacci.",
+      "The product owner changed the deck: Modified Fibonacci.",
+    );
+  });
+
+  it("says the changes in the order they happened, around a new round", () => {
+    const { run, seated } = anasRoom();
+    const started = run("me", { type: "startRound", subject: { kind: "none" } });
+    const anonymous = run("me", { type: "updateSettings", patch: { revealNames: false } });
+    const batch = mergeEvents(
+      liveEvents(started.room, started.causes, seated.room),
+      liveEvents(anonymous.room, anonymous.causes, started.room),
+    );
+    // Started first, changed within the same batch: said in that order, for round 2.
+    expect(said(batch)).toBe("Voting started: Round 1. Anonymous voting starts with round 2.");
+    // Votes either side of a change stay either side of it.
+    const vote = (who: string): LiveEvent => ({ kind: "voted", who, name: who });
+    expect(said([vote("Ben"), ...batch.slice(1), vote("Cleo")])).toBe(
+      "Ben voted. Anonymous voting starts with round 2. Cleo voted.",
+    );
+  });
+
+  it("says that a new round is anonymous", async () => {
+    await loadLanguage("fr");
+    await loadLanguage("de");
+    const { run, seated } = anasRoom();
+    run("me", { type: "updateSettings", patch: { revealNames: false } });
+    const started = run("me", { type: "startRound", subject: { kind: "none" } });
+    const events = liveEvents(started.room, started.causes, seated.room);
+    expect(said(events.filter((e) => e.kind === "roundStarted"))).toBe(
+      "Voting started: Round 1, anonymous.",
+    );
+    const roundOnly = events.filter((e) => e.kind === "roundStarted");
+    expect(describeEvents(fixedT("fr"), roundOnly)).toBe("Le vote a commencé : Tour 1, anonyme.");
+    expect(describeEvents(fixedT("de"), roundOnly)).toBe(
+      "Die Abstimmung hat begonnen: Runde 1, anonym.",
     );
   });
 
@@ -289,10 +323,8 @@ describe("settings (#25)", () => {
       mergeEvents(first, liveEvents(poOff.room, poOff.causes, off.room)),
       liveEvents(off.room, off.causes, on.room),
     );
-    expect(said(batch)).toBe("The PO no longer votes.");
-    expect(said(mergeEvents([], first))).toBe(
-      "The PO turned on anonymous voting from the next round.",
-    );
+    expect(said(batch)).toBe("The product owner no longer votes.");
+    expect(said(mergeEvents([], first))).toBe("Anonymous voting starts with round 1.");
   });
 
   it("speaks French and German", async () => {
@@ -301,12 +333,8 @@ describe("settings (#25)", () => {
     const { run, seated } = anasRoom();
     const changed = run("me", { type: "updateSettings", patch: { revealNames: false } });
     const events = liveEvents(changed.room, changed.causes, seated.room);
-    expect(describeEvents(fixedT("fr"), events)).toBe(
-      "Le PO a activé le vote anonyme à partir du tour suivant.",
-    );
-    expect(describeEvents(fixedT("de"), events)).toBe(
-      "Der PO hat die anonyme Abstimmung ab der nächsten Runde eingeschaltet.",
-    );
+    expect(describeEvents(fixedT("fr"), events)).toBe("Le vote anonyme commence au tour 1.");
+    expect(describeEvents(fixedT("de"), events)).toBe("Ab Runde 1 wird anonym abgestimmt.");
   });
 });
 
