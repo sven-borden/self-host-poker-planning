@@ -49,15 +49,19 @@ server sends and never decides the outcome of a round.
   (status line, participant count, the reload prompt on `protocol_mismatch`).
 - Landing, joining, missing rooms and errors (#24): `routes/index.tsx` is the landing
   page (pitch, four steps, the create card, the join card; CSS grid areas reorder them
-  from `lg`). `rooms/room-input.ts`: `parseRoomInput(raw)` turns a code or a pasted link
-  into `{ ok, code }` or `{ ok: false, reason: "empty" | "malformed" }` with the domain's
-  `isRoomCode`; spaces anywhere are dropped. `rooms/join-room-card.tsx`: "Join with a
-  code" (no `name`, autocomplete off, so no history). `rooms/room-not-found.tsx`: what the
-  room page shows for `room_not_found`; it never shows the code. `components/shell/`:
-  `error-page.tsx` (the router's `defaultErrorComponent`, and the root's own error
-  component inside a bare `<main>`), `empty-table.tsx` (the token-drawn illustration) and
-  `use-page-title.ts` (`usePageTitle(page)` sets "page · Poker Planning" and restores the
-  title on unmount; never pass a code).
+  from `lg`). `rooms/room-input.ts`: `parseRoomInput(raw, location.host)` turns a code
+  or a pasted link into `{ ok, code }`, `{ ok: false, reason: "empty" | "malformed" }`
+  (the domain's `isRoomCode`), or `{ ok: false, reason: "otherHost", host, href }` for a
+  full http(s) link to another host, which the card offers instead of opening; spaces,
+  zero-width characters and dashes are dropped, surrounding quotes, brackets and
+  punctuation trimmed. `rooms/join-room-card.tsx`: "Join with a code" (no `name`,
+  autocomplete off, so no history). `rooms/room-not-found.tsx`: what the room page shows
+  for `room_not_found`, from the header fetch or the socket's `enter`; it never shows
+  the code, and its h1 takes the focus on mount. `components/shell/`: `error-page.tsx`
+  (the router's `defaultErrorComponent`, and the root's own error component inside a
+  bare `<main>`), `empty-table.tsx` (the token-drawn illustration) and
+  `use-page-title.ts` (`usePageTitle(page)` sets "page · Poker Planning" and restores
+  the title on unmount; never pass a code).
 - `src/identity/identity.ts`: who this browser is (#10). `ensureIdentity({ force? })`
   reads `/api/auth/get-session` and, without a session, signs in as a guest
   (`/api/auth/sign-in/anonymous`); concurrent calls share one request. `setDisplayName(name)`
