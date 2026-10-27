@@ -263,6 +263,48 @@ As built (#22), for 640 px and below (the `phone:` variant) unless stated:
   form, the lobby, voting (with a long title, and with the field focused) and after a
   reveal (`e2e/mobile.spec.ts`).
 
+## Room settings
+
+As built (#25):
+
+- **Where.** A button in the room header beside "Copy the link": "Room settings" with a
+  sliders icon for the PO, "Room rules" with a checklist icon for everyone else (on a
+  phone, the 44 px icon alone, its name for screen readers). Everyone sees the same
+  panel; only the PO gets controls.
+- **The panel.** A modal sheet: from the right, up to 28 rem wide, on a wide screen; from
+  the bottom on a phone (640 px or less), the screen's full width, at most 88 % of its
+  height, rounded top corners, its padding above the home indicator. `--surface` on the
+  `--scrim`. A sticky header keeps the title, one line saying what the panel is ("Each
+  change reaches everyone in the room at once." or "The product owner sets how this
+  room plays.") and a 44 px "Close" in sight while the settings scroll. Focus stays
+  inside; Esc, "Close" or a tap on the scrim closes it and the focus returns to the
+  header's button. Opening it puts the PO on the first control and anyone else on
+  "Close".
+- **The settings.** Three groups under small mono headings, Cards, Voting and reveal,
+  People, in ADR-011's order. Each setting is one row: the label, the value or the switch
+  on the right, and a one-line explanation under the label in `--ink-2`, sometimes with a
+  second line in `--ink` (the deck's cards, the special cards in words, what the timer
+  does at its end, "This round still shows names." when anonymity waits for the next
+  round). The explanation of "Change a vote after the reveal" says it never applies to
+  an anonymous round.
+- **Editable now (PO decision).** Only settings whose behaviour the room already shows:
+  reveal when everyone has voted, anonymous voting (from the next round, said under it),
+  the PO votes too, observers count toward the 16 places. The deck and special cards
+  (#26), the timer (#27), who can reveal (#28) and changes after the reveal (#29) show
+  their value and explanation to the PO too until their issue adds the control in the
+  same row.
+- **A change.** The switch moves at once and the row says "Saving…" until the server's
+  snapshot confirms it; a second press of the same switch waits. A refusal moves it back
+  and says why under the setting, with the octagon icon: turning observers back on with
+  more than 16 people says how many may count. Switches keep their 18 px look with a
+  44 px hit area, and the label toggles too.
+- **Everyone else** sees the new values in the same snapshot, also in an open "Room
+  rules", and the table's live region says the change once, in plain words, before the
+  rest of its batch: "The PO turned on anonymous voting from the next round.", "The
+  cards now wait for a reveal, even once everyone has voted.", "The PO no longer votes.",
+  "The PO changed the deck: T-shirt sizes. Voting started: Round 1." Not to the PO, whose
+  switch says it.
+
 ## Cards
 
 - **Hand cards**: 50 × 72 px (phone 44 × 64), warm face, numeral centred, corner

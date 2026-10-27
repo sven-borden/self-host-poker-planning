@@ -229,6 +229,49 @@ server sends and never decides the outcome of a round.
   (`ExtremeMark`, an arrow in a spruce disc, bottom right of the avatar) pops in then.
   Under reduced motion each is a 120 ms cross-fade at once. Copy: `results.*`,
   `table.lowest`, `table.highest`, `table.lowestTag`, `table.highestTag`.
+  The settings (#25): `settings-button.tsx` (`RoomSettingsButton`, in the room header
+  beside "Copy the link", `[data-settings-open=owner|rules]`) shows once a snapshot is
+  there: "Room settings" for the PO (`room.you === room.ownerId`), "Room rules" for
+  everyone else, an icon with its name for screen readers on phones. Its first press
+  imports `settings-panel.tsx`, a chunk of its own (a failed load says
+  `settings.loadFailed` in a toast), which then stays mounted so the sheet can close and
+  open again. `SettingsPanel` is a Radix dialog (`components/ui/sheet.tsx`): a side sheet
+  from 641 px, a bottom sheet (88 % of the screen at most, rounded top, the home
+  indicator's padding) on a phone; the focus stays inside, Esc and "Close" close it, the
+  focus lands on the first control for the PO and on "Close" for anyone else, and goes
+  back to the header's button. The title and "Close" stay in a sticky header while the
+  settings scroll. `GROUPS` lists every setting once, in `SETTING_KEYS` order
+  (`settings-words.ts`, shared with the live region): Cards (deck, specials), Voting and
+  reveal (timer, reveal when everyone voted, who can reveal, anonymous voting, change
+  after the reveal), People (the PO votes, observers count). Each `SettingField` has a
+  label, a one-line hint, its value in words (`[data-setting-value]`, what the read-only
+  view shows), an optional `detail` line (the deck's cards, the specials in words, the
+  timer's end, "This round still shows names." while the round on the table differs
+  from the next) and, for the PO, a `toggle` (an on-off switch) or a `Control`.
+  `useSettingChanges` sends `updateSettings` with only the changed keys through the
+  `commandSender()` taken at the press, shows the change at once (`withPatch`, the
+  domain's merge), marks the row `[data-pending]` with "Saving…" and ignores a second
+  press of the same setting until the ack (the store already holds the snapshot then);
+  a refusal drops the change, so the setting rolls back, and says why under it
+  (`role="alert"`, in the control's `aria-describedby`; `room_full` on observers says
+  `settings.observersCountRefused`). Editable now (PO decision): `revealWhenAllVoted`,
+  `revealNames` ("Anonymous voting", from the next round), `poVotes` and
+  `observersCount`; the deck and specials (#26), the timer (#27), who can reveal (#28) and
+  changes after the reveal (#29, whose hint says it never applies to an anonymous round)
+  are read-only for the PO too until their issue adds a control. **Adding a control:**
+  give the field in `GROUPS` a `toggle: { read, write }` for an on-off setting, or a
+  `Control` component that renders its input with `ControlProps.id` (the label points at
+  it), passes `describedBy` to `aria-describedby`, reads `settings` (the shown values)
+  and calls `change(patch)` with only the keys it changes; the panel does the pending
+  state, the rollback, the message and the focus. A refusal code the panel should word
+  differently goes in `FieldRow`'s `message`. The live region (`announcements.ts`,
+  `settingEvents`) compares the settings of each snapshot with the last one, so a
+  reconnect still says a change, and says each changed setting in plain words before the
+  rest of its batch ("The PO turned on anonymous voting from the next round.", "The PO
+  changed the deck: T-shirt sizes. Voting started: Round 1."), to everyone but the PO,
+  whose own switch says it; a setting changed and changed back in one batch says nothing.
+  While a panel is open, Radix hides the page (and its live region) from screen readers.
+  Copy: `settings.*`, `decks.custom`, `live.*`.
   `failure.ts` turns refusal codes into copy. Focus: after joining it moves to the "You"
   heading, after leaving or when a seat frees up to the name field (a free seat is also
   announced in a polite live region, `[data-room-notice]`); each request is cleared once
@@ -365,7 +408,12 @@ server sends and never decides the outcome of a round.
   (`table/cards.tsx`) narrows any label that would shrink below 80 % to Archivo's 70 %
   width (`data-narrow`). Budgets after #22: the room route 168.5 kB (was 168.1), the
   landing page 152.1 kB (152.0), `seated` 13.0 kB (11.8), `table-stage` 8.3 kB (8.2),
-  the stylesheet 13.4 kB (12.4).
+  the stylesheet 13.4 kB (12.4). After #25: the room route 171.9 kB, the landing page
+  154.6 kB, the lazy `settings-panel` chunk 6.5 kB (Radix Dialog and Switch, the panel)
+  and `seated` 13.5 kB. Of the room route's 3.4 kB, about 1.3 kB is the English copy;
+  the rest is Vite 8's rolldown splitting modules the new lazy chunk shares with the entry
+  (React's JSX runtime and `i18n/hooks.ts`, Radix's shared utilities and `@pp/domain`'s
+  decks, the room connection) into chunks of their own, as it did for Motion in #18.
 - End-to-end: `pnpm --filter @pp/web test:e2e` runs Playwright (`e2e/`) against
   `vite preview`. With `DATABASE_URL` set (a Postgres the server may migrate, such as
   the one in the server README), it also starts the real server on 3000, where
@@ -382,7 +430,11 @@ server sends and never decides the outcome of a round.
   150 % text) checks with `dockAtTop` and `expectClearOfDock`. Not part of `pnpm gate`. `e2e/next-round.spec.ts`
   reads `round_history` and the room's stored round straight from Postgres through `pg`,
   a dev dependency pinned to the server's version; #33's history API should replace that
-  direct read.
+  direct read. `e2e/settings.spec.ts` (#25) plays the PO's settings by keyboard alone on a
+  desktop and an iPhone 13, a voter's "Room rules" with a new room's defaults, one
+  snapshot per change, and the `room_full` rollback; its shots are `settings-owner-*`,
+  `settings-rules-*` (360 and 1440 px, light and dark, taken once the sheet has slid in)
+  and `phone-settings-*`.
 - Tests: the `web` Vitest project extends `vite.config.ts` and runs in jsdom
   (`src/test-setup.ts` stubs `matchMedia`).
 
