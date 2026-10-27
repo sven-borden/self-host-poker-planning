@@ -31,6 +31,8 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 - Identity from #10: Better Auth guest sessions (`__Host-` cookie on https), only
   three auth endpoints exposed, display names with strict text rules, and sockets
   refused without a session. `TRUST_PROXY` is a proxy count.
+- Rooms from #14: `POST /api/rooms` (58-bit codes, 20 per address per 10 minutes),
+  `GET /api/rooms/:code`, the create card and the room header with a copy link.
 - **W0 is done except #12** (deploy), which waits for Sven's go.
 - The decisions are in `docs/05-decisions.md`.
 
@@ -42,8 +44,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#14 (PP-014)** create a room and become its PO, in `../pp-wt-14`.
-- **#15 (PP-015)** realtime room sync, in `../pp-wt-15`.
+- **#15 (PP-015)** realtime room sync: PR #76 in review, CI green.
+- **#24 (PP-024)** landing page, join by code, not-found and error pages, in
+  `../pp-wt-24`.
 
 ## Next
 
