@@ -3,7 +3,7 @@ import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } f
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { commandSender, sendCommand } from "../realtime/room-connection.ts";
-import { CentreResult, type RevealMotion } from "./results-chunk.ts";
+import { CentreFallback, CentreResult, type RevealMotion } from "./results-chunk.tsx";
 import { voteCount } from "./table-data.ts";
 
 interface RoundCentreProps {
@@ -60,13 +60,7 @@ export function RoundCentre({
     );
   }
   const result = (
-    <Suspense
-      fallback={
-        <p data-centre-status="revealed" className="m-0">
-          {t("round.revealed")}
-        </p>
-      }
-    >
+    <Suspense fallback={<CentreFallback />}>
       <CentreResult room={room} compact={owner} motion={reveal} />
     </Suspense>
   );

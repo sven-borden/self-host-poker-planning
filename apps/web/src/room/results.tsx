@@ -16,7 +16,7 @@ import {
 
 // The results of a revealed round (#20): the table's centre (`CentreResult`) and the panel
 // under the table (`ResultsPanel`). A chunk of its own, which `Seated` prefetches while a
-// round is on (results-chunk.ts), so the room route and the `seated` chunk carry none of it.
+// round is on (results-chunk.tsx), so the room route and the `seated` chunk carry none of it.
 // The numbers are the server's `round.results` (the domain's `computeResults`), sorted by
 // `resultsModel` and formatted in the reader's language and region.
 

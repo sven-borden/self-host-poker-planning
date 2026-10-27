@@ -112,8 +112,8 @@ Positions are percentages of the stage, so one formula serves every width:
   brass-ink) when at least three votes agree, or "Nothing to count." when no card
   counts. A deck without numbers suggests its most voted card. The PO's centre puts the
   two side by side above "Next round", and on phones shrinks the card to an 18 px chip,
-  so the stack stays as tall as the reveal's: at most 71 px in English and French and
-  84 px in German, clear of every card with 16 seats (measured in `results.spec.ts`).
+  so the stack is 64 px tall in English, French and German (under the reveal's 71 and
+  84 px), clear of every card with 16 seats (measured in `results.spec.ts`).
   The others' centre stacks the card over the pill or the percentage. Named rounds whose
   cards differ mark the lowest and highest voters with an arrow (down, up) in a spruce
   disc at the avatar's bottom right, the voted check's corner, free after a reveal; the

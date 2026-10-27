@@ -10,7 +10,7 @@ import { type Box, CardFlight, type Flight, type InAir } from "./card-flight.tsx
 import { failureMessage } from "./failure.ts";
 import { confirmedOf, shownCard, withShownVote } from "./hand-state.ts";
 import { LiveAnnouncer } from "./live-announcer.tsx";
-import { loadResults, ResultsPanel } from "./results-chunk.ts";
+import { prefetchResults, ResultsPanel } from "./results-chunk.tsx";
 import { RevealedCards } from "./revealed-cards.tsx";
 import { RoundCentre } from "./round-centre.tsx";
 import { handView, tableData } from "./table-data.ts";
@@ -82,7 +82,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
   const inRound = room.round !== null;
   useEffect(() => {
     // A reveal is in sight: fetch the results' chunk now, so it is there when it comes.
-    if (inRound) void loadResults();
+    if (inRound) prefetchResults();
   }, [inRound]);
   const faceUp = people.filter((p) => p.status.kind === "revealed" && p.status.card !== null);
   const reveal = {

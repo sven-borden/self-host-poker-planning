@@ -161,9 +161,10 @@ server sends and never decides the outcome of a round.
   `revealed {card, extreme}`; never in an anonymous round); `revealSummary` and
   `summarySentence` give the centre and the live region "Consensus on 8.", "Suggested
   5, agreement 60%.", "Most voted M, agreement 50%." (a deck without numbers) or
-  "Nothing to count.". `results.tsx` is a chunk of its own (`results-chunk.ts`:
-  `loadResults`, and `React.lazy` wrappers), which `Seated` prefetches as soon as a round
-  is on: `CentreResult` (`[data-centre-status="revealed"]`, `[data-centre-result]` =
+  "Nothing to count.". `results.tsx` is a chunk of its own (`results-chunk.tsx`:
+  `loadResults`, `prefetchResults` and the `React.lazy` wrappers, which fall back to
+  "Cards revealed" and no panel when the chunk cannot load, so an old chunk gone after a
+  redeploy never breaks the room), which `Seated` prefetches as soon as a round is on: `CentreResult` (`[data-centre-status="revealed"]`, `[data-centre-result]` =
   `consensus`, `suggested` or `none`; the card as a mini card and the agreement, or a
   `Consensus` pill (`[data-pop]`, with a `[data-pulse]` ring); for the PO a one-line
   `compact` form that shrinks the card to a chip on phones, above "Next round"; a
