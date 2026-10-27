@@ -2,7 +2,7 @@
  * The server's configuration, read from the environment once by `run()` and passed down.
  * Nothing else reads `process.env`. A bad or missing variable throws `ConfigError`, whose
  * message names the variables and a fixed reason, never a value: `DATABASE_URL` holds a
- * password.
+ * password and `BETTER_AUTH_SECRET` signs the sessions.
  */
 import { z } from "zod";
 
@@ -16,8 +16,14 @@ export interface Config {
   /** Public origin without a trailing slash, for example `https://poker.borden.ch`. */
   readonly baseUrl: string;
   readonly logLevel: LogLevel;
-  /** Trust `X-Forwarded-For` from the reverse proxy: see `clientIp` (rate limits). */
-  readonly trustProxy: boolean;
+  /**
+   * How many reverse proxies append to `X-Forwarded-For` in front of the server: the
+   * client address is the entry this many places from the right (`clientIp`, rate
+   * limits). 0 trusts no header and takes the socket address.
+   */
+  readonly trustProxy: number;
+  /** Signs the session cookies (Better Auth, #10). At least 32 characters. Never log it. */
+  readonly betterAuthSecret: string;
   readonly roomTtlDays: number;
   /** Set at image build (#11); reported by `/api/health`. */
   readonly gitCommit: string | undefined;
@@ -35,12 +41,13 @@ const REASONS = {
   BASE_URL:
     "must be an http(s) origin without a path or credentials, such as https://poker.example.com",
   LOG_LEVEL: `must be one of ${LOG_LEVELS.join(", ")}`,
-  TRUST_PROXY: "must be true, false, 1 or 0",
+  TRUST_PROXY: "must be true, false or a number of proxies from 0 to 10",
   ROOM_TTL_DAYS: "must be an integer from 1 to 3650",
   GIT_COMMIT: "must be 1 to 64 letters, digits, dots, dashes or underscores",
   APP_VERSION: "must be 1 to 64 letters, digits, dots, plus signs, dashes or underscores",
   STATIC_DIR: "must be a folder path",
   MIGRATIONS_DIR: "must be a folder path",
+  BETTER_AUTH_SECRET: "must be at least 32 characters, such as the output of openssl rand -base64 32",
 } as const;
 type Variable = keyof typeof REASONS;
 const VARIABLES = Object.keys(REASONS) as Variable[];
@@ -78,10 +85,12 @@ const schema = z.object({
     })
     .transform((v) => new URL(v).origin),
   LOG_LEVEL: z.enum(LOG_LEVELS).default("info"),
+  // `true` is one proxy (Traefik alone), `false` none; a number counts the proxies.
   TRUST_PROXY: z
-    .enum(["true", "false", "1", "0"])
-    .transform((v) => v === "true" || v === "1")
-    .default(true),
+    .union([z.enum(["true", "false"]), z.string().regex(/^\d{1,2}$/)])
+    .transform((v) => (v === "true" ? 1 : v === "false" ? 0 : Number(v)))
+    .pipe(z.number().int().min(0).max(10))
+    .default(1),
   ROOM_TTL_DAYS: integer(1, 3650).default(90),
   GIT_COMMIT: z
     .string()
@@ -93,6 +102,7 @@ const schema = z.object({
     .optional(),
   STATIC_DIR: z.string().min(1).optional(),
   MIGRATIONS_DIR: z.string().min(1).optional(),
+  BETTER_AUTH_SECRET: z.string().min(32),
 });
 
 export class ConfigError extends Error {
@@ -139,5 +149,6 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
     appVersion: v.APP_VERSION,
     staticDir: v.STATIC_DIR,
     migrationsDir: v.MIGRATIONS_DIR,
+    betterAuthSecret: v.BETTER_AUTH_SECRET,
   });
 }

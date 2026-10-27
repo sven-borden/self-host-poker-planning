@@ -11,6 +11,8 @@ export type { Logger };
 const REDACT = [
   "databaseUrl",
   "*.databaseUrl",
+  "betterAuthSecret",
+  "*.betterAuthSecret",
   "password",
   "*.password",
   "secret",

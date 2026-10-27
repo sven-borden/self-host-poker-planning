@@ -18,7 +18,7 @@ import {
   setupDatabase,
 } from "../database.ts";
 import { run } from "../run.ts";
-import { collectLogs } from "../test-support.ts";
+import { collectLogs, VALID_ENV } from "../test-support.ts";
 import { DatabaseError } from "./errors.ts";
 import { revealedRoom, T0, votingRoom } from "./fixtures.ts";
 import { createTestDatabase, serverUrl, type TestDatabase, testClient } from "./test-db.ts";
@@ -215,7 +215,7 @@ describe("the migrating session terminated during the start", () => {
     );
     const exits: number[] = [];
     const starting = run(
-      { DATABASE_URL: url, BASE_URL: "http://localhost:3000", PORT: "0", LOG_LEVEL: "trace" },
+      { DATABASE_URL: url, BASE_URL: "http://localhost:3000", BETTER_AUTH_SECRET: VALID_ENV.BETTER_AUTH_SECRET, PORT: "0", LOG_LEVEL: "trace" },
       {
         exit: (code) => exits.push(code),
         onSignal: () => {},

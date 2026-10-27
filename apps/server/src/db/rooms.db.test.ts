@@ -3,7 +3,7 @@ import { toSnapshot } from "@pp/protocol";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type Database, openDatabase, setupDatabase } from "../database.ts";
 import { run } from "../run.ts";
-import { collectLogs, SECRET, testConfig } from "../test-support.ts";
+import { collectLogs, SECRET, testConfig, VALID_ENV } from "../test-support.ts";
 import { nextRound, play, revealedRoom, T0, votingRoom } from "./fixtures.ts";
 import { FIRST_VERSION, type RoomStore } from "./rooms.ts";
 import { createCommandRunner } from "./runner.ts";
@@ -277,7 +277,7 @@ describe("setupDatabase", () => {
     const exits: number[] = [];
     let signal: (s: "SIGTERM") => void = () => {};
     const server = await run(
-      { DATABASE_URL: t.url, BASE_URL: "http://localhost:3000", PORT: "0", LOG_LEVEL: "info" },
+      { DATABASE_URL: t.url, BASE_URL: "http://localhost:3000", BETTER_AUTH_SECRET: VALID_ENV.BETTER_AUTH_SECRET, PORT: "0", LOG_LEVEL: "info" },
       {
         exit: (code) => exits.push(code),
         onSignal: (handler) => {
