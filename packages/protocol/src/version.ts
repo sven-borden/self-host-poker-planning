@@ -4,5 +4,6 @@
  *
  * - 1: the first deployed protocol (#12).
  * - 2: the `busy` ack code (#15), which a version 1 client cannot parse.
+ * - 3: the `away` and `back` causes (#17, presence), which a version 2 client cannot parse.
  */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;

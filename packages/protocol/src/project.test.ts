@@ -286,6 +286,8 @@ describe("projectCauses", () => {
       { type: "ownerChanged", by: "claim", to: "c" },
       { type: "timerStarted" },
       { type: "finalSet", card: "8" },
+      { type: "away", who: "c", name: "Cy", card: "8" },
+      { type: "back", who: "c", awaySince: 1 },
     ] as unknown as Cause[];
     expect(projectCauses(sneaky, anonymousVoting)).toStrictEqual([
       { type: "voteCast", who: "c" },
@@ -296,6 +298,8 @@ describe("projectCauses", () => {
       { type: "ownerChanged", by: "claim", to: "c" },
       { type: "timerStarted" },
       { type: "finalSet", card: "8" },
+      { type: "away", who: "c" },
+      { type: "back", who: "c" },
     ]);
   });
 });

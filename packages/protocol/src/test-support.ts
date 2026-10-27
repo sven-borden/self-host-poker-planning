@@ -9,6 +9,7 @@
 import {
   apply,
   type Cause,
+  type ClientCommand,
   type Command,
   createRoom,
   DEFAULT_SETTINGS,
@@ -82,8 +83,8 @@ const personArb = fc.constantFrom<UserId>(...PEOPLE, STRANGER);
 const roleArb = fc.constantFrom(...ROLES);
 const secondsArb = fc.integer({ min: 5, max: 60 });
 
-/** Every domain command, weighted towards the ones that move a round. */
-export const commandArb: fc.Arbitrary<Command> = fc.oneof(
+/** Every command a client may send, weighted towards the ones that move a round. */
+export const clientCommandArb: fc.Arbitrary<ClientCommand> = fc.oneof(
   {
     weight: 2,
     arbitrary: fc.record({ type: fc.constant("join" as const), name: nameArb, role: roleArb }),
@@ -132,6 +133,22 @@ export const commandArb: fc.Arbitrary<Command> = fc.oneof(
     arbitrary: fc.record({ type: fc.constant("transferOwner" as const), to: personArb }),
   },
   { weight: 1, arbitrary: fc.constant({ type: "claimOwner" as const }) },
+);
+
+/**
+ * Every domain command: a client's, or the server's own presence update (#17), which never
+ * comes from a client but changes who may vote, so the secrecy properties run over it too.
+ */
+export const commandArb: fc.Arbitrary<Command> = fc.oneof(
+  { weight: 15, arbitrary: clientCommandArb },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      type: fc.constant("presence" as const),
+      who: personArb,
+      connected: fc.boolean(),
+    }),
+  },
 );
 
 export type Step = { actor: UserId; dt: number; command: Command };

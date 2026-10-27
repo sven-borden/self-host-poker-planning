@@ -1193,3 +1193,134 @@ describe("immutability", () => {
     }
   });
 });
+
+describe("presence (#17)", () => {
+  const SERVER = ":server";
+  const away = (who: string, connected = true) => ({ type: "presence", who, connected });
+
+  it("marks a person away after the grace period, from the server, at `now`", () => {
+    const result = send(room(), away(A, false), SERVER, T0 + 5);
+    expect(result).toMatchObject({ ok: true, causes: [{ type: "away", who: A }] });
+    expect(result.state.participants[A]).toEqual({
+      ...person("Alice"),
+      connected: false,
+      awaySince: T0 + 5,
+    });
+  });
+
+  it("brings an away person back: connected again, no `awaySince`", () => {
+    const before = room({
+      participants: {
+        [PO]: person("Pia"),
+        [A]: person("Alice", { connected: false, awaySince: T0 - 9 }),
+      },
+    });
+    const result = send(before, away(A), SERVER);
+    expect(result).toMatchObject({ ok: true, causes: [{ type: "back", who: A }] });
+    expect(result.state.participants[A]).toEqual(person("Alice"));
+    expect("awaySince" in (result.state.participants[A] ?? {})).toBe(false);
+  });
+
+  it("connects someone stored as not connected who was never marked away", () => {
+    const before = room({
+      participants: { [PO]: person("Pia"), [A]: person("Alice", { connected: false }) },
+    });
+    const result = send(before, away(A), SERVER);
+    expect(result).toMatchObject({ ok: true, causes: [{ type: "back", who: A }] });
+    expect(result.state.participants[A]?.connected).toBe(true);
+  });
+
+  it("changes nothing when the state already says so: no new state, no cause", () => {
+    const here = room();
+    expect(send(here, away(A), SERVER)).toEqual({ ok: true, state: here, causes: [] });
+    const gone = room({
+      participants: {
+        [PO]: person("Pia"),
+        [A]: person("Alice", { connected: false, awaySince: T0 - 9 }),
+      },
+    });
+    const again = send(gone, away(A, false), SERVER, T0 + 60_000);
+    expect(again).toEqual({ ok: true, state: gone, causes: [] });
+  });
+
+  it("refuses an unknown person, prototype names included", () => {
+    for (const who of [OUT, "constructor", "__proto__", "toString"]) {
+      const before = room();
+      expect(send(before, away(who, false), SERVER)).toEqual({
+        ok: false,
+        error: "unknown_participant",
+        state: before,
+        causes: [],
+      });
+    }
+  });
+
+  it("is open to a non-participant actor: the server sends it", () => {
+    expect(send(room(), away(B, false), SERVER).ok).toBe(true);
+  });
+
+  it("settles the round: the last one thinking goes away after everyone else voted", () => {
+    const before = room({
+      round: voting({ votes: { [PO]: { card: "3" }, [A]: { card: "5" } } }),
+    });
+    const result = send(before, away(B, false), SERVER, T0 + 1);
+    expect(result).toMatchObject({
+      ok: true,
+      causes: [
+        { type: "away", who: B },
+        { type: "revealed", by: "everyoneVoted" },
+      ],
+    });
+    expect(result.state.round).toMatchObject({ phase: "revealed", revealedAt: T0 + 1 });
+  });
+
+  it("keeps the vote of a voter who goes away, and does not reveal while someone still thinks", () => {
+    const before = room({ round: voting({ votes: { [A]: { card: "5" } } }) });
+    const result = send(before, away(A, false), SERVER);
+    expect(result).toMatchObject({ ok: true, causes: [{ type: "away", who: A }] });
+    expect(result.state.round).toMatchObject({ phase: "voting", votes: { [A]: { card: "5" } } });
+  });
+
+  it("does not reveal when everyone eligible is away", () => {
+    const before = room({
+      participants: {
+        [PO]: person("Pia", { connected: false, awaySince: T0 - 1 }),
+        [A]: person("Alice"),
+      },
+    });
+    const result = send(before, away(A, false), SERVER);
+    expect(reveals(result.causes)).toEqual([]);
+    expect(result.state.round?.phase).toBe("voting");
+  });
+
+  it("does not reveal when someone comes back without a vote", () => {
+    const before = room({
+      participants: {
+        [PO]: person("Pia"),
+        [A]: person("Alice", { connected: false, awaySince: T0 - 1 }),
+      },
+      round: voting({ votes: { [PO]: { card: "3" } } }),
+    });
+    const result = send(before, away(A), SERVER);
+    expect(result.causes).toEqual([{ type: "back", who: A }]);
+    expect(result.state.round?.phase).toBe("voting");
+  });
+
+  it("resolves an elapsed deadline first, like any command", () => {
+    const before = room({ round: voting({ deadlineAt: T0 - 1 }) });
+    const result = send(before, away(A, false), SERVER);
+    expect(result.causes).toEqual([
+      { type: "revealed", by: "timer" },
+      { type: "away", who: A },
+    ]);
+  });
+
+  it("opens the PO claim once the PO has been away for two minutes", () => {
+    const gone = ok(send(room(), away(PO, false), SERVER, T0));
+    expect(send(gone, { type: "claimOwner" }, A, T0 + OWNER_CLAIM_AFTER_MS - 1)).toMatchObject({
+      ok: false,
+      error: "owner_present",
+    });
+    expect(send(gone, { type: "claimOwner" }, A, T0 + OWNER_CLAIM_AFTER_MS).ok).toBe(true);
+  });
+});

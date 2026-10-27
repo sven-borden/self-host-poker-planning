@@ -8,8 +8,8 @@
  * a settings patch never half-applies.
  */
 import {
-  type Command,
-  type CommandType,
+  type ClientCommand,
+  type ClientCommandType,
   PRESET_DECK_IDS,
   ROLES,
   SPECIAL_CARDS,
@@ -92,8 +92,9 @@ export const settingsPatchSchema = z.strictObject({
 const empty = z.strictObject({}).default({});
 
 /**
- * The payload of every command: the domain command without `type`. The `satisfies`
- * keeps this map complete and each payload assignable to its domain command.
+ * The payload of every command a client may send: the domain command without `type`.
+ * The `satisfies` keeps this map complete and each payload assignable to its domain
+ * command. The server's own commands (`presence`) have no schema, so they never parse.
  */
 const payloads = {
   join: z.strictObject({ name: nameSchema, role: roleSchema }),
@@ -115,16 +116,18 @@ const payloads = {
   updateSettings: z.strictObject({ patch: settingsPatchSchema }),
   transferOwner: z.strictObject({ to: userIdSchema }),
   claimOwner: empty,
-} satisfies { [K in CommandType]: z.ZodType<Omit<Extract<Command, { type: K }>, "type">> };
+} satisfies {
+  [K in ClientCommandType]: z.ZodType<Omit<Extract<ClientCommand, { type: K }>, "type">>;
+};
 
 /** Every command type a client may send, in the domain's order. */
-export const COMMAND_TYPES = Object.keys(payloads) as CommandType[];
+export const COMMAND_TYPES = Object.keys(payloads) as ClientCommandType[];
 
 /** The client's correlation id: plain ASCII, so it is safe to log and to echo. */
 export const COMMAND_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const commandIdSchema = z.string().regex(COMMAND_ID_PATTERN);
 
-function wire<T extends CommandType, P extends (typeof payloads)[T]>(type: T, payload: P) {
+function wire<T extends ClientCommandType, P extends (typeof payloads)[T]>(type: T, payload: P) {
   return z.strictObject({ id: commandIdSchema, type: z.literal(type), payload });
 }
 
@@ -155,7 +158,7 @@ export type WireCommandInput = z.input<typeof wireCommandSchema>;
 export type WireCommand = z.output<typeof wireCommandSchema>;
 
 export type ParsedCommand =
-  | { ok: true; id: string; command: Command }
+  | { ok: true; id: string; command: ClientCommand }
   | { ok: false; code: "bad_payload" };
 
 /**
@@ -167,5 +170,5 @@ export function toDomainCommand(input: unknown): ParsedCommand {
   if (!parsed.success) return { ok: false, code: "bad_payload" };
   const { id, type, payload } = parsed.data;
   // Safe: `payloads` is checked against the domain's `Command` above, member by member.
-  return { ok: true, id, command: { ...payload, type } as Command };
+  return { ok: true, id, command: { ...payload, type } as ClientCommand };
 }

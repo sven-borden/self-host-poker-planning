@@ -17,7 +17,7 @@ import {
   roomSettingsSchema,
   type SubjectView,
 } from "./schemas.ts";
-import { commandArb, meta, play, scenarioArb } from "./test-support.ts";
+import { clientCommandArb, meta, play, scenarioArb } from "./test-support.ts";
 import { PROTOCOL_VERSION } from "./version.ts";
 
 const jsonRoundTrip = <T>(schema: z.ZodType<T>, value: T) =>
@@ -54,7 +54,7 @@ describe("types", () => {
 describe("wire commands", () => {
   it("round-trip through JSON and the schema, and map back to the same domain command", () => {
     fc.assert(
-      fc.property(idArb, commandArb, (id, generated) => {
+      fc.property(idArb, clientCommandArb, (id, generated) => {
         const command = plain(generated);
         const wire = toWire(id, command);
         expect(jsonRoundTrip(wireCommandSchema, wire)).toStrictEqual(wire);
@@ -142,6 +142,11 @@ describe("wire commands", () => {
       { id: "1", type: "startRound", payload: { subject: { kind: "title", text: "a", x: 1 } } },
     ],
     ["an unknown type", { id: "1", type: "dropTable" }],
+    [
+      "the server's own presence update",
+      { id: "1", type: "presence", payload: { who: "a", connected: false } },
+    ],
+    ["a presence update without payload", { id: "1", type: "presence" }],
     ["a prototype key as type", { id: "1", type: "__proto__" }],
     ["an inherited key as type", { id: "1", type: "toString" }],
     ["a payload that is not an object", { id: "1", type: "reveal", payload: 5 }],
@@ -215,7 +220,7 @@ describe("wire commands", () => {
     fc.assert(
       fc.property(
         idArb,
-        commandArb,
+        clientCommandArb,
         fc.oneof(fc.integer(), fc.string(), fc.boolean(), fc.constant(null), fc.array(fc.nat())),
         (id, command, payload) => {
           expect(toDomainCommand({ id, type: command.type, payload })).toStrictEqual({

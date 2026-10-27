@@ -23,9 +23,20 @@ export type Command =
   | { type: "timeUp" }
   | { type: "updateSettings"; patch: SettingsPatch }
   | { type: "transferOwner"; to: UserId }
-  | { type: "claimOwner" };
+  | { type: "claimOwner" }
+  | { type: "presence"; who: UserId; connected: boolean };
 
 export type CommandType = Command["type"];
+
+/**
+ * Commands only the server sends: `presence` (#17), after a person's last socket left
+ * and the grace period passed, or when they come back. The wire protocol has no schema
+ * for them, so a client that sends one gets `bad_payload` before `apply` runs.
+ */
+export type ServerCommandType = "presence";
+/** What a client may send: every command except the server's own. */
+export type ClientCommand = Exclude<Command, { type: ServerCommandType }>;
+export type ClientCommandType = ClientCommand["type"];
 
 /** Who sends the command, and when (epoch milliseconds). The domain never reads the clock. */
 export type ApplyContext = { actor: UserId; now: number };
@@ -52,7 +63,9 @@ export type Cause =
   | { type: "timeUp" }
   | { type: "finalSet"; card: Card }
   | { type: "settingsUpdated" }
-  | { type: "ownerChanged"; by: "transfer" | "claim"; to: UserId };
+  | { type: "ownerChanged"; by: "transfer" | "claim"; to: UserId }
+  | { type: "away"; who: UserId }
+  | { type: "back"; who: UserId };
 
 /** Why a command was refused. Stable snake_case codes; the UI translates them. */
 export type ErrorCode =
