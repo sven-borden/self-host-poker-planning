@@ -37,7 +37,11 @@ export type HistoryRow = typeof roundHistory.$inferInsert;
  * changed after the reveal, a departed voter's name kept). So a decision is stored when
  * it is made, even if nobody starts another round; the round's end writes the row again.
  */
-export function historyRound(before: RoomState, after: RoomState, ended?: Round): Round | undefined {
+export function historyRound(
+  before: RoomState,
+  after: RoomState,
+  ended?: Round,
+): Round | undefined {
   if (ended) return ended;
   const round = after.round;
   if (round?.phase !== "revealed" || round.final === undefined) return undefined;
