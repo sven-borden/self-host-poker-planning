@@ -1,5 +1,5 @@
 export { apply } from "./apply.ts";
-export { cleanName, cleanRoomName } from "./apply-input.ts";
+export { cleanName, cleanRoomName, cleanSubject, linkKey } from "./apply-input.ts";
 export type {
   ApplyContext,
   ApplyResult,
