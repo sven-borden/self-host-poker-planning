@@ -217,8 +217,22 @@ export function newCommandId(): string {
  * page left it or moved to another code), a send still waiting for the room or for a
  * retry resolves `offline` and never reaches the next room.
  */
-export async function sendCommand(command: CommandInput): Promise<CommandResult> {
+export function sendCommand(command: CommandInput): Promise<CommandResult> {
+  return send(active, command);
+}
+
+/**
+ * Binds commands to the room open now, for a command that is sent after an `await`: the
+ * returned function sends to that room as `sendCommand` would, or resolves `offline` at
+ * once when the page has moved to another room (or none) in between. A form takes it when
+ * it is submitted, so a join or a rename never lands in a room the person did not see.
+ */
+export function commandSender(): (command: CommandInput) => Promise<CommandResult> {
   const target = active;
+  return (command) => send(target, command);
+}
+
+async function send(target: ActiveRoom | null, command: CommandInput): Promise<CommandResult> {
   const id = newCommandId();
   for (let send = 0; target && send < MAX_SENDS; send++) {
     const room = await whenLive(target);
