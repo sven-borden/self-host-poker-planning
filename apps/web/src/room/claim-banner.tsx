@@ -1,13 +1,14 @@
 import { OWNER_CLAIM_AFTER_MS } from "@pp/domain";
 import type { ParticipantView, RoomView } from "@pp/protocol";
 import { CrownIcon, OctagonXIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { commandSender } from "../realtime/room-connection.ts";
+import { roundTripMs, serverTime, useClockOffset } from "../realtime/server-clock.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { codeOf, failureMessage } from "./failure.ts";
-import { focusSoon } from "./round-centre.tsx";
+import { focusAfterReveal, focusSoon } from "./focus.ts";
 
 /** How long a refused claim's reason stays, with the button hidden. */
 export const CLAIM_REFUSAL_MS = 8000;
@@ -21,13 +22,11 @@ interface ClaimBannerProps {
 }
 
 /**
- * The server's clock minus this browser's, from the newest snapshot's `serverNow`: the
- * claim opens by the server's clock, whatever the time on this computer.
+ * How long after `ownerClaimableAt` (by this page's estimate of the server's clock) the
+ * button shows: the estimate can run a little ahead of the server, and a claim sent too
+ * early costs an 8 s "Not yet". 20 ms, or half the last round trip when that is longer.
  */
-function useServerOffset(): number {
-  const snapshot = useRoomStore((state) => state.snapshot);
-  return useMemo(() => (snapshot ? snapshot.serverNow - Date.now() : 0), [snapshot]);
-}
+const claimMargin = () => Math.max(20, roundTripMs() / 2);
 
 /**
  * The claim (#30, ADR-010): once the PO has been away for two minutes, or at once when
@@ -43,28 +42,27 @@ function useServerOffset(): number {
  */
 export function ClaimBanner({ room, me, ownerName }: ClaimBannerProps) {
   const t = useT();
-  const offset = useServerOffset();
+  // The estimate of the server's clock (#27, `server-clock.ts`); this draws again when it moves.
+  const offset = useClockOffset();
   const at = room.ownerClaimableAt;
-  const [now, setNow] = useState(() => Date.now());
+  const [, setTick] = useState(0);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const refusalTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Wakes up when the claim opens by the server's clock.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a moved estimate (`offset`) moves the moment
   useEffect(() => {
     if (at === undefined) return;
-    const wait = at - (Date.now() + offset);
-    if (wait <= 0) {
-      setNow(Date.now());
-      return;
-    }
-    const timer = setTimeout(() => setNow(Date.now()), Math.min(wait + 20, 2 ** 31 - 1));
+    const wait = at + claimMargin() - serverTime();
+    if (wait <= 0) return;
+    const timer = setTimeout(() => setTick((n) => n + 1), Math.min(wait + 1, 2 ** 31 - 1));
     return () => clearTimeout(timer);
   }, [at, offset]);
 
   useEffect(() => () => clearTimeout(refusalTimer.current), []);
 
-  const claimable = at !== undefined && !me.isOwner && now + offset >= at;
+  const claimable = at !== undefined && !me.isOwner && serverTime() >= at + claimMargin();
   const shown = (claimable && refusal === null) || refusal !== null;
 
   async function claim() {
@@ -81,8 +79,10 @@ export function ClaimBanner({ room, me, ownerName }: ClaimBannerProps) {
     }
     setBusy(false);
     if (code === null) {
-      // The banner goes with the button: the new PO's subject field takes the focus.
-      focusSoon("[data-next-subject] input");
+      // The banner goes with the button. After a reveal the new PO's next step is the
+      // decision bar, as after a reveal; in the lobby and while voting, the subject field.
+      if (useRoomStore.getState().snapshot?.room.round?.phase === "revealed") focusAfterReveal();
+      else focusSoon("[data-next-subject] input");
       return;
     }
     // Someone else claimed first: the room already shows them, and the live region says so.

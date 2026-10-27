@@ -619,8 +619,11 @@ password, no social provider before W5.
   the next first socket.
 - Two instances (#39): each judges presence from its own sockets only, so a person whose
   sockets sit on the other instance can be marked away by this one's first-socket timers,
-  until they enter again. The adapter in #39 must share presence (or route a room's
-  sockets to one instance) before the app runs on two.
+  until they enter again. Likewise a removal (#30) sends `kicked` and closes the sockets
+  on the instance that ran the `kick` only: a removed person whose socket sits on the
+  other one sees the room without them but keeps that socket. The adapter in #39 must
+  share presence and the kick (or route a room's sockets to one instance) before the app
+  runs on two.
 
 ## 10. Internationalisation
 

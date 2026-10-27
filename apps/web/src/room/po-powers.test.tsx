@@ -1,4 +1,10 @@
-import { createRoom, OWNER_CLAIM_AFTER_MS, type Participant, type RoomState } from "@pp/domain";
+import {
+  apply,
+  createRoom,
+  OWNER_CLAIM_AFTER_MS,
+  type Participant,
+  type RoomState,
+} from "@pp/domain";
 import { toSnapshot } from "@pp/protocol";
 import {
   createMemoryHistory,
@@ -9,6 +15,7 @@ import {
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeLanguage } from "../i18n/i18n.ts";
+import { resetServerClock, sampleServerClock } from "../realtime/server-clock.ts";
 import { useIdentityStore } from "../stores/identity-store.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { CLAIM_REFUSAL_MS } from "./claim-banner.tsx";
@@ -46,6 +53,8 @@ function stateWith(
 function show(state: RoomState, now = Date.now()) {
   act(() => {
     version += 1;
+    // The connection, mocked here, samples the server's clock from every snapshot.
+    sampleServerClock(now);
     useRoomStore.getState().receive(toSnapshot(state, ME, { code: CODE, version, now }));
     useRoomStore.getState().setStatus("live");
   });
@@ -107,6 +116,7 @@ afterEach(async () => {
   cleanup();
   useRoomStore.getState().reset();
   useIdentityStore.getState().reset();
+  resetServerClock();
   mocks.sendCommand.mockReset();
   mocks.commandSender.mockReset();
   vi.useRealTimers();
@@ -337,7 +347,10 @@ describe("the claim banner", () => {
   });
 
   it("opens two minutes after the PO went away, by the server's clock", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers({
+      shouldAdvanceTime: true,
+      toFake: ["setTimeout", "clearTimeout", "Date", "performance"],
+    });
     const server = Date.now() + 3_600_000; // The server's clock runs an hour ahead.
     const awaySince = server - OWNER_CLAIM_AFTER_MS + 5_000;
     await renderView();
@@ -365,6 +378,30 @@ describe("the claim banner", () => {
       expect(document.activeElement).toBe(
         screen.getByRole("textbox", { name: "Subject of the next round" }),
       ),
+    );
+  });
+
+  it("after a reveal, claims and moves the focus to the decision bar", async () => {
+    await renderView();
+    const step = (state: RoomState, actor: string, command: Parameters<typeof apply>[1]) =>
+      apply(state, command, { actor, now: Date.now() }).state;
+    let state = stateWith(ME, [meVoter, ana]);
+    state = step(state, ME, { type: "startRound", subject: { kind: "none" } });
+    state = step(state, ME, { type: "castVote", card: "5" });
+    state = step(state, "ua", { type: "castVote", card: "5" });
+    state = step(state, ME, { type: "reveal" });
+    const before = { ...state, ownerId: "gone" };
+    await showSeated(before);
+    mocks.sendCommand.mockImplementationOnce(async () => {
+      show({ ...before, ownerId: ME });
+      return { ok: true, version };
+    });
+    fireEvent.click(claimButton() as HTMLElement);
+    await waitFor(() => expect(claimButton()).toBeNull());
+    await waitFor(() =>
+      expect(
+        document.activeElement?.closest("[data-record-final], [data-final-picker]"),
+      ).not.toBeNull(),
     );
   });
 
