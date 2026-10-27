@@ -20,6 +20,11 @@ export const PROTOCOL_ERROR_CODES = [
   "password_required",
   "unauthenticated",
   "rate_limited",
+  /**
+   * Another server instance changed the room at the same moment, every retry included.
+   * Nothing was stored: sending the same command again (same id) is safe.
+   */
+  "busy",
   /** Something failed on the server; the details are in its log, never on the wire. */
   "internal",
 ] as const;

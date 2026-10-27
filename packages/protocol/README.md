@@ -15,6 +15,8 @@ constants and `computeResults`.
   fails the whole parse on an older client.
 - Inbound objects (commands, their payloads, `enter`) are strict: an unknown field
   answers `bad_payload`. Outbound schemas are lenient.
+- `"sideEffects": false` (here and in `@pp/domain`): the web bundles only what it
+  imports, so the zod schemas stay out of the room route. Keep module top levels pure.
 - Exported as TypeScript source (`exports` points at `src/index.ts`), so there is no
   build step. Import siblings with their `.ts` extension.
 - Tests sit next to the code as `*.test.ts` and run in the `protocol` Vitest project.
@@ -29,6 +31,8 @@ constants and `computeResults`.
   added here on purpose.
 - `events.ts`: the Socket.IO event maps and `parseEnter`.
 - `errors.ts`: `ACK_ERROR_CODES` (every code the web app must translate).
+- `leak-scan.ts`: `stringLeaves` and `cardLeaks`, the secrecy scan; exported as
+  `@pp/protocol/leak-scan` for the server's socket tests, never from the main entry.
 - `test-support.ts`: fast-check generators of rooms built through `apply`; tests only,
   not exported.
 

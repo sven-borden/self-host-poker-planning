@@ -18,12 +18,12 @@ import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { isAPIError } from "better-auth/api";
 import { anonymous } from "better-auth/plugins";
-import { eq } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import type { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { AppEnv } from "./app.ts";
 import type { Config } from "./config.ts";
-import { authSchema, user } from "./db/auth-schema.ts";
+import { authSchema, session, user } from "./db/auth-schema.ts";
 import { errorCode, guard } from "./db/errors.ts";
 import type { Db } from "./db/rooms.ts";
 import { foreignOrigin, isJsonBody, rateLimited, requestIp } from "./http.ts";
@@ -195,6 +195,14 @@ export type Auth = ReturnType<typeof createAuth>;
  * Better Auth's error carries the driver's error, whose message holds the session token.
  */
 export async function sessionUser(auth: Auth, headers: Headers): Promise<SocketUser | null> {
+  return (await sessionOf(auth, headers))?.user ?? null;
+}
+
+/** `sessionUser` plus the session's id (not its token), which a socket keeps. */
+export async function sessionOf(
+  auth: Auth,
+  headers: Headers,
+): Promise<{ user: SocketUser; sessionId: string } | null> {
   const result = await guard("read session", () =>
     auth.api.getSession({ headers, query: { disableRefresh: true } }).catch((error: unknown) => {
       if (isAPIError(error) && error.statusCode < 500) return null;
@@ -203,9 +211,29 @@ export async function sessionUser(auth: Auth, headers: Headers): Promise<SocketU
   );
   if (!result) return null;
   return {
-    id: result.user.id,
-    name: result.user.name,
-    isAnonymous: result.user.isAnonymous === true,
+    user: {
+      id: result.user.id,
+      name: result.user.name,
+      isAnonymous: result.user.isAnonymous === true,
+    },
+    sessionId: result.session.id,
+  };
+}
+
+/**
+ * Whether a session still exists and has not expired. A socket outlives a sign-out and the
+ * deletion of its user (the session row goes with the user), so the room sync asks again
+ * on every `enter`. One indexed lookup by primary key; a failure is a `DatabaseError`.
+ */
+export function sessionChecker(db: Db): (sessionId: string) => Promise<boolean> {
+  return async (sessionId) => {
+    const rows = await guard("check session", () =>
+      db
+        .select({ id: session.id })
+        .from(session)
+        .where(and(eq(session.id, sessionId), gt(session.expiresAt, sql`now()`))),
+    );
+    return rows.length === 1;
   };
 }
 
@@ -351,19 +379,21 @@ export function registerAuthApi(
 /**
  * The socket handshake: resolves the session from the handshake's cookie and sets
  * `socket.data.user`. No cookie, an unknown, expired or revoked session, or a forged one:
- * `connect_error` with `unauthenticated`. A database failure rejects, which the realtime
+ * `connect_error` with `unauthenticated`. Also keeps the session's id on `socket.data`, for
+ * the room sync's check on `enter`. A database failure rejects, which the realtime
  * guard turns into `internal`. Never refreshes the session (a socket cannot set a
  * cookie) and never logs the cookie.
  */
 export function sessionMiddleware(auth: Auth): SocketMiddleware {
   return async (socket, next) => {
     const cookie = socket.request.headers.cookie;
-    const me = cookie ? await sessionUser(auth, new Headers({ cookie })) : null;
+    const me = cookie ? await sessionOf(auth, new Headers({ cookie })) : null;
     if (!me) {
       next(new Error("unauthenticated"));
       return;
     }
-    socket.data.user = me;
+    socket.data.user = me.user;
+    socket.data.sessionId = me.sessionId;
     next();
   };
 }

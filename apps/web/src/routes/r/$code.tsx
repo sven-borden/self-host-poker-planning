@@ -6,6 +6,8 @@ import { Input } from "../../components/ui/input.tsx";
 import { errorMessage } from "../../i18n/errors.ts";
 import { useT } from "../../i18n/hooks.ts";
 import { RiseIn } from "../../motion/motion.tsx";
+import { openRoom } from "../../realtime/room-connection.ts";
+import { RoomStatus } from "../../room/room-status.tsx";
 import { fetchRoomHeader, RoomApiError, type RoomHeader } from "../../rooms/api.ts";
 
 export const Route = createFileRoute("/r/$code")({
@@ -18,9 +20,10 @@ type HeaderState =
   | { status: "error"; code: string };
 
 /**
- * The room page. For now its header (#14): the room's name and code from
- * `GET /api/rooms/:code`, and the link to share. The room itself (the table, joining)
- * fills the slot below it (#15, #16); #24 designs the full not-found page.
+ * The room page: its header (#14), the room's name and code from `GET /api/rooms/:code`
+ * and the link to share, then the room itself, followed over its socket (#15) once the
+ * header says the room exists. The table and joining fill the slot (#16, #17); #24
+ * designs the full not-found page.
  */
 function RoomPage() {
   const { code } = Route.useParams();
@@ -83,6 +86,9 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
   /** What the toast would have said, when the toast cannot be shown. */
   const [note, setNote] = useState<string | null>(null);
   const url = `${window.location.origin}/r/${header.code}`;
+
+  // Follows the room over its socket while the page is open.
+  useEffect(() => openRoom(header.code), [header.code]);
 
   useEffect(() => {
     // The link is there to be copied by hand: focused and fully selected.
@@ -165,9 +171,9 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
           />
         </div>
       )}
-      {/* The room itself: the table and joining arrive here (#15, #16). */}
+      {/* The room itself: the connection and who is in it until the table arrives (#16, #17). */}
       <section data-room-slot className="rounded-xl border border-line border-dashed p-6">
-        <p className="text-ink-2">{t("room.notOpenYet")}</p>
+        <RoomStatus />
       </section>
     </RiseIn>
   );

@@ -3,12 +3,17 @@ import { ensureIdentity, retryDelay, UNAUTHENTICATED } from "../identity/identit
 import { useIdentityStore } from "../stores/identity-store.ts";
 import type { ConnectionStatus } from "../stores/room-store.ts";
 
-// A thin, typed wrapper over the Socket.IO client. The event maps come from
-// `@pp/protocol` once #5 defines them; until then callers pass their own.
+// A thin, typed wrapper over the Socket.IO client. The room's event maps come from
+// `@pp/protocol` (`realtime/room-connection.ts`); the tests pass their own.
 
-/** Same shape as Socket.IO's own EventsMap: event name to listener signature. */
-// biome-ignore lint/suspicious/noExplicitAny: mirrors Socket.IO's EventsMap constraint.
-export type EventsMap = Record<string, (...args: any[]) => void>;
+/**
+ * Socket.IO's own EventsMap: event name to listener signature. An interface with an `any`
+ * index signature, as Socket.IO declares it, so the protocol's event interfaces fit.
+ */
+export interface EventsMap {
+  // biome-ignore lint/suspicious/noExplicitAny: mirrors Socket.IO's EventsMap constraint.
+  [event: string]: any;
+}
 
 export type TypedSocket<
   ServerToClient extends EventsMap,

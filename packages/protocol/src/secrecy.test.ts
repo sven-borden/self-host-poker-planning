@@ -8,6 +8,7 @@
 import { apply, deckCards, type RoomState, type Round, type UserId, type Vote } from "@pp/domain";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { cardLeaks } from "./leak-scan.ts";
 import { toSnapshot } from "./project.ts";
 import { snapshotSchema } from "./schemas.ts";
 import {
@@ -18,21 +19,10 @@ import {
   play,
   START,
   scenarioArb,
-  stringLeaves,
   VIEWERS,
 } from "./test-support.ts";
 
 const RUNS = { numRuns: 150 };
-
-/** Paths that legitimately hold card labels: the decks, the specials and the viewer's own card. */
-const PUBLIC_CARD_PATHS = [
-  "room.settings.deck.",
-  "room.settings.specials.",
-  "room.round.deck.",
-  "room.round.specials.",
-];
-const isPublicCardPath = (path: string) =>
-  path === "room.round.yourVote" || PUBLIC_CARD_PATHS.some((p) => path.startsWith(p));
 
 function withVotes(state: RoomState, round: Round, votes: Record<UserId, Vote>): RoomState {
   return { ...state, round: { ...round, votes } };
@@ -92,10 +82,7 @@ describe("while Voting", () => {
             ...deckCards(round.deck, round.specials),
             ...Object.values(round.votes).map((v) => v.card),
           ]);
-          const leaks = stringLeaves(snapshot).filter(
-            (leaf) => labels.has(leaf.value) && !isPublicCardPath(leaf.path),
-          );
-          expect(leaks).toEqual([]);
+          expect(cardLeaks(snapshot, labels)).toEqual([]);
           const own = Object.hasOwn(round.votes, viewer) ? round.votes[viewer] : undefined;
           expect(snapshot.room.round?.yourVote).toBe(own?.card);
         });

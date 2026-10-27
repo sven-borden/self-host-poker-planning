@@ -1,14 +1,16 @@
 /**
  * The `setup` hook `main.ts` hands to `run()`: the database (#7), then identity (#10) on
- * its pool, then the room API (#14). W1 adds the room handlers here. Opens nothing at import time.
+ * its pool, then the room API (#14) and the room sync (#15) on its runner. Opens nothing
+ * at import time.
  */
-import { createAuth, registerAuthApi, sessionMiddleware } from "./auth.ts";
+import { createAuth, registerAuthApi, sessionChecker, sessionMiddleware } from "./auth.ts";
 import type { Config } from "./config.ts";
 import { type Database, setupDatabase } from "./database.ts";
 import type { Logger } from "./logger.ts";
 import { memoryRateLimit } from "./rate-limit.ts";
 import { registerRoomApi } from "./rooms.ts";
 import type { Setup } from "./run.ts";
+import { createRoomSync } from "./sync/room-sync.ts";
 
 export async function setupServer(
   config: Config,
@@ -27,6 +29,8 @@ export async function setupServer(
     await database.close();
     throw error;
   }
+  const { runner, store, db } = database;
+  const sync = createRoomSync({ runner, store, logger, sessionAlive: sessionChecker(db) });
   return {
     database,
     auth,
@@ -34,10 +38,14 @@ export async function setupServer(
       ...opened.deps,
       registerApi: (app) => {
         registerAuthApi(app, { auth, db: database.db, config, limiter });
-        registerRoomApi(app, { auth, rooms: database.store, config, limiter });
+        registerRoomApi(app, { auth, rooms: store, config, limiter });
       },
       socketMiddleware: [sessionMiddleware(auth)],
+      handlers: sync,
     },
-    dispose: opened.dispose,
+    dispose: async () => {
+      sync.close();
+      await database.close();
+    },
   };
 }

@@ -1,6 +1,8 @@
 /**
  * What the server sends: the snapshot (the room as one viewer may see it), its causes,
- * and the acknowledgements. The web app parses every message with these schemas.
+ * and the acknowledgements. The server's tests parse every frame with these schemas. The
+ * web app checks messages by shape only (`realtime/room-connection.ts`): zod would cost
+ * the room route about 27 kB gzipped, and its only peer is the server of the same build.
  */
 import { WHO_CAN_REVEAL } from "@pp/domain";
 import { z } from "zod";
