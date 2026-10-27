@@ -2,10 +2,11 @@
  * The `setup` hook `main.ts` hands to `run()`: the database (#7), then identity (#10) on
  * its pool. W1 adds the room handlers here. Opens nothing at import time.
  */
-import { createAuth, memoryRateLimit, registerAuthApi, sessionMiddleware } from "./auth.ts";
+import { createAuth, registerAuthApi, sessionMiddleware } from "./auth.ts";
 import type { Config } from "./config.ts";
 import { type Database, setupDatabase } from "./database.ts";
 import type { Logger } from "./logger.ts";
+import { memoryRateLimit } from "./rate-limit.ts";
 import type { Setup } from "./run.ts";
 
 export async function setupServer(
