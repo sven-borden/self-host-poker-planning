@@ -118,6 +118,8 @@ export const de: Catalog = {
     bad_payload:
       "Der Server konnte diese Anfrage nicht lesen. Laden Sie die Seite neu und versuchen Sie es erneut.",
     protocol_mismatch: "Eine neue Version der App ist verfügbar. Laden Sie die Seite neu.",
+    bad_room_name:
+      "Ein Raumname hat {{min, number}} bis {{max, number}} sichtbare Zeichen. Kürzen Sie ihn, oder lassen Sie das Feld leer.",
     room_not_found:
       "Diesen Raum gibt es nicht, oder er wurde nach langer Zeit ohne Nutzung gelöscht. Prüfen Sie den Link.",
     password_required: "Dieser Raum hat ein Passwort. Geben Sie es ein, um beizutreten.",

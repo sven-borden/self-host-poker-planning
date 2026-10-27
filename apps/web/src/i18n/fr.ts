@@ -119,6 +119,8 @@ export const fr: Catalog<"many"> = {
       "Les cartes spéciales (?, ☕, ∞) s’activent dans les réglages de la salle, pas dans le jeu.",
     bad_payload: "Le serveur n’a pas pu lire cette demande. Rechargez la page et réessayez.",
     protocol_mismatch: "Une nouvelle version de l’application est disponible. Rechargez la page.",
+    bad_room_name:
+      "Un nom de salle compte de {{min, number}} à {{max, number}} caractères visibles. Raccourcissez-le, ou laissez le champ vide.",
     room_not_found:
       "Cette salle n’existe pas, ou elle a été supprimée après une longue période sans activité. Vérifiez le lien.",
     password_required: "Cette salle est protégée par un mot de passe. Saisissez-le pour entrer.",

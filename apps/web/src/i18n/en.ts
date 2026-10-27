@@ -45,6 +45,8 @@ const errors = {
     "The special cards (?, ☕, ∞) are turned on in the room settings, not added to the deck.",
   bad_payload: "The server could not read that request. Reload the page and try again.",
   protocol_mismatch: "A new version of the app is available. Reload the page.",
+  bad_room_name:
+    "A room name needs {{min, number}} to {{max, number}} visible characters. Shorten it, or leave the field empty.",
   room_not_found:
     "This room does not exist, or it was deleted after a long time without use. Check the link.",
   password_required: "This room has a password. Enter it to join.",

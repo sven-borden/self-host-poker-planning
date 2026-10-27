@@ -5,7 +5,8 @@
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { cleanName, cleanSubject } from "./apply-input.ts";
+import { cleanName, cleanRoomName, cleanSubject } from "./apply-input.ts";
+import { MAX_ROOM_NAME_LENGTH } from "./room.ts";
 
 /** Default-ignorable and bidi control characters that must never pass inside a name. */
 const HIDDEN = [
@@ -87,6 +88,17 @@ describe("cleanName", () => {
   it("refuses tag characters outside an emoji flag", () => {
     expect(cleanName("Ada\u{E0067}\u{E0062}\u{E007F}")).toBeNull();
     expect(cleanName("🏴\u{E0067}\u{E0062}")).toBeNull();
+  });
+
+  it("applies the same rules to a room name, up to 60 characters", () => {
+    expect(MAX_ROOM_NAME_LENGTH).toBe(60);
+    expect(cleanRoomName("  Sprint 42\trefinement\n")).toBe("Sprint 42 refinement");
+    expect(cleanRoomName("x".repeat(MAX_ROOM_NAME_LENGTH))).toBe("x".repeat(60));
+    expect(cleanRoomName("x".repeat(MAX_ROOM_NAME_LENGTH + 1))).toBeNull();
+    expect(cleanRoomName("Team\u{202E}lagel")).toBeNull();
+    expect(cleanRoomName("\u{3164}")).toBeNull();
+    expect(cleanRoomName(42)).toBeNull();
+    expect(cleanRoomName("Équipe 👩\u{200D}💻")).toBe("Équipe 👩\u{200D}💻");
   });
 
   it("applies the same rules to a round title", () => {

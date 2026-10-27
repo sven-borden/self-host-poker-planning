@@ -17,6 +17,7 @@ import {
 import {
   MAX_LINK_LENGTH,
   MAX_NAME_LENGTH,
+  MAX_ROOM_NAME_LENGTH,
   MAX_TIMER_SECONDS,
   MAX_TITLE_LENGTH,
   MIN_TIMER_SECONDS,
@@ -80,6 +81,14 @@ function cleanText(raw: unknown, max: number): string | null {
 /** A display name, cleaned, or `null` (`bad_name`). */
 export function cleanName(raw: unknown): string | null {
   return cleanText(raw, MAX_NAME_LENGTH);
+}
+
+/**
+ * A room name, cleaned, or `null` (`bad_room_name`). The name is set when the room is
+ * created (`POST /api/rooms`) and lives beside `RoomState`, not in it.
+ */
+export function cleanRoomName(raw: unknown): string | null {
+  return cleanText(raw, MAX_ROOM_NAME_LENGTH);
 }
 
 /**

@@ -1,5 +1,5 @@
 export { apply } from "./apply.ts";
-export { cleanName } from "./apply-input.ts";
+export { cleanName, cleanRoomName } from "./apply-input.ts";
 export type {
   ApplyContext,
   ApplyResult,
@@ -36,6 +36,7 @@ export {
   MAX_MEMBERS,
   MAX_NAME_LENGTH,
   MAX_PARTICIPANTS,
+  MAX_ROOM_NAME_LENGTH,
   MAX_TIMER_SECONDS,
   MAX_TITLE_LENGTH,
   MIN_TIMER_SECONDS,
