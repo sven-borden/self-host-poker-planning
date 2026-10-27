@@ -18,7 +18,16 @@ import {
   type MockInstance,
   vi,
 } from "vitest";
-import { ANONYMOUS_SIGN_IN_LIMIT, CLIENT_IP_HEADER, createAuth, memoryRateLimit } from "./auth.ts";
+import {
+  ANONYMOUS_SIGN_IN_LIMIT,
+  AUTH_BODY_LIMIT_BYTES,
+  CLIENT_IP_HEADER,
+  cookieNaming,
+  createAuth,
+  memoryRateLimit,
+  RENAME_LIMITS,
+  sessionUser,
+} from "./auth.ts";
 import type { Config } from "./config.ts";
 import { APP_NAME, type Database } from "./database.ts";
 import { createTestDatabase, serverUrl, type TestDatabase, testClient } from "./db/test-db.ts";
@@ -176,7 +185,9 @@ describe("anonymous sign-in", () => {
     expect(line).toContain(`Max-Age=${90 * 24 * 60 * 60}`);
   });
 
-  it("sets Secure cookies with the __Secure- prefix when BASE_URL is https", async () => {
+  it("names the cookie __Host-pp.session_token on https: Secure, Path=/ and no Domain", async () => {
+    expect(cookieNaming("https://poker.example.com").sessionCookie).toBe("__Host-pp.session_token");
+    expect(cookieNaming("http://192.168.1.20:3000").sessionCookie).toBe(COOKIE);
     const secure = createAuth(
       testConfig({ DATABASE_URL: t.url, BASE_URL: "https://poker.example.com" }),
       database.db,
@@ -194,12 +205,22 @@ describe("anonymous sign-in", () => {
       }),
     );
     expect(response.status).toBe(200);
-    const line = response.headers.getSetCookie().find((l) => l.startsWith(`__Secure-${COOKIE}=`));
-    expect(line).toBeDefined();
-    seen.push(line?.split(";")[0]?.split("=")[1] ?? "");
+    const cookies = response.headers.getSetCookie();
+    expect(cookies.length).toBeGreaterThan(0);
+    for (const cookie of cookies) expect(cookie).toMatch(/^__Host-pp\./);
+    const line = cookies.find((l) => l.startsWith(`__Host-${COOKIE}=`)) ?? "";
+    const pair = line.split(";")[0] ?? "";
+    seen.push(pair.slice(pair.indexOf("=") + 1));
     expect(line).toMatch(/; Secure/i);
     expect(line).toMatch(/; HttpOnly/i);
     expect(line).toMatch(/; SameSite=Lax/i);
+    expect(line).toMatch(/; Path=\/(;|$)/);
+    expect(line).not.toMatch(/; Domain=/i);
+    // The cookie it set is the one it reads back; the http name means nothing there.
+    const user = await sessionUser(secure, new Headers({ cookie: pair }));
+    expect(user?.isAnonymous).toBe(true);
+    const plain = `${COOKIE}=${pair.slice(pair.indexOf("=") + 1)}`;
+    expect(await sessionUser(secure, new Headers({ cookie: plain }))).toBeNull();
   });
 
   it("returns the same user for the same cookie (a refresh) and another for a second browser", async () => {
@@ -224,14 +245,69 @@ describe("anonymous sign-in", () => {
     expect(rows).toEqual([{ ip_address: null, user_agent: null }]);
   });
 
-  it("does not mount the endpoints the app replaces or does not use", async () => {
+  it("forwards only get-session, sign-in/anonymous and sign-out", async () => {
     const { cookie } = await signIn({ "x-forwarded-for": "198.51.100.5" });
-    for (const path of ["/api/auth/update-user", "/api/auth/delete-anonymous-user"]) {
-      expect(await call(path, { method: "POST", cookie, body: { name: "x" } })).toMatchObject({
+    for (const [method, path] of [
+      ["POST", "/api/auth/update-user"],
+      ["POST", "/api/auth/delete-anonymous-user"],
+      ["GET", "/api/auth/list-sessions"],
+      ["GET", "/api/auth/ok"],
+      ["POST", "/api/auth/get-session"],
+      ["GET", "/api/auth/sign-out"],
+      ["GET", "/api/auth/get-session/"],
+    ] as const) {
+      const body = method === "POST" ? { name: "x" } : undefined;
+      expect(await call(path, { method, cookie, body })).toMatchObject({
         status: 404,
         json: { code: "not_found" },
       });
     }
+  });
+
+  it("answers unknown paths before the limiter: no counter per path, never a 429", async () => {
+    const ip = { "x-forwarded-for": "198.51.100.6" };
+    const answers = await Promise.all(
+      Array.from({ length: 150 }, (_, i) => call(`/api/auth/x-${i}`, { headers: ip })),
+    );
+    expect(new Set(answers.map((a) => a.status))).toEqual(new Set([404]));
+  });
+
+  it("refuses an auth body over 4 KB with bad_payload", async () => {
+    const big = { pad: "x".repeat(AUTH_BODY_LIMIT_BYTES) };
+    expect(await call("/api/auth/sign-in/anonymous", { method: "POST", body: big })).toMatchObject({
+      status: 413,
+      json: { code: "bad_payload" },
+    });
+  });
+
+  it("answers with the app's codes and never a token or a sentence", async () => {
+    const first = await signIn({ "x-forwarded-for": "198.51.100.7" });
+    expect(first.status).toBe(200);
+    expect(JSON.stringify(first.json)).not.toMatch(/token/i);
+    const session = await call("/api/auth/get-session", { cookie: first.cookie });
+    expect(session.status).toBe(200);
+    expect(JSON.stringify(session.json)).not.toMatch(/token/i);
+    // A second tab's sign-in while the first one's cookie is set.
+    expect(
+      await call("/api/auth/sign-in/anonymous", { method: "POST", cookie: first.cookie, body: {} }),
+    ).toEqual(expect.objectContaining({ status: 400, json: { code: "not_allowed" } }));
+    // Another origin (Better Auth's own check), then a body that is not JSON.
+    expect(
+      await call("/api/auth/sign-out", {
+        method: "POST",
+        cookie: first.cookie,
+        body: {},
+        headers: { origin: "https://evil.example.com" },
+      }),
+    ).toEqual(expect.objectContaining({ status: 403, json: { code: "not_allowed" } }));
+    const notJson = await call("/api/auth/sign-in/anonymous", {
+      method: "POST",
+      body: "name=x",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+    });
+    expect(notJson.status).toBeGreaterThanOrEqual(400);
+    expect(notJson.status).toBeLessThan(500);
+    expect(notJson.json).toEqual({ code: "bad_payload" });
   });
 });
 
@@ -268,7 +344,7 @@ describe("the display name", () => {
     });
   });
 
-  it("needs a session, a JSON body, this origin and at most 16 KB", async () => {
+  it("needs a session, a JSON body, this origin and at most 4 KB", async () => {
     const { cookie } = await signIn({ "x-forwarded-for": "198.51.100.12" });
     expect(await rename("", { name: "Ada" })).toMatchObject({
       status: 401,
@@ -276,14 +352,38 @@ describe("the display name", () => {
     });
     expect(
       await rename(cookie, { name: "Ada" }, { origin: "https://evil.example.com" }),
-    ).toMatchObject({ status: 403, json: { code: "forbidden" } });
+    ).toMatchObject({ status: 403, json: { code: "not_allowed" } });
     expect(await rename(cookie, { name: "Ada" }, { "content-type": "text/plain" })).toMatchObject({
       status: 415,
       json: { code: "bad_payload" },
     });
-    expect(await rename(cookie, { name: "x".repeat(20_000) })).toMatchObject({
+    expect(await rename(cookie, { name: "x".repeat(AUTH_BODY_LIMIT_BYTES) })).toMatchObject({
       status: 413,
       json: { code: "bad_payload" },
+    });
+  });
+
+  it("is rate limited per user", async () => {
+    const { cookie } = await signIn({ "x-forwarded-for": "198.51.100.13" });
+    for (let i = 0; i < RENAME_LIMITS.user.max; i++) {
+      expect((await rename(cookie, { name: `Ada ${i}` })).status).toBe(200);
+    }
+    const throttled = await rename(cookie, { name: "Ada again" });
+    expect(throttled).toMatchObject({ status: 429, json: { code: "rate_limited" } });
+    expect(Number(throttled.response.headers.get("retry-after"))).toBeGreaterThan(0);
+    // Another user behind the same address is not affected.
+    const other = await signIn({ "x-forwarded-for": "198.51.100.13" });
+    expect((await rename(other.cookie, { name: "Grace" })).status).toBe(200);
+  });
+
+  it("is rate limited per address, before the session is read", async () => {
+    const ip = { "x-forwarded-for": "198.51.100.14" };
+    for (let i = 0; i < RENAME_LIMITS.ip.max; i++) {
+      expect((await rename("", { name: "x" }, ip)).status).toBe(401);
+    }
+    expect(await rename("", { name: "x" }, ip)).toMatchObject({
+      status: 429,
+      json: { code: "rate_limited" },
     });
   });
 });
@@ -331,6 +431,21 @@ describe("the anonymous sign-in rate limit", () => {
     expect(await store.consume("a", rule)).toEqual({ allowed: true, retryAfter: null });
     expect(await store.consume("a", rule)).toEqual({ allowed: false, retryAfter: 10 });
     expect(await memoryRateLimit().consume("a", rule)).toEqual({ allowed: true, retryAfter: null });
+  });
+
+  it("keeps at most maxKeys counters, dropping the oldest tenth when full", async () => {
+    let now = 0;
+    const store = memoryRateLimit(() => now, 10);
+    const rule = { window: 60, max: 1 };
+    for (let i = 0; i < 10; i++) await store.consume(`k${i}`, rule);
+    expect((await store.consume("k0", rule)).allowed).toBe(false);
+    // The 11th key evicts k0, the oldest; newer keys keep counting.
+    await store.consume("k10", rule);
+    expect((await store.consume("k0", rule)).allowed).toBe(true);
+    expect((await store.consume("k2", rule)).allowed).toBe(false);
+    // Expired counters go at the next sweep; a new window starts.
+    now = 61_000;
+    expect((await store.consume("k2", rule)).allowed).toBe(true);
   });
 });
 

@@ -20,7 +20,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { isAPIError } from "better-auth/api";
 import { anonymous } from "better-auth/plugins";
 import { eq } from "drizzle-orm";
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { AppEnv } from "./app.ts";
 import { clientIp } from "./client-ip.ts";
@@ -29,7 +29,7 @@ import { authSchema, user } from "./db/auth-schema.ts";
 import { errorCode, guard } from "./db/errors.ts";
 import type { Db } from "./db/rooms.ts";
 import type { Logger } from "./logger.ts";
-import { MAX_PAYLOAD_BYTES, type SocketMiddleware } from "./realtime.ts";
+import type { SocketMiddleware } from "./realtime.ts";
 
 export const AUTH_BASE_PATH = "/api/auth";
 
@@ -57,10 +57,48 @@ export const ANONYMOUS_SIGN_IN_LIMIT = { window: 60, max: 60 } as const;
 export const AUTH_DEFAULT_LIMIT = { window: 10, max: 100 } as const;
 
 /**
- * Endpoints Better Auth mounts that this app does not use. `/update-user` would take any
- * name (and an image URL) past the domain's rules: `POST /api/me/name` replaces it.
+ * Display name changes, per user and per client address (`POST /api/me/name`): typing a
+ * name and fixing it a few times passes, a script renaming in a loop does not.
  */
-export const DISABLED_AUTH_PATHS = ["/update-user", "/delete-anonymous-user"];
+export const RENAME_LIMITS = {
+  user: { window: 60, max: 10 },
+  ip: { window: 60, max: 60 },
+} as const;
+
+/**
+ * The only Better Auth endpoints the app forwards, as `METHOD path`. Everything else under
+ * `/api/auth` is a JSON 404 before Better Auth (and its limiter, which keeps a counter per
+ * path) sees it: `/list-sessions` would hand out raw session tokens, `/update-user` would
+ * take any name past the domain's rules (`POST /api/me/name` replaces it).
+ */
+export const AUTH_ROUTES: ReadonlySet<string> = new Set([
+  "GET /get-session",
+  "POST /sign-in/anonymous",
+  "POST /sign-out",
+]);
+
+/** Also refused inside Better Auth, in case it is ever mounted without `registerAuthApi`. */
+export const DISABLED_AUTH_PATHS = ["/update-user", "/delete-anonymous-user", "/list-sessions"];
+
+/** Body cap of `/api/auth/*` and `/api/me/*`: their bodies are `{}` or a name. */
+export const AUTH_BODY_LIMIT_BYTES = 4 * 1024;
+
+/** Every cookie Better Auth may set; each gets its name from `cookieNaming`. */
+const AUTH_COOKIES = ["session_token", "session_data", "account_data", "dont_remember"] as const;
+
+/**
+ * The cookie names for a `BASE_URL`. On https: `__Host-pp.*`, which the browser accepts
+ * only with `Secure`, `Path=/` and no `Domain`, so a sibling site (`other.example.com`)
+ * cannot plant a session cookie of its own that would be sent first (`__Secure-` allows a
+ * `Domain`). On http (a LAN address, compose without TLS): `pp.*` without `Secure`, so
+ * the browser keeps the cookie at all.
+ */
+export function cookieNaming(baseUrl: string): { secure: boolean; sessionCookie: string } {
+  const secure = new URL(baseUrl).protocol === "https:";
+  return { secure, sessionCookie: `${cookiePrefix(secure)}session_token` };
+}
+
+const cookiePrefix = (secure: boolean) => (secure ? "__Host-pp." : "pp.");
 
 /** What a handler knows about the person behind a socket: `socket.data.user`. */
 export interface SocketUser {
@@ -74,22 +112,46 @@ export interface SocketUser {
 
 type RateLimitStorage = NonNullable<NonNullable<BetterAuthOptions["rateLimit"]>["customStorage"]>;
 
+export type RateLimiter = RateLimitStorage;
+
+/** At most this many counters live at once; the oldest tenth goes when it is reached. */
+export const RATE_LIMIT_MAX_KEYS = 50_000;
+/** Expired counters are swept at most this often. */
+const SWEEP_EVERY_MS = 30_000;
+
 /**
- * A fixed-window counter per key (`ip|path`), in this process. Better Auth's own memory
- * store is one map shared by every instance in the process, which would leak counts
- * between tests; this one belongs to its `createAuth`. With several instances (#39) each
- * counts on its own.
+ * A fixed-window counter per key (`ip|path`, or `rename|…`), in this process. Better
+ * Auth's own memory store is one map shared by every instance in the process, which would
+ * leak counts between tests; this one belongs to its `setupServer`. With several
+ * instances (#39) each counts on its own.
+ *
+ * Memory stays bounded and each call costs O(1) amortized: expired counters are swept
+ * every 30 s, and at `maxKeys` the oldest tenth (by window start) is dropped at once.
  */
-export function memoryRateLimit(now: () => number = Date.now): RateLimitStorage {
+export function memoryRateLimit(
+  now: () => number = Date.now,
+  maxKeys: number = RATE_LIMIT_MAX_KEYS,
+): RateLimitStorage {
   const windows = new Map<string, { count: number; resetAt: number }>();
+  let nextSweep = 0;
   return {
     consume: async (key, { window, max }) => {
       const at = now();
-      if (windows.size > 10_000) {
+      if (at >= nextSweep) {
+        nextSweep = at + SWEEP_EVERY_MS;
         for (const [k, entry] of windows) if (entry.resetAt <= at) windows.delete(k);
       }
       const entry = windows.get(key);
       if (!entry || entry.resetAt <= at) {
+        // Re-inserted, so the map stays ordered by window start.
+        windows.delete(key);
+        if (windows.size >= maxKeys) {
+          let drop = Math.max(1, Math.floor(maxKeys / 10));
+          for (const k of windows.keys()) {
+            windows.delete(k);
+            if (--drop === 0) break;
+          }
+        }
         windows.set(key, { count: 1, resetAt: at + window * 1000 });
         return { allowed: true, retryAfter: null };
       }
@@ -102,8 +164,13 @@ export function memoryRateLimit(now: () => number = Date.now): RateLimitStorage 
   };
 }
 
-export function authOptions(config: Config, db: Db, logger: Logger) {
-  const secure = new URL(config.baseUrl).protocol === "https:";
+export function authOptions(
+  config: Config,
+  db: Db,
+  logger: Logger,
+  limiter: RateLimiter = memoryRateLimit(),
+) {
+  const { secure } = cookieNaming(config.baseUrl);
   const log = logger.child({ source: "better-auth" });
   return {
     appName: "Poker Planning",
@@ -119,13 +186,17 @@ export function authOptions(config: Config, db: Db, logger: Logger) {
     rateLimit: {
       enabled: true,
       ...AUTH_DEFAULT_LIMIT,
-      customStorage: memoryRateLimit(),
+      customStorage: limiter,
       customRules: { "/sign-in/anonymous": ANONYMOUS_SIGN_IN_LIMIT },
     },
     advanced: {
+      // Names come from `cookieNaming` (`__Host-pp.*` on https, `pp.*` on http), so Better
+      // Auth's own `__Secure-` prefix stays off; `Secure` follows the protocol.
       cookiePrefix: "pp",
-      // https: `Secure` and the `__Secure-` prefix on every cookie.
-      useSecureCookies: secure,
+      useSecureCookies: false,
+      cookies: Object.fromEntries(
+        AUTH_COOKIES.map((name) => [name, { name: `${cookiePrefix(secure)}${name}` }]),
+      ),
       defaultCookieAttributes: { httpOnly: true, sameSite: "lax", path: "/", secure },
       ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
     },
@@ -166,8 +237,8 @@ export function authOptions(config: Config, db: Db, logger: Logger) {
   } satisfies BetterAuthOptions;
 }
 
-export function createAuth(config: Config, db: Db, logger: Logger) {
-  return betterAuth(authOptions(config, db, logger));
+export function createAuth(config: Config, db: Db, logger: Logger, limiter?: RateLimiter) {
+  return betterAuth(authOptions(config, db, logger, limiter));
 }
 
 export type Auth = ReturnType<typeof createAuth>;
@@ -192,18 +263,106 @@ export async function sessionUser(auth: Auth, headers: Headers): Promise<SocketU
   };
 }
 
+/** The app's error codes for Better Auth's 4xx and 5xx answers (never its sentences). */
+export type AuthErrorCode =
+  | "bad_payload"
+  | "unauthenticated"
+  | "rate_limited"
+  | "not_allowed"
+  | "internal";
+
 /**
- * Mounts Better Auth under `/api/auth/*` and `POST /api/me/name`. Each auth request gets
- * the client address in `CLIENT_IP_HEADER`, resolved by `clientIp` as every other rate
- * limit does; a client's own copy of that header is dropped.
+ * Maps a Better Auth error answer (its status and its own `code`) to the app's code.
+ * A guest's second anonymous sign-in (`ANONYMOUS_USERS_CANNOT_SIGN_IN_AGAIN_ANONYMOUSLY`,
+ * two tabs bootstrapping at once) is `not_allowed`: the web app then reads the session.
+ */
+export function authErrorCode(status: number, betterAuthCode: unknown): AuthErrorCode {
+  if (status >= 500) return "internal";
+  if (status === 429) return "rate_limited";
+  if (status === 401) return "unauthenticated";
+  if (status === 403 || betterAuthCode === "ANONYMOUS_USERS_CANNOT_SIGN_IN_AGAIN_ANONYMOUSLY") {
+    return "not_allowed";
+  }
+  return "bad_payload";
+}
+
+/** A copy of a JSON value without any `token` key: the cookie carries the session. */
+export function withoutTokens(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutTokens);
+  if (typeof value !== "object" || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== "token")
+      .map(([key, inner]) => [key, withoutTokens(inner)]),
+  );
+}
+
+/** `response` with another JSON body; its other headers (Set-Cookie included) are kept. */
+function rewrite(response: Response, body: unknown, extra: Record<string, string> = {}): Response {
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.set("content-type", "application/json");
+  for (const [name, value] of Object.entries(extra)) headers.set(name, value);
+  return new Response(JSON.stringify(body), { status: response.status, headers });
+}
+
+async function jsonOf(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return undefined;
+  }
+}
+
+function codeOf(json: unknown): unknown {
+  return typeof json === "object" && json !== null ? Reflect.get(json, "code") : undefined;
+}
+
+/** The client address of a request, as every rate limit sees it (`TRUST_PROXY` hops). */
+function requestIp(c: Context<AppEnv>, config: Config): string | undefined {
+  const incoming = (c.env as { incoming?: IncomingMessage } | undefined)?.incoming;
+  return incoming ? clientIp(incoming, config.trustProxy) : undefined;
+}
+
+function rateLimited(c: Context<AppEnv>, retryAfter: number | null | undefined) {
+  c.header("Retry-After", String(retryAfter ?? 60));
+  c.header("Cache-Control", "no-store");
+  return c.json({ code: "rate_limited" }, 429);
+}
+
+/**
+ * Mounts the allowed Better Auth endpoints (`AUTH_ROUTES`) under `/api/auth/*` and
+ * `POST /api/me/name`. Each auth request gets the client address in `CLIENT_IP_HEADER`,
+ * resolved by `clientIp` as every other rate limit does; a client's own copy of that
+ * header is dropped. Answers carry the app's codes, never Better Auth's sentences, and no
+ * `token` field.
  */
 export function registerAuthApi(
   app: Hono<AppEnv>,
-  { auth, db, config }: { auth: Auth; db: Db; config: Config },
+  { auth, db, config, limiter }: { auth: Auth; db: Db; config: Config; limiter: RateLimiter },
 ): void {
+  const limitBody = bodyLimit({
+    maxSize: AUTH_BODY_LIMIT_BYTES,
+    onError: (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ code: "bad_payload" }, 413);
+    },
+  });
+  app.use(`${AUTH_BASE_PATH}/*`, limitBody);
+  app.use("/api/me/*", limitBody);
+
   app.on(["GET", "POST"], `${AUTH_BASE_PATH}/*`, async (c) => {
-    const incoming = (c.env as { incoming?: IncomingMessage } | undefined)?.incoming;
-    const ip = incoming ? clientIp(incoming, config.trustProxy) : undefined;
+    if (!AUTH_ROUTES.has(`${c.req.method} ${c.req.path.slice(AUTH_BASE_PATH.length)}`)) {
+      return c.notFound();
+    }
+    // Better Auth checks the Origin too, but skips it when NODE_ENV is test: this check
+    // holds everywhere. A browser always sends Origin on a POST.
+    const origin = c.req.header("origin");
+    if (c.req.method === "POST" && origin !== undefined && origin !== config.baseUrl) {
+      c.header("Cache-Control", "no-store");
+      return c.json({ code: "not_allowed" }, 403);
+    }
+    const ip = requestIp(c, config);
     const headers = new Headers(c.req.raw.headers);
     headers.delete(CLIENT_IP_HEADER);
     if (ip) headers.set(CLIENT_IP_HEADER, ip);
@@ -216,51 +375,47 @@ export function registerAuthApi(
       c.header("Cache-Control", "no-store");
       return c.json({ code: "internal" }, 500);
     }
-    // The server answers with codes, never sentences: Better Auth's plain "Not Found", its
-    // English throttle message and its 5xx bodies become the app's codes.
     if (response.status === 404) return c.notFound();
-    if (response.status === 429) {
-      c.header("Retry-After", response.headers.get("x-retry-after") ?? "60");
-      c.header("Cache-Control", "no-store");
-      return c.json({ code: "rate_limited" }, 429);
+    if (response.status >= 400) {
+      const code = authErrorCode(response.status, codeOf(await jsonOf(response)));
+      const extra: Record<string, string> = { "cache-control": "no-store" };
+      if (code === "rate_limited") {
+        extra["retry-after"] = response.headers.get("x-retry-after") ?? "60";
+      }
+      return rewrite(response, { code }, extra);
     }
-    if (response.status >= 500) {
-      c.header("Cache-Control", "no-store");
-      return c.json({ code: "internal" }, 500);
-    }
-    return response;
+    if (!response.headers.get("content-type")?.includes("application/json")) return response;
+    return rewrite(response, withoutTokens(await jsonOf(response)));
   });
 
   // The display name, cleaned by the domain's rules (32 characters, whitespace collapsed,
-  // well-formed). A browser always sends Origin on a POST: another origin is refused, and
-  // a JSON body cannot come from a plain cross-site form.
-  app.post(
-    "/api/me/name",
-    bodyLimit({
-      maxSize: MAX_PAYLOAD_BYTES,
-      onError: (c) => c.json({ code: "bad_payload" }, 413),
-    }),
-    async (c) => {
-      c.header("Cache-Control", "no-store");
-      const origin = c.req.header("origin");
-      if (origin !== undefined && origin !== config.baseUrl) {
-        return c.json({ code: "forbidden" }, 403);
-      }
-      if (!c.req.header("content-type")?.toLowerCase().startsWith("application/json")) {
-        return c.json({ code: "bad_payload" }, 415);
-      }
-      const me = await sessionUser(auth, c.req.raw.headers);
-      if (!me) return c.json({ code: "unauthenticated" }, 401);
-      const body: unknown = await c.req.json().catch(() => undefined);
-      const raw = typeof body === "object" && body !== null ? Reflect.get(body, "name") : undefined;
-      const name = cleanName(raw);
-      if (name === null) return c.json({ code: "bad_name" }, 400);
-      await guard("rename user", () =>
-        db.update(user).set({ name, updatedAt: new Date() }).where(eq(user.id, me.id)),
-      );
-      return c.json({ name });
-    },
-  );
+  // well-formed, nothing invisible). A browser always sends Origin on a POST: another
+  // origin is refused, and a JSON body cannot come from a plain cross-site form.
+  app.post("/api/me/name", async (c) => {
+    c.header("Cache-Control", "no-store");
+    const origin = c.req.header("origin");
+    if (origin !== undefined && origin !== config.baseUrl) {
+      return c.json({ code: "not_allowed" }, 403);
+    }
+    if (!c.req.header("content-type")?.toLowerCase().startsWith("application/json")) {
+      return c.json({ code: "bad_payload" }, 415);
+    }
+    const ipKey = `rename|ip|${requestIp(c, config) ?? "unknown"}`;
+    const byIp = await limiter.consume(ipKey, RENAME_LIMITS.ip);
+    if (!byIp.allowed) return rateLimited(c, byIp.retryAfter);
+    const me = await sessionUser(auth, c.req.raw.headers);
+    if (!me) return c.json({ code: "unauthenticated" }, 401);
+    const byUser = await limiter.consume(`rename|user|${me.id}`, RENAME_LIMITS.user);
+    if (!byUser.allowed) return rateLimited(c, byUser.retryAfter);
+    const body: unknown = await c.req.json().catch(() => undefined);
+    const raw = typeof body === "object" && body !== null ? Reflect.get(body, "name") : undefined;
+    const name = cleanName(raw);
+    if (name === null) return c.json({ code: "bad_name" }, 400);
+    await guard("rename user", () =>
+      db.update(user).set({ name, updatedAt: new Date() }).where(eq(user.id, me.id)),
+    );
+    return c.json({ name });
+  });
 }
 
 /**

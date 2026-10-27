@@ -2,7 +2,7 @@
  * The `setup` hook `main.ts` hands to `run()`: the database (#7), then identity (#10) on
  * its pool. W1 adds the room handlers here. Opens nothing at import time.
  */
-import { createAuth, registerAuthApi, sessionMiddleware } from "./auth.ts";
+import { createAuth, memoryRateLimit, registerAuthApi, sessionMiddleware } from "./auth.ts";
 import type { Config } from "./config.ts";
 import { type Database, setupDatabase } from "./database.ts";
 import type { Logger } from "./logger.ts";
@@ -16,9 +16,11 @@ export async function setupServer(
   const opened = await setupDatabase(config, logger, signal);
   const { database } = opened;
   // Building the auth instance queries nothing; if it throws, release the pool first.
+  // One limiter for Better Auth's endpoints and the app's own (`/api/me/name`).
+  const limiter = memoryRateLimit();
   let auth: ReturnType<typeof createAuth>;
   try {
-    auth = createAuth(config, database.db, logger);
+    auth = createAuth(config, database.db, logger, limiter);
   } catch (error) {
     await database.close();
     throw error;
@@ -28,7 +30,7 @@ export async function setupServer(
     auth,
     deps: {
       ...opened.deps,
-      registerApi: (app) => registerAuthApi(app, { auth, db: database.db, config }),
+      registerApi: (app) => registerAuthApi(app, { auth, db: database.db, config, limiter }),
       socketMiddleware: [sessionMiddleware(auth)],
     },
     dispose: opened.dispose,
