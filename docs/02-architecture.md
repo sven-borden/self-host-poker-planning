@@ -32,7 +32,7 @@ pnpm workspaces, TypeScript strict, Biome, Vitest, Playwright.
 
 ```
 apps/
-  web/        Vite + React 19 SPA (TanStack Router, Zustand, Tailwind v4, shadcn/ui, Motion, react-i18next)
+  web/        Vite + React 19 SPA (TanStack Router, Zustand, Tailwind v4, shadcn/ui, Motion, own typed i18n)
   server/     Hono + Socket.IO + Better Auth + Drizzle; serves the built SPA
 packages/
   domain/     pure TypeScript: state machine, decks, statistics, projections. No I/O.
@@ -279,13 +279,17 @@ Better Auth with the anonymous plugin (ADR-009).
 
 ## 10. Internationalisation
 
-react-i18next with catalogs `en`, `fr`, `de` in `apps/web/src/i18n/`. Language from
-the saved choice (`localStorage` `pp-language`), then `navigator.languages`, then
-English. English is bundled; French and German are lazy chunks, fetched before the
-first render in parallel with the route's chunk (no flash of the wrong language) and
-prefetched when the switcher opens. `Intl` for numbers, dates and relative times;
-plurals follow `Intl.PluralRules` (French needs a `_many` form). CI fails when a key,
-a plural form or a placeholder is missing in any catalog. The server sends codes, never
+Our own typed `t()` (ADR-012, amended) with catalogs `en`, `fr`, `de` in
+`apps/web/src/i18n/`, written in i18next's JSON v4 syntax. Language from the saved
+choice (`localStorage` `pp-language`), then `navigator.languages`, then English. English
+is bundled; French and German are lazy chunks, fetched before the first render in
+parallel with the route's chunk (no flash of the wrong language; after 3 s the page
+renders in English and switches when the catalog lands) and prefetched when the switcher
+opens. Only the latest pick applies. `Intl` for numbers, dates and relative times, in
+the reader's region (the first browser tag in the UI language, else the bare language);
+plurals follow `Intl.PluralRules` (French needs a `_many` form). CI fails when a key, a
+plural form or a placeholder is missing in any catalog, when a translation equals the
+English outside an allowlist, on straight quotes, and on literal copy in components. The server sends codes, never
 sentences; every code in `@pp/protocol`'s `ACK_ERROR_CODES` has a message in every
 language, and an unknown code gets a generic one.
 

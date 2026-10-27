@@ -18,7 +18,7 @@ server sends and never decides the outcome of a round.
   shadcn names.
 - `src/theme/`: light, dark or system; `public/theme-init.js` applies the saved choice
   before first paint (external script: the CSP forbids inline scripts).
-- `src/i18n/`: i18next and react-i18next (#9); see "i18n" below.
+- `src/i18n/`: our own typed `t()` and the catalogs (#9); see "i18n" below.
 - `src/motion/`: `AppMotionConfig` (reduced motion), `MotionFeatures` (lazy Motion
   features) and small wrappers.
 - `src/table/`: the table (#13). `layout.ts` is the pure layout engine
@@ -76,51 +76,76 @@ server sends and never decides the outcome of a round.
 
 ## i18n
 
-The files in `src/i18n/`:
+Our own typed `t()` on `Intl.PluralRules`, not i18next (ADR-012, amended in #9's
+review: i18next and react-i18next cost 17 kB gzipped on the room route). The catalogs
+keep i18next's JSON v4 syntax, so translation platforms read them and a switch back
+stays cheap. The files in `src/i18n/`:
 
 - `en.ts`: the reference catalog (`as const`), nested like `table.votedSoFar`; also the
   `Catalog` type that `fr.ts` and `de.ts` are declared with, so a missing or extra key
   fails `tsc`. English is bundled; `fr.ts` and `de.ts` are lazy chunks.
-- `i18n.ts`: the i18next instance and its typed keys (`CustomTypeOptions`), plus
-  `changeLanguage`, `chooseLanguage` (also saves), `loadLanguage`, `startLanguage` and
-  `fixedT(language)` for code outside React and tests.
-- `language.ts`: `LANGUAGES`, `LANGUAGE_NAMES` (each in itself), `pickLanguage`, and
+- `i18n.ts`: `t` and its types (`MessageKey`, `Params`, `TFunction`: template-literal
+  types check each key and its placeholders), the current language (a module store with
+  `subscribe` and `currentLanguage`), `changeLanguage`, `chooseLanguage` (also saves),
+  `loadLanguage`, `startLanguage` and `fixedT(language)` for code outside React and tests.
+- `language.ts`: `LANGUAGES`, `LANGUAGE_NAMES` (each in itself), `pickLanguage`,
   `detectLanguage` (the saved choice in `localStorage` `pp-language`, then
-  `navigator.languages`, then English; storage errors are swallowed).
+  `navigator.languages`, then English; storage errors are swallowed), and `localeFor`,
+  the locale numbers and dates use (below). Tags split on `-` and `_`; `gsw` is German.
 - `hooks.ts`: `useT()` (the typed `t`), `useLanguage()` (`[language, chooseLanguage]`)
-  and `useFormat()` (the helpers below, bound to the current language).
+  and `useFormat()` (the helpers below, bound to the current language and region). They
+  re-render through React's `useSyncExternalStore`; there is no provider.
 - `format.ts`: `formatNumber`, `formatDate`, `formatTime`, `formatRelativeTime`, each
-  taking the language; `Intl` formatters are cached.
+  taking a locale; `Intl` formatters are cached on the locale and options, never values.
 - `errors.ts`: `errorMessage(t, code)` turns a server error code into a sentence, with
-  `errors.unknown` for a code this version does not know.
+  `errors.unknown` for a code this version does not know. Messages that state a limit
+  (`bad_name`, `bad_seconds`, `deck_too_many_cards`, `card_too_long`) get it from the
+  domain's constants through `ERROR_VALUES`, which `tsc` checks against the placeholders.
 
-`main.tsx` renders only once `startLanguage()` and `router.load()` have both settled, so
-the first paint is in the right language and a French or German start costs no extra
-round trip. `<html lang>` follows every change. The switcher
-(`components/shell/language-switcher.tsx`) prefetches the other catalogs when it opens.
+The region rule: numbers and dates use the first `navigator.languages` tag whose
+language is the UI's (`de-CH` with German UI writes 6.5 and 1’234, `en-GB` a 24-hour
+clock), else the bare language (`fr`, `de`: 5,5). Plural rules use the language.
+
+Start-up and switching: `main.tsx` renders once `startLanguage()` and `router.load()`
+have both settled, so the first paint is in the right language and a French or German
+start costs no extra round trip. `startLanguage` gives up after 3 s and lets the page
+render in English; the catalog still applies when it lands. Only the latest request
+applies: `changeLanguage` keeps a pick counter, so a slow catalog never undoes a later
+pick, and `chooseLanguage` saves only a pick that applied. `<html lang>` follows every
+change. The switcher (`components/shell/language-switcher.tsx`) prefetches the other
+catalogs when it opens, and shows the `language.loadFailed` toast when a pick cannot
+load (offline, or an old chunk gone after a redeploy).
 
 Adding copy:
 
 1. Add the key to `en.ts`, then to `fr.ts` and `de.ts` (`tsc` reminds you). Call it as
-   `t("section.key")` in a component that got `t` from `useT()`.
+   `t("section.key")` in a component that got `t` from `useT()`. Never write copy as JSX
+   text or as a literal `aria-label`, `title`, `placeholder` or `alt`:
+   `scripts/check-copy.ts` (in `pnpm lint`) fails on it.
 2. Interpolate with `{{name}}`; `t("room.title", { code })` is type-checked against the
-   placeholders. Numbers use `{{count, number}}` (or `number(maximumFractionDigits: 1)`),
-   never a bare `{{count}}`, so they follow the language. In code, use `formatNumber` or
-   `useFormat().number`; never `toString()` or `toFixed()` a number the UI shows.
+   placeholders. Values are inserted as plain text; React escapes them. Numbers use
+   `{{count, number}}` (or `number(maximumFractionDigits: 1)`, options separated by `;`),
+   never a bare `{{count}}`, so they follow the language and region. In code, use
+   `useFormat().number` (or `formatNumber(value, localeFor(language))`); never
+   `toString()` or `toFixed()` a number the UI shows.
 3. Plurals: one key per form, `key_one` and `key_other` in English and German, plus
-   `key_many` in French (`Intl.PluralRules` gives "many" from 1 000 000; i18next would
-   fall back to English, not to `_other`, without it). Call `t("key", { count })`.
-4. French: a narrow no-break space (U+202F) before `:`, `;`, `!` and `?`, and ’ for
-   apostrophes.
+   `key_many` in French (`Intl.PluralRules` gives "many" from 1 000 000). Call
+   `t("key", { count })`. `t` falls back to `_other` when a form is missing, but the
+   catalog test requires every form, as i18next and translation platforms do.
+4. Typography: ’ for apostrophes, never `'` or `"`, and … rather than `...`. French: a
+   narrow no-break space (U+202F) before `:`, `;`, `!` and `?`, and « x » with U+202F
+   inside. German: „x“.
 5. A new server error code goes in `@pp/protocol`'s `ACK_ERROR_CODES` and in the
    `errors` section of all three catalogs; `en.ts` checks the codes with `satisfies`.
 
 `src/i18n/i18n.test.ts` checks the catalogs at run time, so the checks hold even for a
 catalog that skips the type check (a JSON import): the same keys in every language, the
 plural forms each language's `Intl.PluralRules` needs and no others, the same
-placeholders with the same formats, formatted number placeholders, French spacing, and
-a message for every code in `ACK_ERROR_CODES`. The French and German tone is reviewed in
-#41.
+placeholders with the same formats, formatted number placeholders, no French or German
+string equal to the English outside a short allowlist (`SAME_AS_ENGLISH`), the
+typography rules, and a message for every code in `ACK_ERROR_CODES`. `t.test.ts` covers
+`t` itself, the region rule, limits in error messages and slow or failing catalogs. The
+French and German tone is reviewed in #41.
 
 ## CSP notes for #36
 
