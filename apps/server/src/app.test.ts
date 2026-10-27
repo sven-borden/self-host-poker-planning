@@ -2,7 +2,13 @@ import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type AppDeps, createApp, DB_CHECK_TIMEOUT_MS, listStaticFiles } from "./app.ts";
+import {
+  API_BODY_LIMIT_BYTES,
+  type AppDeps,
+  createApp,
+  DB_CHECK_TIMEOUT_MS,
+  listStaticFiles,
+} from "./app.ts";
 import { collectLogs, SECRET, testConfig } from "./test-support.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -129,6 +135,27 @@ describe("/api routing", () => {
       registerApi: (api) => api.get("/api/auth/ping", (c) => c.text("pong")),
     });
     expect(await (await a.request("/api/auth/ping")).text()).toBe("pong");
+  });
+
+  it("refuses an /api body over 16 KB with bad_payload before a route reads it", async () => {
+    let read = false;
+    const { app: a } = app({
+      registerApi: (api) =>
+        api.post("/api/echo", async (c) => {
+          read = true;
+          return c.text(await c.req.text());
+        }),
+    });
+    const post = (body: string) => a.request("/api/echo", { method: "POST", body });
+    expect(await (await post("x".repeat(API_BODY_LIMIT_BYTES))).text()).toHaveLength(
+      API_BODY_LIMIT_BYTES,
+    );
+    read = false;
+    const response = await post("x".repeat(API_BODY_LIMIT_BYTES + 1));
+    expect(response.status).toBe(413);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toEqual({ code: "bad_payload" });
+    expect(read).toBe(false);
   });
 
   it("answers a JSON 404 everywhere when the web app is not built", async () => {
