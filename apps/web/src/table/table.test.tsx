@@ -31,6 +31,9 @@ describe("avatars", () => {
     expect(initials("noor")).toBe("No");
     expect(initials("  ")).toBe("?");
     expect(initials("Łukasz de Vries")).toBe("ŁV");
+    expect(initials("Guest 1")).toBe("G1");
+    expect(initials("guest 16")).toBe("G16");
+    expect(initials("Room 2026")).toBe("R20");
   });
 
   it("is decorative and uses an avatar token", () => {
@@ -342,6 +345,13 @@ describe("avatarLooks", () => {
     expect(new Set(looks.map((l) => `${l.colour}${l.initials}`)).size).toBe(32);
     expect(looks.filter((l) => l.initials === "An")).toHaveLength(8);
     expect(looks.at(-1)?.initials).toBe("A4");
+  });
+
+  it("gives Guest 1 to Guest 16 sixteen different initials", () => {
+    const guests = Array.from({ length: 16 }, (_, i) => ({ id: `g${i}`, name: `Guest ${i + 1}` }));
+    const shown = [...avatarLooks(guests).values()].map((look) => look.initials);
+    expect(new Set(shown).size).toBe(16);
+    expect(shown).toEqual(guests.map((_, i) => `G${i + 1}`));
   });
 
   it("bases colours on ids: a rename changes none, a leave only those who gave way", () => {

@@ -25,7 +25,14 @@ export function avatarColour(id: string): number {
   return ((hash >>> 0) % AVATAR_BACKGROUNDS.length) + 1;
 }
 
-/** "Ana Lima" → "AL", "Ana" → "An", "  " → "?". Letters, not UTF-16 halves. */
+/** A last word that is a number keeps up to this many digits ("Guest 12" → "G12"). */
+const NUMBER_DIGITS = 2;
+
+/**
+ * "Ana Lima" → "AL", "Ana" → "An", "  " → "?". Letters, not UTF-16 halves. A name that
+ * ends in a number keeps its digits, so "Guest 1" to "Guest 16" read "G1" to "G16", not
+ * "G1" seven times.
+ */
 export function initials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
   const first = words[0];
@@ -38,6 +45,10 @@ export function initials(name: string): string {
     return a.toLocaleUpperCase() + b.toLocaleLowerCase();
   }
   const last = words[words.length - 1] ?? "";
+  if (/^\p{Nd}+$/u.test(last)) {
+    const digits = letters(last).slice(0, NUMBER_DIGITS).join("");
+    return (letters(first)[0] ?? "").toLocaleUpperCase() + digits;
+  }
   return ((letters(first)[0] ?? "") + (letters(last)[0] ?? "")).toLocaleUpperCase();
 }
 
