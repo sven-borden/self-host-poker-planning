@@ -45,11 +45,15 @@ const lobby = roomWith([
 const voting = run(lobby, "po", { type: "startRound", subject: { kind: "none" } });
 
 /** The server's answer to `command` from the viewer: the new state, as a confirmed card. */
-function serve(state: RoomState, command: { type: string; payload?: { card: string } }) {
+function serve(
+  state: RoomState,
+  command: { type: string; payload?: { card?: string; round: number } },
+) {
+  const round = command.payload?.round ?? 0;
   const domain: Command =
     command.type === "castVote"
-      ? { type: "castVote", card: command.payload?.card ?? "" }
-      : { type: "retractVote" };
+      ? { type: "castVote", card: command.payload?.card ?? "", round }
+      : { type: "retractVote", round };
   const result = apply(state, domain, { actor: ME, now: 20 });
   return result.ok ? { ok: true as const, state: result.state } : { ok: false as const, state };
 }
@@ -66,13 +70,15 @@ describe("roundKey and confirmedOf", () => {
   });
 
   it("reads the viewer's card in the voting round only", () => {
-    expect(confirmedOf(undefined)).toEqual({ card: null, round: null });
-    expect(confirmedOf(view(voting))).toEqual({ card: null, round: "1:10" });
+    const none = { card: null, round: null, number: null };
+    expect(confirmedOf(undefined)).toEqual(none);
+    expect(confirmedOf(view(lobby))).toEqual(none);
+    expect(confirmedOf(view(voting))).toEqual({ card: null, round: "1:10", number: 1 });
     const voted = run(voting, ME, { type: "castVote", card: "5" });
-    expect(confirmedOf(view(voted))).toEqual({ card: "5", round: "1:10" });
+    expect(confirmedOf(view(voted))).toEqual({ card: "5", round: "1:10", number: 1 });
     // Ana's vote does not reveal (the PO has not voted): the viewer's card stays theirs.
     const revealed = run(voted, "po", { type: "reveal" });
-    expect(confirmedOf(view(revealed))).toEqual({ card: null, round: null });
+    expect(confirmedOf(view(revealed))).toEqual(none);
   });
 });
 
@@ -83,7 +89,7 @@ describe("the hand's state machine", () => {
     const pressed = press(SETTLED, "5", confirmed);
     expect(shownCard(pressed, confirmed)).toBe("5");
     const step = nextStep(pressed, confirmed);
-    expect(step.command).toEqual({ type: "castVote", payload: { card: "5" } });
+    expect(step.command).toEqual({ type: "castVote", payload: { card: "5", round: 1 } });
     expect(step.state.sending).toBe(true);
     // Nothing else goes out while it is on the wire.
     expect(nextStep(step.state, confirmed).command).toBeNull();
@@ -115,14 +121,17 @@ describe("the hand's state machine", () => {
     const voted = confirmedOf(view(run(voting, ME, { type: "castVote", card: "5" })));
     const pressed = press(SETTLED, "5", voted);
     expect(shownCard(pressed, voted)).toBeNull();
-    expect(nextStep(pressed, voted).command).toEqual({ type: "retractVote" });
+    expect(nextStep(pressed, voted).command).toEqual({
+      type: "retractVote",
+      payload: { round: 1 },
+    });
   });
 
   it("a press on another card changes the vote", () => {
     const voted = confirmedOf(view(run(voting, ME, { type: "castVote", card: "5" })));
     expect(nextStep(press(SETTLED, "8", voted), voted).command).toEqual({
       type: "castVote",
-      payload: { card: "8" },
+      payload: { card: "8", round: 1 },
     });
   });
 
@@ -167,6 +176,13 @@ describe("the hand's state machine", () => {
     expect(nextStep(answered(step.state, true), now)).toEqual({ state: SETTLED, command: null });
   });
 
+  it("carries the round it was made for, so the server refuses it in the next round", () => {
+    const step = nextStep(press(SETTLED, "5", confirmed), confirmed);
+    const next = run(voting, "po", { type: "startRound", subject: { kind: "none" } }, 40);
+    expect(serve(next, step.command ?? { type: "none" }).ok).toBe(false);
+    expect(serve(voting, step.command ?? { type: "none" }).ok).toBe(true);
+  });
+
   it("gives up rather than sending the same command again when the snapshot disagrees", () => {
     const step = nextStep(press(SETTLED, "5", confirmed), confirmed);
     // Acked, yet the snapshot still shows no vote (it was lost): the server's card wins.
@@ -177,7 +193,7 @@ describe("the hand's state machine", () => {
   });
 
   it("ignores presses outside Voting", () => {
-    const outside: Confirmed = { card: null, round: null };
+    const outside: Confirmed = { card: null, round: null, number: null };
     expect(press(SETTLED, "5", outside)).toBe(SETTLED);
   });
 });

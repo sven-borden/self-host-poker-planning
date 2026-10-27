@@ -101,6 +101,7 @@ export const de: Catalog = {
   you: {
     title: "Sie",
     roleVoter: "Am Tisch, Sie stimmen ab",
+    roleNotVoting: "Am Tisch, ohne abzustimmen",
     roleObserver: "Sie beobachten, ohne abzustimmen",
     rename: "Namen ändern",
     save: "Speichern",
@@ -141,9 +142,10 @@ export const de: Catalog = {
     hintVoting:
       "Wählen Sie eine Karte, um abzustimmen. Wählen Sie sie erneut, um Ihre Stimme zurückzunehmen.",
     hintLobby: "Ihre Karten werden spielbar, sobald der Product Owner die Runde startet.",
+    hintLobbyOwner: "Starten Sie die Runde, um Ihre Karten zu spielen.",
     hintRevealed:
       "Die Karten sind aufgedeckt. In dieser Runde lassen sich die Stimmen nicht mehr ändern.",
-    youVoted: "Sie haben {{card}} gewählt.",
+    youVoted: "Ihre Stimme: {{card}}.",
     retracted: "Stimme zurückgenommen.",
     ownerDoesNotVote: "Als Product Owner stimmen Sie in diesem Raum nicht ab.",
   },
@@ -163,6 +165,7 @@ export const de: Catalog = {
     voted: "{{name}} hat abgestimmt.",
     votedMany_one: "{{count, number}} Person hat abgestimmt.",
     votedMany_other: "{{count, number}} Personen haben abgestimmt.",
+    roundStarted: "Die Abstimmung hat begonnen.",
   },
   cards: {
     yourCards: "Ihre Karten",
@@ -241,6 +244,8 @@ export const de: Catalog = {
     not_voter: "Beobachter stimmen nicht ab. Wechseln Sie zum Abstimmen, um eine Karte zu spielen.",
     bad_card: "Diese Karte gehört nicht zum Kartensatz des Raums. Wählen Sie eine andere.",
     round_revealed: "Die Karten sind bereits aufgedeckt. Stimmen lassen sich nicht mehr ändern.",
+    round_changed:
+      "Eine neue Runde hat begonnen, bevor Ihre Stimme ankam. Wählen Sie Ihre Karte erneut.",
     not_voting: "In dieser Runde kann gerade nicht abgestimmt werden.",
     not_allowed: "Die Einstellungen dieses Raums erlauben das nicht.",
     not_revealed: "Decken Sie zuerst die Karten auf.",

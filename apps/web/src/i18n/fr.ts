@@ -101,6 +101,7 @@ export const fr: Catalog<"many"> = {
   you: {
     title: "Vous",
     roleVoter: "À la table, vous votez",
+    roleNotVoting: "À la table, sans voter",
     roleObserver: "Vous observez sans voter",
     rename: "Changer de nom",
     save: "Enregistrer",
@@ -140,9 +141,10 @@ export const fr: Catalog<"many"> = {
   },
   hand: {
     hintVoting: "Choisissez une carte pour voter. Choisissez-la à nouveau pour retirer votre vote.",
-    hintLobby: "Vos cartes s’ouvrent quand le product owner lance le tour.",
+    hintLobby: "Vous pourrez jouer dès que le product owner lancera le tour.",
+    hintLobbyOwner: "Lancez le vote pour jouer vos cartes.",
     hintRevealed: "Les cartes sont révélées. Les votes ne peuvent plus changer dans ce tour.",
-    youVoted: "Vous avez voté {{card}}.",
+    youVoted: "Votre vote : {{card}}.",
     retracted: "Vote retiré.",
     ownerDoesNotVote: "En tant que product owner, vous ne votez pas dans cette salle.",
   },
@@ -167,6 +169,7 @@ export const fr: Catalog<"many"> = {
     votedMany_one: "{{count, number}} personne a voté.",
     votedMany_many: "{{count, number}} personnes ont voté.",
     votedMany_other: "{{count, number}} personnes ont voté.",
+    roundStarted: "Le vote a commencé.",
   },
   cards: {
     yourCards: "Vos cartes",
@@ -245,6 +248,8 @@ export const fr: Catalog<"many"> = {
     not_voter: "Les observateurs ne votent pas. Passez au rôle de votant pour jouer une carte.",
     bad_card: "Cette carte ne fait pas partie du jeu de la salle. Choisissez-en une autre.",
     round_revealed: "Les cartes sont déjà retournées : les votes ne peuvent plus changer.",
+    round_changed:
+      "Un nouveau tour a commencé avant l’arrivée de votre vote. Choisissez à nouveau votre carte.",
     not_voting: "Ce tour n’est pas ouvert au vote.",
     not_allowed: "Les réglages de cette salle ne vous permettent pas de faire cela.",
     not_revealed: "Retournez d’abord les cartes.",

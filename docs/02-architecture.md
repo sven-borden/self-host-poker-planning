@@ -159,8 +159,8 @@ client that sends one gets `bad_payload`; the server's timers send it (section 9
 | `setRole {role}` | self | voter → observer drops the vote while Voting; observer → voter checks capacity when observers do not count |
 | `kick {who}` | PO | `cannot_kick_self`, `unknown_participant` |
 | `startRound {subject}` | PO | any phase; from Voting it abandons the round; number + 1; captures deck, specials, anonymity; starts `timer.seconds` (`bad_subject`) |
-| `castVote {card}` | voter | `no_round`, `not_voter` (observers; the PO when `poVotes` is off), `bad_card` (not in the round's cards); in Revealed only in a named round with `allowChangeAfterReveal` (a change or a first vote, marked `changedAfterReveal`); an anonymous round locks its votes at reveal, whatever the setting, decided by the round's own `anonymous` flag (`round_revealed`), because the people who could still change shrink as voters leave and a change would then point at someone; the `voteCast` cause always carries `who` |
-| `retractVote` | self | Voting only (`not_voting`); no-op without a vote |
+| `castVote {card, round}` | voter | `no_round`; `round_changed` when `round` (the number of the round the press was made for) is not the current round's, so a vote in flight when the next round starts never lands in it; `not_voter` (observers; the PO when `poVotes` is off), `bad_card` (not in the round's cards); in Revealed only in a named round with `allowChangeAfterReveal` (a change or a first vote, marked `changedAfterReveal`); an anonymous round locks its votes at reveal, whatever the setting, decided by the round's own `anonymous` flag (`round_revealed`), because the people who could still change shrink as voters leave and a change would then point at someone; the `voteCast` cause always carries `who` |
+| `retractVote {round}` | self | `round_changed` as for `castVote`; Voting only (`not_voting`); no-op without a vote |
 | `reveal` | PO, or anyone if `whoCanReveal = "anyone"` | Voting only (`not_voting`, `not_allowed`); zero votes allowed; stops the timer |
 | `setFinal {card}` | PO | Revealed only (`not_revealed`); a non-special card of the round (`bad_card`) |
 | `revote` | PO | Revealed only; a new round with the same subject |
@@ -308,7 +308,9 @@ Server: `apps/server/src/sync/room-sync.ts` (the `handlers` of `createRealtime`)
   the same command is never sent twice in a row). A refusal (`round_revealed`,
   `not_voting`, `offline`, a `busy` that gave up) drops the pick: the hand rolls back to
   the snapshot. A pick belongs to its round (number and `startedAt`), so a new round or
-  the reveal drops it. The pick changes only the viewer's own screen; the others learn
+  the reveal drops it. Each command carries the round number it was made for: one still
+  in flight when the PO starts the next round is refused with `round_changed`, and the
+  hand rolls back without a message (the new round's hand is empty anyway). The pick changes only the viewer's own screen; the others learn
   the vote from the server's `voted`, never the card.
 - Measured on one instance with Postgres (`room-sync.db.test.ts`): a join reaches the
   other client in about 4 ms median, 17 ms worst of ten.

@@ -310,6 +310,41 @@ describe("refusals", () => {
         ] as [string, () => RoomState, unknown, string, ErrorCode],
     ),
     ["a vote in the lobby", lobby, { type: "castVote", card: "3" }, A, "no_round"],
+    [
+      "a vote made for the last round",
+      () => room({ round: voting({ number: 2 }) }),
+      { type: "castVote", card: "3", round: 1 },
+      A,
+      "round_changed",
+    ],
+    [
+      "a vote made for the last round, now revealed too",
+      () => room({ round: revealed({ number: 2 }) }),
+      { type: "castVote", card: "3", round: 1 },
+      A,
+      "round_changed",
+    ],
+    [
+      "a retract made for the last round",
+      () => room({ round: voting({ number: 2, votes: { [A]: { card: "3" } } }) }),
+      { type: "retractVote", round: 1 },
+      A,
+      "round_changed",
+    ],
+    [
+      "a retract made for the last round, now revealed too",
+      () => room({ round: revealed({ number: 2 }) }),
+      { type: "retractVote", round: 1 },
+      A,
+      "round_changed",
+    ],
+    [
+      "a retract made for a round in the lobby",
+      lobby,
+      { type: "retractVote", round: 1 },
+      A,
+      "not_voting",
+    ],
     ["a vote from an observer", room, { type: "castVote", card: "3" }, OBS, "not_voter"],
     [
       "a vote from a PO who does not vote",
@@ -681,6 +716,14 @@ describe("rounds", () => {
     expect(ok(retracted).round?.votes).toEqual({});
     expect(send(retracted.state, { type: "retractVote" }, A).state).toBe(retracted.state);
     expect(JSON.stringify([cast.causes, changed.causes, retracted.causes])).not.toMatch(/"5"|☕/);
+  });
+
+  it("takes a vote and a retract made for the current round", () => {
+    const current = room({ round: voting({ number: 2 }) });
+    const cast = send(current, { type: "castVote", card: "5", round: 2 }, A);
+    expect(ok(cast).round?.votes).toEqual({ [A]: { card: "5" } });
+    const retracted = send(cast.state, { type: "retractVote", round: 2 }, A);
+    expect(ok(retracted).round?.votes).toEqual({});
   });
 
   it("validates votes against the round's cards, not the settings", () => {

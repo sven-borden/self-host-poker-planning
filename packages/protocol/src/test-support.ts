@@ -83,6 +83,12 @@ const personArb = fc.constantFrom<UserId>(...PEOPLE, STRANGER);
 const roleArb = fc.constantFrom(...ROLES);
 const secondsArb = fc.integer({ min: 5, max: 60 });
 
+/**
+ * The round a vote was made for: mostly the first, the one a scenario starts, so most
+ * votes land; the others meet `round_changed`, or match a later round.
+ */
+const roundArb = fc.constantFrom(1, 1, 1, 2, 3);
+
 /** Every command a client may send, weighted towards the ones that move a round. */
 export const clientCommandArb: fc.Arbitrary<ClientCommand> = fc.oneof(
   {
@@ -102,9 +108,13 @@ export const clientCommandArb: fc.Arbitrary<ClientCommand> = fc.oneof(
     arbitrary: fc.record({
       type: fc.constant("castVote" as const),
       card: fc.constantFrom(...CARD_POOL),
+      round: roundArb,
     }),
   },
-  { weight: 2, arbitrary: fc.constant({ type: "retractVote" as const }) },
+  {
+    weight: 2,
+    arbitrary: fc.record({ type: fc.constant("retractVote" as const), round: roundArb }),
+  },
   { weight: 3, arbitrary: fc.constant({ type: "reveal" as const }) },
   {
     weight: 1,

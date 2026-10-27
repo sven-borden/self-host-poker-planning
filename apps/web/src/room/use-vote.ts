@@ -10,6 +10,7 @@ import {
   press,
   SETTLED,
   type VoteCommand,
+  type Wish,
 } from "./hand-state.ts";
 
 type Sender = (command: VoteCommand) => Promise<CommandResult>;
@@ -53,13 +54,13 @@ export function useVote(): Vote {
   }, []);
 
   const pump = useCallback(async () => {
-    let sentAny = false;
+    // The wish of the last command the server accepted.
+    let acked: Wish | null = null;
     for (;;) {
       const step = nextStep(current.current, confirmedNow());
       commit(step.state);
       const send = sender.current;
       if (step.command === null || send === null) break;
-      sentAny = true;
       let ack: CommandResult;
       try {
         ack = await send(step.command);
@@ -68,21 +69,26 @@ export function useVote(): Vote {
       }
       if (!ack.ok) {
         commit(answered(current.current, false));
+        // Made for the round the PO just ended: the new round's hand is empty anyway, so
+        // the pick rolls back without a word.
+        if (ack.code === "round_changed") return;
         const round = useRoomStore.getState().snapshot?.room.round?.number ?? null;
         setError({ code: ack.code, round });
         return;
       }
+      acked = step.state.sent;
       commit(answered(current.current, true));
     }
-    const confirmed = confirmedNow();
-    if (sentAny && confirmed.round !== null) {
-      said.current += 1;
-      setNews({
-        id: said.current,
-        what:
-          confirmed.card === null ? { kind: "retracted" } : { kind: "voted", card: confirmed.card },
-      });
-    }
+    // Said once the server holds the last accepted pick, in any phase: a vote that was the
+    // last one is revealed at once, and the voter still hears it went in.
+    const round = useRoomStore.getState().snapshot?.room.round;
+    if (acked === null || round?.number !== acked.number) return;
+    if ((round.yourVote ?? null) !== acked.card) return;
+    said.current += 1;
+    setNews({
+      id: said.current,
+      what: acked.card === null ? { kind: "retracted" } : { kind: "voted", card: acked.card },
+    });
   }, [commit]);
 
   const pick = useCallback(

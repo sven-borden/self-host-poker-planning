@@ -93,7 +93,7 @@ test("the live region says who voted, never the card (AC 3)", async ({
     await expect(live(page)).toHaveText("Ana joined.");
     expect(await ben.enter(code)).toMatchObject({ ok: true });
     expect(await ben.cmd("startRound", { subject: { kind: "none" } })).toMatchObject({ ok: true });
-    expect(await ana.cmd("castVote", { card: "13" })).toMatchObject({ ok: true });
+    expect(await ana.cmd("castVote", { card: "13", round: 1 })).toMatchObject({ ok: true });
 
     await expect(live(page)).toHaveText("Ana voted.");
     const anaSeat = seats(page).locator("[data-seat]").filter({ hasText: "Ana" });

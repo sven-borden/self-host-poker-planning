@@ -120,9 +120,9 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       return subject ? startRound(state, subject, now) : refuse("bad_subject");
     }
     case "castVote":
-      return castVote(state, actor, command.card);
+      return castVote(state, actor, command.card, command.round);
     case "retractVote":
-      return retractVote(state, actor);
+      return retractVote(state, actor, command.round);
     case "reveal": {
       if (actor !== state.ownerId && state.settings.whoCanReveal !== "anyone") {
         return refuse("not_allowed");
@@ -287,9 +287,10 @@ function startRound(state: RoomState, subject: Subject, now: number): Step {
  * but never what, or after a named reveal. The protocol still strips `who` from vote
  * causes after an anonymous reveal, as defence in depth.
  */
-function castVote(state: RoomState, actor: UserId, card: unknown): Step {
+function castVote(state: RoomState, actor: UserId, card: unknown, made: unknown): Step {
   const round = state.round;
   if (!round) return refuse("no_round");
+  if (otherRound(round, made)) return refuse("round_changed");
   if (!isVoter(state, actor)) return refuse("not_voter");
   const previous = ownVote(round, actor);
   // `allowChangeAfterReveal` applies to named rounds only: an anonymous round locks its
@@ -310,14 +311,23 @@ function castVote(state: RoomState, actor: UserId, card: unknown): Step {
   });
 }
 
-function retractVote(state: RoomState, actor: UserId): Step {
+function retractVote(state: RoomState, actor: UserId, made: unknown): Step {
   const round = state.round;
+  if (round && otherRound(round, made)) return refuse("round_changed");
   if (round?.phase !== "voting") return refuse("not_voting");
   if (!ownVote(round, actor)) return done(state);
   return done(withRound(state, { ...round, votes: omit(round.votes, actor) }), {
     type: "voteRetracted",
     who: actor,
   });
+}
+
+/**
+ * A vote made for another round than the current one: a command still in flight when the
+ * PO started the next round. Without `made` (a command the server built) any round goes.
+ */
+function otherRound(round: Round, made: unknown): boolean {
+  return made !== undefined && made !== round.number;
 }
 
 function setFinal(state: RoomState, card: unknown): Step {

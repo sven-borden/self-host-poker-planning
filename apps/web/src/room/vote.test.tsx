@@ -152,20 +152,20 @@ describe("the hand", () => {
     expect(centre()).toBe("0/3 voted so far");
 
     fireEvent.click(card("5"));
-    await waitFor(() => expect(handLive()).toBe("You voted 5."));
+    await waitFor(() => expect(handLive()).toBe("Your vote: 5."));
     expect(pressed()).toEqual(["5"]);
-    expect(sent).toEqual([{ type: "castVote", payload: { card: "5" } }]);
+    expect(sent).toEqual([{ type: "castVote", payload: { card: "5", round: 1 } }]);
     expect(mySlot()?.getAttribute("data-face")).toBe("down");
     expect(centre()).toBe("1/3 voted so far");
 
     fireEvent.click(card("8"));
-    await waitFor(() => expect(handLive()).toBe("You voted 8."));
+    await waitFor(() => expect(handLive()).toBe("Your vote: 8."));
     expect(pressed()).toEqual(["8"]);
 
     fireEvent.click(card("8"));
     await waitFor(() => expect(handLive()).toBe("Vote taken back."));
     expect(pressed()).toEqual([]);
-    expect(sent.at(-1)).toEqual({ type: "retractVote" });
+    expect(sent.at(-1)).toEqual({ type: "retractVote", payload: { round: 1 } });
     expect(mySlot()?.getAttribute("data-face")).toBe("empty");
     expect(server.round?.votes).toEqual({});
   });
@@ -185,7 +185,7 @@ describe("the hand", () => {
     expect(pressed()).toEqual(["13"]);
     expect(handLive()).toBe("");
     await act(async () => open());
-    await waitFor(() => expect(handLive()).toBe("You voted 13."));
+    await waitFor(() => expect(handLive()).toBe("Your vote: 13."));
     expect(server.round?.votes[ME]).toEqual({ card: "13" });
   });
 
@@ -208,7 +208,7 @@ describe("the hand", () => {
   it("rolls back a vote the server refuses after the reveal, and says why", async () => {
     await renderRoom(voting());
     fireEvent.click(card("5"));
-    await waitFor(() => expect(handLive()).toBe("You voted 5."));
+    await waitFor(() => expect(handLive()).toBe("Your vote: 5."));
     let open = () => {};
     gate = new Promise((resolve) => {
       open = resolve;
@@ -231,6 +231,34 @@ describe("the hand", () => {
     run("po", { type: "startRound", subject: { kind: "none" } });
     expect(screen.queryByText(/already revealed/)).toBeNull();
     expect(pressed()).toEqual([]);
+  });
+
+  it("rolls back without a word when the next round started before the vote arrived", async () => {
+    await renderRoom(voting());
+    let open = () => {};
+    gate = new Promise((resolve) => {
+      open = resolve;
+    });
+    fireEvent.click(card("8"));
+    expect(pressed()).toEqual(["8"]);
+    run("po", { type: "startRound", subject: { kind: "none" } });
+    await act(async () => open());
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual({ type: "castVote", payload: { card: "8", round: 1 } });
+    expect(server.round?.number).toBe(2);
+    expect(server.round?.votes).toEqual({});
+    expect(pressed()).toEqual([]);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(handLive()).toBe("");
+  });
+
+  it("says the vote that ends the round, though the reveal follows at once", async () => {
+    await renderRoom(voting());
+    run("po", { type: "castVote", card: "3" });
+    run("ana", { type: "castVote", card: "5" });
+    fireEvent.click(card("needs a break"));
+    await waitFor(() => expect(handLive()).toBe("Your vote: needs a break."));
+    expect(server.round?.phase).toBe("revealed");
   });
 
   it("rolls back when the room is offline", async () => {
