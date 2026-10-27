@@ -66,15 +66,24 @@ export function flagWords(t: TFunction, person: PersonFlags): string[] {
 }
 
 /**
+ * The name as the room shows and says it, wherever a name appears: "Ana Lima", or "Ana
+ * Lima (2)" for the second person of that name in the room (`namesakes`, #22).
+ */
+export function shownName(
+  t: TFunction,
+  person: { name: string; namesake?: number | undefined },
+): string {
+  return person.namesake === undefined
+    ? person.name
+    : t("table.nameNumbered", { name: person.name, number: person.namesake });
+}
+
+/**
  * The name with what sets the person apart, for screen readers: "Ana, you, away", or
  * "Ana (2), away" for the second Ana in the room.
  */
 export function nameWithFlags(t: TFunction, person: { name: string } & PersonFlags): string {
-  const name =
-    person.namesake === undefined
-      ? person.name
-      : t("table.nameNumbered", { name: person.name, number: person.namesake });
-  return [name, ...flagWords(t, person)].join(", ");
+  return [shownName(t, person), ...flagWords(t, person)].join(", ");
 }
 
 /**
@@ -287,7 +296,7 @@ function SeatPopover({ person, side }: { person: TablePerson; side: SeatPlace["l
       className="w-auto max-w-60 px-3 py-2 text-sm"
     >
       <p className="m-0 font-semibold break-words">
-        <bdi>{person.name}</bdi>
+        <bdi>{shownName(t, person)}</bdi>
       </p>
       {state !== "" ? <p className="m-0 text-xs text-ink-2">{state}</p> : null}
     </PopoverContent>
@@ -373,7 +382,7 @@ export function Seat({ person, place, geometry, settle = 0 }: SeatProps) {
           fontSize: labelHeight >= 16 ? 12 : 11,
         }}
       >
-        <bdi>{person.name}</bdi>
+        <bdi>{shownName(t, person)}</bdi>
       </span>
     </>
   );

@@ -3,7 +3,10 @@ import type { ParticipantView, RoomView } from "@pp/protocol";
 import { type AvatarLook, avatarLooks } from "../table/avatar.tsx";
 import type { PersonFlags, SeatStatus, TablePerson } from "../table/seat.tsx";
 import type { Observer } from "../table/table-stage.tsx";
+import { namesakes } from "./namesakes.ts";
 import { extremeOf } from "./results-view.ts";
+
+export { namesakes };
 
 // From the server's snapshot to the table's props (#16, #17). Pure: the room page renders
 // what these return and decides nothing. Before reveal the snapshot says only who voted
@@ -44,25 +47,6 @@ export function seatStatus(participant: ParticipantView, room: RoomView): SeatSt
   return extreme
     ? { kind: "revealed", card: vote.card, extreme }
     : { kind: "revealed", card: vote.card };
-}
-
-/** How two names compare when a screen reader says them: case and form aside. */
-const spoken = (name: string) => name.normalize("NFC").toLocaleLowerCase();
-
-/**
- * For each person whose name someone who joined earlier already goes by (`spoken`), which
- * one of that name they are in join order: 2, 3, …. The first keeps the name alone.
- */
-export function namesakes(participants: readonly ParticipantView[]): Map<string, number> {
-  const count = new Map<string, number>();
-  const numbers = new Map<string, number>();
-  for (const { id, name } of participants) {
-    const key = spoken(name);
-    const n = (count.get(key) ?? 0) + 1;
-    count.set(key, n);
-    if (n > 1) numbers.set(id, n);
-  }
-  return numbers;
 }
 
 /**

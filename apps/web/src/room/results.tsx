@@ -4,7 +4,7 @@ import { useFormat, useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
 import { cardLabel, MiniCard } from "../table/cards.tsx";
 import { cancelAll, play, prefersReducedMotion } from "../table/reveal-motion.ts";
-import { ExtremeMark, extremeWord } from "../table/seat.tsx";
+import { ExtremeMark, extremeWord, shownName } from "../table/seat.tsx";
 import { consensusPop, consensusPulse, riseBar, riseLabel, showAt } from "./results-motion.ts";
 import {
   type ResultsModel,
@@ -285,7 +285,9 @@ function Panel({ model, motion }: { model: ResultsModel; motion: RevealMotion })
           className="m-0 flex w-full list-none flex-col items-center gap-2 p-0 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-x-8"
         >
           {model.extremes.map(({ extreme, card, names }) => {
-            const named = names.map((name) => name ?? t("results.someone"));
+            const named = names.map((name) =>
+              name === null ? t("results.someone") : shownName(t, name),
+            );
             return (
               <li
                 key={extreme}
