@@ -220,3 +220,39 @@ export function withDeadline(state: RoomState, deadlineAt: number): RoomState {
   if (!state.round) throw new Error("no round");
   return { ...state, round: { ...state.round, deadlineAt } };
 }
+
+/** The session cookie's name on http (`cookieNaming`). */
+export const SESSION_COOKIE = "pp.session_token";
+
+export interface Guest {
+  id: string;
+  /** `pp.session_token=…`, to send back. */
+  cookie: string;
+}
+
+/** Signs in as a new guest on the server at `base`, as the web app does. */
+export async function signInGuest(base: string, origin: string): Promise<Guest> {
+  const response = await fetch(`${base}/api/auth/sign-in/anonymous`, {
+    method: "POST",
+    headers: { origin, "content-type": "application/json" },
+    body: "{}",
+  });
+  if (!response.ok) throw new Error(`sign-in answered ${response.status}`);
+  const json = (await response.json()) as { user?: { id?: string } };
+  const cookie = response.headers
+    .getSetCookie()
+    .find((line) => line.startsWith(`${SESSION_COOKIE}=`))
+    ?.split(";")[0];
+  const id = json.user?.id;
+  if (!cookie || !id) throw new Error("sign-in gave no session");
+  return { id, cookie };
+}
+
+/** A random room code of 10 base58 characters, as #14 draws them. */
+export function roomCode(): string {
+  const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  return Array.from(
+    { length: 10 },
+    () => alphabet[Math.floor(Math.random() * alphabet.length)] ?? "1",
+  ).join("");
+}
