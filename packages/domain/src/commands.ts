@@ -60,7 +60,7 @@ export type Cause =
   | { type: "kicked"; who: UserId }
   | { type: "renamed"; who: UserId }
   | { type: "roleChanged"; who: UserId; role: Role }
-  | { type: "roundStarted"; number: number; restarted?: true }
+  | { type: "roundStarted"; number: number; restarted?: true; revote?: true }
   | { type: "voteCast"; who?: UserId }
   | { type: "voteRetracted"; who?: UserId }
   | { type: "revealed"; by: "manual" | "everyoneVoted" | "timer" }
