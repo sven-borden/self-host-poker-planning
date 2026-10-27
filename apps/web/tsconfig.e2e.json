@@ -2,8 +2,16 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./.tsbuild/e2e",
+    // The e2e tests import the protocol version from its source.
+    "rootDir": "../..",
     "lib": ["es2024", "dom", "dom.iterable"],
     "types": ["node"]
   },
-  "include": ["playwright.config.ts", "e2e/**/*.ts", "src/table/layout.ts", "src/table/geometry.ts"]
+  "include": [
+    "playwright.config.ts",
+    "e2e/**/*.ts",
+    "src/table/layout.ts",
+    "src/table/geometry.ts",
+    "../../packages/protocol/src/version.ts"
+  ]
 }

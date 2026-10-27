@@ -38,14 +38,30 @@ server sends and never decides the outcome of a round.
   it to the name field when the name is refused. The room page (`routes/r/$code.tsx`)
   shows the header (name inside `<bdi>`, code, copy
   link with a toast, or the link to select when the clipboard is missing or refused) and
-  a `[data-room-slot]` section where the room itself goes (#15, #16).
+  a `[data-room-slot]` holding `RoomView` (below).
 - `src/realtime/room-connection.ts` (#15): `openRoom(code)` follows one room (the room
   page calls it in an effect and returns its cleanup); `sendCommand({ type, payload? })`
   resolves with the ack. `src/stores/room-store.ts` holds `{ code, status, error,
   snapshot, connection }`; `status` is `connecting`, `live`, `reconnecting` or `error`
   (`error` holds an ack code, or `kicked` or `offline`). `receive` keeps only a newer
-  version of the open room. `src/room/room-status.tsx` is the room page until #16 and #17
-  (status line, participant count, the reload prompt on `protocol_mismatch`).
+  version of the open room. A command belongs to the room open when it was sent: once
+  that room closes, a send still waiting resolves `offline` and never reaches the next
+  room.
+- `src/room/` (#16): the room below its header, all from the room store.
+  `room-view.tsx` (`RoomView`) shows `RoomStatus` (status line, participant count, the
+  final errors and the reload prompt on `protocol_mismatch`), then, by the snapshot:
+  - `you` is null: `JoinForm` (`join-form.tsx`: name prefilled from the identity store,
+    checked with `cleanName`, saved with `setDisplayName`, then `join`; voter by
+    default), or the room-full screen when `isRoomFull(room)` or the server answered
+    `room_full` at the current version. When observers do not count, `room_full` for a
+    voter is an inline message instead (the observer row is still open).
+  - `you` is set: the table (`TableStage` with `tableData(room)`) and `YouControls`
+    (`you-controls.tsx`: rename, which saves the name too, voter/observer switch, leave).
+  `table-data.ts` maps the snapshot to the table: voters in join order, rotated so the
+  viewer sits at the bottom, observers in the row; `toTablePerson` and `toObserver` are
+  where presence, the voted badge, the PO badge and the viewer highlight go (#17).
+  `failure.ts` turns refusal codes into copy. Focus: after joining it moves to the "You"
+  heading, after leaving to the name field. Every name renders inside `<bdi>`.
 - `src/identity/identity.ts`: who this browser is (#10). `ensureIdentity({ force? })`
   reads `/api/auth/get-session` and, without a session, signs in as a guest
   (`/api/auth/sign-in/anonymous`); concurrent calls share one request. `setDisplayName(name)`

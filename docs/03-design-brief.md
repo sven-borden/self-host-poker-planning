@@ -88,6 +88,14 @@ Positions are percentages of the stage, so one formula serves every width:
 - The centre of the table shows the status (`5/8 voted so far`), the timer ring, or
   after reveal the suggested card with agreement or a **Consensus** pill.
 - Observers sit off the table (a small row under it) so voters keep the seats.
+- The others follow the viewer clockwise in join order, starting with whoever joined
+  after the viewer, so the order around the table is the same for everyone (#16).
+- Joining (#16): the room page shows a "Take a seat" card (name, prefilled with the last
+  one used; voter or observer, voter by default) until the viewer is in the room; the PO
+  joins the same way. A full room shows "This room is full" instead, and turns back into
+  the card as soon as someone leaves. When observers do not count and only the seats are
+  taken, a voter is told so on the card and can join as an observer. Under the table a
+  "You" panel renames, switches between voter and observer, and leaves the room.
 - With more than 10 people on a phone, seats show initials only; names on tap. A name
   cut off at its width opens the same way.
 - The table picks its variant from the width its container gives it, not from the

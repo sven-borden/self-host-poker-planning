@@ -191,7 +191,7 @@ export function YouControls({ me, focusOnMount, onLeaving }: YouControlsProps) {
               </span>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
             <Button ref={renameButton} variant="outline" onClick={startEditing}>
               {t("you.rename")}
             </Button>
