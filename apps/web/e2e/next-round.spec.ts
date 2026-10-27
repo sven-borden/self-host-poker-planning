@@ -239,7 +239,7 @@ test("an anonymous round leaves only its cards in history (AC 2)", async ({
       expect(await guest.enter(code)).toMatchObject({ ok: true });
       expect(await guest.cmd("join", { name, role: "voter" })).toMatchObject({ ok: true });
     }
-    // The settings panel comes in W2: anonymity is set over the protocol.
+    // Anonymity over the protocol: settings.spec.ts plays it in the settings panel.
     expect(await po.enter(code)).toMatchObject({ ok: true });
     expect(await po.cmd("updateSettings", { patch: { revealNames: false } })).toMatchObject({
       ok: true,
@@ -253,7 +253,9 @@ test("an anonymous round leaves only its cards in history (AC 2)", async ({
     }
     await handCard(page, "8").click();
     await page.getByRole("button", { name: "Next round" }).click();
-    await expect(subjectLine(page)).toHaveText("Round 2");
+    // Round 2 is anonymous too, and its line says so.
+    await expect(subjectLine(page).locator("span").first()).toHaveText("Round 2");
+    await expect(subjectLine(page).locator("[data-round-anonymous]")).toBeVisible();
     const [row] = await historyOf(code);
     expect(row).toMatchObject({
       number: 1,
