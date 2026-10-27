@@ -15,7 +15,8 @@ import {
 /**
  * English, Français, Deutsch: each named in itself and marked with its `lang`, so a reader
  * finds theirs whatever the page speaks. The choice is saved; every string changes at once,
- * without a reload. Opening the menu fetches the other catalogs, so a pick shows at once.
+ * without a reload. Opening the menu fetches the other catalogs, so a pick shows at once;
+ * a pick whose catalog cannot be fetched shows a toast that asks for a reload.
  * On phones the trigger is the icon alone, like the theme toggle.
  */
 export function LanguageSwitcher() {
@@ -51,8 +52,14 @@ export function LanguageSwitcher() {
           value={language}
           onValueChange={(value) => {
             if (isLanguage(value)) {
-              // On a failed fetch the page stays in its language; the next pick retries.
-              setLanguage(value).catch(() => {});
+              // On a failed fetch the page stays in its language and says so: after a
+              // redeploy the old chunk is gone, and only a reload fetches the new one.
+              // The toaster is a lazy chunk, so the toast is too.
+              setLanguage(value).catch(() => {
+                void import("sonner").then(({ toast }) => {
+                  toast.error(t("language.loadFailed"), { id: "language-load-failed" });
+                });
+              });
             }
           }}
         >
