@@ -140,16 +140,14 @@ export function testClient(url: string, options: ClientOptions = {}): TestClient
   };
   watchEngine();
   socket.io.on("open", watchEngine);
-  socket.on("snapshot", (raw) => {
-    received.push({ snapshot: snapshotSchema.parse(raw), at: performance.now() });
-  });
+  const waiters = new Set<() => void>();
+  const receive = (snapshot: Snapshot) => {
+    received.push({ snapshot, at: performance.now() });
+    for (const wake of waiters) wake();
+  };
+  socket.on("snapshot", (raw) => receive(snapshotSchema.parse(raw)));
   socket.on("kicked", () => {
     kicked.count += 1;
-  });
-
-  const waiters = new Set<() => void>();
-  socket.on("snapshot", () => {
-    for (const wake of waiters) wake();
   });
 
   return {
@@ -160,7 +158,7 @@ export function testClient(url: string, options: ClientOptions = {}): TestClient
     enter: async (code, protocol = PROTOCOL_VERSION) => {
       const ack = await socket.timeout(5000).emitWithAck("enter", { code, protocol });
       const parsed = enterAckSchema.parse(ack);
-      if (parsed.ok) received.push({ snapshot: parsed.snapshot, at: performance.now() });
+      if (parsed.ok) receive(parsed.snapshot);
       return parsed;
     },
     cmd: async (type, payload, id = nextCommandId()) => {
