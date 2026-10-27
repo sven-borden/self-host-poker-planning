@@ -455,8 +455,18 @@ function withParticipant(state: RoomState, id: UserId, person: Participant): Roo
   return { ...state, participants: { ...state.participants, [id]: person } };
 }
 
+/**
+ * Removes a person (a leave or a kick). While Voting, `settle` then drops their vote.
+ * After a named reveal their card stays on the table with the name they had (#19), since
+ * no seat names them any more; an anonymous round keeps the card alone.
+ */
 function removeParticipant(state: RoomState, id: UserId): RoomState {
-  return { ...state, participants: omit(state.participants, id) };
+  const next: RoomState = { ...state, participants: omit(state.participants, id) };
+  const round = state.round;
+  const vote = round?.phase === "revealed" && !round.anonymous ? ownVote(round, id) : undefined;
+  if (!round || !vote) return next;
+  const { name } = state.participants[id] as Participant;
+  return withRound(next, { ...round, votes: { ...round.votes, [id]: { ...vote, name } } });
 }
 
 function omit<T>(record: Record<string, T>, key: string): Record<string, T> {

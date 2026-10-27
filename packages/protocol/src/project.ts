@@ -228,10 +228,13 @@ function roundView(round: Round, order: readonly UserId[], viewer: UserId): Roun
   return {
     ...revealed,
     anonymous: false,
+    // A voter who left after the reveal has no participant row: their vote carries the
+    // name they had (#19). Someone still in the room is named by `participants` alone.
     votes: voters.map(([who, vote]) => ({
       who,
       card: vote.card,
       changedAfterReveal: vote.changedAfterReveal === true,
+      ...(vote.name !== undefined && !order.includes(who) ? { name: vote.name } : {}),
     })),
   };
 }

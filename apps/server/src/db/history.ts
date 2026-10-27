@@ -72,7 +72,8 @@ function historyVotes(
       const entry: NamedHistoryVote = {
         who,
         // `hasOwn`: an id such as "constructor" must not find Object.prototype's.
-        name: present(who) ? (participants[who]?.name ?? null) : null,
+        // Someone who left after the reveal: the name the domain kept with the vote (#19).
+        name: present(who) ? (participants[who]?.name ?? null) : (vote?.name ?? null),
         card: vote?.card ?? "",
       };
       if (vote?.changedAfterReveal) entry.changedAfterReveal = true;

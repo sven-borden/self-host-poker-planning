@@ -577,9 +577,34 @@ describe("membership", () => {
     expect(po.participants[PO]).toBeUndefined();
   });
 
-  it("keeps the vote of someone who leaves after reveal", () => {
-    const before = room({ round: revealed({ votes: { [A]: { card: "3" } } }) });
+  it("keeps the vote of someone who leaves after a named reveal, with their name (#19)", () => {
+    const before = room({ round: revealed({ votes: { [A]: { card: "3" }, [B]: { card: "5" } } }) });
+    expect(ok(send(before, { type: "leave" }, A)).round?.votes).toEqual({
+      [A]: { card: "3", name: "Alice" },
+      [B]: { card: "5" },
+    });
+    const kicked = ok(send(before, { type: "kick", who: B }));
+    expect(kicked.round?.votes[B]).toEqual({ card: "5", name: "Bob" });
+    const changed = room({
+      round: revealed({ votes: { [A]: { card: "3", changedAfterReveal: true } } }),
+    });
+    expect(ok(send(changed, { type: "leave" }, A)).round?.votes[A]).toEqual({
+      card: "3",
+      changedAfterReveal: true,
+      name: "Alice",
+    });
+  });
+
+  it("keeps the card alone, with no name, when someone leaves after an anonymous reveal", () => {
+    const before = room({ round: revealed({ anonymous: true, votes: { [A]: { card: "3" } } }) });
     expect(ok(send(before, { type: "leave" }, A)).round?.votes).toEqual({ [A]: { card: "3" } });
+  });
+
+  it("leaves the round alone when someone without a vote leaves after the reveal", () => {
+    const before = room({ round: revealed({ votes: { [A]: { card: "3" } } }) });
+    const after = ok(send(before, { type: "leave" }, B));
+    expect(after.round).toBe(before.round);
+    expect(after.participants[B]).toBeUndefined();
   });
 
   it("kicks a participant and their vote", () => {
