@@ -412,6 +412,108 @@ describe("the room settings (#25)", () => {
   });
 });
 
+describe("the deck (#26)", () => {
+  it("refuses a deck change from a voter and an observer, and brings every custom-deck code to the PO", async () => {
+    const code = await insert(votingRoom());
+    const [a, b, c] = [client(ada), client(bob), client(cy)];
+    await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
+    const tshirt = { deck: { kind: "preset", id: "tshirt" } };
+    expect(await b.cmd("updateSettings", { patch: tshirt })).toEqual({
+      ok: false,
+      code: "not_owner",
+    });
+    expect(await c.cmd("updateSettings", { patch: { specials: [] } })).toEqual({
+      ok: false,
+      code: "not_owner",
+    });
+    const refused: Array<[string, string[]]> = [
+      ["deck_empty", []],
+      ["deck_too_many_cards", Array.from({ length: 21 }, (_, i) => String(i))],
+      ["card_empty", ["1", " "]],
+      ["card_invalid", ["a\u{200b}b"]],
+      ["card_too_long", ["Large"]],
+      ["card_duplicate", ["1", "1.0"]],
+      ["card_special", ["\u{2615}\u{fe0f}"]],
+    ];
+    for (const [expected, cards] of refused) {
+      expect(await a.cmd("updateSettings", { patch: { deck: { kind: "custom", cards } } })).toEqual(
+        { ok: false, code: expected },
+      );
+    }
+    expect((await main().database.store.loadRoom(code))?.version).toBe(1);
+  });
+
+  it("restarts the round on a new deck: votes cleared, same subject and number, and a vote sent before it is refused", async () => {
+    const code = await insert(votingRoom());
+    const [a, b, c] = [client(ada), client(bob), client(cy)];
+    await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
+    expect((await b.cmd("castVote", { card: "5", round: 1, restart: 0 })).ok).toBe(true);
+    const cards = ["0.5", "1", "1.5", "2.5", "5"];
+    expect((await a.cmd("updateSettings", { patch: { deck: { kind: "custom", cards } } })).ok).toBe(
+      true,
+    );
+    for (const watcher of [a, b, c]) {
+      const seen = await watcher.waitFor((s) => s.room.round?.restarts === 1);
+      expect(seen.snapshot.causes).toEqual([
+        { type: "settingsUpdated" },
+        { type: "roundStarted", number: 1, restarted: true },
+      ]);
+      expect(seen.snapshot.room.round).toMatchObject({
+        number: 1,
+        phase: "voting",
+        subject: { kind: "title", text: "Login" },
+        deck: { kind: "custom", cards },
+        voted: [],
+      });
+      expect(seen.snapshot.room.round).not.toHaveProperty("yourVote");
+    }
+    // "5" is in both decks: a vote made for the round before its restart must not land.
+    expect(await b.cmd("castVote", { card: "5", round: 1, restart: 0 })).toEqual({
+      ok: false,
+      code: "round_changed",
+    });
+    expect(await b.cmd("retractVote", { round: 1, restart: 0 })).toEqual({
+      ok: false,
+      code: "round_changed",
+    });
+    expect((await main().database.store.loadRoom(code))?.state.round?.votes).toEqual({});
+    // Played on the new deck, the round reveals and goes to history with its deck.
+    expect((await a.cmd("castVote", { card: "1.5", round: 1, restart: 1 })).ok).toBe(true);
+    expect((await b.cmd("castVote", { card: "0.5", round: 1, restart: 1 })).ok).toBe(true);
+    const revealed = await c.waitFor((s) => s.room.round?.phase === "revealed");
+    expect(revealed.snapshot.room.round).toMatchObject({
+      results: { average: 1, median: 1, consensus: false },
+    });
+    expect((await a.cmd("startRound", { subject: { kind: "none" } })).ok).toBe(true);
+    await c.waitFor((s) => s.room.round?.number === 2);
+    const stored = await main().database.store.loadRoom(code);
+    // Round 2 plays with the custom deck too.
+    expect(stored?.state.round?.deck).toEqual({ kind: "custom", cards });
+    const sql = dbClient(t.url);
+    try {
+      const { rows } = await sql.query(
+        "select number, deck, votes from round_history where room_id = $1 order by number",
+        [stored?.id],
+      );
+      expect(rows).toEqual([
+        {
+          number: 1,
+          deck: { spec: { kind: "custom", cards }, specials: ["?", "☕"] },
+          votes: {
+            kind: "named",
+            votes: [
+              { who: ada.id, name: "Ada", card: "1.5" },
+              { who: bob.id, name: "Bob", card: "0.5" },
+            ],
+          },
+        },
+      ]);
+    } finally {
+      await sql.end();
+    }
+  });
+});
+
 describe("the next round (#21)", () => {
   async function historyOf(code: string) {
     const stored = await main().database.store.loadRoom(code);

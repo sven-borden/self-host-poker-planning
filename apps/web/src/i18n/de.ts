@@ -173,9 +173,9 @@ export const de: Catalog = {
     customCount_one: "{{count, number}} Karte",
     customCount_other: "{{count, number}} Karten",
     useCustom: "Diese Karten verwenden",
-    fromNextRound: "Eine Änderung gilt ab Runde {{round, number}}.",
+    fromNextRound: "Neue Karten gelten ab Runde {{round, number}}.",
     restartsRound:
-      "Eine Änderung startet Runde {{round, number}} neu: Die Stimmen werden gelöscht, das Thema bleibt.",
+      "Neue Karten starten Runde {{round, number}} neu: Die Stimmen werden gelöscht, das Thema bleibt.",
     deckQuestion_one:
       "Ein neues Kartendeck startet Runde {{round, number}} neu. Die bisher abgegebene Stimme wird gelöscht, das Thema bleibt.",
     deckQuestion_other:

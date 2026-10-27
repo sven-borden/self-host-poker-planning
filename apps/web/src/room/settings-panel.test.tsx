@@ -240,9 +240,7 @@ describe("the settings panel", () => {
     expect(button.getAttribute("aria-expanded")).toBe("true");
     // The PO lands on the first control: the deck in use (#26).
     await waitFor(() =>
-      expect(document.activeElement).toBe(
-        within(dialog).getByRole("radio", { name: "Fibonacci" }),
-      ),
+      expect(document.activeElement).toBe(within(dialog).getByRole("radio", { name: "Fibonacci" })),
     );
     fireEvent.keyDown(document.activeElement ?? dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

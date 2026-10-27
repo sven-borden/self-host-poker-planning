@@ -174,9 +174,9 @@ export const fr: Catalog<"many"> = {
     customCount_many: "{{count, number}} cartes",
     customCount_other: "{{count, number}} cartes",
     useCustom: "Utiliser ces cartes",
-    fromNextRound: "Un changement s’applique à partir du tour {{round, number}}.",
+    fromNextRound: "De nouvelles cartes s’appliquent à partir du tour {{round, number}}.",
     restartsRound:
-      "Un changement relance le tour {{round, number}}\u{202f}: ses votes sont effacés, son sujet reste.",
+      "De nouvelles cartes relancent le tour {{round, number}}\u{202f}: ses votes sont effacés, son sujet reste.",
     deckQuestion_one:
       "Changer de jeu relance le tour {{round, number}}. Le vote déjà exprimé est effacé\u{202f}; le sujet reste.",
     deckQuestion_many:

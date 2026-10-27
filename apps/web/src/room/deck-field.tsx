@@ -55,7 +55,7 @@ function restartToAsk(room: RoomView): { round: number; count: number } | null {
   return { round: round.number, count: round.voted.length };
 }
 
-/** When a change of the cards takes effect, said under the field. */
+/** When new cards (a deck or the special cards) take effect, said once, in the deck field. */
 function WhenLine({ room }: { room: RoomView }) {
   const t = useT();
   const round = roundOfChange(room);
@@ -580,7 +580,6 @@ export function SpecialsControl({
 
   return (
     <div data-specials-field>
-      <WhenLine room={room} />
       <fieldset id={id} aria-labelledby={labelId} className="m-0 grid min-w-0 gap-1 border-0 p-0">
         {SPECIAL_CARDS.map((card) => (
           <div key={card} data-special={card} className="flex min-h-11 items-center gap-3">

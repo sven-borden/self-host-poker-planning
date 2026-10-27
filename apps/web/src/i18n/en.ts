@@ -222,9 +222,9 @@ export const en = {
     customCount_one: "{{count, number}} card",
     customCount_other: "{{count, number}} cards",
     useCustom: "Use these cards",
-    fromNextRound: "A change applies from round {{round, number}}.",
+    fromNextRound: "New cards apply from round {{round, number}}.",
     restartsRound:
-      "A change restarts round {{round, number}}: its votes are cleared, its subject stays.",
+      "New cards restart round {{round, number}}: its votes are cleared, its subject stays.",
     deckQuestion_one:
       "Changing the deck restarts round {{round, number}}. The {{count, number}} vote cast so far is cleared; the subject stays.",
     deckQuestion_other:
