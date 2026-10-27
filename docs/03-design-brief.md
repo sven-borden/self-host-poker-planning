@@ -398,7 +398,7 @@ and highest in named rounds; screen readers hear "5: 2 votes". On phones the col
 narrow to 24 px, 2 px apart, so the eleven cards of the modified Fibonacci deck fit one
 row at 360 px. Spreads never break ("XS–XXL"): on a phone a deck without numbers puts
 the spread on its own row. A tie of many cards for most voted wraps between its cards
-(#26: a custom deck's six-way tie). Card labels never draw below 7 px. Special cards sit beside it under "Not counted", with a note
+(#26: a custom deck's six-way tie). A custom word keeps its label at 7 px or more on a phone's slot: lowercase letters but m and w count 0.8 em when a label is fitted. Special cards sit beside it under "Not counted", with a note
 that they don't count toward these numbers. The "Not at the table" row marks a lowest
 or highest card with the seats' arrow and says it in the label. If the results' code
 cannot load (an old build gone after a redeploy), the centre says the result as a
