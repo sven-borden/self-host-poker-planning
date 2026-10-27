@@ -11,13 +11,21 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   `run(process.env, { ...processHooks(process), setup: setupServer })`.
 - `src/setup.ts`: `setupServer(config, logger, signal)`, the `setup` hook: `setupDatabase`,
   then `createAuth` on its pool; returns `deps` with `checkDb`, `registerApi` (auth
-  routes) and `socketMiddleware` (the session), plus `database` and `auth`. W1 adds its
-  handlers here.
+  routes, then the room API) and `socketMiddleware` (the session), plus `database` and
+  `auth`. W1 adds its handlers here.
 - `src/auth.ts`: identity. `createAuth(config, db, logger)` builds Better Auth (Drizzle
   adapter, anonymous plugin, options in `authOptions`); `registerAuthApi` mounts
   `/api/auth/*` and `POST /api/me/name`; `sessionMiddleware(auth)` is the socket
   handshake; `sessionUser(auth, headers)` resolves a cookie into a `SocketUser`
   (`{ id, name, isAnonymous }`) or null, and rejects when the database fails.
+- `src/rooms.ts`: the room API (#14). `registerRoomApi(app, { auth, rooms, config,
+  limiter, random? })` mounts `POST /api/rooms` and `GET /api/rooms/:code`;
+  `insertNewRoom(store, { ownerId, name, deck }, random?)` stores a new room and draws
+  the code again on a clash (`CODE_ATTEMPTS`, 5). `src/room-code.ts`: `generateRoomCode`
+  (base58, rejection sampling) and `isRoomCode`.
+- `src/rate-limit.ts`: `memoryRateLimit()`, the bounded fixed-window limiter, and its
+  `RateLimiter` interface (`consume(key, { window, max })`). `src/http.ts`: what the
+  app's own routes share: `foreignOrigin`, `isJsonBody`, `requestIp`, `rateLimited`.
 - `src/run.ts`: validates the config, installs the SIGTERM/SIGINT handler, runs the
   `setup` hook, listens and exits. A signal during `setup` aborts it through the
   `AbortSignal` it receives, logs one line and exits 0. A bad config, a failed `setup` or a failed listen logs
@@ -121,8 +129,12 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   `trustProxy` counts the proxies (`TRUST_PROXY`). Better Auth gets the same address in
   `x-pp-client-ip` (`CLIENT_IP_HEADER`), set by `registerAuthApi` after dropping the
   client's copy; its own `X-Forwarded-For` reading is not used.
-- `setupServer` creates one limiter (`memoryRateLimit`, bounded) for Better Auth and
-  `/api/me/name`: Better Auth's own memory store is shared by the whole process.
+- `setupServer` creates one limiter (`memoryRateLimit`, bounded) for Better Auth,
+  `/api/me/name` and room creation: Better Auth's own memory store is shared by the
+  whole process. Keys start with their purpose (`rename|…`, `rooms|create|…`).
+- A POST route of the app's own checks `foreignOrigin` (403 `not_allowed`) and
+  `isJsonBody` (415 `bad_payload`) first, and counts its rate limit before reading the
+  session, so a flood costs no query.
 - Never log a cookie, a session token or `config.betterAuthSecret`, nor any error from
   Better Auth or the driver: their messages can hold a token. Better Auth's logger goes
   to pino with a fixed message and at most its error code, `onAPIError.throw` stops it
@@ -131,6 +143,21 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   the fake secret and every token it saw.
 - Better Auth's answers become the app's codes in `registerAuthApi` (`authErrorCode`),
   and `withoutTokens` drops every `token` field from its JSON.
+
+## Rooms
+
+- `POST /api/rooms` (session, this origin, JSON): body `{ name?, deck? }`, strict, `deck`
+  one of `PRESET_DECK_IDS` (Fibonacci without one). `name` goes through the domain's
+  `cleanRoomName` (1 to 60 characters). The state is `createRoom({ ownerId })` with the
+  deck; the caller is the PO in `live` and in `owner_user_id`; `name` has its own column.
+  Answers 201 `{ code }`, or `{ code }` with an `AckErrorCode`: 401 `unauthenticated`,
+  403 `not_allowed`, 415 or 400 `bad_payload`, 400 `bad_room_name`, 429 `rate_limited`
+  (`Retry-After`), 500 `internal` (five codes in a row taken, or the database).
+- `GET /api/rooms/:code` (no session): 200 `{ code, name }`, never the state; 404
+  `room_not_found` for an unknown or a malformed code (no query then).
+- `ROOM_CREATE_LIMIT`: 20 creations per client address in 10 minutes.
+- A room code is a room's address: it never reaches a log line. The request log writes
+  `/r/:code` and `/api/rooms/:code` (`loggedPath`); `rooms.db.test.ts` greps the logs.
 
 ## Database
 

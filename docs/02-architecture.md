@@ -111,6 +111,11 @@ input, 100 % branch coverage enforced by the gate. Commands are a flat union
 itself (`===`), so the server can skip the write. Error codes are one snake_case union
 (`ErrorCode`); causes never carry a card value except the public `finalSet`.
 
+Creating a room is not a command: `POST /api/rooms` (section 8) stores
+`createRoom({ ownerId })` with the chosen preset deck as the room's first state
+(version 1), the creator as PO and nobody inside; the PO then enters through `join`
+like everyone else (#16).
+
 States: **Lobby** (`round === null`) → **Voting** → **Revealed** → next round →
 **Voting**. A finished round is written to history when the next round starts, when
 the final estimate is set, or when the room goes idle.
@@ -377,11 +382,22 @@ password, no social provider before W5.
 
 ## 8. Rooms, access and security
 
-- Room code: 10 characters of base58 from `crypto.randomBytes` (about 58 bits). URL `/r/:code`.
+- Room code: 10 characters of base58 (no 0, O, I or l) from `crypto.randomBytes`, about
+  58.6 bits, drawn by rejection sampling (bytes from 232 up are dropped, so no character
+  is favoured). URL `/r/:code`. The `code` column is unique: on a clash the server draws
+  again, up to 5 times, then answers `internal`. A code is a room's address and never
+  reaches a log line (the request log writes `/r/:code` and `/api/rooms/:code`).
+- Room API: `POST /api/rooms` (a session, this origin, a JSON body `{ name?, deck? }`,
+  strict, `deck` a preset id, Fibonacci by default) answers 201 `{ code }`; the creator
+  is the PO. `GET /api/rooms/:code` answers `{ code, name }` to anyone holding the code,
+  never the room's state, or 404 `room_not_found` (a malformed code is not looked up).
+  Errors are `{ code }` with an `AckErrorCode`: `unauthenticated` 401, `not_allowed`
+  403, `bad_payload` 400 or 415, `bad_room_name` 400, `rate_limited` 429, `internal`
+  500.
 - Password (optional): argon2id hash. A correct entry sets a signed, httpOnly
   room-access cookie for that room; attempts limited per IP and per room.
-- Limits: names 32 characters, subjects 200, custom cards 4 characters × 20, payloads
-  16 KB.
+- Limits: names 32 characters, room names 60, subjects 200, custom cards 4 characters
+  × 20, payloads 16 KB.
 - Text (names, round titles, room names: the domain's `cleanText`): control characters,
   bidi controls and default-ignorable code points are refused (zero-width space, soft
   hyphen, LRM, Hangul fillers, U+FEFF …), except ZWJ, ZWNJ and VS16, and tag characters
@@ -397,7 +413,9 @@ password, no social provider before W5.
   passes in a header of its own after dropping any client copy): anonymous sign-in 60 per
   address and minute, so a team of 30 behind one office address joins at once; every
   other auth endpoint 100 per 10 s; display name changes 10 per user and 60 per address
-  a minute. Answer: 429 `rate_limited`. The counters live in the process (per instance
+  a minute; room creation 20 per address in 10 minutes, so an office behind one
+  address creates rooms freely while a loop gets two a minute. Answer: 429
+  `rate_limited` with `Retry-After`. The counters live in the process (per instance
   with #39), at most 50,000 at once: expired ones are swept every 30 s, and when full the
   oldest tenth goes.
 - Headers: strict CSP (no inline scripts), HSTS, `X-Content-Type-Options`,
