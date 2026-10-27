@@ -97,7 +97,7 @@ test("a refused clipboard shows the link to copy by hand", async ({ page }) => {
 test("an unknown room shows the not-found state", async ({ page }) => {
   await page.goto("/r/Unknown123");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Room not found");
-  await page.getByRole("link", { name: "Back to the home page" }).click();
+  await page.getByRole("link", { name: "Create a new room" }).click();
   await expect(page.getByRole("button", { name: "Create the room" })).toBeVisible();
 });
 
