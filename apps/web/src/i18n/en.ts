@@ -213,6 +213,58 @@ export const en = {
     observersCountRefused:
       "More than {{max, number}} people are here with the observers. Observers can count again once there are {{max, number}} or fewer.",
   },
+  deckField: {
+    inUse: "In use",
+    use: "Use {{deck}}",
+    customLabel: "Cards, separated by commas",
+    customHint:
+      "Up to {{max, number}} cards of up to {{length, number}} characters each, emoji too. The comma separates the cards, so write a decimal with a point: 0.5.",
+    customCount_one: "{{count, number}} card",
+    customCount_other: "{{count, number}} cards",
+    useCustom: "Use these cards",
+    fromNextRound: "A change applies from round {{round, number}}.",
+    restartsRound:
+      "A change restarts round {{round, number}}: its votes are cleared, its subject stays.",
+    deckQuestion_one:
+      "Changing the deck restarts round {{round, number}}. The {{count, number}} vote cast so far is cleared; the subject stays.",
+    deckQuestion_other:
+      "Changing the deck restarts round {{round, number}}. The {{count, number}} votes cast so far are cleared; the subject stays.",
+    specialsQuestion_one:
+      "Changing the special cards restarts round {{round, number}}. The {{count, number}} vote cast so far is cleared; the subject stays.",
+    specialsQuestion_other:
+      "Changing the special cards restarts round {{round, number}}. The {{count, number}} votes cast so far are cleared; the subject stays.",
+    restartWith: "Restart with {{deck}}",
+    restartSpecials: "Restart with the new special cards",
+    cancel: "Cancel",
+    deck_empty: "Type at least one card.",
+    deck_too_many_cards: "These are {{count, number}} cards; a deck holds at most {{max, number}}.",
+    card_empty: "Card {{position, number}} is empty. Remove the extra comma.",
+    card_invalid: "Card {{position, number}} holds characters that cannot be shown. Type it again.",
+    card_too_long: "“{{card}}” is too long: a card holds at most {{max, number}} characters.",
+    card_duplicate: "“{{card}}” is in the deck twice. Keep one.",
+    card_same_value: "“{{card}}” has the same value as “{{other}}”. Keep one of them.",
+    card_special:
+      "“{{card}}” is a special card. Turn it on under “Special cards” instead of typing it.",
+    rangeOpen: "Generate a range",
+    rangeStart: "Start",
+    rangeEnd: "End",
+    rangeStep: "Step",
+    rangeHint:
+      "Numbers, with a comma or a point as the decimal mark. The cards fill the field above, where you can still edit them.",
+    rangeFill: "Fill in the cards",
+    rangeFilled_one: "{{count, number}} card filled in. Check it, then use it.",
+    rangeFilled_other: "{{count, number}} cards filled in. Check them, then use them.",
+    range_not_finite: "Type a number in start, end and step, such as 0.5 or 0,5.",
+    range_step_not_positive: "The step must be more than 0.",
+    range_end_before_start: "The end must not be smaller than the start.",
+    range_too_many_cards:
+      "That range gives more than {{max, number}} cards. Take a larger step or a shorter range.",
+    range_label_too_long:
+      "Some values would need more than {{max, number}} characters, such as 0.125 or 10000. Use fewer decimals or smaller numbers.",
+    specialUnsure: "Not sure",
+    specialCoffee: "Need a break",
+    specialInfinite: "Too big to estimate",
+  },
   table: {
     seats: "People at the table",
     observers: "Observers",
@@ -327,8 +379,14 @@ export const en = {
     poVotesOff: "The product owner no longer votes.",
     observersCountOn: "Observers now take one of the {{max, number}} places.",
     observersCountOff: "Observers no longer take one of the {{max, number}} places.",
-    deckChanged: "The product owner changed the deck: {{deck}}.",
-    specialsChanged: "The product owner changed the special cards.",
+    deckChanged: "The product owner changed the deck to {{deck}} from the next round.",
+    specialsChanged: "The product owner changed the special cards from the next round.",
+    deckRestarted: "The product owner restarted round {{round, number}} with {{deck}}.",
+    specialsRestarted:
+      "The product owner restarted round {{round, number}} with new special cards.",
+    voteAgain: "Vote again.",
+    deckNow: "The product owner changed the deck to {{deck}}.",
+    specialsNow: "The product owner changed the special cards.",
     timerChanged: "The product owner changed the timer.",
     revealAnyone: "Anyone who votes can now reveal the cards.",
     revealOwner: "Only the product owner can reveal the cards now.",

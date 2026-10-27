@@ -152,6 +152,7 @@ describe("catalogs", () => {
       "dev.hand",
       "decks.fib",
       "results.median",
+      "deckField.rangeStart",
     ],
   };
 

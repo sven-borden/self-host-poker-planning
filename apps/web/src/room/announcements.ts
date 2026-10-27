@@ -37,9 +37,20 @@ export interface LiveEvent {
   round?: Pick<RoundView, "number" | "subject" | "anonymous">;
   /**
    * A setting the PO changed (#25), with the room's settings before and after, and the
-   * number of the next round, from which a change of anonymity applies.
+   * number of the next round, from which a change of anonymity applies. A deck or specials
+   * change during Voting restarts the round (#26): `restarted` is its number, and
+   * `voteAgain` whether the viewer has a hand to play again.
    */
-  setting?: { key: SettingKey; from: RoomSettingsView; to: RoomSettingsView; nextRound: number };
+  setting?: {
+    key: SettingKey;
+    from: RoomSettingsView;
+    to: RoomSettingsView;
+    nextRound: number;
+    restarted?: number;
+    voteAgain?: boolean;
+    /** The change shows in the voting round on the table, which a reconnect missed starting. */
+    now?: true;
+  };
 }
 
 /**
@@ -98,6 +109,8 @@ export function liveEvents(
     let kind: LiveKind;
     switch (cause.type) {
       case "roundStarted":
+        // A deck change restarted the round: the settings event says it, with its deck.
+        if (cause.restarted) continue;
         events.push({
           kind: cause.type,
           who: "",
@@ -151,12 +164,35 @@ function settingEvents(previous: RoomView | null, next: RoomView): LiveEvent[] {
   const to = next.settings;
   // A round starts with the room's anonymity; the one on the table keeps its own.
   const nextRound = (next.round?.number ?? 0) + 1;
+  const restarted = restartedRound(previous, next);
+  const voteAgain = next.participants.some((p) => p.id === next.you && p.role === "voter");
   return SETTING_KEYS.filter((key) => !sameSetting(from, to, key)).map((key) => ({
     kind: "settings",
     who: key,
     name: "",
-    setting: { key, from, to, nextRound },
+    setting: !(key === "deck" || key === "specials")
+      ? { key, from, to, nextRound }
+      : restarted !== null
+        ? { key, from, to, nextRound, restarted, voteAgain }
+        : next.round?.phase === "voting"
+          ? { key, from, to, nextRound, now: true }
+          : { key, from, to, nextRound },
   }));
+}
+
+/**
+ * The number of the voting round a deck or specials change restarted between `previous`
+ * and `next` (#26: same number, one more restart), or null.
+ */
+function restartedRound(previous: RoomView, next: RoomView): number | null {
+  const was = previous.round;
+  const now = next.round;
+  return was?.phase === "voting" &&
+    now?.phase === "voting" &&
+    now.number === was.number &&
+    (now.restarts ?? 0) > (was.restarts ?? 0)
+    ? now.number
+    : null;
 }
 
 /** The reveal, with the result `next` shows (none when a new round already replaced it). */
@@ -243,15 +279,21 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
 }
 
 /** What a changed setting means for the room, in plain words. */
-function settingSentence(
-  t: TFunction,
-  { key, to, nextRound }: NonNullable<LiveEvent["setting"]>,
-): string {
+function settingSentence(t: TFunction, setting: NonNullable<LiveEvent["setting"]>): string {
+  const { key, to, nextRound, restarted } = setting;
+  if (restarted !== undefined && (key === "deck" || key === "specials")) {
+    // "The product owner restarted round 4 with T-shirt sizes. Vote again."
+    const said =
+      key === "deck"
+        ? t("live.deckRestarted", { round: restarted, deck: deckName(t, to.deck) })
+        : t("live.specialsRestarted", { round: restarted });
+    return setting.voteAgain ? `${said} ${t("live.voteAgain")}` : said;
+  }
   switch (key) {
     case "deck":
-      return t("live.deckChanged", { deck: deckName(t, to.deck) });
+      return t(setting.now ? "live.deckNow" : "live.deckChanged", { deck: deckName(t, to.deck) });
     case "specials":
-      return t("live.specialsChanged");
+      return t(setting.now ? "live.specialsNow" : "live.specialsChanged");
     case "timer":
       return t("live.timerChanged");
     case "revealWhenAllVoted":
