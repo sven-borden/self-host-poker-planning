@@ -6,7 +6,7 @@ import { ThemeToggle } from "../components/shell/theme-toggle.tsx";
 import { buttonVariants } from "../components/ui/button.tsx";
 import { errorMessage } from "../i18n/errors.ts";
 import { useT } from "../i18n/hooks.ts";
-import { UNAUTHENTICATED } from "../identity/identity.ts";
+import { COOKIES_BLOCKED, UNAUTHENTICATED } from "../identity/identity.ts";
 import { useIdentityStore } from "../stores/identity-store.ts";
 
 // The toaster (sonner) loads after first render: no toast can come before the room has
@@ -51,25 +51,39 @@ function RootLayout() {
       <Suspense fallback={null}>
         <Toaster />
       </Suspense>
-      <SessionLostToast />
+      <IdentityToasts />
     </>
   );
 }
 
 /**
- * The socket was refused twice in a row for want of a session, the bootstrap in between
- * included (`connectWhenIdentified`): say so, in the reader's language.
+ * What the identity bootstrap has to say, in the reader's language:
+ * - while it retries a temporary failure (a redeploy), a quiet note that stays until it
+ *   passes;
+ * - when the browser refuses the session cookie, that the site needs cookies;
+ * - when the socket was refused twice in a row for want of a session, the bootstrap in
+ *   between included (`connectWhenIdentified`), that the session ended.
  */
-function SessionLostToast() {
+function IdentityToasts() {
   const t = useT();
+  const status = useIdentityStore((state) => state.status);
   const error = useIdentityStore((state) => state.error);
   useEffect(() => {
-    if (error !== UNAUTHENTICATED) return;
-    // The toaster is a lazy chunk, so the toast is too.
+    // The toaster is a lazy chunk, so the toasts are too.
     void import("sonner").then(({ toast }) => {
-      toast.error(errorMessage(t, error), { id: "session-lost" });
+      if (status === "retrying") {
+        toast(t("identity.reconnecting"), { id: "identity-retrying", duration: Infinity });
+        return;
+      }
+      toast.dismiss("identity-retrying");
+      if (status !== "error") return;
+      if (error === COOKIES_BLOCKED) {
+        toast.error(t("identity.cookiesBlocked"), { id: "cookies-blocked", duration: Infinity });
+      } else if (error === UNAUTHENTICATED) {
+        toast.error(errorMessage(t, error), { id: "session-lost" });
+      }
     });
-  }, [error, t]);
+  }, [status, error, t]);
   return null;
 }
 

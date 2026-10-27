@@ -1,5 +1,5 @@
 import { io, type ManagerOptions, type Socket, type SocketOptions } from "socket.io-client";
-import { ensureIdentity, UNAUTHENTICATED } from "../identity/identity.ts";
+import { ensureIdentity, retryDelay, UNAUTHENTICATED } from "../identity/identity.ts";
 import { useIdentityStore } from "../stores/identity-store.ts";
 import type { ConnectionStatus } from "../stores/room-store.ts";
 
@@ -33,22 +33,50 @@ export function createSocket<ServerToClient extends EventsMap, ClientToServer ex
 }
 
 /**
- * Connects `socket` once this browser has a session (`ensureIdentity`), never before: the
- * handshake carries the session cookie and the server refuses a socket without one. When
- * the server still answers `unauthenticated` (the session expired or was revoked), runs
- * the bootstrap once more and reconnects; a second refusal in a row, or a failed
- * bootstrap, sets the identity store's error to `unauthenticated` for the page to show
- * (`errorMessage(t, "unauthenticated")`). Returns a function that removes the listeners.
+ * Handshake refusals that pass on their own (the database is back, the limiter's window
+ * ends): `connectWhenIdentified` connects again after a backoff, so the status stays
+ * `reconnecting`. Socket.IO itself never retries a refusal from a server middleware.
+ */
+export const RETRIED_REFUSALS: ReadonlySet<string> = new Set(["internal", "rate_limited"]);
+
+/** What `connectWhenIdentified` may be handed instead of the real bootstrap and clock. */
+export interface ConnectOptions {
+  ensure?: (options?: { force?: boolean; retry?: boolean }) => Promise<unknown>;
+  /** Milliseconds before retry number `attempt`, and the server's Retry-After if any. */
+  delay?: (attempt: number, retryAfterSeconds?: number) => number;
+}
+
+/** The `retryAfter` (seconds) a server put in a refusal's `data`, if any. */
+function retryAfterOf(error: Error): number | undefined {
+  const data = (error as Error & { data?: unknown }).data;
+  const value =
+    typeof data === "object" && data !== null ? Reflect.get(data, "retryAfter") : undefined;
+  return typeof value === "number" && value > 0 ? value : undefined;
+}
+
+/**
+ * Connects `socket` once this browser has a session (`ensureIdentity`, retried with
+ * backoff while it fails for a temporary reason such as a redeploy), never before: the
+ * handshake carries the session cookie and the server refuses a socket without one.
+ * - `internal` or `rate_limited` (`RETRIED_REFUSALS`): connects again after a capped,
+ *   jittered exponential backoff that honours a `retryAfter` the server sends, until it
+ *   passes; a successful connect starts the backoff over.
+ * - `unauthenticated` (the session expired or was revoked): runs the bootstrap once more
+ *   and reconnects; a second refusal in a row, or a failed bootstrap, sets the identity
+ *   store's error to `unauthenticated` for the page to show.
+ * Returns a function that removes the listeners and cancels a pending retry.
  */
 export function connectWhenIdentified<
   ServerToClient extends EventsMap,
   ClientToServer extends EventsMap,
 >(
   socket: TypedSocket<ServerToClient, ClientToServer>,
-  ensure: (options?: { force?: boolean }) => Promise<unknown> = ensureIdentity,
+  { ensure = ensureIdentity, delay = retryDelay }: ConnectOptions = {},
 ): () => void {
   let retried = false;
   let stopped = false;
+  let attempt = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const giveUp = () => {
     if (!stopped) useIdentityStore.getState().setError(UNAUTHENTICATED);
   };
@@ -57,22 +85,30 @@ export function connectWhenIdentified<
   };
   const onConnect = () => {
     retried = false;
+    attempt = 0;
   };
   const onConnectError = (error: Error) => {
-    if (stopped || error.message !== UNAUTHENTICATED) return;
+    if (stopped) return;
+    if (RETRIED_REFUSALS.has(error.message)) {
+      clearTimeout(timer);
+      timer = setTimeout(connect, delay(attempt++, retryAfterOf(error)));
+      return;
+    }
+    if (error.message !== UNAUTHENTICATED) return;
     if (retried) {
       giveUp();
       return;
     }
     retried = true;
-    ensure({ force: true }).then(connect, giveUp);
+    ensure({ force: true, retry: true }).then(connect, giveUp);
   };
   socket.on("connect", onConnect);
   socket.on("connect_error", onConnectError);
-  // A failed bootstrap already put its code in the store (`rate_limited`, `network`, …).
-  ensure().then(connect, () => {});
+  // A final bootstrap failure already put its code in the store (`cookies_blocked`, …).
+  ensure({ retry: true }).then(connect, () => {});
   return () => {
     stopped = true;
+    clearTimeout(timer);
     socket.off("connect", onConnect);
     socket.off("connect_error", onConnectError);
   };
@@ -91,7 +127,9 @@ export function trackConnection<ServerToClient extends EventsMap, ClientToServer
   // not after a disconnect the client asked for (`io client disconnect`) or one the server
   // forced (`io server disconnect`): then `active` is false and the status is final.
   const onDisconnect = () => onStatus(socket.active ? "reconnecting" : "offline");
-  const onConnectError = () => onStatus(socket.active ? "reconnecting" : "offline");
+  // A refusal `connectWhenIdentified` retries is not final either.
+  const onConnectError = (error: Error) =>
+    onStatus(socket.active || RETRIED_REFUSALS.has(error.message) ? "reconnecting" : "offline");
   const onReconnectAttempt = () => onStatus("reconnecting");
 
   socket.on("connect", onConnect);

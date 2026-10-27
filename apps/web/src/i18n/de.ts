@@ -65,6 +65,11 @@ export const de: Catalog = {
     title: "Seite nicht gefunden",
     body: "Diese Adresse führt nirgendwohin. Prüfen Sie den Link oder kehren Sie zur Startseite zurück.",
   },
+  identity: {
+    reconnecting: "Verbindung zum Server wird hergestellt…",
+    cookiesBlocked:
+      "Diese Website braucht Cookies, um Sie in einem Raum wiederzuerkennen. Erlauben Sie Cookies für diese Website und laden Sie die Seite dann neu.",
+  },
   common: {
     close: "Schließen",
     notifications: "Benachrichtigungen",

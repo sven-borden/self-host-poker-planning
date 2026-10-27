@@ -36,5 +36,6 @@ void Promise.all([startLanguage(), router.load().catch(() => {})]).then(() => {
 
 // Every visitor gets an identity: the session cookie's, or a new guest's (#10). It runs
 // next to the first render rather than before it; sockets wait for it
-// (`connectWhenIdentified`). A failure is kept in the identity store.
-ensureIdentity().catch(() => {});
+// (`connectWhenIdentified`). A temporary failure (a redeploy) is retried with backoff;
+// a final one (cookies blocked) is kept in the identity store.
+ensureIdentity({ retry: true }).catch(() => {});

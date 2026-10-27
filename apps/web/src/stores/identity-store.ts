@@ -4,7 +4,8 @@ import { create } from "zustand";
 // `src/identity/identity.ts` fills it; components read it. The session cookie itself is
 // httpOnly and never reaches JavaScript.
 
-export type IdentityStatus = "idle" | "loading" | "ready" | "error";
+/** `retrying`: a temporary failure (`error` holds its code); the bootstrap tries again. */
+export type IdentityStatus = "idle" | "loading" | "retrying" | "ready" | "error";
 
 export interface IdentityStoreState {
   status: IdentityStatus;
@@ -18,6 +19,7 @@ export interface IdentityStoreState {
   setIdentity: (identity: { userId: string; name: string | null }) => void;
   setName: (name: string) => void;
   setError: (code: string) => void;
+  setRetrying: (code: string) => void;
   reset: () => void;
 }
 
@@ -34,5 +36,6 @@ export const useIdentityStore = create<IdentityStoreState>()((set) => ({
   setIdentity: ({ userId, name }) => set({ status: "ready", userId, name, error: null }),
   setName: (name) => set({ name }),
   setError: (error) => set({ status: "error", error }),
+  setRetrying: (error) => set({ status: "retrying", error }),
   reset: () => set(initialState),
 }));

@@ -117,6 +117,11 @@ export const en = {
     title: "Page not found",
     body: "This address leads nowhere. Check the link or start again from the home page.",
   },
+  identity: {
+    reconnecting: "Connecting to the server…",
+    cookiesBlocked:
+      "This site needs cookies to recognise you in a room. Allow cookies for it, then reload the page.",
+  },
   common: {
     close: "Close",
     notifications: "Notifications",

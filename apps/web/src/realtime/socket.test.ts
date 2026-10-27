@@ -54,6 +54,19 @@ describe("createSocket", () => {
     socket.close();
   });
 
+  it("reports a refusal that connectWhenIdentified retries as reconnecting", () => {
+    const socket = createSocket();
+    const statuses: string[] = [];
+    const stop = trackConnection(socket, (status) => statuses.push(status));
+    setActive(socket, false);
+    fire(socket, "connect_error", new Error("internal"));
+    fire(socket, "connect_error", new Error("rate_limited"));
+    fire(socket, "connect_error", new Error("unauthenticated"));
+    expect(statuses).toEqual(["reconnecting", "reconnecting", "offline"]);
+    stop();
+    socket.close();
+  });
+
   it("reports a failed attempt as reconnecting while Socket.IO keeps trying", () => {
     const socket = createSocket();
     const statuses: string[] = [];
@@ -95,10 +108,15 @@ describe("trackConnection", () => {
 describe("connectWhenIdentified", () => {
   const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-  function setup(ensure: (options?: { force?: boolean }) => Promise<unknown>) {
+  type Ensure = (options?: { force?: boolean; retry?: boolean }) => Promise<unknown>;
+
+  function setup(
+    ensure: Ensure,
+    delay: (attempt: number, retryAfter?: number) => number = () => 5,
+  ) {
     const socket = createSocket();
     const connect = vi.spyOn(socket, "connect").mockReturnValue(socket);
-    const stop = connectWhenIdentified(socket, ensure);
+    const stop = connectWhenIdentified(socket, { ensure, delay });
     return { socket, connect, stop };
   }
 
@@ -114,11 +132,49 @@ describe("connectWhenIdentified", () => {
     stop();
   });
 
-  it("never connects when the bootstrap fails", async () => {
-    const { connect, stop } = setup(() => Promise.reject(new Error("rate_limited")));
+  it("asks for a bootstrap that retries, and never connects when it fails for good", async () => {
+    const ensure = vi.fn<Ensure>(() => Promise.reject(new Error("cookies_blocked")));
+    const { connect, stop } = setup(ensure);
     await tick();
+    expect(ensure).toHaveBeenCalledWith({ retry: true });
     expect(connect).not.toHaveBeenCalled();
     stop();
+  });
+
+  it("connects again after internal or rate_limited, with backoff, until the server is back", async () => {
+    vi.useFakeTimers();
+    try {
+      const delay = vi.fn((attempt: number) => 1000 * 2 ** attempt);
+      const { socket, connect, stop } = setup(() => Promise.resolve({ userId: "u1" }), delay);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(connect).toHaveBeenCalledTimes(1);
+      // The database is down: the handshake answers internal, twice.
+      fire(socket, "connect_error", new Error("internal"));
+      await vi.advanceTimersByTimeAsync(999);
+      expect(connect).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(connect).toHaveBeenCalledTimes(2);
+      fire(socket, "connect_error", new Error("internal"));
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(connect).toHaveBeenCalledTimes(3);
+      // A refusal that names its wait passes it on.
+      const limited = Object.assign(new Error("rate_limited"), { data: { retryAfter: 7 } });
+      fire(socket, "connect_error", limited);
+      expect(delay).toHaveBeenLastCalledWith(2, 7);
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(connect).toHaveBeenCalledTimes(4);
+      // Back: the next refusal starts the backoff over.
+      fire(socket, "connect");
+      fire(socket, "connect_error", new Error("internal"));
+      expect(delay).toHaveBeenLastCalledWith(0, undefined);
+      expect(useIdentityStore.getState().error).toBeNull();
+      // Cleanup cancels the pending retry.
+      stop();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(connect).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("runs the bootstrap once more on unauthenticated, then reports a second refusal", async () => {
@@ -127,7 +183,7 @@ describe("connectWhenIdentified", () => {
     await tick();
     fire(socket, "connect_error", new Error("unauthenticated"));
     await tick();
-    expect(ensure).toHaveBeenLastCalledWith({ force: true });
+    expect(ensure).toHaveBeenLastCalledWith({ force: true, retry: true });
     expect(connect).toHaveBeenCalledTimes(2);
     expect(useIdentityStore.getState().error).toBeNull();
     fire(socket, "connect_error", new Error("unauthenticated"));
@@ -155,7 +211,7 @@ describe("connectWhenIdentified", () => {
 
   it("reports unauthenticated when the second bootstrap fails, and stops on cleanup", async () => {
     const ensure = vi
-      .fn<(options?: { force?: boolean }) => Promise<unknown>>()
+      .fn<Ensure>()
       .mockResolvedValueOnce({ userId: "u1", name: null })
       .mockRejectedValueOnce(new Error("internal"));
     const { socket, connect, stop } = setup(ensure);
