@@ -421,6 +421,8 @@ test("the PO's timer by keyboard alone, on a desktop", async ({ page }) => {
   await page.keyboard.press("r");
   await expect(centreStatus(page)).toHaveAttribute("data-centre-status", "revealed");
   await expect(chip(page)).toHaveCount(0);
+  // The chip left with the round: the focus went to the PO's decision under the table.
+  await expect(page.locator("[data-decision] :focus")).toHaveCount(1);
 });
 
 test("the PO's timer by keyboard alone, on a phone, with the hand docked under the table", async ({

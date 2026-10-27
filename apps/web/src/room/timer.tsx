@@ -17,7 +17,7 @@ import { cn } from "../lib/utils.ts";
 import { type CommandInput, commandSender } from "../realtime/room-connection.ts";
 import { clockOffset, onClockOffset } from "../realtime/server-clock.ts";
 import { useRoomStore } from "../stores/room-store.ts";
-import { focusAfterReveal, focusSoon } from "./focus.ts";
+import { AFTER_REVEAL, focusSoon } from "./focus.ts";
 import {
   clockText,
   EXTEND_SECONDS,
@@ -375,9 +375,11 @@ function useFocusHandOff<E extends HTMLElement>() {
   useLayoutEffect(() => {
     const element = ref.current;
     return () => {
-      if (element === null || document.activeElement !== element) return;
-      if (document.querySelector("[data-reveal]") === null) focusAfterReveal();
-      else focusSoon("[data-timer-button]");
+      // Decided a frame later, once the page shows what replaced the button: the chip while
+      // the round votes, else the PO's decision after the reveal.
+      if (element !== null && document.activeElement === element) {
+        focusSoon("[data-timer-button]", ...AFTER_REVEAL);
+      }
     };
   }, []);
   return ref;

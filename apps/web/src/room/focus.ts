@@ -26,10 +26,12 @@ export function focusSoon(...selectors: string[]) {
  * "Record 8" when a card is preselected, so one press records the suggestion; else to the
  * picker, where the PO picks; then to "Next round" if neither is there.
  */
-export const focusAfterReveal = () =>
-  focusSoon(
-    "[data-record-final]:not([aria-disabled])",
-    "[data-final-picker] input:checked",
-    "[data-final-picker] input",
-    "[data-start-round]",
-  );
+/** The PO's decision after a reveal, in the order `focusAfterReveal` tries it. */
+export const AFTER_REVEAL = [
+  "[data-record-final]:not([aria-disabled])",
+  "[data-final-picker] input:checked",
+  "[data-final-picker] input",
+  "[data-start-round]",
+] as const;
+
+export const focusAfterReveal = () => focusSoon(...AFTER_REVEAL);
