@@ -143,6 +143,8 @@ describe("a backend terminated", () => {
     const outcome = await running;
     await release();
     expect(outcome).toMatchObject({ error: expect.any(DatabaseError) });
+    // admin_shutdown: the first error, not the failed ROLLBACK after it.
+    expect(outcome).toMatchObject({ error: { code: "57P01" } });
     expect((await d.store.loadRoom(room.code))?.version).toBe(1);
     expect(await historyCount(room.id)).toBe(0);
 
@@ -165,6 +167,8 @@ describe("a backend terminated", () => {
     const outcome = await running;
     await release();
     expect(outcome).toMatchObject({ error: expect.any(DatabaseError) });
+    // admin_shutdown: the first error, not the failed ROLLBACK after it.
+    expect(outcome).toMatchObject({ error: { code: "57P01" } });
     expect((await d.store.loadRoom(room.code))?.version).toBe(1);
     expect(await historyCount(room.id)).toBe(0);
 
@@ -180,6 +184,8 @@ describe("a backend terminated", () => {
     const outcome = await running;
     await release();
     expect(outcome).toMatchObject({ error: expect.any(DatabaseError) });
+    // admin_shutdown: the first error, not the failed ROLLBACK after it.
+    expect(outcome).toMatchObject({ error: { code: "57P01" } });
     expect((await d.store.loadRoom(room.code))?.version).toBe(1);
 
     expect(await d.runner.run(room.code, rename)).toMatchObject({ ok: true, version: 2 });

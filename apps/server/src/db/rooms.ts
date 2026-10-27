@@ -96,27 +96,39 @@ export function createRoomStore(db: Db): RoomStore {
           return rows.length === 1;
         };
         if (!isHistory(ended)) return write(db);
-        return db.transaction(async (tx) => {
-          if (!(await write(tx))) return false;
-          const row = historyRow(id, ended);
-          await tx
-            .insert(roundHistory)
-            .values(row)
-            .onConflictDoUpdate({
-              target: [roundHistory.roomId, roundHistory.number],
-              set: {
-                subject: row.subject,
-                deck: row.deck,
-                votes: row.votes,
-                stats: row.stats,
-                final: row.final,
-                startedAt: row.startedAt,
-                revealedAt: row.revealedAt,
-                finishedAt: row.finishedAt,
-              },
-            });
-          return true;
-        });
+        const row = historyRow(id, ended);
+        // When the connection dies mid-transaction, drizzle's ROLLBACK fails too and its
+        // error (no SQLSTATE) replaces the first one. Keep the first, for its code.
+        let first: unknown;
+        return db
+          .transaction(async (tx) => {
+            try {
+              if (!(await write(tx))) return false;
+              await tx
+                .insert(roundHistory)
+                .values(row)
+                .onConflictDoUpdate({
+                  target: [roundHistory.roomId, roundHistory.number],
+                  set: {
+                    subject: row.subject,
+                    deck: row.deck,
+                    votes: row.votes,
+                    stats: row.stats,
+                    final: row.final,
+                    startedAt: row.startedAt,
+                    revealedAt: row.revealedAt,
+                    finishedAt: row.finishedAt,
+                  },
+                });
+              return true;
+            } catch (error) {
+              first = error;
+              throw error;
+            }
+          })
+          .catch((error: unknown) => {
+            throw first ?? error;
+          });
       }),
   };
 }
