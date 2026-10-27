@@ -185,11 +185,7 @@ it("reveals at the deadline, once, when the server restarts mid-countdown (#27)"
   await dropped;
   await startServer();
   // Both clients are back before the deadline: the countdown goes on where it was.
-  const back = await a.waitFor(
-    (s) => s.room.round?.deadlineAt === deadlineAt,
-    10_000,
-    fromA,
-  );
+  const back = await a.waitFor((s) => s.room.round?.deadlineAt === deadlineAt, 10_000, fromA);
   expect(back.snapshot.room.round?.phase).toBe("voting");
   expect(Date.now()).toBeLessThan(deadlineAt);
 
