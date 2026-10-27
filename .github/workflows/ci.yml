@@ -104,22 +104,16 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # The browser download is cached per Playwright version. Its system packages come
-      # from apt only when the runner image lacks one: `apt-get update` once took this job
-      # 9 minutes (#23), and the image usually has them all.
+      # The browser download is cached per Playwright version; its system packages install
+      # every time. A dry run of install-deps (#23) found fonts missing on ubuntu-26.04 on
+      # every run, so it never saved the apt step.
       - id: playwright
         run: echo "version=$(pnpm --filter @pp/web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-      - run: pnpm --filter @pp/web exec playwright install chromium
-      # Playwright's dry run simulates the apt install (`apt-get install -s`, no update) and
-      # fails when a package is missing, or when apt cannot tell; only then does apt run.
-      - name: Install Chromium's system packages if any is missing
-        run: |
-          pnpm --filter @pp/web exec playwright install-deps --dry-run chromium \
-            || pnpm --filter @pp/web exec playwright install-deps chromium
+      - run: pnpm --filter @pp/web exec playwright install --with-deps chromium
       - run: pnpm --filter @pp/web build
       - run: pnpm --filter @pp/web test:e2e
       - if: failure()

@@ -401,8 +401,7 @@ server sends and never decides the outcome of a round.
   job fails, for 5 days. Open a trace with
   `pnpm --filter @pp/web exec playwright show-trace <path>/trace.zip`, or drop it on
   trace.playwright.dev: each step shows the page before and after, the console and the
-  network, where the WebSocket frames are. The CI job installs Chromium's system packages
-  through apt only when Playwright's dry run of `install-deps` finds one missing.
+  network, where the WebSocket frames are.
 - Tests: the `web` Vitest project extends `vite.config.ts` and runs in jsdom
   (`src/test-setup.ts` stubs `matchMedia`).
 
