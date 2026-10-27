@@ -4,9 +4,12 @@ export type {
   ApplyContext,
   ApplyResult,
   Cause,
+  ClientCommand,
+  ClientCommandType,
   Command,
   CommandType,
   ErrorCode,
+  ServerCommandType,
 } from "./commands.ts";
 export {
   baseCards,

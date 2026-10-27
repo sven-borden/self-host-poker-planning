@@ -1,7 +1,8 @@
-import { createRoom, type Participant, type RoomState } from "@pp/domain";
+import { apply, type Command, createRoom, type Participant, type RoomState } from "@pp/domain";
 import { toSnapshot } from "@pp/protocol";
 import { describe, expect, it } from "vitest";
-import { isRoomFull, tableData } from "./table-data.ts";
+import { isRoomFull } from "./room-full.ts";
+import { tableData } from "./table-data.ts";
 
 function roomWith(
   people: Array<[string, Participant["role"]]>,
@@ -32,7 +33,7 @@ describe("tableData", () => {
     expect(people.map((p) => p.id)).toEqual(["u1", "u3", "u4"]);
     expect(people.every((p) => p.status.kind === "present")).toBe(true);
     expect(people[0]?.name).toBe("Name u1");
-    expect(observers).toEqual([
+    expect(observers.map(({ id, name }) => ({ id, name }))).toEqual([
       { id: "u2", name: "Name u2" },
       { id: "u5", name: "Name u5" },
     ]);
@@ -46,6 +47,84 @@ describe("tableData", () => {
 
   it("leaves the seats in join order when the viewer observes", () => {
     expect(tableData(view(state, "u2")).people.map((p) => p.id)).toEqual(["u1", "u3", "u4"]);
+  });
+});
+
+describe("the table's states (#17)", () => {
+  /** u0 is the PO and votes; u1 and u3 vote; u2 observes. */
+  function round(): RoomState {
+    let s = roomWith([
+      ["u0", "voter"],
+      ["u1", "voter"],
+      ["u2", "observer"],
+      ["u3", "voter"],
+    ]);
+    const run = (actor: string, command: Command) => {
+      const result = apply(s, command, { actor, now: 100 });
+      if (!result.ok) throw new Error(result.error);
+      s = result.state;
+    };
+    run("u0", { type: "startRound", subject: { kind: "none" } });
+    run("u1", { type: "castVote", card: "8" });
+    run(":server", { type: "presence", who: "u3", connected: false });
+    run(":server", { type: "presence", who: "u2", connected: false });
+    return s;
+  }
+
+  it("shows who voted, who thinks and who is away; the PO and the viewer", () => {
+    const { people, observers } = tableData(view(round(), "u1"));
+    expect(
+      people.map(({ id, status, away, owner, you }) => ({ id, status, away, owner, you })),
+    ).toEqual([
+      { id: "u1", status: { kind: "voted" }, away: false, owner: false, you: true },
+      { id: "u3", status: { kind: "thinking" }, away: true, owner: false, you: false },
+      { id: "u0", status: { kind: "thinking" }, away: false, owner: true, you: false },
+    ]);
+    expect(observers[0]).toMatchObject({ id: "u2", away: true, owner: false, you: false });
+  });
+
+  it("never carries a card before reveal, even for the viewer's own seat", () => {
+    const data = tableData(view(round(), "u1"));
+    expect(JSON.stringify(data.people)).not.toContain('"8"');
+  });
+
+  it("shows the cards of a named reveal, and only who voted or not after an anonymous one", () => {
+    const revealed = (anonymous: boolean): RoomState => {
+      const s = round();
+      if (!s.round) throw new Error("no round");
+      return { ...s, round: { ...s.round, anonymous, phase: "revealed", revealedAt: 200 } };
+    };
+    const named = tableData(view(revealed(false), "u0")).people;
+    expect(named.map((p) => p.status)).toEqual([
+      { kind: "revealed", card: null },
+      { kind: "revealed", card: "8" },
+      { kind: "revealed", card: null },
+    ]);
+    const anonymous = tableData(view(revealed(true), "u0")).people;
+    // Who voted is public; no card belongs to anyone.
+    expect(anonymous.map((p) => p.status)).toEqual([
+      { kind: "revealed", card: null },
+      { kind: "voted" },
+      { kind: "revealed", card: null },
+    ]);
+  });
+
+  it("gives everyone in the room initials and a colour of their own, the same for every viewer", () => {
+    const twins = roomWith(
+      Array.from({ length: 12 }, (_, i): [string, Participant["role"]] => [
+        `id-${i}`,
+        i % 4 === 0 ? "observer" : "voter",
+      ]),
+    );
+    for (const p of Object.values(twins.participants)) p.name = "Ana Lima";
+    const looks = (viewer: string) => {
+      const { people, observers } = tableData(view(twins, viewer));
+      return [...people, ...observers].map((p) => `${p.id}:${p.look?.colour}:${p.look?.initials}`);
+    };
+    const seen = looks("id-1");
+    const pairs = seen.map((entry) => entry.split(":").slice(1).join(":"));
+    expect(new Set(pairs).size).toBe(12);
+    expect(looks("id-5").sort()).toEqual([...seen].sort());
   });
 });
 

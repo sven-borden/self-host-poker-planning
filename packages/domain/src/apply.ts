@@ -63,8 +63,11 @@ const OWNER_ONLY: ReadonlySet<CommandType> = new Set<CommandType>([
   "transferOwner",
 ]);
 
-/** Commands a non-participant may send: entering, and the server's own timer ping. */
-const OPEN: ReadonlySet<CommandType> = new Set<CommandType>(["join", "timeUp"]);
+/**
+ * Commands a non-participant may send: entering, the timer ping, and the server's own
+ * presence updates (the actor is the server; `who` names the person).
+ */
+const OPEN: ReadonlySet<CommandType> = new Set<CommandType>(["join", "timeUp", "presence"]);
 
 export function apply(state: RoomState, command: Command, ctx: ApplyContext): ApplyResult {
   const resolved = resolveDeadline(state);
@@ -168,6 +171,8 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       );
     case "claimOwner":
       return claimOwner(state, actor, now);
+    case "presence":
+      return presence(state, command.who, command.connected, now);
     default:
       return unknownCommand(command);
   }
@@ -227,6 +232,28 @@ function claimOwner(state: RoomState, actor: UserId, now: number): Step {
     return refuse("owner_present");
   }
   return done({ ...state, ownerId: actor }, { type: "ownerChanged", by: "claim", to: actor });
+}
+
+/**
+ * The server's presence update (#17, architecture sections 4 and 9). Going away (the last
+ * socket left and the grace period passed) sets `awaySince` and clears `connected`;
+ * coming back clears `awaySince` and sets `connected`. No change, no new state: a reload
+ * inside the grace period never reaches here, and a repeated update is a no-op. Going
+ * away leaves the eligible voters, so `settle` may then reveal the round.
+ */
+function presence(state: RoomState, who: UserId, connected: boolean, now: number): Step {
+  const person = participant(state, who);
+  if (!person) return refuse("unknown_participant");
+  if (connected) {
+    if (person.connected && person.awaySince === undefined) return done(state);
+    const { awaySince: _, ...here } = person;
+    return done(withParticipant(state, who, { ...here, connected: true }), { type: "back", who });
+  }
+  if (person.awaySince !== undefined) return done(state);
+  return done(withParticipant(state, who, { ...person, connected: false, awaySince: now }), {
+    type: "away",
+    who,
+  });
 }
 
 // ---------------------------------------------------------------------------------- rounds

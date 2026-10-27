@@ -62,12 +62,13 @@ async function measure(page: Page): Promise<Measured> {
       avatars: seats.map((seat) => {
         const part = seat.querySelector('[data-seat-part="avatar"]');
         const avatar = seat.querySelector("[data-avatar]");
-        const badge = seat.querySelector("[data-badge]");
+        const badges = [...seat.querySelectorAll("[data-badge]")];
         if (!part || !avatar) {
           throw new Error("A seat without an avatar.");
         }
-        // The avatar's 2 px ring, and the badge's own box.
-        return { part: box(part), paint: [box(avatar, 2), ...(badge ? [box(badge)] : [])] };
+        // The avatar's 2 px ring (4 px with the viewer's outline), and each badge's box.
+        const ring = seat.hasAttribute("data-you") ? 4 : 2;
+        return { part: box(part), paint: [box(avatar, ring), ...badges.map((b) => box(b))] };
       }),
       slots: [...stage.querySelectorAll("[data-slot-card] > *")].map((slot) => box(slot)),
     };
@@ -139,6 +140,32 @@ for (const theme of THEMES) {
       }
     });
   }
+
+  // #17: the viewer, the PO, some away and some voted, from 1 to 16 people (AC 2).
+  test.describe(`${theme} theme with presence`, () => {
+    test.use({ colorScheme: theme });
+
+    for (const width of [360, 1440]) {
+      for (const count of [1, 2, 5, 8, 12, 16]) {
+        test(`${count} people, some away and some voted, fit at ${width} px`, async ({ page }) => {
+          await page.setViewportSize({ width, height: 900 });
+          await open(page, `n=${count}&state=voting&observers=2&away=1`);
+          const measured = await measure(page);
+          expect(measured.layout.seats).toHaveLength(count);
+          expect(problems(measured)).toEqual([]);
+          const away = Math.floor(count / 4);
+          await expect(page.locator("[data-seat][data-away]")).toHaveCount(away);
+          await expect(page.locator('[data-seat] [data-badge="away"]')).toHaveCount(away);
+          await expect(page.locator('[data-seat] [data-badge="owner"]')).toHaveCount(1);
+          await expect(page.locator("[data-seat][data-you]")).toHaveCount(1);
+          await page.screenshot({
+            path: `${SHOTS}${theme}-${width}-n${count}-presence.png`,
+            fullPage: true,
+          });
+        });
+      }
+    }
+  });
 
   test.describe(`${theme} theme, revealed, at device pixel ratio 2`, () => {
     test.use({ colorScheme: theme, deviceScaleFactor: 2 });
@@ -278,12 +305,71 @@ test.describe("forced colours", () => {
   });
 });
 
+/** The contrast of an away avatar's initials on its disc, as the browser paints them. */
+async function awayInitialsContrast(page: Page): Promise<number[]> {
+  return page.locator("[data-seat][data-away] [data-avatar]").evaluateAll((avatars) => {
+    const channels = (colour: string) =>
+      (colour.match(/[\d.]+/g) ?? []).slice(0, 3).map((c) => {
+        const v = Number(c) / 255;
+        return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+      });
+    const luminance = (colour: string) => {
+      const [r = 0, g = 0, b = 0] = channels(colour);
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    return avatars.map((avatar) => {
+      const style = getComputedStyle(avatar);
+      const [hi, lo] = [luminance(style.color), luminance(style.backgroundColor)].sort(
+        (a, b) => b - a,
+      );
+      return ((hi ?? 0) + 0.05) / ((lo ?? 0) + 0.05);
+    });
+  });
+}
+
+// Review of #79: away avatars keep readable initials on dense phone tables, where the
+// initials are the only name shown.
+test.describe("away initials", () => {
+  for (const theme of ["light", "dark"] as const) {
+    test.describe(`${theme} theme`, () => {
+      test.use({ colorScheme: theme });
+      for (const width of [360, 1440]) {
+        test(`keep 4.5:1 with 16 people at ${width} px`, async ({ page }) => {
+          await page.setViewportSize({ width, height: 900 });
+          await open(page, "n=16&away=1");
+          const ratios = await awayInitialsContrast(page);
+          expect(ratios).toHaveLength(4);
+          for (const ratio of ratios) expect(ratio).toBeGreaterThanOrEqual(4.5);
+          await page.screenshot({
+            path: `${SHOTS}away-n16-${width}-${theme}.png`,
+            fullPage: true,
+          });
+        });
+      }
+    });
+  }
+
+  test.describe("forced colours", () => {
+    test.use({ forcedColors: "active", viewport: { width: 360, height: 900 } });
+
+    test("draw away avatars with a dashed edge", async ({ page }) => {
+      await open(page, "n=16&away=1");
+      const border = await page
+        .locator("[data-seat][data-away] [data-avatar]")
+        .first()
+        .evaluate((avatar) => getComputedStyle(avatar).borderTopStyle);
+      expect(border).toBe("dashed");
+      await page.screenshot({ path: `${SHOTS}away-n16-360-forced.png`, fullPage: true });
+    });
+  });
+});
+
 test.describe("cut-off names", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test("open the whole name and the state on tap and by keyboard", async ({ page }) => {
     await open(page, "n=16&state=voting");
-    // Exactly the seats whose name does not fit are buttons.
+    // Every seat is a button, those whose name does not fit among them.
     const seats = await page.locator("[data-seat]").evaluateAll((items) =>
       items
         .filter((item) => item.querySelector('[data-seat-part="name"]'))
@@ -296,7 +382,7 @@ test.describe("cut-off names", () => {
         }),
     );
     expect(seats.some((seat) => seat.cut)).toBe(true);
-    expect(seats.every((seat) => seat.cut === seat.button)).toBe(true);
+    expect(seats.every((seat) => seat.button)).toBe(true);
 
     const seat = page.getByRole("button", { name: "Maximilian Oberhuber-Schwarz, voted" });
     await seat.click();

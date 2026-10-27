@@ -5,8 +5,8 @@ import { buttonVariants } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { JoinForm } from "./join-form.tsx";
+import { isRoomFull } from "./room-full.ts";
 import { RoomStatus } from "./room-status.tsx";
-import { isRoomFull } from "./table-data.ts";
 
 /** The table and the "You" panel: a chunk of their own, prefetched when the page mounts. */
 const loadSeated = () => import("./seated.tsx");

@@ -137,6 +137,8 @@ export const causeSchema = z.discriminatedUnion("type", [
     by: z.enum(["transfer", "claim"]),
     to: userIdSchema,
   }),
+  z.object({ type: z.literal("away"), who: userIdSchema }),
+  z.object({ type: z.literal("back"), who: userIdSchema }),
 ]);
 
 export const roomViewSchema = z.object({

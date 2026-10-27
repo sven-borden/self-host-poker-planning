@@ -80,6 +80,8 @@ function causeView(cause: Cause, hideVoter: boolean): CauseView | null {
     case "left":
     case "kicked":
     case "renamed":
+    case "away":
+    case "back":
       return { type: cause.type, who: cause.who };
     case "roleChanged":
       return { type: cause.type, who: cause.who, role: cause.role };

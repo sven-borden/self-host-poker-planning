@@ -6,7 +6,7 @@ import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { type CommandResult, commandSender, sendCommand } from "../realtime/room-connection.ts";
-import { Avatar } from "../table/avatar.tsx";
+import { Avatar, type AvatarLook } from "../table/avatar.tsx";
 import { codeOf, failureMessage } from "./failure.ts";
 import { NAME_INPUT_MAX_UNITS } from "./join-form.tsx";
 import { saveName } from "./save-name.ts";
@@ -16,6 +16,8 @@ type Action = "rename" | "role" | "leave";
 interface YouControlsProps {
   /** The viewer as the snapshot lists them. */
   me: ParticipantView;
+  /** The look the table gave the viewer, so the panel and the seat match. */
+  look?: AvatarLook | undefined;
   /** Moves the focus to this panel's heading (after joining), then calls `onFocused`. */
   focusOnMount?: boolean;
   onFocused?: () => void;
@@ -29,7 +31,7 @@ interface YouControlsProps {
  * prefills it; switching role sends `setRole`; leaving sends `leave`, after which the
  * snapshot no longer holds `you` and the page shows the join form again.
  */
-export function YouControls({ me, focusOnMount, onFocused, onLeaving }: YouControlsProps) {
+export function YouControls({ me, look, focusOnMount, onFocused, onLeaving }: YouControlsProps) {
   const t = useT();
   const ids = { heading: useId(), name: useId(), hint: useId(), error: useId() };
   const heading = useRef<HTMLHeadingElement>(null);
@@ -190,7 +192,7 @@ export function YouControls({ me, focusOnMount, onFocused, onLeaving }: YouContr
       ) : (
         <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <Avatar id={me.id} name={me.name} size={36} />
+            <Avatar id={me.id} name={me.name} size={36} look={look} />
             <div className="flex min-w-0 flex-col">
               <span data-you-name dir="auto" className="truncate font-semibold">
                 <bdi>{me.name}</bdi>

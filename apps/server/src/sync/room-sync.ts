@@ -12,8 +12,15 @@
  * One room per socket: the `enter`s of a socket run one after the other, a `cmd` waits
  * for the `enter` in progress, and `socket.data.room` is set only once every check of an
  * `enter` passed.
+ *
+ * Presence (#17, architecture section 9): a person is connected while at least one of
+ * their sockets has entered the room on this instance. When the last one goes, a grace
+ * timer runs; when it fires, the server's own `presence` command marks them away through
+ * the runner. A socket that enters again cancels the grace, and brings back a person the
+ * room shows as away. Both decide in the room's queue, from the state stored then; a new
+ * state is stored only when presence changes.
  */
-import { apply, type Cause, type Command, type RoomState } from "@pp/domain";
+import { type ApplyResult, apply, type Cause, type Command, type RoomState } from "@pp/domain";
 import {
   type CmdAck,
   type EnterAck,
@@ -27,11 +34,23 @@ import type { CommandRunner, RunOutcome } from "../db/runner.ts";
 import type { Logger } from "../logger.ts";
 import type { RealtimeHandlers, RealtimeServer, RealtimeSocket } from "../realtime.ts";
 import { createDeadlineTimers, type DeadlineTimers } from "./deadlines.ts";
+import {
+  createGraceTimers,
+  type GraceTimers,
+  PRESENCE_GRACE_MS,
+  PRESENCE_RESTART_GRACE_MS,
+} from "./presence.ts";
 import { ackKey, createRecentAcks, type RecentAcksOptions } from "./recent-acks.ts";
 
-/** The actor of the server's own `timeUp`: `apply` lets anyone send it. */
+/** The actor of the server's own `timeUp` and `presence`: `apply` lets anyone send them. */
 export const SERVER_ACTOR = ":server";
 const TIME_UP: Command = { type: "timeUp" };
+
+/**
+ * How many times an away run that failed (a database error, or every attempt lost the
+ * compare-and-set) starts the grace again before the person is left shown connected.
+ */
+export const MAX_AWAY_RETRIES = 3;
 
 /** A command re-checks the socket's session once its last check is older than this. */
 export const SESSION_RECHECK_MS = 60_000;
@@ -49,6 +68,16 @@ export interface RoomSyncOptions {
   /** Epoch milliseconds, for `apply` and the snapshots; `Date.now` by default. */
   now?: () => number;
   recentAcks?: Omit<RecentAcksOptions, "forget">;
+  /**
+   * For tests only: how long a person may be gone before they show as away.
+   * `PRESENCE_GRACE_MS` (15 s, architecture section 9) otherwise.
+   */
+  presenceGraceMs?: number;
+  /**
+   * For tests only: the grace of the people a room shows as connected when its first
+   * socket reaches this instance (after a restart). `PRESENCE_RESTART_GRACE_MS` (60 s).
+   */
+  presenceRestartGraceMs?: number;
 }
 
 export interface RoomSync extends RealtimeHandlers {
@@ -58,6 +87,8 @@ export interface RoomSync extends RealtimeHandlers {
   close(): void;
   /** For tests: the deadline armed for a room (by id) on this instance. */
   deadlines: Pick<DeadlineTimers, "armed">;
+  /** For tests: whether a person's presence grace runs in a room (by id) on this instance. */
+  presence: Pick<GraceTimers, "pending">;
 }
 
 /** The Socket.IO room of a room, by its id (never its code). */
@@ -70,6 +101,9 @@ interface RoomRef {
 }
 
 type ApplyRun = RunOutcome<ReturnType<typeof apply>>;
+
+/** How a run of the server's own command ended: `failed` stored nothing it knows of. */
+type ServerRun = "changed" | "unchanged" | "failed";
 
 const refuse = <C extends Extract<CmdAck, { ok: false }>["code"]>(code: C) =>
   ({ ok: false, code }) as const;
@@ -97,7 +131,25 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   /** When each socket's session was last found alive, and a check under way. */
   const sessionChecked = new WeakMap<RealtimeSocket, number>();
   const pendingChecks = new WeakMap<RealtimeSocket, Promise<boolean>>();
-  const deadlines = createDeadlineTimers((id) => void timeUp(id), { now });
+  const deadlines = createDeadlineTimers(
+    (id) => void runAsServer(id, () => TIME_UP, "deadline", "timeUp"),
+    {
+      now,
+    },
+  );
+  const graces = createGraceTimers(
+    (id, who) => void markAway(id, who),
+    options.presenceGraceMs ?? PRESENCE_GRACE_MS,
+  );
+  const restartGraceMs = options.presenceRestartGraceMs ?? PRESENCE_RESTART_GRACE_MS;
+  /** The rooms (by id) whose presence this instance follows: those it has sockets in. */
+  const watched = new Set<string>();
+  /** The participants of the newest state seen of each room (by id) with sockets here. */
+  const members = new Map<string, ReadonlySet<string>>();
+  /** Per room (by id): how many away runs of each person failed in a row. */
+  const awayFailures = new Map<string, Map<string, number>>();
+  /** Shutting down: no new grace starts. */
+  let closed = false;
   let io: RealtimeServer | undefined;
 
   /** The sockets of a room (by id) on this instance. */
@@ -119,6 +171,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   function advance(id: string, version: number, state: RoomState): boolean {
     if (version < (newest.get(id) ?? 0)) return false;
     newest.set(id, version);
+    members.set(id, new Set(Object.keys(state.participants)));
     armDeadline(id, state);
     return true;
   }
@@ -154,10 +207,17 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   /** After a run: broadcast what is new, and remove the people it kicked. */
   function publish(room: RoomRef, outcome: Extract<ApplyRun, { ok: true }>) {
     const { result } = outcome;
-    // Unchanged, the loaded state may still be newer than what this instance sent: another
-    // instance wrote it. Its causes are unknown here, so it goes out without any.
-    broadcast(room, outcome.version, result.state, outcome.changed ? result.causes : []);
-    if (!outcome.changed) return;
+    if (!outcome.changed) {
+      // The loaded state may still be newer than what this instance sent: another instance
+      // wrote it. Its causes are unknown here, so it goes out without any. A version this
+      // instance already knows goes nowhere: a socket still entering (in the channel, no
+      // version held yet) gets it with its answer, and would get it twice.
+      if (outcome.version > (newest.get(room.id) ?? 0)) {
+        broadcast(room, outcome.version, result.state, []);
+      }
+      return;
+    }
+    broadcast(room, outcome.version, result.state, result.causes);
     for (const cause of result.causes) {
       if (cause.type === "kicked") removeKicked(room.id, cause.who);
     }
@@ -185,24 +245,141 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     }
   }
 
-  async function timeUp(id: string) {
+  /**
+   * Runs one of the server's own commands on a room (by id) that has a socket here:
+   * `timeUp` at a deadline, `presence` after a grace or on enter. `step` builds the command
+   * from the stored state when the run's turn comes in the room's queue; it may return
+   * null to change nothing. `part` and `what` name the run in log lines.
+   */
+  async function runAsServer(
+    id: string,
+    step: (state: RoomState) => Command | null,
+    part: "deadline" | "presence",
+    what: string,
+  ): Promise<ServerRun> {
     const code = codeOf.get(id);
-    if (code === undefined || socketsOf(id).length === 0) return;
+    if (code === undefined || socketsOf(id).length === 0) return "unchanged";
     const room = { id, code };
     try {
-      const outcome = await runner.run(code, (state) =>
-        apply(state, TIME_UP, { actor: SERVER_ACTOR, now: now() }),
-      );
-      if (outcome.ok) publish(room, outcome);
-      else if (outcome.error === "conflict") {
-        // Another instance kept writing; its own timeout or the next command reveals.
-        log.warn({ room: id }, "deadline: every attempt lost the compare-and-set");
-        await resync(room);
+      const outcome = await runner.run(code, (state): ApplyResult => {
+        const command = step(state);
+        return command
+          ? apply(state, command, { actor: SERVER_ACTOR, now: now() })
+          : { ok: true, state, causes: [] };
+      });
+      if (outcome.ok) {
+        publish(room, outcome);
+        return outcome.changed ? "changed" : "unchanged";
       }
+      if (outcome.error === "conflict") {
+        // Another instance kept writing; its own timer or the next command catches up.
+        log.warn({ room: id }, `${part}: every attempt lost the compare-and-set`);
+        await resync(room);
+        return "failed";
+      }
+      return "unchanged";
     } catch (error) {
-      log.warn({ room: id, err: errorCodeOf(error) }, "deadline: timeUp failed");
+      log.warn({ room: id, err: errorCodeOf(error) }, `${part}: ${what} failed`);
       await resync(room);
+      return "failed";
     }
+  }
+
+  // ----------------------------------------------------------------------------- presence
+
+  /** Whether one of the person's sockets has entered the room (by id) on this instance. */
+  function isHere(id: string, who: string): boolean {
+    return socketsOf(id).some(
+      (socket) => socket.connected && socket.data.room?.id === id && socket.data.user?.id === who,
+    );
+  }
+
+  const participant = (state: RoomState, who: string) =>
+    Object.hasOwn(state.participants, who) ? state.participants[who] : undefined;
+
+  /** The grace ran out: mark the person away, unless a socket of theirs came back. */
+  async function markAway(id: string, who: string) {
+    if (!members.get(id)?.has(who)) return;
+    // Decided when the run's turn comes: a socket that entered meanwhile keeps them here.
+    const outcome = await runAsServer(
+      id,
+      (state) =>
+        participant(state, who) === undefined || isHere(id, who)
+          ? null
+          : { type: "presence", who, connected: false },
+      "presence",
+      "away",
+    );
+    // The room's id only: never a name (or the person's id, which the name follows).
+    if (outcome === "changed") log.debug({ room: id }, "presence: away");
+    if (outcome === "failed") {
+      retryAway(id, who);
+    } else {
+      awayFailures.get(id)?.delete(who);
+    }
+  }
+
+  /**
+   * An away run failed, so the room still shows the person connected: start the grace
+   * again, at most `MAX_AWAY_RETRIES` times in a row. A return, or the room's last socket
+   * leaving, ends the series.
+   */
+  function retryAway(id: string, who: string) {
+    const failures = awayFailures.get(id) ?? new Map<string, number>();
+    const count = (failures.get(who) ?? 0) + 1;
+    if (closed || !watched.has(id) || isHere(id, who) || count > MAX_AWAY_RETRIES) {
+      failures.delete(who);
+      if (count > MAX_AWAY_RETRIES) log.warn({ room: id }, "presence: away given up");
+      return;
+    }
+    failures.set(who, count);
+    awayFailures.set(id, failures);
+    graces.start(id, who);
+  }
+
+  /** `presence true` when the person is here and the stored state shows them away. */
+  function backStep(state: RoomState, id: string, who: string): Command | null {
+    const person = participant(state, who);
+    if (person === undefined || !isHere(id, who)) return null;
+    if (person.connected && person.awaySince === undefined) return null;
+    return { type: "presence", who, connected: true };
+  }
+
+  /**
+   * A socket of `who` entered the room: their grace stops, and a person the room shows as
+   * away comes back. The back step runs in the room's queue for every participant who
+   * enters, since the state this enter loaded may predate an away run that committed
+   * since; it stores nothing when they are connected, so a reload stays free. The first
+   * socket of a room on this instance also starts a grace (`restartGraceMs`, 60 s) for
+   * everyone the room shows as connected who has no socket here: after a restart their
+   * timers are gone, and their clients may take a while to reconnect.
+   */
+  function presenceOnEnter(room: RoomRef, who: string, state: RoomState) {
+    graces.cancel(room.id, who);
+    awayFailures.get(room.id)?.delete(who);
+    if (participant(state, who) !== undefined) {
+      const back = (current: RoomState) => backStep(current, room.id, who);
+      void runAsServer(room.id, back, "presence", "back").then((outcome) => {
+        if (outcome === "changed") log.debug({ room: room.id }, "presence: back");
+      });
+    }
+    if (watched.has(room.id)) return;
+    watched.add(room.id);
+    for (const [id, other] of Object.entries(state.participants)) {
+      if (id === who || !other.connected || other.awaySince !== undefined) continue;
+      if (!isHere(room.id, id)) graces.start(room.id, id, restartGraceMs);
+    }
+  }
+
+  /**
+   * A socket of `who` left the room (closed, entered another room, or lost its session):
+   * when it was their last one here, their grace starts. When it was the room's last
+   * socket here, `forgetIfEmpty` already dropped every timer of the room instead.
+   */
+  function presenceOnLeave(id: string, who: string | undefined) {
+    if (closed || who === undefined || !watched.has(id)) return;
+    if (!members.get(id)?.has(who) || isHere(id, who)) return;
+    graces.start(id, who);
   }
 
   async function execute(room: RoomRef, actor: string, command: Command): Promise<CmdAck> {
@@ -235,6 +412,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     socket.data.room = undefined;
     held.delete(socket);
     leaveChannel(socket, room.id);
+    presenceOnLeave(room.id, socket.data.user?.id);
   }
 
   function leaveChannel(socket: RealtimeSocket, id: string) {
@@ -245,6 +423,10 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   function forgetIfEmpty(id: string) {
     if (socketsOf(id).length > 0) return;
     deadlines.clear(id);
+    graces.clearRoom(id);
+    awayFailures.delete(id);
+    watched.delete(id);
+    members.delete(id);
     newest.delete(id);
     const code = codeOf.get(id);
     codeOf.delete(id);
@@ -331,6 +513,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       codeOf.set(room.id, code);
       advance(room.id, loaded.version, loaded.state);
       held.set(socket, Math.max(held.get(socket) ?? 0, loaded.version));
+      presenceOnEnter(room, user.id, loaded.state);
       log.debug({ room: room.id, version: loaded.version }, "socket entered");
       return {
         ok: true,
@@ -388,14 +571,19 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
 
     disconnect(socket) {
       const room = socket.data.room;
-      if (room !== undefined) forgetIfEmpty(room.id);
+      if (room === undefined) return;
+      forgetIfEmpty(room.id);
+      presenceOnLeave(room.id, socket.data.user?.id);
     },
 
     close() {
+      closed = true;
       deadlines.clearAll();
+      graces.clearAll();
     },
 
     deadlines,
+    presence: graces,
   };
 }
 
