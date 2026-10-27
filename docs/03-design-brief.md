@@ -182,11 +182,16 @@ interruptible and disabled under `prefers-reduced-motion` (120 ms cross-fades in
 - Full keyboard play: arrow keys move through the hand, Enter votes, `R` reveals for the PO.
   The hand is one tab stop (a toolbar of toggle buttons): the arrows wrap, Home and End
   jump, Enter or Space votes and again takes it back; dimmed cards keep the focus.
-- The viewer's own vote is said to them alone, once the server confirmed it ("You voted
-  5.", "Vote taken back."), in the hand's own polite region.
+- The viewer's own vote is said to them alone, once the server confirmed it ("Your vote:
+  5.", "Your vote: needs a break.", "Vote taken back."), in the hand's own polite region,
+  also when it was the last vote and the reveal follows at once. A double click counts
+  once; a held Enter does not repeat. After "Start voting" the focus moves to the hand
+  (or the centre's status for a PO who does not vote), and the table's region says
+  "Voting started." On a phone the selected card stays in view, and a fade on an edge
+  says more cards lie that way.
 - Live region announces "Ana voted", "Cards revealed: average 5", never a hidden value.
-  The table's region (#17) says joins, leaves, away and back, and others' first votes; a
-  burst becomes one sentence per kind ("3 people voted."), after 600 ms of quiet or
+  The table's region (#17) says joins, leaves, away and back, others' first votes and a
+  new round; a burst becomes one sentence per kind ("3 people voted."), after 600 ms of quiet or
   1.5 s at most, and the viewer's own actions are never announced there.
 - Touch targets at least 44 px; no hover-only controls.
 

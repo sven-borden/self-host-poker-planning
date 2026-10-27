@@ -7,6 +7,7 @@ import {
   newPerson,
   ownAddress,
   recordFrames,
+  SHOTS,
   sameUser,
   seats,
   shoot,
@@ -15,8 +16,9 @@ import {
 
 // Voting (#18) in real browsers, against the real server and Postgres: the cards a voter
 // picks, changes and takes back never reach the others before the reveal (AC 1, named and
-// anonymous), keyboard-only voting (AC 2), and a vote refused after the reveal rolls back
-// (AC 3). Needs DATABASE_URL; skipped without it locally, failing without it in CI.
+// anonymous), keyboard-only voting (AC 2), a vote refused after the reveal rolls back
+// (AC 3), a vote in flight when the next round starts never lands in it, and the hand on
+// a phone. Needs DATABASE_URL; skipped without it locally, failing without it in CI.
 
 test.skip(
   !process.env.DATABASE_URL && !process.env.CI,
@@ -89,14 +91,14 @@ for (const anonymous of [false, true]) {
       if (!anonymous) await shoot(page, "vote-hand-empty");
 
       // Pick, change, take back, and vote again.
-      await pick(page, "5", "You voted 5.");
+      await pick(page, "5", "Your vote: 5.");
       await expect(pressedCards(page)).toHaveAccessibleName("5");
       await expect(centre(voter.page)).toHaveText("1/2 voted so far");
-      await pick(page, "8", "You voted 8.");
+      await pick(page, "8", "Your vote: 8.");
       await pick(page, "8", "Vote taken back.");
       await expect(pressedCards(page)).toHaveCount(0);
       await expect(centre(voter.page)).toHaveText("0/2 voted so far");
-      await pick(page, "13", "You voted 13.");
+      await pick(page, "13", "Your vote: 13.");
       await expect(centre(observer.page)).toHaveText("1/2 voted so far");
       await expect(
         voter.page
@@ -178,6 +180,17 @@ test("a person votes and takes the vote back with the keyboard only (AC 2)", asy
     await tabTo(page, page.getByRole("button", { name: "Start voting" }));
     await page.keyboard.press("Enter");
     await expect(centre(page)).toHaveText("0/2 voted so far");
+    // The button is gone; the focus went to the hand, not to the page's body.
+    await expect(handCard(page, "0")).toBeFocused();
+
+    // Every vote command the page sends, to count a held Enter's.
+    const votes: string[] = [];
+    page.on("websocket", (socket) =>
+      socket.on("framesent", ({ payload }) => {
+        const frame = String(payload);
+        if (frame.includes('"castVote"') || frame.includes('"retractVote"')) votes.push(frame);
+      }),
+    );
 
     // One tab stop into the hand, arrows through it, Enter votes, Space takes it back.
     await page.reload();
@@ -186,7 +199,7 @@ test("a person votes and takes the vote back with the keyboard only (AC 2)", asy
     await page.keyboard.press("ArrowRight");
     await expect(handCard(page, "2")).toBeFocused();
     await page.keyboard.press("Enter");
-    await expect(handLive(page)).toHaveText("You voted 2.");
+    await expect(handLive(page)).toHaveText("Your vote: 2.");
     await expect(handCard(page, "2")).toHaveAttribute("aria-pressed", "true");
     await expect(centre(page)).toHaveText("1/2 voted so far");
     await page.keyboard.press("Space");
@@ -194,6 +207,14 @@ test("a person votes and takes the vote back with the keyboard only (AC 2)", asy
     await expect(handCard(page, "2")).toHaveAttribute("aria-pressed", "false");
     await expect(handCard(page, "2")).toBeFocused();
     await expect(centre(page)).toHaveText("0/2 voted so far");
+
+    // A held Enter votes once: its repeated keydowns press nothing.
+    for (let i = 0; i < 6; i++) await page.keyboard.down("Enter");
+    await page.keyboard.up("Enter");
+    await expect(handLive(page)).toHaveText("Your vote: 2.");
+    await page.waitForTimeout(300);
+    await expect(handCard(page, "2")).toHaveAttribute("aria-pressed", "true");
+    expect(votes).toHaveLength(3);
   } finally {
     ben.close();
   }
@@ -235,7 +256,7 @@ test("a vote the server refuses after the reveal rolls back (AC 3)", async ({
     await expect(centre(page)).toHaveText("0/2 voted so far");
     await expect.poll(() => upgraded, { message: "the socket upgraded" }).toBe(true);
 
-    await pick(page, "3", "You voted 3.");
+    await pick(page, "3", "Your vote: 3.");
     holding = true;
     await handCard(page, "8").click();
     // Shown at once, before the server has it.
@@ -260,5 +281,137 @@ test("a vote the server refuses after the reveal rolls back (AC 3)", async ({
   } finally {
     po.close();
     await other.context.close();
+  }
+});
+
+test("a vote in flight when the next round starts never lands in it", async ({
+  page,
+  context,
+  browser,
+  baseURL,
+}) => {
+  const base = baseURL ?? "";
+  const code = await createRoom(page);
+  await join(page, "Ana");
+  const other = await newPerson(browser);
+  let upgraded = false;
+  let holding = false;
+  const held: Array<() => void> = [];
+  await page.routeWebSocket(/\/socket\.io\//, (ws: WebSocketRoute) => {
+    const server = ws.connectToServer();
+    ws.onMessage((message) => {
+      if (message === "5") upgraded = true;
+      if (holding && String(message).includes('"castVote"')) {
+        held.push(() => server.send(message));
+        return;
+      }
+      server.send(message);
+    });
+    server.onMessage((message) => ws.send(message));
+  });
+  const po = await sameUser(base, context);
+  try {
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "You", exact: true })).toBeVisible();
+    await other.page.goto(page.url());
+    await join(other.page, "Ben");
+    await page.getByRole("button", { name: "Start voting" }).click();
+    await expect(centre(page)).toHaveText("0/2 voted so far");
+    await expect.poll(() => upgraded, { message: "the socket upgraded" }).toBe(true);
+
+    // A double click votes once rather than voting and taking the vote back.
+    await handCard(page, "5").dblclick();
+    await expect(handLive(page)).toHaveText("Your vote: 5.");
+    await expect(pressedCards(page)).toHaveAccessibleName("5");
+
+    holding = true;
+    await handCard(page, "8").click();
+    await expect(pressedCards(page)).toHaveAccessibleName("8");
+    await expect.poll(() => held.length).toBe(1);
+
+    // The PO reveals and starts the next round, then the change made for round 1 arrives.
+    expect(await po.enter(code)).toMatchObject({ ok: true });
+    expect(await po.cmd("reveal")).toMatchObject({ ok: true });
+    expect(await po.cmd("startRound", { subject: { kind: "none" } })).toMatchObject({ ok: true });
+    await expect(centre(other.page)).toHaveText("0/2 voted so far");
+    for (const send of held) send();
+
+    // Refused with round_changed: the new round's hand stays empty, without a message.
+    await page.waitForTimeout(500);
+    await expect(pressedCards(page)).toHaveCount(0);
+    await expect(handLive(page)).not.toHaveText("Your vote: 8.");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(centre(page)).toHaveText("0/2 voted so far");
+    await expect(
+      other.page.locator("[data-seat]").filter({ hasText: "Ana" }).locator('[data-badge="voted"]'),
+    ).toHaveCount(0);
+  } finally {
+    po.close();
+    await other.context.close();
+  }
+});
+
+/** The page at 360 px, in both schemes. */
+async function shootPhone(page: Page, name: string) {
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.waitForTimeout(150);
+    await page.screenshot({ path: `${SHOTS}${name}-360-${scheme}.png`, fullPage: true });
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+}
+
+test("on a phone the hand keeps the vote in view and shows more cards lie aside", async ({
+  page,
+  context,
+  baseURL,
+}) => {
+  const base = baseURL ?? "";
+  const code = await createRoom(page);
+  await join(page, "Ana");
+  const ben = await newGuest(base);
+  const po = await sameUser(base, context);
+  try {
+    expect(await ben.enter(code)).toMatchObject({ ok: true });
+    expect(await ben.cmd("join", { name: "Ben", role: "voter" })).toMatchObject({ ok: true });
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.getByRole("button", { name: "Start voting" }).click();
+    await expect(centre(page)).toHaveText("0/2 voted so far");
+    await expect(page.locator('[data-hand-fade="end"]')).toBeVisible();
+    await pick(page, "21", "Your vote: 21.");
+
+    // After a reload the hand scrolls itself to the vote.
+    await page.reload();
+    await expect(pressedCards(page)).toHaveAccessibleName("21");
+    await landed(page);
+    const inView = await hand(page).evaluate((bar) => {
+      const card = bar.querySelector("[data-hand-card='21']");
+      const box = bar.getBoundingClientRect();
+      const at = card?.getBoundingClientRect();
+      return {
+        scrolled: bar.scrollLeft > 0,
+        visible: at !== undefined && at.left >= box.left && at.right <= box.right,
+      };
+    });
+    expect(inView).toEqual({ scrolled: true, visible: true });
+    await expect(page.locator('[data-hand-fade="start"]')).toBeVisible();
+    await shootPhone(page, "vote-hand-reload-21");
+
+    // The T-shirt deck overflows too; a deck change restarts the round.
+    expect(await po.enter(code)).toMatchObject({ ok: true });
+    expect(
+      await po.cmd("updateSettings", { patch: { deck: { kind: "preset", id: "tshirt" } } }),
+    ).toMatchObject({ ok: true });
+    await expect(handCard(page, "XL")).toBeVisible();
+    // The hand kept its scroll through the change: more cards lie at its start.
+    await expect(page.locator('[data-hand-fade="start"]')).toBeVisible();
+    await page.reload();
+    await expect(handCard(page, "XS")).toBeVisible();
+    await expect(page.locator('[data-hand-fade="end"]')).toBeVisible();
+    await expect(page.locator('[data-hand-fade="start"]')).toHaveCount(0);
+    await shootPhone(page, "vote-hand-tshirt");
+  } finally {
+    po.close();
+    ben.close();
   }
 });

@@ -95,9 +95,13 @@ server sends and never decides the outcome of a round.
   (fast presses collapse; a wish the last command already carried is dropped rather than
   sent twice). A refusal, a `busy` that gave up or `offline` drops every wish: the hand
   rolls back and shows `failureMessage`. A wish belongs to its round (`roundKey`: number
-  and start), so a new round or the reveal drops it. `use-vote.ts` runs the machine with
-  the `commandSender()` taken at each press and words the viewer's own news ("You voted
-  5.", "Vote taken back.") for `[data-hand-live]`, a region nobody else gets.
+  and start), so a new round or the reveal drops it; each command carries the round's
+  number, and a `round_changed` refusal (the PO started the next round while it was on
+  the wire) rolls back without a message. `use-vote.ts` runs the machine with the
+  `commandSender()` taken at each press and words the viewer's own news ("Your vote: 5.",
+  "Vote taken back.") for `[data-hand-live]`, a region nobody else gets: it compares the
+  last accepted pick with `yourVote` in any phase, so the vote that ends the round is
+  said too.
   `withShownVote(room, card)` folds the unconfirmed pick into the room the viewer sees,
   so their seat (face-down slot, voted badge), the centre's count and the hand agree at
   once. `handView(room, me)` (table-data.ts): no hand for observers, a line instead for a
