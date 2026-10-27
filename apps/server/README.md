@@ -11,8 +11,8 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   `run(process.env, { ...processHooks(process), setup: setupServer })`.
 - `src/setup.ts`: `setupServer(config, logger, signal)`, the `setup` hook: `setupDatabase`,
   then `createAuth` on its pool; returns `deps` with `checkDb`, `registerApi` (auth
-  routes) and `socketMiddleware` (the session), plus `database` and `auth`. W1 adds its
-  handlers here.
+  routes), `socketMiddleware` (the session) and `handlers` (the room sync), plus
+  `database` and `auth`. `dispose` clears the deadline timeouts, then ends the pool.
 - `src/auth.ts`: identity. `createAuth(config, db, logger)` builds Better Auth (Drizzle
   adapter, anonymous plugin, options in `authOptions`); `registerAuthApi` mounts
   `/api/auth/*` and `POST /api/me/name`; `sessionMiddleware(auth)` is the socket
@@ -32,7 +32,11 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 - `src/app.ts`: `createApp(config, deps)`, the Hono app: request ids and logs,
   `/api/health`, the hooks for more API routes, the JSON `/api` 404, the web app.
 - `src/realtime.ts`: `createRealtime(httpServer, options)`, Socket.IO typed with
-  `@pp/protocol`'s event maps; parses every payload before a handler sees it.
+  `@pp/protocol`'s event maps; takes a token from the socket's bucket
+  (`sync/token-bucket.ts`, 10 a second, bursts of 20, else `rate_limited`), then parses
+  every payload before a handler sees it. `SocketData` holds `user`, `sessionId` and
+  `room`. Handlers may have `attach(io)` and `disconnect(socket)`.
+- `src/sync/`: the realtime path of a room (#15), see "Rooms over the socket" below.
 - `src/server.ts`: `createServer(config, deps)` puts both on one HTTP server and returns
   `{ app, httpServer, io, listen(), close() }`.
 - `src/client-ip.ts`: `clientIp(request, config.trustProxy)`, the client address for the
@@ -104,13 +108,59 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   own). `src/test-support.ts` collects log lines in memory.
 - Import siblings with their `.ts` extension.
 
+## Rooms over the socket
+
+`createRoomSync({ runner, store, logger, sessionAlive })` (`src/sync/room-sync.ts`) is the
+`handlers` of `createRealtime`.
+
+- `enter { code, protocol }`: checks the session again (`sessionChecker`: a socket outlives
+  a sign-out), joins the Socket.IO room `room:<code>` **before** loading (so no commit is
+  missed), records `socket.data.room` and answers the viewer's `toSnapshot`. A stranger
+  gets a snapshot with `you: null`. Refusals: `protocol_mismatch` (from `parseEnter`),
+  `room_not_found`, `unauthenticated`; a database failure answers `internal`.
+- `cmd { id, type, payload }`: `runner.run(code, state => apply(state, command, { actor:
+  user.id, now }))`. The flow of every command, and what to keep when adding one:
+  1. The socket's bucket, then `toDomainCommand` (`bad_payload`).
+  2. No entered room: `room_not_found`.
+  3. `ackKey(user, room, id)` in the `RecentAcks` LRU (5000): the same id gets the same
+     answer (also while it runs) and runs once. `busy` and a thrown step are forgotten,
+     so the same id may run again. Process memory only: a restart forgets it.
+  4. Success: every socket of the room gets its own snapshot with the projected
+     `causes`, **then** the ack `{ ok: true, version }`. A refusal acks the domain code;
+     if the runner still stored something (a timer reveal resolved first), that is
+     broadcast too. A `kicked` cause sends `kicked` to the person's sockets and closes them.
+  5. Runner `conflict` (every retry lost the compare-and-set to another instance; nothing
+     stored): `busy`, retryable with the same id. `DatabaseError` (a commit may have
+     landed): reload the room, broadcast it, ack `internal`; never run it again.
+- Each socket remembers the version it holds: nobody gets the same or an older version
+  twice, and a reload that finds nothing new sends nothing. An unchanged run whose loaded
+  version is newer than what a socket holds (another instance wrote it) is sent without
+  causes, so a room on two instances catches up on the next command or deadline.
+- Deadlines (`sync/deadlines.ts`): one timeout per room with a voting round's
+  `deadlineAt` and at least one socket on this instance, re-armed after every broadcast and
+  enter, cleared when the round changes or the last socket leaves. It runs `timeUp` (any
+  actor, `SERVER_ACTOR`) through the runner: `apply` resolves the deadline, the
+  compare-and-set makes two instances reveal once.
+- A server-only command (presence for #17, say) needs no new path: add it to the domain's
+  `Command` and `OPEN` set if non-participants may send it, leave it out of the protocol's
+  wire union (so `toDomainCommand` refuses it from a client), and run it like `timeUp`
+  in `room-sync.ts` (`runner.run` then `publish`).
+- Logs hold the room code, the command type, versions and codes: never a payload, a card
+  or a snapshot.
+- Tests: `room-sync.test.ts` on an in-memory store (`sync/test-support.ts`:
+  `memoryRoomStore` with commit fates, `fakeIdentity`, a `testClient` that keeps raw
+  frames); `room-sync.db.test.ts` with real guests on Postgres (join latency, the burst,
+  secrecy on raw frames with `@pp/protocol/leak-scan`, two instances);
+  `restart.db.test.ts` runs the built `dist/main.mjs` (build it first; CI does).
+
 ## Identity
 
 - Who is behind a socket: `socket.data.user` (`SocketUser`: `id`, `name`, `isAnonymous`),
   set by `sessionMiddleware` before `connection` fires. A socket without a valid session
   never connects (`connect_error` `unauthenticated`). It is optional in `SocketData`
-  only because tests run servers without identity: a W1 handler answers
-  `unauthenticated` when it is missing. Over HTTP, `sessionUser(auth, c.req.raw.headers)`.
+  only because tests run servers without identity: the room sync answers
+  `unauthenticated` when it is missing. `socket.data.sessionId` is the session's id
+  (never its token), checked again on every `enter`. Over HTTP, `sessionUser(auth, c.req.raw.headers)`.
 - `user.name` is `""` until the person picks one; `POST /api/me/name` sets it through
   the domain's `cleanName`, rate limited per user and per address. Never write
   `user.name` another way.

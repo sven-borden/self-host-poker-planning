@@ -29,6 +29,13 @@ server sends and never decides the outcome of a round.
   presentational: props in, no store. `/dev/table` (`src/routes/dev/table.tsx`, lazy,
   noindex) shows them: `?n=1..16&state=lobby|voting|revealed&observers=0..4`.
 - `src/stores/`: Zustand stores. `src/realtime/`: the typed Socket.IO client.
+- `src/realtime/room-connection.ts` (#15): `openRoom(code)` follows one room (the room
+  page calls it in an effect and returns its cleanup); `sendCommand({ type, payload? })`
+  resolves with the ack. `src/stores/room-store.ts` holds `{ code, status, error,
+  snapshot, connection }`; `status` is `connecting`, `live`, `reconnecting` or `error`
+  (`error` holds an ack code, or `kicked` or `offline`). `receive` keeps only a newer
+  version of the open room. `src/room/room-status.tsx` is the room page until #16 and #17
+  (status line, participant count, the reload prompt on `protocol_mismatch`).
 - `src/identity/identity.ts`: who this browser is (#10). `ensureIdentity({ force? })`
   reads `/api/auth/get-session` and, without a session, signs in as a guest
   (`/api/auth/sign-in/anonymous`); concurrent calls share one request. `setDisplayName(name)`
@@ -75,6 +82,15 @@ server sends and never decides the outcome of a round.
   shows as a toast (`errors.unauthenticated`). After `internal` or `rate_limited` it
   connects again with `retryDelay`'s backoff. The session cookie is httpOnly: never read
   it.
+- Room sync rules: render the store, never decide. `openRoom` sends `enter` on every
+  connect (a reconnect starts from a fresh snapshot); Socket.IO reconnects by itself, and
+  only an `enter` refused with `internal`, `rate_limited` or `busy` is sent again with
+  `retryDelay`. `sendCommand` waits for `live`, then sends with a fresh id; after a lost
+  ack (disconnect) or `busy` it sends the same id again (at most 4 sends), which the
+  server answers once; `{ ok: false, code: "offline" }` when the room never became live.
+  When it resolves `ok`, the store already holds the new snapshot (the server
+  broadcasts before it acks). Messages are checked by shape (`isSnapshot`, `isEnterAck`,
+  `isCmdAck`), not with zod: zod costs the room route about 27 kB gzipped.
 - The identity bootstrap holds the `pp-identity` Web Lock (two tabs, one guest), always
   takes the user from a session read, retries temporary failures (identity status
   `retrying`, a quiet toast) and stops at `cookies_blocked`. Render every user-provided
