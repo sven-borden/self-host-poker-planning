@@ -17,7 +17,7 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   system themes, shadcn/ui, Motion and fonts.
 - i18n from #9: our own typed `t()` (ADR-012 amended), en/fr/de with catalogs loaded
   on demand, numbers in the reader's regional format, a switcher in the header, and
-  copy checks in the gate. The room route loads 167.5 kB of JS (after #19) against a
+  copy checks in the gate. The room route loads 167.9 kB of JS (after #20) against a
   200 kB budget; see the budget watch in the build log.
 - The table from #13: a pure layout engine with a pixel geometry proof for 1 to 16
   people, the seat and card components, and a `/dev/table` bench.
@@ -55,6 +55,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 - The reveal from #19: the PO's button and `R` (scoped to the table and hand), the
   automatic reveal exactly once, the staggered flip, the anonymous "Cards played" row,
   and a "Not at the table" row that keeps departed voters' names.
+- Results from #20: the suggested card with the team's agreement, ties and the
+  Consensus pill in the centre, then Average, Median, Agreement, Spread, the
+  distribution columns and the lowest and highest voters under the table.
 - **W0 is complete.**
 - The decisions are in `docs/05-decisions.md`.
 
@@ -66,14 +69,14 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#20 (PP-020)** results: the suggested card or "Consensus" in the centre, the
-  numbers from `computeResults`, the distribution columns, low and high voters in named
-  rounds. Building in `../pp-wt-20`.
+- **#21 (PP-021)** next round with an optional subject (none, a title or a link with
+  Jira and Azure DevOps keys), replacing #18's minimal "Start voting" and "Next
+  round", and the history row. Building in `../pp-wt-21`.
 
 ## Next
 
 - W1 order, by dependencies:
-  - #20 (results), then #21 (next round).
+  - #21 (next round), then #22 (mobile) and #23 (the four-person e2e).
   - #22 (mobile) needs #17, #18 and #20. #23 (four-person e2e) needs #21 and #22.
 - **W1 runs without a new go** (Sven, 2026-10-26).
 
