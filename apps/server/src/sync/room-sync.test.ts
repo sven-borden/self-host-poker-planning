@@ -1,17 +1,19 @@
 /**
  * The room sync over real sockets, on an in-memory store and the real runner: enter,
  * commands and their acks, per-viewer broadcasts, idempotency, `busy`, a lost reply, kick,
- * the deadline timeout, the message limit and the session check. Against Postgres, with
- * real identity, see `room-sync.db.test.ts`.
+ * the deadline timeout, the message limit, the session check, concurrent enters on one
+ * socket, and room codes kept out of the logs. Against Postgres, with real identity, see
+ * `room-sync.db.test.ts`.
  */
 import { createRoom, type RoomState } from "@pp/domain";
 import { PROTOCOL_VERSION } from "@pp/protocol";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { DatabaseError } from "../db/errors.ts";
 import { play } from "../db/fixtures.ts";
 import { createCommandRunner } from "../db/runner.ts";
 import { createServer, type PokerServer } from "../server.ts";
 import { collectLogs, type LogCollector, testConfig } from "../test-support.ts";
-import { createRoomSync, type RoomSync } from "./room-sync.ts";
+import { channelOf, createRoomSync, type RoomSync, SESSION_RECHECK_MS } from "./room-sync.ts";
 import {
   fakeIdentity,
   type MemoryRoomStore,
@@ -22,6 +24,12 @@ import {
 } from "./test-support.ts";
 
 const CODE = "RoomCode12";
+/** The id `memoryRoomStore` gave a room. */
+function idOf(store: MemoryRoomStore, code = CODE): string {
+  const id = store.rooms.get(code)?.id;
+  if (id === undefined) throw new Error("no such room");
+  return id;
+}
 const open: { server: PokerServer; clients: TestClient[]; sync: RoomSync }[] = [];
 
 afterEach(async () => {
@@ -35,17 +43,32 @@ afterEach(async () => {
 interface Started {
   store: MemoryRoomStore;
   sync: RoomSync;
+  server: PokerServer;
   logs: LogCollector;
   client(user: string): TestClient;
 }
 
+interface StartOptions {
+  sessionAlive?: (id: string) => Promise<boolean>;
+  now?: () => number;
+  /** Runs before every load of a room (enter, the runner, a reload): may wait or throw. */
+  beforeLoad?: (code: string) => Promise<void> | void;
+}
+
 async function start(
   state: RoomState | null,
-  options: { sessionAlive?: (id: string) => Promise<boolean> } = {},
+  { beforeLoad, ...options }: StartOptions = {},
 ): Promise<Started> {
-  const logs = collectLogs();
+  const logs = collectLogs("debug");
   const store = memoryRoomStore();
   if (state) await store.insertRoom({ code: CODE, name: null, state });
+  if (beforeLoad) {
+    const load = store.loadRoom;
+    store.loadRoom = async (code) => {
+      await beforeLoad(code);
+      return load(code);
+    };
+  }
   const sync = createRoomSync({
     runner: createCommandRunner(store),
     store,
@@ -63,6 +86,7 @@ async function start(
   return {
     store,
     sync,
+    server,
     logs,
     client: (user) => {
       const client = testClient(`http://localhost:${port}`, { user });
@@ -71,6 +95,8 @@ async function start(
     },
   };
 }
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Ada (PO, ua) and Bob (ub) in the lobby. */
 function lobby(): RoomState {
@@ -248,25 +274,170 @@ describe("the deadline", () => {
     const cy = client("uc");
     await ada.enter(CODE);
     await cy.enter(CODE);
-    expect(sync.deadlines.armed(CODE)).toBeDefined();
+    expect(sync.deadlines.armed(idOf(store))).toBeDefined();
     const seen = await cy.waitFor((s) => s.room.round?.phase === "revealed", 3000);
     expect(seen.snapshot.causes).toEqual([{ type: "revealed", by: "timer" }]);
     await ada.waitFor((s) => s.room.round?.phase === "revealed");
     expect(store.commits).toBe(1);
-    expect(sync.deadlines.armed(CODE)).toBeUndefined();
+    expect(sync.deadlines.armed(idOf(store))).toBeUndefined();
   });
 
   it("follows a timer started, then forgets it when the room's last socket leaves", async () => {
-    const { client, sync } = await start(voting());
+    const { client, store, sync } = await start(voting());
     const ada = client("ua");
     await ada.enter(CODE);
-    expect(sync.deadlines.armed(CODE)).toBeUndefined();
+    expect(sync.deadlines.armed(idOf(store))).toBeUndefined();
     expect((await ada.cmd("startTimer", { seconds: 60 })).ok).toBe(true);
     await ada.waitFor((s) => s.room.round?.deadlineAt !== undefined);
-    expect(sync.deadlines.armed(CODE)).toBe(ada.latest()?.room.round?.deadlineAt);
+    expect(sync.deadlines.armed(idOf(store))).toBe(ada.latest()?.room.round?.deadlineAt);
     const gone = new Promise((resolve) => setTimeout(resolve, 100));
     ada.close();
     await gone;
-    expect(sync.deadlines.armed(CODE)).toBeUndefined();
+    expect(sync.deadlines.armed(idOf(store))).toBeUndefined();
+  });
+});
+
+describe("one room per socket", () => {
+  const A = "RoomSlowAA";
+  const B = "RoomQuickB";
+
+  it("runs two enters sent at once one after the other: the socket ends in the second room only", async () => {
+    // Room A loads slowly and is at version 9; room B is at version 1.
+    const { client, store, server } = await start(null, {
+      beforeLoad: (code) => (code === A ? sleep(80) : undefined),
+    });
+    let a = lobby();
+    await store.insertRoom({ code: A, name: null, state: a });
+    for (let n = 0; n < 8; n++) {
+      a = play(a, "ua", { type: "rename", name: `Ada ${n}` });
+      const room = store.rooms.get(A);
+      if (room) store.rooms.set(A, { ...room, version: room.version + 1, state: a });
+    }
+    await store.insertRoom({ code: B, name: null, state: createRoom({ ownerId: "ub" }) });
+    const x = client("ux");
+    const bob = client("ub");
+    const ada = client("ua");
+    await bob.enter(B);
+    await ada.enter(A);
+
+    const [ackA, ackB] = await Promise.all([x.enter(A), x.enter(B)]);
+    expect(ackA.ok && ackA.snapshot.version).toBe(9);
+    expect(ackB.ok && ackB.snapshot.room.code).toBe(B);
+    const rooms = server.io.sockets.adapter.rooms;
+    expect(rooms.get(channelOf(idOf(store, A)))?.size).toBe(1);
+    expect(rooms.get(channelOf(idOf(store, B)))?.size).toBe(2);
+
+    // Three changes in B (versions 2 to 4) reach the socket; a change in A does not.
+    const from = x.received.length;
+    expect((await bob.cmd("join", { name: "Bob", role: "voter" })).ok).toBe(true);
+    expect((await bob.cmd("rename", { name: "Bobby" })).ok).toBe(true);
+    expect((await bob.cmd("rename", { name: "Bobo" })).ok).toBe(true);
+    expect((await ada.cmd("rename", { name: "Ada again" })).ok).toBe(true);
+    await x.waitFor((s) => s.room.code === B && s.version === 4, 2000, from);
+    await sleep(50);
+    const seen = x.received.slice(from).map(({ snapshot: s }) => `${s.room.code}@${s.version}`);
+    expect(seen).toEqual([`${B}@2`, `${B}@3`, `${B}@4`]);
+  });
+
+  it("runs a command sent during an enter in the room entered, and refuses it after a failed one", async () => {
+    const { client, store } = await start(lobby(), { beforeLoad: () => sleep(50) });
+    const cy = client("uc");
+    const [entered, joined] = await Promise.all([
+      cy.enter(CODE),
+      cy.cmd("join", { name: "Cy", role: "observer" }),
+    ]);
+    expect(entered.ok).toBe(true);
+    expect(joined).toEqual({ ok: true, version: 2 });
+    expect(store.rooms.get(CODE)?.state.participants.uc).toBeDefined();
+
+    const dee = client("ud");
+    const [refused, command] = await Promise.all([
+      dee.enter("NoSuchRoom"),
+      dee.cmd("join", { name: "Dee", role: "voter" }),
+    ]);
+    expect(refused).toEqual({ ok: false, code: "room_not_found" });
+    expect(command).toEqual({ ok: false, code: "room_not_found" });
+  });
+});
+
+describe("a session that ends while the socket stays open", () => {
+  it("is checked again by a command once the last check is a minute old, then refused and closed", async () => {
+    let alive = true;
+    let checks = 0;
+    let clock = Date.now();
+    const { client } = await start(voting(), {
+      now: () => clock,
+      sessionAlive: async () => {
+        checks += 1;
+        return alive;
+      },
+    });
+    const bob = client("ub");
+    await bob.enter(CODE);
+    expect(checks).toBe(1);
+    alive = false;
+    // Within the minute the enter's check still holds.
+    expect((await bob.cmd("castVote", { card: "5" })).ok).toBe(true);
+    expect(checks).toBe(1);
+    clock += SESSION_RECHECK_MS + 1;
+    const closed = new Promise<string>((resolve) => bob.socket.on("disconnect", resolve));
+    expect(await bob.cmd("retractVote")).toEqual({ ok: false, code: "unauthenticated" });
+    expect(checks).toBe(2);
+    // A transport close: the client reconnects, and the handshake refuses the old session.
+    expect(await closed).toBe("transport close");
+  });
+});
+
+describe("room codes in the logs", () => {
+  it("names a room by its id on every path that logs one, never by its code", async () => {
+    let failLoads = false;
+    const { client, store, logs } = await start(voting(), {
+      beforeLoad: () => {
+        if (failLoads) throw new DatabaseError("load room", "57P01");
+      },
+    });
+    const ada = client("ua");
+    expect((await ada.enter(CODE)).ok).toBe(true);
+    // Every attempt loses: "command not run" (busy).
+    store.fate = () => "lose";
+    expect(await ada.cmd("castVote", { card: "5" })).toEqual({ ok: false, code: "busy" });
+    // The commit fails, and so does the reload after it.
+    store.fate = () => {
+      failLoads = true;
+      return "fail";
+    };
+    expect(await ada.cmd("castVote", { card: "5" })).toEqual({ ok: false, code: "internal" });
+    failLoads = false;
+    // The deadline: every attempt lost, then a failed timeUp, then the reveal.
+    const room = store.rooms.get(CODE);
+    if (!room) throw new Error("no room");
+    store.rooms.set(CODE, {
+      ...room,
+      version: room.version + 1,
+      state: withDeadline(room.state, Date.now() + 30),
+    });
+    store.fate = () => "lose";
+    expect((await ada.enter(CODE)).ok).toBe(true);
+    await vi.waitFor(() =>
+      expect(logs.messages()).toContain("deadline: every attempt lost the compare-and-set"),
+    );
+    store.fate = () => "fail";
+    await vi.waitFor(() => expect(logs.messages()).toContain("deadline: timeUp failed"));
+    store.fate = () => "store";
+    await ada.waitFor((s) => s.room.round?.phase === "revealed", 3000);
+
+    const messages = logs.messages();
+    for (const message of [
+      "socket entered",
+      "command not run",
+      "command failed in the database",
+      "room reload failed",
+      "deadline: every attempt lost the compare-and-set",
+      "deadline: timeUp failed",
+    ]) {
+      expect(messages).toContain(message);
+      expect(logs.lines.find((line) => line.msg === message)?.room).toBe(idOf(store));
+    }
+    expect(logs.raw.filter((line) => line.includes(CODE))).toEqual([]);
   });
 });

@@ -3,8 +3,10 @@
  * describe a well-behaved client and check nothing at runtime): `enter` goes through
  * `parseEnter`, `cmd` through `toDomainCommand`, and only parsed values reach the
  * handlers (`sync/room-sync.ts` in the running server). Every message first takes a token
- * from the socket's bucket (`SOCKET_MESSAGE_LIMIT`): past it, the answer is `rate_limited`
- * and the socket stays open.
+ * from its sender's bucket (`SOCKET_MESSAGE_LIMIT`, one bucket per person shared by all
+ * their sockets): past it, the answer is `rate_limited` and the socket stays open. One
+ * person holds at most `MAX_SOCKETS_PER_USER` sockets; the next handshake is refused with
+ * `rate_limited`. `drainRealtime` stops taking messages and waits for the answers owed.
  */
 import { randomBytes } from "node:crypto";
 import type { Server as HttpServer } from "node:http";
@@ -24,6 +26,7 @@ import type { Logger } from "./logger.ts";
 import {
   createTokenBucket,
   SOCKET_MESSAGE_LIMIT,
+  type TokenBucket,
   type TokenBucketOptions,
 } from "./sync/token-bucket.ts";
 
@@ -42,8 +45,11 @@ export interface SocketData {
    * the room sync checks it again on every `enter`.
    */
   sessionId?: string;
-  /** The code of the room this socket entered; a socket follows one room at a time. */
-  room?: string;
+  /**
+   * The room this socket entered, set once every check of `enter` passed; a socket
+   * follows one room at a time. Logs and channel names use the id, never the code.
+   */
+  room?: { id: string; code: string };
 }
 
 type InterServerEvents = Record<string, never>;
@@ -97,8 +103,55 @@ export interface RealtimeOptions {
   handlers?: RealtimeHandlers;
   /** Run in order on every handshake after the connection id is set (#10: session). */
   middleware?: readonly SocketMiddleware[];
-  /** Messages (`enter` and `cmd`) per socket; `SOCKET_MESSAGE_LIMIT` by default. */
+  /** Messages (`enter` and `cmd`) per person; `SOCKET_MESSAGE_LIMIT` by default. */
   messageLimit?: TokenBucketOptions;
+  /** Sockets one person may hold at once; `MAX_SOCKETS_PER_USER` by default. */
+  maxSocketsPerUser?: number;
+}
+
+/**
+ * Sockets one person may hold open at once (tabs, devices): enough for a few tabs, few
+ * enough that one session cannot multiply its message budget or the server's work.
+ */
+export const MAX_SOCKETS_PER_USER = 8;
+
+/** One person's sockets and their shared message bucket. */
+interface Holder {
+  sockets: Set<string>;
+  bucket: TokenBucket;
+  /** Set while the person holds no socket: forgets the holder once the bucket refilled. */
+  idle?: ReturnType<typeof setTimeout> | undefined;
+}
+
+/** What `drainRealtime` needs from a server built by `createRealtime`. */
+interface Drain {
+  accepting: boolean;
+  inFlight: Set<Promise<void>>;
+}
+
+const drains = new WeakMap<RealtimeServer, Drain>();
+
+/**
+ * Stops taking `enter` and `cmd` (a new one gets no answer: the client sends it again
+ * after it reconnected, with the same id) and resolves once every message already taken
+ * has been answered, or after `timeoutMs`, with how many were in flight. The server is
+ * shutting down; the engine closes after this, so the answers owed reach their sockets.
+ */
+export async function drainRealtime(io: RealtimeServer, timeoutMs: number): Promise<number> {
+  const drain = drains.get(io);
+  if (!drain) return 0;
+  drain.accepting = false;
+  const pending = drain.inFlight.size;
+  if (pending === 0) return 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    Promise.allSettled([...drain.inFlight]),
+    new Promise((resolve) => {
+      timer = setTimeout(resolve, timeoutMs);
+    }),
+  ]);
+  clearTimeout(timer);
+  return pending;
 }
 
 /** Payload cap per message, both transports (architecture section 8). */
@@ -111,6 +164,7 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     handlers = noRoomHandlers,
     middleware = [],
     messageLimit = SOCKET_MESSAGE_LIMIT,
+    maxSocketsPerUser = MAX_SOCKETS_PER_USER,
   } = options;
   const io: RealtimeServer = new Server(httpServer, {
     maxHttpBufferSize: MAX_PAYLOAD_BYTES,
@@ -126,24 +180,70 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     next();
   });
   for (const fn of middleware) io.use(guard(fn, logger));
+
+  // After the session: the sockets and the message bucket of each person. Without
+  // identity (tests), each socket counts as its own person.
+  const holders = new Map<string, Holder>();
+  const holderKey = (socket: RealtimeSocket) => socket.data.user?.id ?? `socket ${socket.id}`;
+  const refillMs = (messageLimit.burst / messageLimit.perSecond) * 1000;
+  const release = (key: string, id: string) => {
+    const holder = holders.get(key);
+    if (!holder?.sockets.delete(id) || holder.sockets.size > 0) return;
+    // Kept until its bucket would be full again: closing every socket and opening new
+    // ones does not refill it sooner.
+    holder.idle = setTimeout(() => {
+      if (holder.sockets.size === 0) holders.delete(key);
+    }, refillMs);
+    holder.idle.unref();
+  };
+  io.use((socket, next) => {
+    const conn = socket.client.conn;
+    if (conn.readyState === "closing" || conn.readyState === "closed") {
+      next(new Error("internal"));
+      return;
+    }
+    const key = holderKey(socket);
+    let holder = holders.get(key);
+    if (holder && holder.sockets.size >= maxSocketsPerUser) {
+      logger.debug({ conn: socket.data.conn }, "socket refused: too many sockets for one person");
+      next(new Error("rate_limited"));
+      return;
+    }
+    if (!holder) {
+      holder = { sockets: new Set(), bucket: createTokenBucket(messageLimit) };
+      holders.set(key, holder);
+    }
+    clearTimeout(holder.idle);
+    holder.idle = undefined;
+    holder.sockets.add(socket.id);
+    // Released when the socket disconnects, and when the connection closes before the
+    // socket ever connected.
+    conn.once("close", () => release(key, socket.id));
+    next();
+  });
+
+  const drain: Drain = { accepting: true, inFlight: new Set() };
+  drains.set(io, drain);
   handlers.attach?.(io);
 
   io.on("connection", (socket) => {
     const log = logger.child({ conn: socket.data.conn });
     log.info({ transport: socket.conn.transport.name }, "socket connected");
+    const key = holderKey(socket);
     socket.on("disconnect", (reason) => {
       log.info({ reason }, "socket disconnected");
+      release(key, socket.id);
       handlers.disconnect?.(socket);
     });
-    const bucket = createTokenBucket(messageLimit);
+    const bucket = holders.get(key)?.bucket ?? createTokenBucket(messageLimit);
     const limited = { ok: false, code: "rate_limited" } as const;
 
-    onRaw(socket, log, "enter", async (payload) => {
+    onRaw(socket, log, drain, "enter", async (payload) => {
       if (!bucket.take()) return limited;
       const parsed = parseEnter(payload);
       return parsed.ok ? handlers.enter(socket, parsed.enter) : { ok: false, code: parsed.code };
     });
-    onRaw(socket, log, "cmd", async (payload) => {
+    onRaw(socket, log, drain, "cmd", async (payload) => {
       if (!bucket.take()) return limited;
       const parsed = toDomainCommand(payload);
       return parsed.ok
@@ -184,11 +284,14 @@ function guard(fn: SocketMiddleware, logger: Logger): SocketMiddleware {
 /**
  * Listens to an event without trusting its arguments: the first one is the payload, the
  * last one the ack when it is a function. A message without an ack is still handled (its
- * answer is dropped); a throwing handler answers `internal` and logs the error.
+ * answer is dropped); a throwing handler answers `internal` and logs the error. Each
+ * message is tracked until its answer is sent; while the server drains, a new one is
+ * dropped unanswered.
  */
 function onRaw<A extends EnterAck | CmdAck>(
   socket: RealtimeSocket,
   log: Logger,
+  drain: Drain,
   event: "enter" | "cmd",
   handle: (payload: unknown) => Promise<A>,
 ): void {
@@ -199,7 +302,11 @@ function onRaw<A extends EnterAck | CmdAck>(
     const last = args.at(-1);
     const ack = typeof last === "function" ? (last as (answer: A | CmdAck) => void) : undefined;
     const payload = args.length > (ack ? 1 : 0) ? args[0] : undefined;
-    handle(payload).then(
+    if (!drain.accepting) {
+      log.debug({ event }, "message dropped: shutting down");
+      return;
+    }
+    const answered: Promise<void> = handle(payload).then(
       (answer) => {
         if (!answer.ok) log.debug({ event, code: answer.code }, "message refused");
         ack?.(answer);
@@ -209,5 +316,7 @@ function onRaw<A extends EnterAck | CmdAck>(
         ack?.({ ok: false, code: "internal" });
       },
     );
+    drain.inFlight.add(answered);
+    void answered.finally(() => drain.inFlight.delete(answered));
   });
 }

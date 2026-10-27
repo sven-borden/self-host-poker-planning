@@ -9,7 +9,7 @@ import {
 } from "@pp/protocol";
 import { io as connect, type Socket } from "socket.io-client";
 import { afterEach, describe, expect, it } from "vitest";
-import { MAX_PAYLOAD_BYTES } from "./realtime.ts";
+import { MAX_PAYLOAD_BYTES, MAX_SOCKETS_PER_USER, type SocketMiddleware } from "./realtime.ts";
 import { createServer, type PokerServer, type ServerDeps } from "./server.ts";
 import { collectLogs, type LogCollector, testConfig } from "./test-support.ts";
 
@@ -256,6 +256,49 @@ describe("Socket.IO", () => {
   });
 });
 
+/** Every handshake is the same person, as many tabs of one session would be. */
+const samePerson: SocketMiddleware = (socket, next) => {
+  socket.data.user = { id: "u1", name: "", isAnonymous: true };
+  next();
+};
+const CMD = { id: "c1", type: "reveal" };
+
+describe("limits per person", () => {
+  it(`holds at most ${MAX_SOCKETS_PER_USER} sockets of one person and refuses the next with rate_limited`, async () => {
+    const { client } = await start({ socketMiddleware: [samePerson] });
+    const sockets = Array.from({ length: MAX_SOCKETS_PER_USER }, () => client());
+    await Promise.all(sockets.map(connected));
+    const extra = client();
+    await expect(connected(extra)).rejects.toThrow("rate_limited");
+    // A closed socket frees its place.
+    const gone = new Promise((resolve) => setTimeout(resolve, 50));
+    sockets[0]?.disconnect();
+    await gone;
+    await connected(client());
+  });
+
+  it("shares one message bucket between the sockets of one person", async () => {
+    const { client } = await start({
+      socketMiddleware: [samePerson],
+      handlers: {
+        enter: () => ({ ok: false, code: "room_not_found" }),
+        cmd: () => ({ ok: true, version: 1 }),
+      },
+    });
+    const sockets = [client(), client()];
+    await Promise.all(sockets.map(connected));
+    const acks = await Promise.all(
+      sockets.flatMap((socket) =>
+        Array.from({ length: 20 }, () => raw(socket).emitWithAck("cmd", CMD)),
+      ),
+    );
+    const ok = acks.filter((ack) => cmdAckSchema.parse(ack).ok).length;
+    // A burst of 20 for both together, and what refills meanwhile.
+    expect(ok).toBeGreaterThanOrEqual(20);
+    expect(ok).toBeLessThanOrEqual(22);
+  });
+});
+
 describe("the Origin check", () => {
   // testConfig() sets BASE_URL=http://localhost:3000; the server listens elsewhere, which
   // does not matter: the rule compares the Origin header with BASE_URL's origin.
@@ -301,6 +344,7 @@ describe("shutdown", () => {
     expect(logs.messages()).toEqual(
       expect.arrayContaining([
         "shutdown: stopped accepting connections",
+        "shutdown: socket messages answered",
         "shutdown: sockets disconnected",
         "shutdown: http server closed",
       ]),
@@ -341,6 +385,7 @@ describe("shutdown", () => {
     const phases = () => logs.messages().filter((msg) => msg.startsWith("shutdown:"));
     expect(phases()).toEqual([
       "shutdown: stopped accepting connections",
+      "shutdown: socket messages answered",
       "shutdown: sockets disconnected",
     ]);
 
@@ -348,5 +393,32 @@ describe("shutdown", () => {
     expect(await stalled).toBe("done");
     await closed;
     expect(phases().at(-1)).toBe("shutdown: http server closed");
+  });
+
+  it("answers the commands it took before closing the sockets, and takes no new one", async () => {
+    let started: () => void = () => {};
+    const running = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const { server, client } = await start({
+      handlers: {
+        enter: () => ({ ok: false, code: "room_not_found" }),
+        cmd: async () => {
+          started();
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          return { ok: true, version: 7 };
+        },
+      },
+    });
+    const socket = client();
+    await connected(socket);
+    const taken = raw(socket).emitWithAck("cmd", CMD);
+    await running;
+    const closed = server.close();
+    // Sent during the drain: dropped, so the client sends it again after reconnecting.
+    const late = socket.timeout(2000).emitWithAck("cmd", { ...CMD, id: "c2" } as never);
+    expect(cmdAckSchema.parse(await taken)).toEqual({ ok: true, version: 7 });
+    await expect(late).rejects.toThrow();
+    await closed;
   });
 });

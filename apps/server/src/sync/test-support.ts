@@ -3,6 +3,7 @@
  * runner on it), a stand-in for the session middleware, and a socket client that keeps
  * every snapshot and every raw frame it receives. Not imported by `main.ts`.
  */
+import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import type { RoomState } from "@pp/domain";
 import {
@@ -43,7 +44,8 @@ export function memoryRoomStore(): MemoryRoomStore {
     commits: 0,
     insertRoom: async ({ code, state }) => {
       if (rooms.has(code)) return null;
-      const room = { id: `id-${code}`, code, version: FIRST_VERSION, state };
+      // A random id, as Postgres gives: never derived from the code (logs carry the id).
+      const room = { id: randomUUID(), code, version: FIRST_VERSION, state };
       rooms.set(code, room);
       return room;
     },
@@ -139,7 +141,7 @@ export function testClient(url: string, options: ClientOptions = {}): TestClient
       if (packet.type === "message" && typeof packet.data === "string") frames.push(packet.data);
     });
   };
-  watchEngine();
+  // The manager's "open" fires for every engine, the first one included: one listener each.
   socket.io.on("open", watchEngine);
   const waiters = new Set<() => void>();
   const receive = (snapshot: Snapshot) => {

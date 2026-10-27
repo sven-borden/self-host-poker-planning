@@ -18,44 +18,84 @@ describe("createTokenBucket", () => {
 });
 
 describe("createRecentAcks", () => {
-  it("runs a key once and hands out the same answer, also while it runs", async () => {
-    const acks = createRecentAcks(10);
+  const counter = () => {
     let runs = 0;
-    const run = async () => ({ ok: true as const, version: ++runs });
-    const [a, b] = await Promise.all([acks.remember("k", run), acks.remember("k", run)]);
+    return async () => ({ ok: true as const, version: ++runs });
+  };
+
+  it("runs a key once and hands out the same answer, also while it runs", async () => {
+    const acks = createRecentAcks();
+    const run = counter();
+    const [a, b] = await Promise.all([
+      acks.remember("u1", "k", run),
+      acks.remember("u1", "k", run),
+    ]);
     expect(a).toEqual({ ok: true, version: 1 });
     expect(b).toBe(a);
-    expect(await acks.remember("k", run)).toBe(a);
-    expect(runs).toBe(1);
+    expect(await acks.remember("u1", "k", run)).toBe(a);
+    // The same key of another person is another command.
+    expect(await acks.remember("u2", "k", run)).toEqual({ ok: true, version: 2 });
   });
 
-  it("forgets the least recently used key past its size", async () => {
-    const acks = createRecentAcks(2);
-    let runs = 0;
-    const run = async () => ({ ok: true as const, version: ++runs });
-    await acks.remember("a", run);
-    await acks.remember("b", run);
-    await acks.remember("a", run);
-    await acks.remember("c", run);
+  it("forgets a person's least recently used key past their own bound", async () => {
+    const acks = createRecentAcks({ perUser: 2 });
+    const run = counter();
+    await acks.remember("u1", "a", run);
+    await acks.remember("u1", "b", run);
+    await acks.remember("u1", "a", run);
+    await acks.remember("u1", "c", run);
     expect(acks.size).toBe(2);
-    expect(await acks.remember("a", run)).toEqual({ ok: true, version: 1 });
-    expect(await acks.remember("b", run)).toEqual({ ok: true, version: 4 });
+    expect(await acks.remember("u1", "a", run)).toEqual({ ok: true, version: 1 });
+    expect(await acks.remember("u1", "b", run)).toEqual({ ok: true, version: 4 });
+  });
+
+  it("keeps everyone else's results while one person floods", async () => {
+    const acks = createRecentAcks({ perUser: 5 });
+    const run = counter();
+    const honest = await acks.remember("ada", "vote", run);
+    for (let i = 0; i < 1000; i++) await acks.remember("mallory", `m${i}`, run);
+    expect(acks.size).toBe(6);
+    expect(await acks.remember("ada", "vote", run)).toBe(honest);
+  });
+
+  it("forgets the person who has not sent a command for longest past the people bound", async () => {
+    const acks = createRecentAcks({ users: 2 });
+    const run = counter();
+    await acks.remember("u1", "k", run);
+    await acks.remember("u2", "k", run);
+    await acks.remember("u1", "j", run);
+    await acks.remember("u3", "k", run);
+    expect(acks.size).toBe(3);
+    expect(await acks.remember("u1", "k", run)).toEqual({ ok: true, version: 1 });
+    expect(await acks.remember("u2", "k", run)).toEqual({ ok: true, version: 5 });
   });
 
   it("drops an answer `forget` accepts, and a rejection, once known", async () => {
-    const acks = createRecentAcks(10, (ack) => !ack.ok && ack.code === "busy");
-    expect(await acks.remember("k", async () => ({ ok: false, code: "busy" }))).toEqual({
+    const acks = createRecentAcks({ forget: (ack) => !ack.ok && ack.code === "busy" });
+    expect(await acks.remember("u1", "k", async () => ({ ok: false, code: "busy" }))).toEqual({
       ok: false,
       code: "busy",
     });
     expect(acks.size).toBe(0);
-    await expect(acks.remember("j", () => Promise.reject(new Error("bug")))).rejects.toThrow("bug");
+    await expect(acks.remember("u1", "j", () => Promise.reject(new Error("bug")))).rejects.toThrow(
+      "bug",
+    );
     await Promise.resolve();
     expect(acks.size).toBe(0);
   });
 
-  it("keys by user, room and command id", () => {
-    expect(ackKey("u1", "Room1", "c1")).not.toBe(ackKey("u1", "Room2", "c1"));
+  it("counts right when a forgotten person's command settles later", async () => {
+    const acks = createRecentAcks({ users: 1, forget: (ack) => !ack.ok });
+    let settle: (ack: { ok: false; code: "busy" }) => void = () => {};
+    const slow = acks.remember("u1", "k", () => new Promise((resolve) => (settle = resolve)));
+    await acks.remember("u2", "k", counter());
+    settle({ ok: false, code: "busy" });
+    await slow;
+    expect(acks.size).toBe(1);
+  });
+
+  it("keys by room and command id", () => {
+    expect(ackKey("room-1", "c1")).not.toBe(ackKey("room-2", "c1"));
   });
 });
 
