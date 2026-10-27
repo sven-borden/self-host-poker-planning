@@ -1,6 +1,13 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { useIdentityStore } from "../stores/identity-store.ts";
 import { useRoomStore } from "../stores/room-store.ts";
-import { createSocket, type EventsMap, type TypedSocket, trackConnection } from "./socket.ts";
+import {
+  connectWhenIdentified,
+  createSocket,
+  type EventsMap,
+  type TypedSocket,
+  trackConnection,
+} from "./socket.ts";
 
 interface ServerToClient extends EventsMap {
   "room:snapshot": (snapshot: { version: number }) => void;
@@ -23,6 +30,7 @@ function setActive(socket: TypedSocket<EventsMap, EventsMap>, active: boolean) {
 
 afterEach(() => {
   useRoomStore.getState().reset();
+  useIdentityStore.getState().reset();
 });
 
 describe("createSocket", () => {
@@ -81,5 +89,82 @@ describe("trackConnection", () => {
     fire(socket, "connect");
     expect(status()).toBe("offline");
     socket.close();
+  });
+});
+
+describe("connectWhenIdentified", () => {
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  function setup(ensure: (options?: { force?: boolean }) => Promise<unknown>) {
+    const socket = createSocket();
+    const connect = vi.spyOn(socket, "connect").mockReturnValue(socket);
+    const stop = connectWhenIdentified(socket, ensure);
+    return { socket, connect, stop };
+  }
+
+  it("connects only once the identity exists", async () => {
+    let resolve: (value: unknown) => void = () => {};
+    const ensure = vi.fn(() => new Promise((r) => (resolve = r)));
+    const { connect, stop } = setup(ensure);
+    await tick();
+    expect(connect).not.toHaveBeenCalled();
+    resolve({ userId: "u1", name: null });
+    await tick();
+    expect(connect).toHaveBeenCalledOnce();
+    stop();
+  });
+
+  it("never connects when the bootstrap fails", async () => {
+    const { connect, stop } = setup(() => Promise.reject(new Error("rate_limited")));
+    await tick();
+    expect(connect).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("runs the bootstrap once more on unauthenticated, then reports a second refusal", async () => {
+    const ensure = vi.fn(() => Promise.resolve({ userId: "u1", name: null }));
+    const { socket, connect, stop } = setup(ensure);
+    await tick();
+    fire(socket, "connect_error", new Error("unauthenticated"));
+    await tick();
+    expect(ensure).toHaveBeenLastCalledWith({ force: true });
+    expect(connect).toHaveBeenCalledTimes(2);
+    expect(useIdentityStore.getState().error).toBeNull();
+    fire(socket, "connect_error", new Error("unauthenticated"));
+    await tick();
+    expect(connect).toHaveBeenCalledTimes(2);
+    expect(useIdentityStore.getState().error).toBe("unauthenticated");
+    stop();
+  });
+
+  it("starts over after a successful connect and ignores other errors", async () => {
+    const ensure = vi.fn(() => Promise.resolve({ userId: "u1", name: null }));
+    const { socket, connect, stop } = setup(ensure);
+    await tick();
+    fire(socket, "connect_error", new Error("xhr poll error"));
+    expect(ensure).toHaveBeenCalledTimes(1);
+    fire(socket, "connect_error", new Error("unauthenticated"));
+    await tick();
+    fire(socket, "connect");
+    fire(socket, "connect_error", new Error("unauthenticated"));
+    await tick();
+    expect(connect).toHaveBeenCalledTimes(3);
+    expect(useIdentityStore.getState().error).toBeNull();
+    stop();
+  });
+
+  it("reports unauthenticated when the second bootstrap fails, and stops on cleanup", async () => {
+    const ensure = vi
+      .fn<(options?: { force?: boolean }) => Promise<unknown>>()
+      .mockResolvedValueOnce({ userId: "u1", name: null })
+      .mockRejectedValueOnce(new Error("internal"));
+    const { socket, connect, stop } = setup(ensure);
+    await tick();
+    fire(socket, "connect_error", new Error("unauthenticated"));
+    await tick();
+    expect(useIdentityStore.getState().error).toBe("unauthenticated");
+    stop();
+    fire(socket, "connect_error", new Error("unauthenticated"));
+    expect(connect).toHaveBeenCalledOnce();
   });
 });

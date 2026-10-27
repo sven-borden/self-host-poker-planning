@@ -1,4 +1,6 @@
 import { io, type ManagerOptions, type Socket, type SocketOptions } from "socket.io-client";
+import { ensureIdentity, UNAUTHENTICATED } from "../identity/identity.ts";
+import { useIdentityStore } from "../stores/identity-store.ts";
 import type { ConnectionStatus } from "../stores/room-store.ts";
 
 // A thin, typed wrapper over the Socket.IO client. The event maps come from
@@ -28,6 +30,52 @@ export function createSocket<ServerToClient extends EventsMap, ClientToServer ex
     withCredentials: true,
     ...options,
   });
+}
+
+/**
+ * Connects `socket` once this browser has a session (`ensureIdentity`), never before: the
+ * handshake carries the session cookie and the server refuses a socket without one. When
+ * the server still answers `unauthenticated` (the session expired or was revoked), runs
+ * the bootstrap once more and reconnects; a second refusal in a row, or a failed
+ * bootstrap, sets the identity store's error to `unauthenticated` for the page to show
+ * (`errorMessage(t, "unauthenticated")`). Returns a function that removes the listeners.
+ */
+export function connectWhenIdentified<
+  ServerToClient extends EventsMap,
+  ClientToServer extends EventsMap,
+>(
+  socket: TypedSocket<ServerToClient, ClientToServer>,
+  ensure: (options?: { force?: boolean }) => Promise<unknown> = ensureIdentity,
+): () => void {
+  let retried = false;
+  let stopped = false;
+  const giveUp = () => {
+    if (!stopped) useIdentityStore.getState().setError(UNAUTHENTICATED);
+  };
+  const connect = () => {
+    if (!stopped) socket.connect();
+  };
+  const onConnect = () => {
+    retried = false;
+  };
+  const onConnectError = (error: Error) => {
+    if (stopped || error.message !== UNAUTHENTICATED) return;
+    if (retried) {
+      giveUp();
+      return;
+    }
+    retried = true;
+    ensure({ force: true }).then(connect, giveUp);
+  };
+  socket.on("connect", onConnect);
+  socket.on("connect_error", onConnectError);
+  // A failed bootstrap already put its code in the store (`rate_limited`, `network`, …).
+  ensure().then(connect, () => {});
+  return () => {
+    stopped = true;
+    socket.off("connect", onConnect);
+    socket.off("connect_error", onConnectError);
+  };
 }
 
 /**
