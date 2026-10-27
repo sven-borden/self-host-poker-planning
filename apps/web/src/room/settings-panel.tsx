@@ -31,7 +31,6 @@ import { DeckControl, SpecialsControl } from "./deck-field.tsx";
 import { codeOf, failureMessage } from "./failure.ts";
 import { WhoCanRevealControl } from "./reveal-setting.tsx";
 import { deckName, type SettingKey } from "./settings-words.ts";
-import { everyoneVoted } from "./table-data.ts";
 import { TimerSetting } from "./timer-setting.tsx";
 import { durationWords } from "./timer-view.ts";
 
@@ -102,6 +101,21 @@ export interface SettingGroup {
   id: string;
   title: (t: TFunction) => string;
   fields: readonly SettingField[];
+}
+
+/**
+ * Whether every voter who is present has voted in the voting round: what reveals it at
+ * once while "Reveal when everyone has voted" is on (the domain's `settle`). Here rather
+ * than in `table-data.ts`, which would pull the table's helpers into this chunk.
+ */
+function everyoneVoted(room: RoomView): boolean {
+  if (room.round?.phase !== "voting") return false;
+  const voted = new Set(room.round.voted);
+  const present = room.participants.filter(
+    (p) =>
+      p.role === "voter" && (p.id !== room.ownerId || room.settings.poVotes) && p.away !== true,
+  );
+  return present.length > 0 && present.every((p) => voted.has(p.id));
 }
 
 const onOff = (t: TFunction, on: boolean) => t(on ? "settings.on" : "settings.off");

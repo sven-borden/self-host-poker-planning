@@ -135,17 +135,6 @@ export function mayReveal(room: RoomView): boolean {
 }
 
 /**
- * Whether every voter who is present has voted in the voting round: what reveals it at
- * once while "Reveal when everyone has voted" is on (the domain's `settle`).
- */
-export function everyoneVoted(room: RoomView): boolean {
-  if (room.round?.phase !== "voting") return false;
-  const voted = new Set(room.round.voted);
-  const present = room.participants.filter((p) => canVote(p, room) && !p.away);
-  return present.length > 0 && present.every((p) => voted.has(p.id));
-}
-
-/**
  * The centre's "5/8 voted so far": who voted out of who can vote. Someone away counts
  * only when their vote is in (the domain's automatic reveal waits for present voters only).
  */
