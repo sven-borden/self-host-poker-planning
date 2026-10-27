@@ -83,7 +83,14 @@ export const en = {
   room: {
     title: "Room {{code}}",
     codeLabel: "Room code",
-    notOpenYet: "This room is not open yet: the table arrives in a later version.",
+    statusConnecting: "Connecting to the room…",
+    statusLive: "Connected",
+    statusReconnecting: "Connection lost. Reconnecting…",
+    people_one: "{{count, number}} person in the room",
+    people_other: "{{count, number}} people in the room",
+    reload: "Reload",
+    kicked: "You were removed from this room.",
+    offline: "The connection to the server was lost. Reload the page to try again.",
     backHome: "Back to the home page",
   },
   table: {

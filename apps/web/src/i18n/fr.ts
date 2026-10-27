@@ -30,8 +30,15 @@ export const fr: Catalog<"many"> = {
   room: {
     title: "Salle {{code}}",
     codeLabel: "Code de la salle",
-    notOpenYet:
-      "Cette salle n’est pas encore ouverte : la table arrive dans une prochaine version.",
+    statusConnecting: "Connexion à la salle…",
+    statusLive: "Connecté",
+    statusReconnecting: "Connexion perdue. Reconnexion…",
+    people_one: "{{count, number}} personne dans la salle",
+    people_many: "{{count, number}} personnes dans la salle",
+    people_other: "{{count, number}} personnes dans la salle",
+    reload: "Recharger",
+    kicked: "Vous avez été retiré de cette salle.",
+    offline: "La connexion au serveur a été perdue. Rechargez la page pour réessayer.",
     backHome: "Retour à l’accueil",
   },
   table: {

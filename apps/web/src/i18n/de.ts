@@ -30,7 +30,15 @@ export const de: Catalog = {
   room: {
     title: "Raum {{code}}",
     codeLabel: "Raumcode",
-    notOpenYet: "Dieser Raum ist noch nicht geöffnet: Der Tisch folgt in einer späteren Version.",
+    statusConnecting: "Verbindung zum Raum wird hergestellt…",
+    statusLive: "Verbunden",
+    statusReconnecting: "Verbindung unterbrochen. Neuer Versuch…",
+    people_one: "{{count, number}} Person im Raum",
+    people_other: "{{count, number}} Personen im Raum",
+    reload: "Neu laden",
+    kicked: "Sie wurden aus diesem Raum entfernt.",
+    offline:
+      "Die Verbindung zum Server wurde unterbrochen. Laden Sie die Seite neu, um es erneut zu versuchen.",
     backHome: "Zurück zur Startseite",
   },
   table: {
