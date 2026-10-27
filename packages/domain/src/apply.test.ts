@@ -834,7 +834,7 @@ describe("rounds", () => {
   it("revotes: a new round with the same subject", () => {
     const before = room({ round: revealed({ number: 2, votes: { [A]: { card: "3" } } }) });
     const result = send(before, { type: "revote" });
-    expect(result.causes).toEqual([{ type: "roundStarted", number: 3 }]);
+    expect(result.causes).toEqual([{ type: "roundStarted", number: 3, revote: true }]);
     expect(ok(result).round).toMatchObject({
       number: 3,
       subject: { kind: "title", text: "Login page" },

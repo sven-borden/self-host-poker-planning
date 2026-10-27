@@ -1,6 +1,7 @@
 import type { RoomView } from "@pp/protocol";
 import { type ComponentProps, useEffect, useState } from "react";
 import { useT } from "../i18n/hooks.ts";
+import { cardLabel } from "../table/cards.tsx";
 import { revealSummary, summarySentence } from "./results-view.ts";
 import { PlayedCards } from "./revealed-cards.tsx";
 
@@ -57,13 +58,30 @@ function useResults(): { module: Results | null; failed: boolean } {
   return state;
 }
 
-/** The centre until the results have loaded, or when they cannot: the result as a sentence. */
+/**
+ * The centre until the results have loaded, or when they cannot: the result as a sentence,
+ * then the recorded final estimate (#32), which must never be lost with the chunk.
+ */
 export function CentreFallback({ room }: { room: RoomView }) {
   const t = useT();
   const round = room.round;
+  if (round?.phase !== "revealed") {
+    return (
+      <p data-centre-status="revealed" data-centre-fallback className="m-0">
+        {t("round.revealed")}
+      </p>
+    );
+  }
+  const final = round.final ?? null;
   return (
     <p data-centre-status="revealed" data-centre-fallback className="m-0">
-      {round?.phase === "revealed" ? summarySentence(t, revealSummary(round)) : t("round.revealed")}
+      {summarySentence(t, revealSummary(round))}
+      {final !== null ? (
+        <>
+          {" "}
+          <span data-centre-final={final}>{t("final.centre", { card: cardLabel(t, final) })}</span>
+        </>
+      ) : null}
     </p>
   );
 }

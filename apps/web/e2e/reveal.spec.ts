@@ -114,8 +114,9 @@ test("the PO reveals a named round; the cards turn over in seat order from the v
     await recordAnimations(ben.page);
     await revealButton(page).click();
 
-    // Everyone sees the cards, the seats say them, and the PO's focus is on Next round.
-    await expect(page.getByRole("button", { name: "Next round" })).toBeFocused();
+    // Everyone sees the cards, the seats say them, and the PO's focus is on recording the
+    // suggestion (#32).
+    await expect(page.getByRole("button", { name: "Record 8" })).toBeFocused();
     await expect(status(ben.page)).toHaveAttribute("data-centre-status", "revealed");
     // The result comes with the reveal (#20): 3, 5, 5, 8, 8 and 13 average 7.
     await expect(tableLive(ben.page)).toContainText("Cards revealed. Suggested 8. Agreement 33%.");
@@ -263,7 +264,8 @@ test("a named vote without a seat shows under the table: an observer now, or bac
     await handCard(ben.page, "8").click();
     await expect(status(page)).toHaveText("2/3 voted so far");
     await revealButton(page).click();
-    await expect(page.getByRole("button", { name: "Next round" })).toBeFocused();
+    // The PO's focus goes on to recording the suggestion (#32).
+    await expect(page.getByRole("button", { name: /^Record [0-9]+$/ })).toBeFocused();
 
     // Ben switches to observer after the reveal: his card leaves the table, not the round.
     await ben.page.getByRole("button", { name: "Switch to observer" }).click();

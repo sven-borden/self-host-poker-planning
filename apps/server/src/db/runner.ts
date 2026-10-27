@@ -5,12 +5,17 @@
  * the version check keeps several instances correct.
  */
 import type { RoomState, Round, UserId } from "@pp/domain";
+import { historyRound } from "./history.ts";
 import type { RoomStore } from "./rooms.ts";
 
 /** What a step returns; `ApplyResult` fits (both of its branches). */
 export interface StepResult {
   state: RoomState;
-  /** `ApplyResult.ended`: the round this step replaced; history when it was revealed. */
+  /**
+   * `ApplyResult.ended`: the round this step replaced; history when it was revealed. A
+   * revealed round with a final estimate is written too whenever a step changes it
+   * (`historyRound`).
+   */
   ended?: Round;
 }
 
@@ -95,8 +100,10 @@ export function createCommandRunner(store: RoomStore, options: RunnerOptions = {
       if (result.state === loaded.state) {
         return { ...base, version: loaded.version, changed: false, result };
       }
-      const ended = result.ended && {
-        round: result.ended,
+      // The round it ended, or the revealed round once its final estimate is recorded (#32).
+      const round = historyRound(loaded.state, result.state, result.ended);
+      const ended = round && {
+        round,
         participants: names(loaded.state, result.state),
         finishedAt: now(),
       };

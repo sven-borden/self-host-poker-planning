@@ -1,4 +1,4 @@
-import { apply, createRoom, type RoomState } from "@pp/domain";
+import { apply, type Command, createRoom, type RoomState } from "@pp/domain";
 import { toSnapshot } from "@pp/protocol";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type Database, openDatabase, setupDatabase } from "../database.ts";
@@ -230,6 +230,83 @@ describe("history", () => {
     expect(await a.store.commitRoom(room.id, 3, next, final)).toBe(true);
     const rows = await historyOf(room.id);
     expect(rows.map((r) => [r.number, r.final])).toEqual([[1, "5"]]);
+  });
+
+  describe("the final estimate (#32)", () => {
+    const po =
+      (command: Command, now = T0 + 50) =>
+      (state: RoomState) =>
+        apply(state, command, { actor: "u1", now });
+    const runner = () => createCommandRunner(a.store, { now: () => T0 + 99 });
+
+    it("AC 1: is in the row once set, before any next round; a change updates it; the next round keeps it", async () => {
+      const room = await insert(revealedRoom());
+      const run = runner();
+      expect(await run.run(room.code, po({ type: "setFinal", card: "8" }))).toMatchObject({
+        ok: true,
+        version: 2,
+      });
+      const decided = await historyOf(room.id);
+      expect(decided.map(({ text: _, ...row }) => row)).toEqual([
+        {
+          number: 1,
+          votes: {
+            kind: "named",
+            votes: [
+              { who: "u2", name: "Bob", card: "5" },
+              { who: "u3", name: "Cy", card: "8" },
+            ],
+          },
+          stats: expect.objectContaining({ mode: "5", spread: ["5", "8"] }),
+          final: "8",
+        },
+      ]);
+
+      await run.run(room.code, po({ type: "setFinal", card: "13" }));
+      expect((await historyOf(room.id)).map((r) => [r.number, r.final])).toEqual([[1, "13"]]);
+      // The same card again changes nothing: no write at all.
+      expect(await run.run(room.code, po({ type: "setFinal", card: "13" }))).toMatchObject({
+        changed: false,
+        version: 3,
+      });
+
+      await run.run(room.code, po({ type: "startRound", subject: { kind: "none" } }));
+      const after = await historyOf(room.id);
+      expect(after.map((r) => [r.number, r.final])).toEqual([[1, "13"]]);
+      expect(after[0]?.votes).toEqual(decided[0]?.votes);
+    });
+
+    it("a re-vote keeps the revealed round in history with its votes and final, and starts the same subject again", async () => {
+      const room = await insert(revealedRoom());
+      const run = runner();
+      await run.run(room.code, po({ type: "setFinal", card: "5" }));
+      expect(await run.run(room.code, po({ type: "revote" }))).toMatchObject({
+        ok: true,
+        changed: true,
+      });
+      const loaded = await a.store.loadRoom(room.code);
+      expect(loaded?.state.round).toMatchObject({
+        number: 2,
+        phase: "voting",
+        subject: { kind: "title", text: "Login page" },
+        votes: {},
+      });
+      const rows = await historyOf(room.id);
+      expect(rows.map((r) => [r.number, r.final, r.votes.kind, r.votes.votes.length])).toEqual([
+        [1, "5", "named", 2],
+      ]);
+    });
+
+    it("an anonymous round's row keeps the cards and the final only", async () => {
+      const room = await insert(revealedRoom({ anonymous: true }));
+      await runner().run(room.code, po({ type: "setFinal", card: "8" }));
+      const [row] = await historyOf(room.id);
+      expect(row?.final).toBe("8");
+      expect(row?.votes).toEqual({ kind: "anonymous", cards: ["5", "8"] });
+      for (const leak of ["u1", "u2", "u3", "Ada", "Bob", "Cy"]) {
+        expect(row?.text).not.toContain(leak);
+      }
+    });
   });
 
   it("is deleted with its room", async () => {
