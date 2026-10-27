@@ -265,9 +265,15 @@ test("four people play three rounds: create, join, vote, reveal, results, next r
     await expect(seats(dee.page).getByRole("button", { name: /^Ben, voted$/ })).toHaveCount(1);
     await ana.press(ana.page.getByRole("button", { name: "Reveal cards" }));
     const first = await expectResults(everyone, ["8", "5"]);
+    // The seats say the cards, and mark the lowest and the highest; Ana did not vote.
     for (const { page } of everyone) {
-      await expect(seats(page).getByRole("button", { name: /^Ben, card 8\b/ })).toHaveCount(1);
-      await expect(seats(page).getByRole("button", { name: /^Cleo, card 5\b/ })).toHaveCount(1);
+      for (const label of [
+        /^Ana, (you, )?product owner, no vote/,
+        /^Ben, (you, )?card 8, highest card/,
+        /^Cleo, (you, )?card 5, lowest card/,
+      ]) {
+        await expect(seats(page).getByRole("button", { name: label })).toHaveCount(1);
+      }
     }
     for (const [i, person] of everyone.entries()) {
       expectNoCardBeforeReveal(person, marks[i] ?? 0, 1, ["3", "5", "8"], 2);
@@ -353,6 +359,8 @@ test("four people play three rounds: create, join, vote, reveal, results, next r
         const snapshot = snapshotOf(packet);
         const round = snapshot?.room.round;
         if (!snapshot || round?.number !== 3) continue;
+        // No vote list in any phase: nothing pairs a voter with a card.
+        expect(JSON.stringify(snapshot), person.name).not.toContain('"votes"');
         for (const cause of snapshot.causes) {
           if (cause.type === "revealed") reveals.push(cause);
           if (round.phase === "revealed" && cause.type.startsWith("vote")) {
@@ -362,7 +370,6 @@ test("four people play three rounds: create, join, vote, reveal, results, next r
         if (round.phase !== "revealed") continue;
         revealed += 1;
         expect(round.anonymous, person.name).toBe(true);
-        expect(round, person.name).not.toHaveProperty("votes");
         expect(round.cards, person.name).toEqual(["2", "5"]);
         // A card may sit only in the deck, the viewer's own vote, the cards and the results.
         expect(
@@ -382,7 +389,6 @@ test("four people play three rounds: create, join, vote, reveal, results, next r
       }
       expect(revealed, `${person.name} saw round 3 revealed`).toBeGreaterThan(0);
       expect(reveals, person.name).toEqual([{ type: "revealed", by: "timer" }]);
-      for (const frame of person.frames.slice(from)) expect(frame).not.toContain('"votes"');
     }
 
     // The next round, with no subject: round 3 is history with its cards and no name.
