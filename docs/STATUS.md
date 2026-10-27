@@ -6,8 +6,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## Live
 
-- Nothing is deployed yet. The Coolify resources for #12 exist and wait for Sven's part
-  (see Owner items).
+- Deployed on Coolify and healthy (migrations run at start, `/api/health` reports the
+  commit). Not reachable from outside yet: the Synology rule for `poker.borden.ch`
+  does not match (see Owner items).
 - `main` has the monorepo scaffold from #1: pnpm 12.15.0, Node 24, TypeScript 7,
   Biome, Vitest, Vite and tsdown. `pnpm gate` is green.
 - CI from #2 runs on every pull request: `check` runs `pnpm gate`, `db-tests` runs
@@ -16,7 +17,7 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   system themes, shadcn/ui, Motion and fonts.
 - i18n from #9: our own typed `t()` (ADR-012 amended), en/fr/de with catalogs loaded
   on demand, numbers in the reader's regional format, a switcher in the header, and
-  copy checks in the gate. The room route loads 164.0 kB of JS (after #24) against a
+  copy checks in the gate. The room route loads 167.0 kB of JS (after #16) against a
   200 kB budget; see the budget watch in the build log.
 - The table from #13: a pure layout engine with a pixel geometry proof for 1 to 16
   people, the seat and card components, and a `/dev/table` bench.
@@ -41,8 +42,10 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 - Landing, join by code, not-found and error pages from #24. A link to another host
   shows a warning instead of opening here, and the not-found page never shows the
   code.
-- **W0 is done except #12** (deploy). It is ready on Coolify; the first webhook deploy
-  failed only because the two secrets are missing (see Owner items).
+- Joining from #16: the join screen, the room-full screen, seats in join order with
+  the viewer at the bottom, observers under the table, and rename, role switch and
+  leave. Commands are bound to the room they were sent from.
+- **W0 is done except #12** (deploy): live on Coolify, waiting for the Synology rule.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -53,17 +56,17 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#16 (PP-016)** join a room as voter or observer: PR #78, CI green, review running.
-  Its fixer merges `main` (#77 touched `routes/r/$code.tsx`, the catalogs and the
-  READMEs).
-- **#12** deploy: waiting for Sven (Owner items). Then I redeploy and check
-  `/api/health` and a WebSocket through the proxies.
+- **#17 (PP-017)** the table: presence with the 15 s grace, voted badges, the PO
+  badge, the viewer highlight and the live region. Building in `../pp-wt-17`.
+- **#12** deploy: the app runs healthy on Coolify. Once Sven's Synology rule matches,
+  I check `/api/health` and a WebSocket through both proxies, then close #12 with the
+  deploy notes.
 
 ## Next
 
 - W1 order, by dependencies:
-  - After #16: #17 (table), #18 (vote), #19 (reveal), #20 (results) and #21 (next
-    round), one after another.
+  - #17 (table), then #18 (vote), #19 (reveal), #20 (results) and #21 (next round),
+    one after another.
   - #22 (mobile) needs #17, #18 and #20. #23 (four-person e2e) needs #21 and #22.
 - **W1 runs without a new go** (Sven, 2026-10-26).
 - Once #12 is live, every merge deploys: after each merge, check that
@@ -91,14 +94,13 @@ issues are merged.
 
 ## Owner items (only Sven)
 
-- **#12** (go given 2026-10-27; project, `poker-db` with daily backups and the app are
-  created, with `BASE_URL` and `TRUST_PROXY=1`). Sven's part:
-  - In the app, set `DATABASE_URL` (poker-db's internal URL) and `BETTER_AUTH_SECRET`
-    (`openssl rand -base64 32`), with "Available at Buildtime" unticked.
-  - In Advanced > Build, set "Source commit availability: Available during build"
-    and "Build arguments: Managed manually in Dockerfile" (the API cannot).
-  - On the Synology, add a reverse-proxy rule for `poker.borden.ch` with WebSocket
-    headers, and give the host the `*.borden.ch` certificate.
+- **#12** (go given 2026-10-27). Done: the project, `poker-db` with daily backups, the
+  app with all four variables and both build settings, and a healthy deploy. Left:
+  - The Synology reverse-proxy rule for `poker.borden.ch` (HTTPS 443 to the same
+    destination as Popote's, with WebSocket headers) and its `*.borden.ch`
+    certificate. Today the host still gets the Synology's default page.
+  - Optional, his call: rotate `BETTER_AUTH_SECRET`, whose value went through my
+    session when he asked me to add it.
   - Optional, his call: let Coolify's Traefik trust the Synology
     (`forwardedHeaders.trustedIPs`), then `TRUST_PROXY=2`. It restarts the proxy for
     all his apps. Until then, per-address limits see one address for everyone.
