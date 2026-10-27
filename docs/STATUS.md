@@ -17,7 +17,7 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   system themes, shadcn/ui, Motion and fonts.
 - i18n from #9: our own typed `t()` (ADR-012 amended), en/fr/de with catalogs loaded
   on demand, numbers in the reader's regional format, a switcher in the header, and
-  copy checks in the gate. The room route loads 168.1 kB of JS (after #21) against a
+  copy checks in the gate. The room route loads 168.5 kB of JS (after #22) against a
   200 kB budget; see the budget watch in the build log.
 - The table from #13: a pure layout engine with a pixel geometry proof for 1 to 16
   people, the seat and card components, and a `/dev/table` bench.
@@ -60,6 +60,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   distribution columns and the lowest and highest voters under the table.
 - The next round from #21: the PO's subject field (none, a title or a link with Jira
   and Azure DevOps keys), "Start voting" and "Next round", and the history row.
+- Phones from #22: the hand docks within thumb reach while voting when there is room,
+  a compact header, numbered namesakes ("Ana Lima (2)"), narrow long labels, safe
+  areas and a haptic tick.
 - **W0 is complete.**
 - The decisions are in `docs/05-decisions.md`.
 
@@ -71,14 +74,15 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#22 (PP-022)** mobile layout: the tall table, compact seats, the hand within thumb
-  reach, a compact header, safe areas, landscape and a haptic tick. Building in
-  `../pp-wt-22`.
+- **#23 (PP-023)** the four-person end-to-end round with secrecy on real frames, ten
+  runs without a flake, traces on failure, and a faster `web-e2e` job. It closes W1.
+  Building in `../pp-wt-23`.
 
 ## Next
 
 - W1 order, by dependencies:
-  - #22 (mobile), then #23 (the four-person e2e), which closes W1.
+  - #23 (the four-person e2e) closes W1. W2 (#25 to #32) starts after it without
+    a new go.
   - #22 (mobile) needs #17, #18 and #20. #23 (four-person e2e) needs #21 and #22.
 - **W1 runs without a new go** (Sven, 2026-10-26).
 
