@@ -152,7 +152,7 @@ export function TableStage({
 /**
  * One observer in the row under the table. The row has room for words, so what sets the
  * person apart is written out after the name ("Away", "Product owner"), and the avatar
- * fades when they are away; the viewer's name is in spruce with a ring on the avatar.
+ * turns grey when they are away; the viewer's name is in spruce with a ring on the avatar.
  */
 function ObserverItem({ observer }: { observer: Observer }) {
   const t = useT();
@@ -174,10 +174,8 @@ function ObserverItem({ observer }: { observer: Observer }) {
         name={observer.name}
         size={24}
         look={observer.look}
-        className={cn(
-          observer.away && "opacity-45 grayscale",
-          observer.you && "outline-2 outline-offset-2 outline-spruce",
-        )}
+        away={observer.away}
+        className={cn(observer.you && "outline-2 outline-offset-2 outline-spruce")}
       />
       <span
         dir="auto"

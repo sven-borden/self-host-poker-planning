@@ -88,7 +88,7 @@ describe("the table's states (#17)", () => {
     expect(JSON.stringify(data.people)).not.toContain('"8"');
   });
 
-  it("shows the cards of a named reveal, and only who voted after an anonymous one", () => {
+  it("shows the cards of a named reveal, and only who voted or not after an anonymous one", () => {
     const revealed = (anonymous: boolean): RoomState => {
       const s = round();
       if (!s.round) throw new Error("no round");
@@ -101,7 +101,12 @@ describe("the table's states (#17)", () => {
       { kind: "revealed", card: null },
     ]);
     const anonymous = tableData(view(revealed(true), "u0")).people;
-    expect(anonymous.map((p) => p.status.kind)).toEqual(["thinking", "voted", "thinking"]);
+    // Who voted is public; no card belongs to anyone.
+    expect(anonymous.map((p) => p.status)).toEqual([
+      { kind: "revealed", card: null },
+      { kind: "voted" },
+      { kind: "revealed", card: null },
+    ]);
   });
 
   it("gives everyone in the room initials and a colour of their own, the same for every viewer", () => {

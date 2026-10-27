@@ -19,14 +19,16 @@ export interface TableData {
 /**
  * Where a voter stands in the round: present in the lobby; thinking or voted while
  * Voting; after a named reveal, their card (or none). After an anonymous reveal no card
- * belongs to anyone, so a seat shows only that its person voted. #19 builds the flip on
- * the `revealed` status.
+ * belongs to anyone, so a seat shows only that its person voted; who did not vote is
+ * public, so their seat says "no vote" as in a named reveal. #19 builds the flip on the
+ * `revealed` status.
  */
 export function seatStatus(participant: ParticipantView, room: RoomView): SeatStatus {
   const round = room.round;
   if (round === null) return { kind: "present" };
   const voted = round.voted.includes(participant.id);
-  if (round.phase === "voting" || round.anonymous) return { kind: voted ? "voted" : "thinking" };
+  if (round.phase === "voting") return { kind: voted ? "voted" : "thinking" };
+  if (round.anonymous) return voted ? { kind: "voted" } : { kind: "revealed", card: null };
   const vote = round.votes.find((v) => v.who === participant.id);
   return { kind: "revealed", card: vote?.card ?? null };
 }

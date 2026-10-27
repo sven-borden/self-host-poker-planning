@@ -132,9 +132,9 @@ export const de: Catalog = {
     awayTag: "Abwesend",
   },
   live: {
-    joined: "{{name}} ist beigetreten.",
-    joinedMany_one: "{{count, number}} Person ist beigetreten.",
-    joinedMany_other: "{{count, number}} Personen sind beigetreten.",
+    joined: "{{name}} ist dem Raum beigetreten.",
+    joinedMany_one: "{{count, number}} Person ist dem Raum beigetreten.",
+    joinedMany_other: "{{count, number}} Personen sind dem Raum beigetreten.",
     left: "{{name}} hat den Raum verlassen.",
     leftMany_one: "{{count, number}} Person hat den Raum verlassen.",
     leftMany_other: "{{count, number}} Personen haben den Raum verlassen.",

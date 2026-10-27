@@ -1,5 +1,4 @@
 import { CheckIcon, CrownIcon, MoonIcon } from "lucide-react";
-import { useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover.tsx";
 import { useT } from "../i18n/hooks.ts";
 import type { TFunction } from "../i18n/i18n.ts";
@@ -18,7 +17,7 @@ export type SeatStatus =
 
 /** Who someone is at the table, beside their state in the round (#17). */
 export interface PersonFlags {
-  /** Gone for longer than the grace period: dimmed, with a moon badge. */
+  /** Gone for longer than the grace period: a grey avatar, with a moon badge. */
   away?: boolean | undefined;
   /** The product owner: a crown badge on the avatar. */
   owner?: boolean | undefined;
@@ -146,8 +145,9 @@ export function AvatarBadges({ voted, owner, away, size }: BadgesProps) {
 }
 
 /**
- * The avatar with its badges. Away, it fades and loses its colour (the moon badge and the
- * label say so too); the viewer's gets a spruce ring outside its own, 4 px out at most.
+ * The avatar with its badges. Away, its disc turns grey with a dashed edge and the
+ * initials stay readable (the moon badge and the label say so too); the viewer's gets a
+ * spruce ring outside its own, 4 px out at most.
  */
 function SeatAvatar({ person, size, badge }: { person: TablePerson; size: number; badge: number }) {
   return (
@@ -157,10 +157,8 @@ function SeatAvatar({ person, size, badge }: { person: TablePerson; size: number
         name={person.name}
         size={size}
         look={person.look}
-        className={cn(
-          person.away && "opacity-45 grayscale",
-          person.you && "outline-2 outline-offset-2 outline-spruce",
-        )}
+        away={person.away}
+        className={cn(person.you && "outline-2 outline-offset-2 outline-spruce")}
       />
       <AvatarBadges
         voted={person.status.kind === "voted"}
@@ -172,7 +170,10 @@ function SeatAvatar({ person, size, badge }: { person: TablePerson; size: number
   );
 }
 
-/** The name and state in a popover, for seats that cannot show the whole name. */
+/**
+ * The whole name and what the badges mean ("Product owner · Away · Voted") in a popover:
+ * the name may be cut off or shown as initials, and a badge is a shape without words.
+ */
 function SeatPopover({ person, side }: { person: TablePerson; side: SeatPlace["label"] }) {
   const t = useT();
   const state = [
@@ -195,34 +196,6 @@ function SeatPopover({ person, side }: { person: TablePerson; side: SeatPlace["l
   );
 }
 
-/**
- * True when the element's text is cut off. Measured before paint and again once the web
- * fonts have loaded, since they change the text's width.
- */
-function useTruncated(name: string, width: number) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [truncated, setTruncated] = useState(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: measure again when the name, the width or the element (a button once truncated) changes.
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (!element) {
-      return;
-    }
-    let live = true;
-    const check = () => {
-      if (live) {
-        setTruncated(element.scrollWidth > element.clientWidth);
-      }
-    };
-    check();
-    document.fonts?.ready.then(check);
-    return () => {
-      live = false;
-    };
-  }, [name, width, truncated]);
-  return [ref, truncated] as const;
-}
-
 interface SeatProps {
   person: TablePerson;
   place: SeatPlace;
@@ -231,16 +204,17 @@ interface SeatProps {
 
 /**
  * One person at the table: avatar plus name, the name on the side away from the table.
- * Initials-only seats (more than 10 people on a phone) are 44 px buttons that show the
- * name in a popover on tap; so is a seat whose name is cut off, as a button the size of
- * the seat. Otherwise the list item carries the full label for screen readers.
+ * Every seat is a button that opens the whole name and the state in a popover, on tap or
+ * by keyboard: initials-only seats (more than 10 people on a phone) as 44 px buttons, the
+ * others as a button the size of the seat, so a cut-off name and every badge can be read
+ * in words. A seat stays a button whatever its state, so the focus never drops when
+ * someone votes or goes away.
  */
 export function Seat({ person, place, geometry }: SeatProps) {
   const t = useT();
   const label = seatLabel(t, person);
   const avatar = geometry.avatar;
   const badge = avatar >= 40 ? 17 : 15;
-  const [nameRef, truncated] = useTruncated(person.name, geometry.label?.width ?? 0);
   const marks = {
     "data-away": person.away || undefined,
     "data-you": person.you || undefined,
@@ -286,7 +260,6 @@ export function Seat({ person, place, geometry }: SeatProps) {
         <SeatAvatar person={person} size={avatar} badge={badge} />
       </span>
       <span
-        ref={nameRef}
         data-seat-part="name"
         aria-hidden="true"
         dir="auto"
@@ -318,27 +291,21 @@ export function Seat({ person, place, geometry }: SeatProps) {
         top: `calc(${place.y}% - ${above ? avatar / 2 + gap + labelHeight : avatar / 2}px)`,
       }}
     >
-      {truncated ? (
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              aria-label={label}
-              data-seat-trigger
-              className={`${column} w-full cursor-pointer rounded-md p-0`}
-              style={direction}
-            >
-              {parts}
-            </button>
-          </PopoverTrigger>
-          <SeatPopover person={person} side={place.label} />
-        </Popover>
-      ) : (
-        <div className={column} style={direction}>
-          <span className="sr-only">{label}</span>
-          {parts}
-        </div>
-      )}
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            data-seat-trigger
+            className={`${column} w-full cursor-pointer rounded-md p-0`}
+            style={direction}
+          >
+            {/* The button's name: the visible parts are hidden from screen readers. */}
+            <span className="sr-only">{label}</span>
+            {parts}
+          </button>
+        </PopoverTrigger>
+        <SeatPopover person={person} side={place.label} />
+      </Popover>
     </li>
   );
 }
