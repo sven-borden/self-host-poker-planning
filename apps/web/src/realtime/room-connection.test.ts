@@ -148,6 +148,40 @@ describe("openRoom", () => {
     expect(useRoomStore.getState()).toMatchObject({ status: "error", error: "room_not_found" });
   });
 
+  it("signs in again on unauthenticated without passing through offline, and a waiting command goes through", async () => {
+    let enters = 0;
+    const fake = fakeSocket(({ event }) => {
+      if (event !== "enter") return { ok: true, version: 9 };
+      enters += 1;
+      return enters === 2
+        ? { ok: false, code: "unauthenticated" }
+        : { ok: true, snapshot: snapshot(enters) };
+    });
+    let signedIn: () => void = () => {};
+    const ensure = vi.fn(() => new Promise<void>((resolve) => (signedIn = resolve)));
+    closers.push(
+      openRoom(CODE, { socket: fake.socket, connect: () => () => {}, ensure, delay: () => 0 }),
+    );
+    fake.up();
+    await vi.waitFor(() => expect(status()).toBe("live"));
+    const seen: string[] = [];
+    const unsubscribe = useRoomStore.subscribe(({ status: s, error, connection }) =>
+      seen.push(`${s}${error ? `:${error}` : ""}/${connection}`),
+    );
+    // A dropped connection; the enter after the reconnect finds the session gone.
+    fake.drop();
+    const pending = sendCommand({ type: "reveal" });
+    fake.up();
+    await vi.waitFor(() => expect(ensure).toHaveBeenCalledWith({ force: true, retry: true }));
+    signedIn();
+    await vi.waitFor(() => expect(fake.socket.connect).toHaveBeenCalled());
+    fake.up();
+    expect(await pending).toEqual({ ok: true, version: 9 });
+    unsubscribe();
+    expect(status()).toBe("live");
+    expect(seen.some((entry) => entry.includes("error") || entry.includes("offline"))).toBe(false);
+  });
+
   it("reports kicked", async () => {
     const fake = fakeSocket(() => ({ ok: true, snapshot: snapshot(1) }));
     open(fake);
@@ -216,6 +250,12 @@ describe("message guards", () => {
     expect(isSnapshot({ ...snapshot(1), protocol: PROTOCOL_VERSION + 1 })).toBe(false);
     expect(isSnapshot({ ...snapshot(1), version: "1" })).toBe(false);
     expect(isSnapshot(null)).toBe(false);
+    expect(isSnapshot({ ...snapshot(1), version: Number.MAX_SAFE_INTEGER + 2 })).toBe(false);
+    const room = snapshot(1).room;
+    for (const participants of [[null], [42], [{ id: "ua" }]]) {
+      expect(isSnapshot({ ...snapshot(1), room: { ...room, participants } })).toBe(false);
+    }
+    expect(isSnapshot({ ...snapshot(1), room: { ...room, round: "voting" } })).toBe(false);
     expect(isEnterAck({ ok: true, snapshot: snapshot(1) })).toBe(true);
     expect(isEnterAck({ ok: true })).toBe(false);
     expect(isEnterAck({ ok: false, code: "room_not_found" })).toBe(true);

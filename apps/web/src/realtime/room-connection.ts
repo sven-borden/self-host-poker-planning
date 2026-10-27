@@ -74,6 +74,8 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
   let stopped = false;
   let attempt = 0;
   let reauthenticated = false;
+  /** Set while this code itself closed the socket to sign in again: not a final offline. */
+  let reauthenticating = false;
   let retry: ReturnType<typeof setTimeout> | undefined;
 
   const fail = (error: string) => {
@@ -105,13 +107,18 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
       // The session ended while the socket stayed open: one fresh bootstrap, then a new
       // handshake with the new cookie, which enters again on connect.
       reauthenticated = true;
-      socket.disconnect();
+      reauthenticating = true;
       store().setStatus("reconnecting");
+      socket.disconnect();
       ensure({ force: true, retry: true }).then(
         () => {
+          reauthenticating = false;
           if (!stopped) socket.connect();
         },
-        () => fail(UNAUTHENTICATED),
+        () => {
+          reauthenticating = false;
+          fail(UNAUTHENTICATED);
+        },
       );
       return;
     }
@@ -150,6 +157,11 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
   socket.on("kicked", onKicked);
   const stopTracking = trackConnection(socket, (connection) => {
     if (stopped) return;
+    // The disconnect before a fresh sign-in is ours, and the socket connects again after.
+    if (connection === "offline" && reauthenticating) {
+      store().setConnection("reconnecting");
+      return;
+    }
     store().setConnection(connection);
     const { status } = store();
     if (status === "error") return;
@@ -250,15 +262,28 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
-/** A snapshot of this protocol version: a number version and a room with its code. */
+/** One person at the table, as far as the page reads it. */
+const isParticipant = (value: unknown) =>
+  isObject(value) &&
+  typeof value.id === "string" &&
+  typeof value.name === "string" &&
+  typeof value.role === "string" &&
+  typeof value.connected === "boolean";
+
+/**
+ * A snapshot of this protocol version: a number version, and a room with its code, its
+ * participants (each one a person) and its round (none, or one with a phase).
+ */
 export function isSnapshot(value: unknown): value is Snapshot {
+  if (!isObject(value) || !isObject(value.room)) return false;
+  const { room } = value;
   return (
-    isObject(value) &&
     value.protocol === PROTOCOL_VERSION &&
-    Number.isInteger(value.version) &&
-    isObject(value.room) &&
-    typeof value.room.code === "string" &&
-    Array.isArray(value.room.participants) &&
+    Number.isSafeInteger(value.version) &&
+    typeof room.code === "string" &&
+    Array.isArray(room.participants) &&
+    room.participants.every(isParticipant) &&
+    (room.round === null || (isObject(room.round) && typeof room.round.phase === "string")) &&
     Array.isArray(value.causes)
   );
 }
