@@ -93,7 +93,8 @@ Positions are percentages of the stage, so one formula serves every width:
 - Joining (#16): the room page shows a "Take a seat" card (name, prefilled with the last
   one used; voter or observer, voter by default) until the viewer is in the room; the PO
   joins the same way. A full room shows "This room is full" instead, and turns back into
-  the card as soon as someone leaves. When observers do not count and only the seats are
+  the card as soon as someone leaves; the name field then takes the focus and "A seat is
+  free" is announced politely. When observers do not count and only the seats are
   taken, a voter is told so on the card and can join as an observer. Under the table a
   "You" panel renames, switches between voter and observer, and leaves the room.
 - With more than 10 people on a phone, seats show initials only; names on tap. A name

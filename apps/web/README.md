@@ -47,22 +47,31 @@ server sends and never decides the outcome of a round.
   (`error` holds an ack code, or `kicked` or `offline`). `receive` keeps only a newer
   version of the open room. A command belongs to the room open when it was sent: once
   that room closes, a send still waiting resolves `offline` and never reaches the next
-  room.
+  room. A command sent after an `await` takes `commandSender()` first: it binds to the
+  room open at that moment, and resolves `offline` without sending if the page has moved
+  on since.
 - `src/room/` (#16): the room below its header, all from the room store.
   `room-view.tsx` (`RoomView`) shows `RoomStatus` (status line, participant count, the
   final errors and the reload prompt on `protocol_mismatch`), then, by the snapshot:
   - `you` is null: `JoinForm` (`join-form.tsx`: name prefilled from the identity store,
-    checked with `cleanName`, saved with `setDisplayName`, then `join`; voter by
-    default), or the room-full screen when `isRoomFull(room)` or the server answered
-    `room_full` at the current version. When observers do not count, `room_full` for a
-    voter is an inline message instead (the observer row is still open).
-  - `you` is set: the table (`TableStage` with `tableData(room)`) and `YouControls`
-    (`you-controls.tsx`: rename, which saves the name too, voter/observer switch, leave).
+    checked with `cleanName`, then `join` through the `commandSender()` taken at the
+    submit; voter by default), or the room-full screen when `isRoomFull(room)` or the
+    server answered `room_full` at the current version. When observers do not count,
+    `room_full` for a voter is an inline message instead (the observer row is still open).
+  - `you` is set: `seated.tsx`, a lazy chunk prefetched when `RoomView` mounts: the table
+    (`TableStage` with `tableData(room)`) and `YouControls` (`you-controls.tsx`: rename,
+    voter/observer switch, leave).
+  `save-name.ts` (`saveName`) saves the name for the next room before a join or rename:
+  skipped when it is already the saved one (`/api/me/name` allows 10 a minute), and a
+  failed save never stops the command, which carries the name typed. The copy lives
+  under `seat.*` (the landing page's "Join with a code" card has `join.*`) and `you.*`.
   `table-data.ts` maps the snapshot to the table: voters in join order, rotated so the
   viewer sits at the bottom, observers in the row; `toTablePerson` and `toObserver` are
   where presence, the voted badge, the PO badge and the viewer highlight go (#17).
   `failure.ts` turns refusal codes into copy. Focus: after joining it moves to the "You"
-  heading, after leaving to the name field. Every name renders inside `<bdi>`.
+  heading, after leaving or when a seat frees up to the name field (a free seat is also
+  announced in a polite live region, `[data-room-notice]`); each request is cleared once
+  used. Every name renders inside `<bdi>`, and a truncating span has `dir="auto"`.
 - Landing, joining, missing rooms and errors (#24): `routes/index.tsx` is the landing
   page (pitch, four steps, the create card, the join card; CSS grid areas reorder them
   from `lg`). `rooms/room-input.ts`: `parseRoomInput(raw, location.host)` turns a code

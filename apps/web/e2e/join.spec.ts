@@ -34,6 +34,23 @@ interface Guest {
 }
 
 let commandIds = 0;
+let addresses = 0;
+
+/**
+ * A client address of its own, as an X-Forwarded-For header: the e2e server trusts one
+ * proxy (playwright.config.ts), so each person here counts alone against the server's
+ * per-address limits (20 rooms in 10 minutes, 60 sign-ins a minute), which the whole
+ * suite from one machine would otherwise share.
+ */
+function ownAddress(): Record<string, string> {
+  const n = ++addresses;
+  const worker = test.info().workerIndex % 256;
+  return { "x-forwarded-for": `10.${worker}.${(n >> 8) & 255}.${n & 255}` };
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.setExtraHTTPHeaders(ownAddress());
+});
 
 /** Opens a socket with `cookie`, as the web app does, over the preview's proxy. */
 async function connectGuest(base: string, cookie: string): Promise<Guest> {
@@ -62,7 +79,7 @@ async function connectGuest(base: string, cookie: string): Promise<Guest> {
 async function newGuest(base: string): Promise<Guest> {
   const response = await fetch(`${base}/api/auth/sign-in/anonymous`, {
     method: "POST",
-    headers: { origin: base, "content-type": "application/json" },
+    headers: { origin: base, "content-type": "application/json", ...ownAddress() },
     body: "{}",
   });
   expect(response.status, "guest sign-in").toBe(200);
@@ -100,7 +117,7 @@ const seatNames = (page: Page) => seats(page).locator("[data-seat-part=name] bdi
 const observerRow = (page: Page) => page.getByRole("list", { name: "Observers" });
 
 async function newPerson(browser: Browser): Promise<{ context: BrowserContext; page: Page }> {
-  const context = await browser.newContext({ locale: "en-US" });
+  const context = await browser.newContext({ locale: "en-US", extraHTTPHeaders: ownAddress() });
   return { context, page: await context.newPage() };
 }
 
@@ -127,6 +144,11 @@ test("three people join one room and each sees the other two seated", async ({
   await createRoom(page);
   await expect(page.getByRole("heading", { name: "Take a seat" })).toBeVisible();
   await shoot(page, "join");
+  // Windows high contrast: the role cards, the field and the Join button keep their edges.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ forcedColors: "active" });
+  await page.screenshot({ path: `${SHOTS}join-1440-forced-colors.png`, fullPage: true });
+  await page.emulateMedia({ forcedColors: "none" });
   await page.setViewportSize({ width: 1280, height: 900 });
   await join(page, "Ana");
 
@@ -187,12 +209,17 @@ test("the 17th person sees that the room is full, and can join once someone leav
 
     await late.page.goto(page.url());
     await expect(late.page.getByRole("heading", { name: "This room is full" })).toBeVisible();
-    await expect(late.page.getByText("16 people are already in this room.")).toBeVisible();
+    await expect(late.page.getByText(/^16 people are already here\./)).toBeVisible();
     await expect(late.page.getByRole("button", { name: "Join the room" })).toHaveCount(0);
     await shoot(late.page, "room-full");
 
-    // Someone leaves: the screen turns into the join form, and the 17th person sits down.
+    // Someone leaves: the screen turns into the join form, which takes the focus and says
+    // why, and the 17th person sits down.
     expect(await guests[0]?.cmd("leave")).toMatchObject({ ok: true });
+    await expect(late.page.getByRole("textbox", { name: "Your name" })).toBeFocused();
+    await expect(late.page.locator("[data-room-notice]")).toHaveText(
+      "A seat is free. You can join now.",
+    );
     await join(late.page, "Seventeen");
     await expect(seatNames(late.page).first()).toHaveText("Seventeen");
   } finally {
@@ -219,10 +246,17 @@ test("a refresh and a second tab keep the seat and the vote", async ({
     ana.close();
   }
 
+  // Socket.IO starts on HTTP long-polling and upgrades to a websocket, so the enter ack
+  // may come either way: both are read.
   const frames: string[] = [];
   page.on("websocket", (socket) =>
     socket.on("framereceived", ({ payload }) => frames.push(String(payload))),
   );
+  page.on("response", async (response) => {
+    if (!new URL(response.url()).pathname.startsWith("/socket.io/")) return;
+    if (response.request().method() !== "GET") return;
+    frames.push(await response.text().catch(() => ""));
+  });
   await page.reload();
   await expect(page.getByRole("heading", { name: "You", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Join the room" })).toHaveCount(0);
@@ -235,6 +269,43 @@ test("a refresh and a second tab keep the seat and the vote", async ({
   await expect(second.getByRole("heading", { name: "You", exact: true })).toBeVisible();
   await expect(seatNames(second)).toHaveText(["Ana"]);
   await second.close();
+});
+
+test("a join still saving the name never lands in the next room the page opens", async ({
+  page,
+  context,
+  baseURL,
+}) => {
+  const base = baseURL ?? "";
+  await createRoom(page);
+  // The name save hangs for a while; the person goes back and creates another room.
+  let saved: () => void = () => {};
+  const nameSaved = new Promise<void>((resolve) => {
+    saved = resolve;
+  });
+  await page.route("**/api/me/name", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    await route.continue();
+    saved();
+  });
+  await page.getByRole("textbox", { name: "Your name" }).fill("Wanderer");
+  await page.getByRole("button", { name: "Join the room" }).click();
+  await page.goBack();
+  await page.getByRole("button", { name: "Create the room" }).click();
+  await expect(page).toHaveURL(ROOM_PATH);
+  const second = ROOM_PATH.exec(page.url())?.[1] ?? "";
+  await expect(page.getByRole("heading", { name: "Take a seat" })).toBeVisible();
+  await nameSaved;
+  // Time for a join that would follow the save; then nobody sits in the second room.
+  await page.waitForTimeout(1_000);
+  await expect(page.getByRole("heading", { name: "Take a seat" })).toBeVisible();
+  const probe = await sameUser(base, context);
+  try {
+    const ack = await probe.enter(second);
+    expect(ack).toMatchObject({ ok: true, snapshot: { room: { participants: [] } } });
+  } finally {
+    probe.close();
+  }
 });
 
 test("rename, switch role and leave from the room, as others see it", async ({ page, browser }) => {
