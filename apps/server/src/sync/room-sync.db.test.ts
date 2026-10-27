@@ -717,6 +717,39 @@ describe("one session flooding a room from many sockets", () => {
     );
     expect((await main().database.store.loadRoom(code))?.version).toBe(before);
   });
+  it("starts the round over on a restart, timer included: the room's timer anew, a timer by hand stops", async () => {
+    // One room without a timer setting, whose PO started a timer by hand; one with a 5 s
+    // timer. Both deadlines are close, and both rounds hold a vote.
+    let byHand = votingRoom();
+    byHand = step(byHand, bob.id, { type: "castVote", card: "5" });
+    let timed = votingRoom();
+    timed = { ...timed, settings: { ...timed.settings, timer: { seconds: 5, revealAtEnd: true } } };
+    timed = step(timed, bob.id, { type: "castVote", card: "5" });
+    const codes = await Promise.all([
+      insert(withDeadline(byHand, Date.now() + 700)),
+      insert(withDeadline(timed, Date.now() + 700)),
+    ]);
+    const [a1, c1, a2, c2] = [client(ada), client(cy), client(ada), client(cy)];
+    await Promise.all([a1.enter(codes[0]), c1.enter(codes[0]), a2.enter(codes[1]), c2.enter(codes[1])]);
+    const tshirt = { deck: { kind: "preset", id: "tshirt" } };
+    const before = Date.now();
+    expect((await a1.cmd("updateSettings", { patch: tshirt })).ok).toBe(true);
+    expect((await a2.cmd("updateSettings", { patch: tshirt })).ok).toBe(true);
+    const stopped = await c1.waitFor((s) => s.room.round?.restarts === 1);
+    expect(stopped.snapshot.room.round).not.toHaveProperty("deadlineAt");
+    const anew = await c2.waitFor((s) => s.room.round?.restarts === 1);
+    expect(anew.snapshot.room.round?.deadlineAt).toBeGreaterThanOrEqual(before + 5_000);
+    // Past the old deadlines, both rounds still vote.
+    await sleep(1_000);
+    for (const code of codes) {
+      expect((await main().database.store.loadRoom(code))?.state.round?.phase).toBe("voting");
+    }
+    // A client that sends no restart (one older than #26) votes in the round as it is now.
+    expect((await a2.cmd("castVote", { card: "M", round: 1 })).ok).toBe(true);
+    expect((await main().database.store.loadRoom(codes[1]))?.state.round?.votes[ada.id]).toEqual(
+      expect.objectContaining({ card: "M" }),
+    );
+  });
 });
 
 describe("the deadline timeout", () => {

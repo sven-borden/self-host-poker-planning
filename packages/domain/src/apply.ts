@@ -371,14 +371,17 @@ function updateSettings(state: RoomState, patch: unknown, now: number): Step {
     return done(next, { type: "settingsUpdated" });
   }
   // A new deck or new specials during Voting restart the round: same subject and number.
+  // It starts over as any round does, timer included: a new deadline when the room has a
+  // timer, none otherwise (a timer the PO started by hand stops).
   const restarted: Round = {
-    ...round,
+    ...withoutDeadline(round),
     deck: canonicalDeck(settings.deck),
     specials: [...settings.specials],
     votes: {},
     startedAt: now,
     restarts: (round.restarts ?? 0) + 1,
   };
+  if (settings.timer.seconds !== null) restarted.deadlineAt = now + settings.timer.seconds * 1000;
   return {
     ...done(
       withRound(next, restarted),

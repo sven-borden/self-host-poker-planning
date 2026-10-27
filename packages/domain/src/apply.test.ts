@@ -1226,12 +1226,23 @@ describe("updateSettings", () => {
       { type: "settingsUpdated" },
       { type: "roundStarted", number: 4, restarted: true },
     ]);
+    // The room has no timer, so the one the PO started by hand stops: the round starts over.
     expect(ok(result).round).toEqual({
-      ...voting({ number: 4, deadlineAt: T0 + 9_000 }),
+      ...voting({ number: 4 }),
       deck: { kind: "preset", id: "tshirt" },
       startedAt: T0,
       restarts: 1,
     });
+  });
+
+  it("starts the room's timer over when it restarts a round", () => {
+    const before = room({
+      settings: { timer: { seconds: 8, revealAtEnd: true } },
+      round: voting({ votes: { [A]: { card: "3" } }, deadlineAt: T0 + 4_000 }),
+    });
+    const now = T0 + 4_000 - 1;
+    const result = send(before, { type: "updateSettings", patch: { specials: [] } }, PO, now);
+    expect(ok(result).round).toMatchObject({ startedAt: now, deadlineAt: now + 8_000, votes: {} });
   });
 
   it("counts the restarts, and takes a vote made for the round as it is now", () => {
@@ -1241,6 +1252,14 @@ describe("updateSettings", () => {
     const vote = send(again, { type: "castVote", card: "3", round: 4, restart: 2 }, A);
     expect(ok(vote).round?.votes[A]).toEqual({ card: "3" });
     const retract = send(ok(vote), { type: "retractVote", round: 4, restart: 2 }, A);
+    expect(ok(retract).round?.votes).toEqual({});
+  });
+
+  it("takes a vote and a retract that carry no restart in a restarted round, as a tab from before #26 sends them", () => {
+    const before = room({ round: voting({ number: 4, restarts: 1 }) });
+    const vote = send(before, { type: "castVote", card: "3", round: 4 }, A);
+    expect(ok(vote).round?.votes[A]).toEqual({ card: "3" });
+    const retract = send(ok(vote), { type: "retractVote", round: 4 }, A);
     expect(ok(retract).round?.votes).toEqual({});
   });
 
