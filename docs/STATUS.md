@@ -6,9 +6,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## Live
 
-- Deployed on Coolify and healthy (migrations run at start, `/api/health` reports the
-  commit). Not reachable from outside yet: the Synology rule for `poker.borden.ch`
-  does not match (see Owner items).
+- **https://poker.borden.ch is live** (#12, 2026-10-27). Every merge that changes the
+  image deploys in about three minutes. After a merge, check that `/api/health`
+  reports the merge commit. Docs-only pushes do not deploy.
 - `main` has the monorepo scaffold from #1: pnpm 12.15.0, Node 24, TypeScript 7,
   Biome, Vitest, Vite and tsdown. `pnpm gate` is green.
 - CI from #2 runs on every pull request: `check` runs `pnpm gate`, `db-tests` runs
@@ -45,7 +45,10 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 - Joining from #16: the join screen, the room-full screen, seats in join order with
   the viewer at the bottom, observers under the table, and rename, role switch and
   leave. Commands are bound to the room they were sent from.
-- **W0 is done except #12** (deploy): live on Coolify, waiting for the Synology rule.
+- The live table from #17: presence through `apply` (15 s grace, 60 s after a
+  restart), voted badges and face-down cards, the PO crown, the viewer outline, colours
+  from ids, and a live region that never says a value. `PROTOCOL_VERSION` is 3.
+- **W0 is complete.**
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -56,22 +59,17 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#17 (PP-017)** the table: presence with the 15 s grace, voted badges, the PO
-  badge, the viewer highlight and the live region. Building in `../pp-wt-17`.
-- **#12** deploy: the app runs healthy on Coolify. Once Sven's Synology rule matches,
-  I check `/api/health` and a WebSocket through both proxies, then close #12 with the
-  deploy notes.
+- **#18 (PP-018)** vote: the hand, pick, change and retract, keyboard, motion, and a
+  minimal PO "Start voting" button for the lobby until #21. Building in
+  `../pp-wt-18`.
 
 ## Next
 
 - W1 order, by dependencies:
-  - #17 (table), then #18 (vote), #19 (reveal), #20 (results) and #21 (next round),
-    one after another.
+  - #18 (vote), then #19 (reveal), #20 (results) and #21 (next round), one after
+    another.
   - #22 (mobile) needs #17, #18 and #20. #23 (four-person e2e) needs #21 and #22.
 - **W1 runs without a new go** (Sven, 2026-10-26).
-- Once #12 is live, every merge deploys: after each merge, check that
-  `https://poker.borden.ch/api/health` reports the merge commit. Pushes that only
-  touch docs, Markdown or tests do not deploy (Coolify watch paths).
 
 ## Order
 
@@ -94,16 +92,12 @@ issues are merged.
 
 ## Owner items (only Sven)
 
-- **#12** (go given 2026-10-27). Done: the project, `poker-db` with daily backups, the
-  app with all four variables and both build settings, and a healthy deploy. Left:
-  - The Synology reverse-proxy rule for `poker.borden.ch` (HTTPS 443 to the same
-    destination as Popote's, with WebSocket headers) and its `*.borden.ch`
-    certificate. Today the host still gets the Synology's default page.
-  - Optional, his call: rotate `BETTER_AUTH_SECRET`, whose value went through my
-    session when he asked me to add it.
-  - Optional, his call: let Coolify's Traefik trust the Synology
-    (`forwardedHeaders.trustedIPs`), then `TRUST_PROXY=2`. It restarts the proxy for
-    all his apps. Until then, per-address limits see one address for everyone.
+- Optional, after #12:
+  - Rotate `BETTER_AUTH_SECRET` (it went through my session when Sven asked me to add
+    it).
+  - Let Coolify's Traefik trust the Synology (`forwardedHeaders.trustedIPs`), then
+    set `TRUST_PROXY=2`. This restarts the proxy for all his apps. Until then,
+    per-address limits see one address for everyone.
 - **#38**: pick the Azure service (OQ-1).
 - **#41**: French and German tone (OQ-2).
 - **#56**: licence and pricing model for branding (OQ-3).
