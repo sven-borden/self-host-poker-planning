@@ -87,6 +87,11 @@ Positions are percentages of the stage, so one formula serves every width:
   (above the avatar in the top half, below it elsewhere).
 - The centre of the table shows the status (`5/8 voted so far`), the timer ring, or
   after reveal the suggested card with agreement or a **Consensus** pill.
+- Until #19 to #21 (#18): while Voting the centre says "1/2 voted so far" (people away
+  count once they voted; a PO who does not vote never counts). In the lobby and after a
+  reveal the PO gets one button there, drawn as a card face (warm face, card ink, 44 px
+  tall, two lines on phones): "Start voting", then "Next round"; everyone else reads
+  "Waiting for the PO" or "Cards revealed".
 - Observers sit off the table (a small row under it) so voters keep the seats.
 - The others follow the viewer clockwise in join order, starting with whoever joined
   after the viewer, so the order around the table is the same for everyone (#16).
@@ -134,6 +139,13 @@ Positions are percentages of the stage, so one formula serves every width:
 
 - **Hand cards**: 50 × 72 px (phone 44 × 64), warm face, numeral centred, corner
   indices top-left and bottom-right (rotated), 7 px radius.
+- **The hand** (#18): under the table, in a surface panel, the round's deck then the
+  enabled specials, one line that scrolls on phones. Picking a card votes, picking it
+  again takes the vote back, another card changes it; the pick shows at once (lifted,
+  brass ring, the seat's slot face down) and rolls back if the server refuses. A line
+  under the cards says how to play, or why the cards are dimmed (40 %): in the lobby
+  ("Your cards open when the product owner starts the round") and after the reveal.
+  Observers have no hand; a PO who does not vote reads a line instead.
 - **Back**: brass diagonal stripes framed by the card face colour.
 - **Specials**: `?` unsure, `☕` break, `∞` too big; never counted in statistics.
 - **Mini cards** (anonymous results): 28 × 39 px.
@@ -152,9 +164,10 @@ interruptible and disabled under `prefers-reduced-motion` (120 ms cross-fades in
 
 | Moment | Spec |
 |---|---|
-| Hand deal-in (round start) | cards rise 12 px and fade in, 260 ms, 30 ms stagger |
+| Hand deal-in | cards rise 12 px and fade in, 260 ms, 30 ms stagger; when the hand appears (not each round, so the focus stays) |
 | Hover / select | lift 6 px (180 ms); selected lifts 12 px with a 2 px brass ring |
 | Hand → seat travel | 520 ms arc, midpoint 36 px above the line, −9° tilt, scales to the slot; lands face down with a 380 ms drop |
+| Seat → hand (vote taken back, #18) | the face-down card flies back on the same 520 ms arc and fades over its hand card |
 | Voted badge | 300 ms pop with slight overshoot |
 | Reveal flip | `rotateY(180deg)` 650 ms, 90 ms stagger in seat order from the viewer |
 | Anonymous reveal | slot cards shrink to 0.6 and fade (350 ms); mini cards deal into the results row, 70 ms stagger |
@@ -167,6 +180,10 @@ interruptible and disabled under `prefers-reduced-motion` (120 ms cross-fades in
 
 - Text contrast at least 4.5:1 in both themes; focus ring 2 px `--brass`.
 - Full keyboard play: arrow keys move through the hand, Enter votes, `R` reveals for the PO.
+  The hand is one tab stop (a toolbar of toggle buttons): the arrows wrap, Home and End
+  jump, Enter or Space votes and again takes it back; dimmed cards keep the focus.
+- The viewer's own vote is said to them alone, once the server confirmed it ("You voted
+  5.", "Vote taken back."), in the hand's own polite region.
 - Live region announces "Ana voted", "Cards revealed: average 5", never a hidden value.
   The table's region (#17) says joins, leaves, away and back, and others' first votes; a
   burst becomes one sentence per kind ("3 people voted."), after 600 ms of quiet or

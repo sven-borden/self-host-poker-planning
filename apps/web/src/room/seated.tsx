@@ -124,10 +124,10 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           <p id={ids.hint} className="m-0 px-4 text-center text-sm text-ink-2">
             {hint}
           </p>
-          {vote.error !== null ? (
+          {vote.error !== null && vote.error.round === (room.round?.number ?? null) ? (
             <p role="alert" className="mx-4 mt-2 flex items-start justify-center gap-2 text-sm">
               <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
-              {failureMessage(t, vote.error)}
+              {failureMessage(t, vote.error.code)}
             </p>
           ) : null}
           {/* The viewer's own vote, said to them once it is confirmed; never to anyone else. */}

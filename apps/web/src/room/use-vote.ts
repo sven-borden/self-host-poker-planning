@@ -19,8 +19,11 @@ export type VoteNews = { kind: "voted"; card: string } | { kind: "retracted" };
 
 export interface Vote {
   state: HandState;
-  /** The code of the last refusal (`round_revealed`, `offline`, …), until the next press. */
-  error: string | null;
+  /**
+   * The last refusal (`round_revealed`, `offline`, …) and the number of the round it
+   * happened in, until the next press; the page shows it only while that round lasts.
+   */
+  error: { code: string; round: number | null } | null;
   /** Said once the server confirmed the last press; a new object each time. */
   news: { id: number; what: VoteNews } | null;
   /** A press on a card of the hand. Returns the hand's new wish (null: take back). */
@@ -37,7 +40,7 @@ const confirmedNow = (): Confirmed => confirmedOf(useRoomStore.getState().snapsh
  */
 export function useVote(): Vote {
   const [state, setState] = useState<HandState>(SETTLED);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Vote["error"]>(null);
   const [news, setNews] = useState<Vote["news"]>(null);
   // The machine's state for the async loop, which must not wait for a render.
   const current = useRef<HandState>(SETTLED);
@@ -65,7 +68,8 @@ export function useVote(): Vote {
       }
       if (!ack.ok) {
         commit(answered(current.current, false));
-        setError(ack.code);
+        const round = useRoomStore.getState().snapshot?.room.round?.number ?? null;
+        setError({ code: ack.code, round });
         return;
       }
       commit(answered(current.current, true));

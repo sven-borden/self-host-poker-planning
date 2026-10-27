@@ -227,6 +227,10 @@ describe("the hand", () => {
     expect(screen.getByText(/The cards are revealed/).textContent).toBe(
       "The cards are revealed. Votes can no longer change in this round.",
     );
+    // The next round starts: the refusal belonged to the last one.
+    run("po", { type: "startRound", subject: { kind: "none" } });
+    expect(screen.queryByText(/already revealed/)).toBeNull();
+    expect(pressed()).toEqual([]);
   });
 
   it("rolls back when the room is offline", async () => {

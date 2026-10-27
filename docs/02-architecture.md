@@ -301,6 +301,15 @@ Server: `apps/server/src/sync/room-sync.ts` (the `handlers` of `createRealtime`)
   `unauthenticated` runs the identity bootstrap once more; other refusals are final.
   `sendCommand(command)` waits for `live`, sends with a fresh id, and resends the same id
   after a lost ack or `busy`. Messages are checked by shape, not with zod (27 kB gzipped).
+- **Voting from the web** (#18, `apps/web/src/room/hand-state.ts`): the hand shows a
+  pick at once and settles on the snapshot's `yourVote`. One `castVote` or `retractVote`
+  is on the wire at a time; when its ack resolves the store holds its snapshot, so the
+  next command goes out only if the latest pick still differs (fast clicks collapse, and
+  the same command is never sent twice in a row). A refusal (`round_revealed`,
+  `not_voting`, `offline`, a `busy` that gave up) drops the pick: the hand rolls back to
+  the snapshot. A pick belongs to its round (number and `startedAt`), so a new round or
+  the reveal drops it. The pick changes only the viewer's own screen; the others learn
+  the vote from the server's `voted`, never the card.
 - Measured on one instance with Postgres (`room-sync.db.test.ts`): a join reaches the
   other client in about 4 ms median, 17 ms worst of ten.
 
