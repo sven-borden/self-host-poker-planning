@@ -207,10 +207,17 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   /** After a run: broadcast what is new, and remove the people it kicked. */
   function publish(room: RoomRef, outcome: Extract<ApplyRun, { ok: true }>) {
     const { result } = outcome;
-    // Unchanged, the loaded state may still be newer than what this instance sent: another
-    // instance wrote it. Its causes are unknown here, so it goes out without any.
-    broadcast(room, outcome.version, result.state, outcome.changed ? result.causes : []);
-    if (!outcome.changed) return;
+    if (!outcome.changed) {
+      // The loaded state may still be newer than what this instance sent: another instance
+      // wrote it. Its causes are unknown here, so it goes out without any. A version this
+      // instance already knows goes nowhere: a socket still entering (in the channel, no
+      // version held yet) gets it with its answer, and would get it twice.
+      if (outcome.version > (newest.get(room.id) ?? 0)) {
+        broadcast(room, outcome.version, result.state, []);
+      }
+      return;
+    }
+    broadcast(room, outcome.version, result.state, result.causes);
     for (const cause of result.causes) {
       if (cause.type === "kicked") removeKicked(room.id, cause.who);
     }

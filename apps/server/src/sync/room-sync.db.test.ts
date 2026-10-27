@@ -83,7 +83,17 @@ function client(guest: Guest, instance = main()): TestClient {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-function step(state: RoomState, actor: string, command: Command, now = Date.now()): RoomState {
+/**
+ * A fixture clock that never repeats: two joins in one millisecond would tie on `joinedAt`,
+ * and the snapshot would then order those people by id, which differs from room to room.
+ */
+let lastStep = 0;
+function tick(): number {
+  lastStep = Math.max(Date.now(), lastStep + 1);
+  return lastStep;
+}
+
+function step(state: RoomState, actor: string, command: Command, now = tick()): RoomState {
   const result = apply(state, command, { actor, now });
   if (!result.ok) throw new Error(`fixture refused: ${result.error}`);
   return result.state;

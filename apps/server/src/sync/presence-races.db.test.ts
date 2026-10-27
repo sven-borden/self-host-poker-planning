@@ -17,7 +17,14 @@ import { createServer, type PokerServer } from "../server.ts";
 import { setupServer } from "../setup.ts";
 import { collectLogs, testConfig, VALID_ENV } from "../test-support.ts";
 import { createRoomSync, MAX_AWAY_RETRIES, type RoomSync } from "./room-sync.ts";
-import { type Guest, roomCode, signInGuest, type TestClient, testClient } from "./test-support.ts";
+import {
+  type Guest,
+  roomCode,
+  signInGuest,
+  snapshotsIn,
+  type TestClient,
+  testClient,
+} from "./test-support.ts";
 
 const ORIGIN = VALID_ENV.BASE_URL;
 const GRACE_MS = 300;
@@ -175,6 +182,28 @@ describe("an enter racing the away run", () => {
     expect(after.version).toBe(before + 2);
     expect(after.state.participants[bob.id]).toMatchObject({ connected: true });
     expect(after.state.participants[bob.id]).not.toHaveProperty("awaySince");
+  });
+
+  it("sends a socket still entering no copy of the version its answer carries", async () => {
+    const { code } = await everyoneIn();
+    let release!: () => void;
+    let read!: () => void;
+    const loadRead = new Promise<void>((resolve) => {
+      read = resolve;
+    });
+    holdNextLoad = { release: new Promise<void>((resolve) => (release = resolve)), read };
+    // Cy's second tab joins the room's channel, then waits in its load.
+    const c2 = client(cy);
+    const entering = c2.enter(code);
+    await loadRead;
+    // Meanwhile Ada's second tab enters: its back step changes nothing.
+    await client(ada).enter(code);
+    await sleep(100);
+    release();
+    expect((await entering).ok).toBe(true);
+    await sleep(100);
+    // The enter's answer only: the unchanged run sent the entering socket nothing.
+    expect(snapshotsIn(c2.frames)).toHaveLength(1);
   });
 
   it("stores nothing for an enter of someone shown connected", async () => {
