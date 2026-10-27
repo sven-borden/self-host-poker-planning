@@ -28,6 +28,10 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 - The Docker image and compose file from #11: 219 MB, non-root, with a healthcheck.
   `docker compose up` serves the app on port 3000, and a `docker` CI job tests the
   image.
+- Identity from #10: Better Auth guest sessions (`__Host-` cookie on https), only
+  three auth endpoints exposed, display names with strict text rules, and sockets
+  refused without a session. `TRUST_PROXY` is a proxy count.
+- **W0 is done except #12** (deploy), which waits for Sven's go.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -38,13 +42,16 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#10 (PP-010)** identity with Better Auth guest sessions: PR #74 in review, CI
-  green.
+- **#14 (PP-014)** create a room and become its PO, in `../pp-wt-14`.
+- **#15 (PP-015)** realtime room sync, in `../pp-wt-15`.
 
 ## Next
 
-- W1 takes a free slot as soon as its issues' dependencies are merged: #14 and #15
-  need #10, and #24 needs #14.
+- W1 order, by dependencies:
+  - #16 (join) needs #13, #14 and #15. Then #17 (table), #18 (vote), #19 (reveal),
+    #20 (results) and #21 (next round), one after another.
+  - #22 (mobile) needs #17, #18 and #20. #23 (four-person e2e) needs #21 and #22.
+  - #24 (landing page) needs only #14, so it fills the second slot.
 - **W1 starts without a new go** once the W0 issues other than #12 are merged (Sven,
   2026-10-26). No W1 issue depends on #11 or #12.
 - **#12** waits for Sven's go (asked on 2026-10-27, when #11 was ready). DNS needs
