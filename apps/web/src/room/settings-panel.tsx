@@ -29,6 +29,8 @@ import { commandSender } from "../realtime/room-connection.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { codeOf, failureMessage } from "./failure.ts";
 import { deckName, type SettingKey } from "./settings-words.ts";
+import { TimerSetting } from "./timer-setting.tsx";
+import { durationWords } from "./timer-view.ts";
 
 // The room's settings (#25): one panel, opened from the room's header. The PO changes
 // the settings whose behaviour the room already shows; everyone else, and the PO for a
@@ -143,8 +145,8 @@ function SettingSwitch({
 
 /**
  * The settings in the order the panel shows them (ADR-011's list). Editable now: the
- * settings whose behaviour the room already shows end to end. The deck and specials
- * (#26), the timer (#27), who can reveal (#28) and changes after the reveal (#29) are
+ * settings whose behaviour the room already shows end to end, and the timer (#27). The
+ * deck and specials (#26), who can reveal (#28) and changes after the reveal (#29) are
  * read-only until their issue adds a control.
  */
 export const GROUPS: readonly SettingGroup[] = [
@@ -182,13 +184,14 @@ export const GROUPS: readonly SettingGroup[] = [
         label: (t) => t("settings.timer"),
         hint: (t) => t("settings.timerHint"),
         value: (t, s) =>
-          s.timer.seconds === null
-            ? t("settings.off")
-            : t("settings.timerSeconds", { seconds: s.timer.seconds }),
+          s.timer.seconds === null ? t("settings.off") : durationWords(t, s.timer.seconds),
         detail: (t, s) =>
           s.timer.seconds === null
             ? null
             : t(s.timer.revealAtEnd ? "settings.timerThenReveal" : "settings.timerThenTimeUp"),
+        // #27: the length and "Reveal when the timer ends", across the row.
+        layout: "block",
+        Control: TimerSetting,
       },
       {
         key: "revealWhenAllVoted",

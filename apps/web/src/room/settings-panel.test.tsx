@@ -125,14 +125,19 @@ describe("the settings panel", () => {
     const dialog = await openPanel("Room settings");
     const checked = (name: string) =>
       within(dialog).getByRole("switch", { name }).getAttribute("aria-checked") === "true";
-    expect(within(dialog).getAllByRole("switch")).toHaveLength(4);
+    expect(within(dialog).getAllByRole("switch")).toHaveLength(5);
     expect(checked("Reveal when everyone has voted")).toBe(DEFAULT_SETTINGS.revealWhenAllVoted);
     expect(checked("Anonymous voting")).toBe(!DEFAULT_SETTINGS.revealNames);
     expect(checked("The product owner votes too")).toBe(DEFAULT_SETTINGS.poVotes);
     expect(checked("Observers take one of the 16 places")).toBe(DEFAULT_SETTINGS.observersCount);
+    // The timer (#27): no timer, and the cards turn over when one ends.
+    expect(checked("Reveal when the timer ends")).toBe(DEFAULT_SETTINGS.timer.revealAtEnd);
+    expect(within(row(dialog, "timer")).getByRole("radio", { name: "Off" })).toHaveProperty(
+      "checked",
+      true,
+    );
     // The others are read until their issue adds a control.
     expect(shownValue(dialog, "deck")).toBe("Fibonacci");
-    expect(shownValue(dialog, "timer")).toBe("Off");
     expect(shownValue(dialog, "whoCanReveal")).toBe("The product owner");
     expect(shownValue(dialog, "allowChangeAfterReveal")).toBe("Not allowed");
     const anonymous = within(dialog).getByRole("switch", { name: "Anonymous voting" });
@@ -234,11 +239,9 @@ describe("the settings panel", () => {
     button.focus();
     const dialog = await openPanel("Room settings");
     expect(button.getAttribute("aria-expanded")).toBe("true");
-    // The PO lands on the first control.
+    // The PO lands on the first control: the timer's length (#27).
     await waitFor(() =>
-      expect(document.activeElement).toBe(
-        within(dialog).getByRole("switch", { name: "Reveal when everyone has voted" }),
-      ),
+      expect(document.activeElement).toBe(within(dialog).getByRole("radio", { name: "Off" })),
     );
     fireEvent.keyDown(document.activeElement ?? dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -250,7 +253,7 @@ describe("the settings panel", () => {
     render(<RoomSettingsButton />);
     show(newRoom(), PO);
     const dialog = await openPanel("Room settings");
-    expect(within(dialog).getAllByRole("switch")).toHaveLength(4);
+    expect(within(dialog).getAllByRole("switch")).toHaveLength(5);
     show({ ...state, ownerId: ANA }, PO);
     expect(within(dialog).queryAllByRole("switch")).toEqual([]);
     expect(within(dialog).getByRole("heading", { name: "Room rules" })).toBeTruthy();
