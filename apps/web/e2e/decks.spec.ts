@@ -475,6 +475,26 @@ const labelSizes = (scope: Locator) =>
     })),
   );
 
+/** The cards whose label leaves its card or wraps (as `table.spec.ts` checks the bench). */
+const spills = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll("[data-hand-card], [data-face='up'], [data-mini-card]")].flatMap(
+      (card) => {
+        const c = card.getBoundingClientRect();
+        return [...card.querySelectorAll("[data-card-value]")].flatMap((value) => {
+          const v = value.getBoundingClientRect();
+          const size = Number.parseFloat(getComputedStyle(value).fontSize);
+          const inside =
+            v.left >= c.left + 0.5 &&
+            v.right <= c.right - 0.5 &&
+            v.top >= c.top + 0.5 &&
+            v.bottom <= c.bottom - 0.5;
+          return inside && v.height < size * 1.6 ? [] : [`${value.textContent} spills`];
+        });
+      },
+    ),
+  );
+
 const TWENTY = [
   "0",
   "0.5",
@@ -555,6 +575,8 @@ test("a 20-card deck with the three specials stays playable and legible at 360 a
     for (const label of TWENTY.slice(0, 10)) expect(label.length).toBeLessThanOrEqual(4);
     for (const size of await labelSizes(hand(page))) expect(size.px).toBeGreaterThanOrEqual(7);
     for (const size of await labelSizes(hand(ben.page))) expect(size.px).toBeGreaterThanOrEqual(7);
+    expect(await spills(page)).toEqual([]);
+    expect(await spills(ben.page)).toEqual([]);
     await shoot(ben.page, "deck-20-hand-phone");
     await shoot(page, "deck-20-hand");
 
@@ -571,6 +593,7 @@ test("a 20-card deck with the three specials stays playable and legible at 360 a
           ...(await labelSizes(results(viewer))),
         ].filter(({ px }) => px < 7);
         expect(small, `${width} px`).toEqual([]);
+        expect(await spills(viewer), `${width} px`).toEqual([]);
         // A six-card tie for most voted wraps inside the panel, clear of its neighbours.
         const boxes = await results(viewer)
           .locator("[data-stat] dd")

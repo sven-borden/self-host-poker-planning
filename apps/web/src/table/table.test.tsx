@@ -241,6 +241,10 @@ describe("cards", () => {
     expect(labelEms("100")).toBeCloseTo(2.16);
     expect(labelEms("XXL")).toBe(3);
     expect(labelEms("WWWW")).toBe(4);
+    // Lowercase letters but m and w take 0.8 em (#26).
+    expect(labelEms("Huge")).toBeCloseTo(3.4);
+    expect(labelEms("mmmm")).toBe(4);
+    expect(labelEms("a")).toBe(0.8);
     // A skin-toned thumb is one grapheme of two code points.
     expect(labelEms("👍🏽👍")).toBeCloseTo(2.6);
     expect(labelScale("13", 1.88)).toBe(1);
@@ -254,7 +258,7 @@ describe("cards", () => {
     const value = document.querySelector<HTMLElement>("[data-card-value]");
     expect(value?.className).toContain("whitespace-nowrap");
     // At 42 % it would be 5 px on a phone's chip: it narrows to 70 % width and grows.
-    expect(value?.style.fontSize).toBe("max(7px, 0.579em)");
+    expect(value?.style.fontSize).toBe("0.579em");
     expect(value?.style.fontStretch).toBe("70%");
   });
 

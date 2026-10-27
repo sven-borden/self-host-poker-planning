@@ -33,14 +33,20 @@ export function cardLabel(t: TFunction, value: string): string {
 const PICTOGRAPH = /\p{Extended_Pictographic}/u;
 const NUMERAL = /^[\d.,½¼¾]+$/u;
 
+/** A lowercase letter narrower than "m" and "w": at most 0.8 em of Archivo ExtraBold. */
+const NARROW_LOWERCASE = /(?![mw])\p{Ll}/gu;
+
 /**
  * The widest a label can be, in ems of Archivo ExtraBold at 110 % width: per grapheme
  * (the domain's `cardLength`, at most 4), 0.72 em for digits, 1 em for any letter (W
- * and M are the widest), 1.3 em for an emoji.
+ * and M are the widest) but 0.8 em for a lowercase one other than m and w (#26: a
+ * custom "Huge" fits a phone's slot at 7 px or more), 1.3 em for an emoji.
  */
 export function labelEms(value: string): number {
-  const perGrapheme = PICTOGRAPH.test(value) ? 1.3 : NUMERAL.test(value) ? 0.72 : 1;
-  return Math.max(1, cardLength(value)) * perGrapheme;
+  if (PICTOGRAPH.test(value)) return Math.max(1, cardLength(value)) * 1.3;
+  if (NUMERAL.test(value)) return Math.max(1, cardLength(value)) * 0.72;
+  const narrow = value.match(NARROW_LOWERCASE)?.length ?? 0;
+  return Math.max(0.8, Math.max(1, cardLength(value)) - 0.2 * narrow);
 }
 
 /** The scale (at most 1) that fits `value` into `room` ems of the card's font size. */
@@ -95,8 +101,7 @@ export function CardValue({ value, room }: { value: string; room: number }) {
       data-card-value
       data-narrow={narrow || undefined}
       className="whitespace-nowrap"
-      // Never below 7 px (#26): a four-letter word on a phone's slot would land just under.
-      style={{ fontSize: `max(7px, ${scale}em)`, fontStretch: narrow ? "70%" : undefined }}
+      style={{ fontSize: `${scale}em`, fontStretch: narrow ? "70%" : undefined }}
     >
       {value}
     </span>

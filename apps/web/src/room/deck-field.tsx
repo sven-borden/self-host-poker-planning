@@ -89,8 +89,7 @@ function RestartQuestion({
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => box.current?.focus(), []);
   return (
-    // A group, not a fieldset: it is a question with its answers, focused as one.
-    // biome-ignore lint/a11y/useSemanticElements: a fieldset cannot take the focus as one block
+    // biome-ignore lint/a11y/useSemanticElements: a question and its two answers, focused as one block, hold no form field to group
     <div
       ref={box}
       tabIndex={-1}
