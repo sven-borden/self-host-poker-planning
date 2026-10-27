@@ -32,8 +32,10 @@ server sends and never decides the outcome of a round.
 - `src/rooms/`: the room API (#14). `api.ts`: `createRoom({ name, deck })` (identity
   first, one session renewal on `unauthenticated`, a blank name left out) and
   `fetchRoomHeader(code)`; both reject with `RoomApiError` carrying the server's code or
-  `network`. `create-room-card.tsx`: the self-contained "Create a room" card on `/`. The
-  room page (`routes/r/$code.tsx`) shows the header (name inside `<bdi>`, code, copy
+  `network`. `create-room-card.tsx`: the self-contained "Create a room" card on `/`. It
+  checks the name with the domain's `cleanRoomName` before sending, keeps the focus on
+  the button through a failure (`aria-disabled`, never `disabled` while busy) and moves
+  it to the name field when the name is refused. The room page (`routes/r/$code.tsx`) shows the header (name inside `<bdi>`, code, copy
   link with a toast, or the link to select when the clipboard is missing or refused) and
   a `[data-room-slot]` section where the room itself goes (#15, #16).
 - `src/identity/identity.ts`: who this browser is (#10). `ensureIdentity({ force? })`

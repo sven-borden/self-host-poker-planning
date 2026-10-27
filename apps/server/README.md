@@ -45,7 +45,8 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   `{ app, httpServer, io, listen(), close() }`.
 - `src/client-ip.ts`: `clientIp(request, config.trustProxy)`, the client address for the
   rate limits (architecture section 8). Takes a Node request (`c.env.incoming` in Hono,
-  `socket.request` in Socket.IO). Never logged.
+  `socket.request` in Socket.IO). Never logged. It answers a key: an IPv4-mapped IPv6
+  address as IPv4, any other IPv6 address as its /64 network.
 - `src/database.ts`: `setupDatabase(config, logger, signal)`, the `setup` hook: waits
   for Postgres (30 s in all), takes the migration lock with `pg_try_advisory_lock`
   (60 s at most, a log line every 5 s), migrates on that one session
@@ -151,13 +152,18 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   `cleanRoomName` (1 to 60 characters). The state is `createRoom({ ownerId })` with the
   deck; the caller is the PO in `live` and in `owner_user_id`; `name` has its own column.
   Answers 201 `{ code }`, or `{ code }` with an `AckErrorCode`: 401 `unauthenticated`,
-  403 `not_allowed`, 415 or 400 `bad_payload`, 400 `bad_room_name`, 429 `rate_limited`
+  403 `not_allowed`, 400, 413 or 415 `bad_payload`, 400 `bad_room_name`, 429 `rate_limited`
   (`Retry-After`), 500 `internal` (five codes in a row taken, or the database).
 - `GET /api/rooms/:code` (no session): 200 `{ code, name }`, never the state; 404
   `room_not_found` for an unknown or a malformed code (no query then).
 - `ROOM_CREATE_LIMIT`: 20 creations per client address in 10 minutes.
-- A room code is a room's address: it never reaches a log line. The request log writes
-  `/r/:code` and `/api/rooms/:code` (`loggedPath`); `rooms.db.test.ts` greps the logs.
+  `ROOM_HEADER_LIMIT`: 120 header reads per client address and minute, counted before the
+  query.
+- A room code is a bearer capability: it never reaches a log line, an error message,
+  Sentry or Umami; logs name a room by its id. The request log writes the matched route,
+  or for a path that matched only a wildcard the normalised path of `loggedPath` (the
+  segment after `/r` or `/api/rooms` and any code-shaped segment become `:code`, case
+  and `//` ignored); `app.test.ts` and `rooms.db.test.ts` grep the logs.
 
 ## Database
 

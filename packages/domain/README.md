@@ -58,7 +58,8 @@ canonical: `.` is the decimal mark and the domain never localises (the UI may sh
 `Cause`, `ErrorCode`, `ApplyResult`), `apply.ts` (the machine) and `apply-input.ts`
 (runtime validation of names, subjects, seconds and settings patches) (#3).
 `cleanRoomName` applies the same text rules to a room name (1 to
-`MAX_ROOM_NAME_LENGTH`, 60), which the server takes when it creates a room (#14). The rules
+`MAX_ROOM_NAME_LENGTH`, 60), which the server takes when it creates a room (#14). All of
+them refuse more than 3 combining marks in a row on one character. The rules
 are in `docs/02-architecture.md`, section 4.
 
 - Never mutate the input; return the input object itself when nothing changed.
