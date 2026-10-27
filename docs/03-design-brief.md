@@ -98,8 +98,9 @@ Positions are percentages of the stage, so one formula serves every width:
   10 px; the two still stand about 71 px tall in English and French and 84 px in German
   (the button wraps), so they overflow the 68 × 60 box onto the felt, centred, without
   reaching a card even with 16 seats.
-  Nobody else gets a button. After the reveal the PO's focus moves to "Next round" when
-  it was on the button (or nowhere). A named reveal turns the seats' cards face up; the
+  Nobody else gets a button. After the reveal the PO's focus moves to "Record 8", the
+  final estimate's button under the table (#32), when it was on the button (or nowhere);
+  to the picker when nothing is preselected. A named reveal turns the seats' cards face up; the
   seats then read "Ana, card 5". An anonymous reveal leaves each voter's seat with its
   voted badge and an empty outline (the card went to the row), and a "Cards played" row
   of mini cards under the table holds every card in the deck's order, with nothing that
@@ -115,12 +116,9 @@ Positions are percentages of the stage, so one formula serves every width:
   of the tie. The figure is labelled as the team's agreement, the panel's word, because
   that is what it measures: the share of the most voted card, not support for the
   suggestion. Votes 3, 3 and 13 suggest 5, which nobody played, with "Agreement 67%"
-  (PO decision, 2026-10-27). The PO's centre puts the result above "Next round"; on
-  phones the card shrinks to an 18 px chip and the stack stays at most 76 px wide: the
-  agreement beside the chip on two lines ("Agreement" over "29%"), 71 px tall; the pill
-  or "Tie" under the chip, 83 px tall. Measured clear of every card at 4, 8, 10 and 16
-  seats in English, French and German (`results.spec.ts`). The others' centre stacks
-  the card over the pill or the caption. Named rounds whose
+  (PO decision, 2026-10-27). Since #32 the PO's centre is everyone's: "Next round" moved
+  under the table with the final estimate, and the centre stacks the card over the pill
+  or the caption. With a recorded final it turns compact (below). Named rounds whose
   cards differ mark the lowest and highest voters with an arrow (down, up) in a spruce
   disc at the avatar's bottom right, the voted check's corner, free after a reveal; the
   seat's label adds "lowest card" or "highest card". Anonymous rounds never do.
@@ -135,10 +133,36 @@ Positions are percentages of the stage, so one formula serves every width:
   while Voting the hint reads "Round 4 will start with this subject after the reveal."
   The field stays in every phase (PO decision, 2026-10-27): the table never jumps at a
   reveal, and the PO can paste the next ticket while the team votes. Only the centre's
-  "Start voting" and "Next round" start a round, or Enter in the field when the centre
-  offers one; while Voting the PO cannot abandon the round from the page. A refused
+  "Start voting", "Next round" under the table after a reveal (#32), and "Vote again"
+  start a round, or Enter in the field in the lobby or after a reveal; while Voting the PO cannot abandon the round from the page. A refused
   subject shows under the field (`bad` icon, the reason: too long, a link that is not
   http or https or carries a user name) and nothing is cut.
+- The final estimate (#32). Recording is explicit: nothing is recorded by itself, so the
+  history shows decisions, not guesses. After a reveal the PO's decision sits right
+  under the table (and above the results): a radio group labelled "Final estimate" with
+  the round's deck without the specials as small cards (36 × 48 px, 32 × 44 on phones,
+  wrapping on a long deck), then "Record 8", "Next round" (outline) and "Vote again"
+  (ghost), in that order for the keyboard too. The suggested card (or a consensus) is
+  preselected, so one press records it; on a tie, or when nothing counts, nothing is,
+  the tied cards wear a small "Tie" mark, "Record" waits, and a line asks the PO to pick.
+  Arrow keys move the pick; the pick lifts with the hand's brass ring. Once recorded the
+  button reads "Recorded" (a check) until the PO picks another card, which changes the
+  final while the round stays revealed. A held key's repeats never record or start.
+  Everyone's centre, named or anonymous rounds alike, then shows the final under the
+  result, set apart from the suggestion: its mini card with a 2 px brass outline beside
+  "Final estimate", said as "Final estimate: 8."; the result turns compact (card beside
+  its caption), and on phones both cards shrink to 18 px chips, the stack at most 76 px
+  wide. A final recorded on screen pops in (crossfade under reduced motion). The live
+  region says "The PO recorded 8 as the final estimate." or "The PO changed the final
+  estimate to 13.", once, to everyone. Measured clear of every card at 4, 8, 10 and 16
+  seats, in English, French and German, on desktop and at 360 px, for the PO and a voter
+  (`final-estimate.spec.ts`): SIZES.
+- "Vote again" (#32): the PO's secondary action beside "Next round". It keeps the
+  subject (the title, or the link with its key) and starts a new round with the next
+  number, the votes cleared and the timer as at any start; the revealed round stays in
+  the history with its votes, so it asks for no confirmation. The live region says "The
+  PO started a new vote on the same subject." The focus goes to the hand, as after
+  "Next round".
 - Observers sit off the table (a small row under it) so voters keep the seats.
 - The others follow the viewer clockwise in join order, starting with whoever joined
   after the viewer, so the order around the table is the same for everyone (#16).
