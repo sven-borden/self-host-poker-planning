@@ -5,7 +5,7 @@ import { useT } from "../i18n/hooks.ts";
 import { cardLabel } from "../table/cards.tsx";
 import { Hand } from "../table/hand.tsx";
 import { TableStage } from "../table/table-stage.tsx";
-import { type Box, CardFlight, type Flight } from "./card-flight.tsx";
+import { type Box, CardFlight, type Flight, type InAir } from "./card-flight.tsx";
 import { failureMessage } from "./failure.ts";
 import { confirmedOf, shownCard, withShownVote } from "./hand-state.ts";
 import { LiveAnnouncer } from "./live-announcer.tsx";
@@ -55,6 +55,8 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
   const [startFailure, setStartFailure] = useState<string | null>(null);
   const [flight, setFlight] = useState<Flight | null>(null);
   const flights = useRef(0);
+  /** An interrupted flight's card, for the next one to start from. */
+  const inAir = useRef<InAir | null>(null);
 
   useEffect(() => {
     if (flight === null) return;
@@ -151,7 +153,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
         </p>
       ) : null}
       {flight !== null ? (
-        <CardFlight key={flight.id} flight={flight} onDone={() => setFlight(null)} />
+        <CardFlight key={flight.id} flight={flight} carry={inAir} onDone={() => setFlight(null)} />
       ) : null}
       <YouControls
         me={me}

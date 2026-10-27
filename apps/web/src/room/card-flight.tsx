@@ -113,6 +113,48 @@ export function flightKeyframes(flight: Flight, reduced: boolean): FlightKeyfram
   };
 }
 
+/**
+ * Where an interrupted flight's card was when the next press cancelled it: its box at
+ * rest, its computed transform and opacities, and when (`performance.now()`).
+ */
+export interface InAir {
+  left: number;
+  top: number;
+  transform: string;
+  opacity: number;
+  cover: number;
+  at: number;
+}
+
+/** A card cancelled longer ago than this is no longer in the air. */
+const CARRY_MS = 100;
+
+/**
+ * The next flight starts where the interrupted one was, rather than jumping to its own
+ * start: its first keyframe takes the old card's place (moved into the new card's frame;
+ * hand cards share one size) and opacities.
+ */
+export function continueFrom(
+  frames: FlightKeyframes,
+  flight: Flight,
+  from: InAir | null,
+): FlightKeyframes {
+  const [first, ...rest] = frames.card;
+  const [back, ...backRest] = frames.back;
+  if (from === null || first === undefined || back === undefined) return frames;
+  const shift = `translate(${from.left - flight.hand.left}px, ${from.top - flight.hand.top}px)`;
+  const still = from.transform === "none" || from.transform === "";
+  const transform = still ? shift : `${shift} ${from.transform}`;
+  return {
+    ...frames,
+    card: [
+      { ...first, transform, opacity: from.opacity },
+      ...rest.map((frame) => ({ ...frame, opacity: frame.opacity ?? 1 })),
+    ],
+    back: [{ ...back, opacity: from.cover }, ...backRest],
+  };
+}
+
 const prefersReducedMotion = () =>
   typeof window.matchMedia === "function" &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -120,9 +162,18 @@ const prefersReducedMotion = () =>
 /**
  * The ghost card in the air, drawn over the hand card at rest and moved by transforms.
  * Give it a new `key` per flight: unmounting cancels the trip, so a new press interrupts
- * the last one. `onDone` runs once it has landed, or at once without the API.
+ * the last one, and the new trip starts where the old card was (`carry`, shared by the
+ * flights of one page). `onDone` runs once it has landed, or at once without the API.
  */
-export function CardFlight({ flight, onDone }: { flight: Flight; onDone: () => void }) {
+export function CardFlight({
+  flight,
+  onDone,
+  carry,
+}: {
+  flight: Flight;
+  onDone: () => void;
+  carry?: { current: InAir | null };
+}) {
   const card = useRef<HTMLDivElement>(null);
   const back = useRef<HTMLDivElement>(null);
   const done = useRef(onDone);
@@ -135,16 +186,31 @@ export function CardFlight({ flight, onDone }: { flight: Flight; onDone: () => v
       done.current();
       return;
     }
-    const frames = flightKeyframes(flight, prefersReducedMotion());
+    const reduced = prefersReducedMotion();
+    const last = carry?.current ?? null;
+    if (carry) carry.current = null;
+    const fresh = !reduced && last !== null && performance.now() - last.at < CARRY_MS;
+    const frames = continueFrom(flightKeyframes(flight, reduced), flight, fresh ? last : null);
     const timing: KeyframeAnimationOptions = { duration: frames.duration, fill: "both" };
     const trip = element.animate(frames.card, timing);
     const turn = cover.animate(frames.back, timing);
     trip.onfinish = () => done.current();
     return () => {
+      if (carry && trip.playState === "running") {
+        const style = getComputedStyle(element);
+        carry.current = {
+          left: flight.hand.left,
+          top: flight.hand.top,
+          transform: style.transform,
+          opacity: Number(style.opacity),
+          cover: Number(getComputedStyle(cover).opacity),
+          at: performance.now(),
+        };
+      }
       trip.cancel();
       turn.cancel();
     };
-  }, [flight]);
+  }, [flight, carry]);
 
   const { hand } = flight;
   return (

@@ -1,6 +1,14 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CardFlight, DROP_MS, type Flight, flightKeyframes, TRAVEL_MS } from "./card-flight.tsx";
+import {
+  CardFlight,
+  continueFrom,
+  DROP_MS,
+  type Flight,
+  flightKeyframes,
+  type InAir,
+  TRAVEL_MS,
+} from "./card-flight.tsx";
 
 // The hand-to-seat trip (docs/03-design-brief.md, "Motion spec"): a 520 ms arc whose
 // midpoint rises 36 px with a -9° tilt, scaled to the slot, then a 380 ms drop; under
@@ -44,6 +52,31 @@ describe("flightKeyframes", () => {
     });
   });
 
+  it("continues an interrupted flight from where its card was", () => {
+    const frames = flightKeyframes(flight("return"), false);
+    expect(continueFrom(frames, flight("return"), null)).toBe(frames);
+    const from: InAir = {
+      left: 60,
+      top: 390,
+      transform: "matrix(1, 0, 0, 1, 40, -120)",
+      opacity: 0.5,
+      cover: 0.25,
+      at: 0,
+    };
+    const next = continueFrom(frames, flight("return"), from);
+    expect(next.card[0]).toMatchObject({
+      offset: 0,
+      transform: "translate(60px, -10px) matrix(1, 0, 0, 1, 40, -120)",
+      opacity: 0.5,
+    });
+    expect(next.card.slice(1)).toEqual(frames.card.slice(1));
+    expect(next.back[0]?.opacity).toBe(0.25);
+    const play = flightKeyframes(flight("play"), false);
+    const resting = continueFrom(play, flight("play"), { ...from, transform: "none" });
+    expect(resting.card[0]?.transform).toBe("translate(60px, -10px)");
+    expect(resting.card.every((k) => typeof k.opacity === "number")).toBe(true);
+  });
+
   it("cross-fades on the slot under reduced motion, without travel", () => {
     for (const kind of ["play", "return"] as const) {
       const frames = flightKeyframes(flight(kind), true);
@@ -69,21 +102,27 @@ describe("CardFlight", () => {
 
   it("reports the landing, and a new flight cancels the one in the air", () => {
     const trips: Array<{ cancel: () => void; onfinish: (() => void) | null }> = [];
-    Object.defineProperty(HTMLElement.prototype, "animate", {
-      configurable: true,
-      value: vi.fn(() => {
-        const trip = { cancel: vi.fn(), onfinish: null };
-        trips.push(trip);
-        return trip;
-      }),
+    const animate = vi.fn((_frames: Keyframe[]) => {
+      const trip = { cancel: vi.fn(), onfinish: null, playState: "running" };
+      trips.push(trip);
+      return trip;
     });
+    Object.defineProperty(HTMLElement.prototype, "animate", { configurable: true, value: animate });
     const onDone = vi.fn();
-    const { rerender } = render(<CardFlight key={1} flight={flight("play")} onDone={onDone} />);
+    const carry = { current: null as InAir | null };
+    const { rerender } = render(
+      <CardFlight key={1} flight={flight("play")} onDone={onDone} carry={carry} />,
+    );
     expect(trips).toHaveLength(2);
     expect(onDone).not.toHaveBeenCalled();
-    rerender(<CardFlight key={2} flight={{ ...flight("return"), id: 2 }} onDone={onDone} />);
+    rerender(
+      <CardFlight key={2} flight={{ ...flight("return"), id: 2 }} onDone={onDone} carry={carry} />,
+    );
     expect(trips[0]?.cancel).toHaveBeenCalled();
     expect(trips[1]?.cancel).toHaveBeenCalled();
+    // The return starts where the cancelled card was, not on the slot.
+    expect(animate.mock.calls[2]?.[0][0]?.transform).toBe("translate(0px, 0px)");
+    expect(carry.current).toBeNull();
     trips[2]?.onfinish?.();
     expect(onDone).toHaveBeenCalledOnce();
     expect(document.querySelector("[data-card-flight]")?.getAttribute("data-card-flight")).toBe(
