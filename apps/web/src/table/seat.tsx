@@ -37,6 +37,11 @@ export interface PersonFlags {
   you?: boolean | undefined;
   /** Initials and colour, unique at the table (`avatarLooks`). */
   look?: AvatarLook | undefined;
+  /**
+   * Someone who joined earlier has the same name: which one of that name this is (2, 3,
+   * …), so that every seat's label is a name of its own: "Ana (2)" (#22).
+   */
+  namesake?: number | undefined;
 }
 
 export interface TablePerson extends PersonFlags {
@@ -60,9 +65,16 @@ export function flagWords(t: TFunction, person: PersonFlags): string[] {
   return words;
 }
 
-/** The name with what sets the person apart, for screen readers: "Ana, you, away". */
+/**
+ * The name with what sets the person apart, for screen readers: "Ana, you, away", or
+ * "Ana (2), away" for the second Ana in the room.
+ */
 export function nameWithFlags(t: TFunction, person: { name: string } & PersonFlags): string {
-  return [person.name, ...flagWords(t, person)].join(", ");
+  const name =
+    person.namesake === undefined
+      ? person.name
+      : t("table.nameNumbered", { name: person.name, number: person.namesake });
+  return [name, ...flagWords(t, person)].join(", ");
 }
 
 /**

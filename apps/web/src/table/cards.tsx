@@ -227,7 +227,12 @@ export function SlotCard({ face, value, size, turnDelay = 0, className }: SlotCa
       </div>
     );
   }
-  const fontSize = Math.round(size.height * 0.34);
+  // The dense phone slot (20 × 28, 16 people) cannot grow without touching its
+  // neighbours (layout.test.ts), so its label gets a larger font and 1 px a side
+  // instead of 2: "13" shows at 11 px, "100" at 7 px (#22).
+  const small = size.width <= 20;
+  const fontSize = Math.round(size.height * (small ? 0.39 : 0.34));
+  const inner = size.width - (small ? 4 : 6);
   return (
     <div
       ref={root}
@@ -240,8 +245,8 @@ export function SlotCard({ face, value, size, turnDelay = 0, className }: SlotCa
       )}
       style={{ ...box, fontSize }}
     >
-      {/* The inner width less 2 px a side. */}
-      <CardValue value={value ?? ""} room={(size.width - 6) / fontSize} />
+      {/* The inner width less 2 px a side (1 px on the dense phone slot). */}
+      <CardValue value={value ?? ""} room={inner / fontSize} />
       <Cover radius={radius} cover={cover} />
     </div>
   );

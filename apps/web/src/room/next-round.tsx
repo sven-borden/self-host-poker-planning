@@ -2,6 +2,7 @@ import { OctagonXIcon } from "lucide-react";
 import { type RefObject, useCallback, useId, useRef, useState } from "react";
 import { Input } from "../components/ui/input.tsx";
 import { useT } from "../i18n/hooks.ts";
+import { cn } from "../lib/utils.ts";
 import { commandSender } from "../realtime/room-connection.ts";
 import { focusSoon } from "./round-centre.tsx";
 import { draftSubject, problemMessage, type SubjectProblem } from "./subject.ts";
@@ -106,7 +107,8 @@ export function NextSubject({ next, nextNumber, canStart }: NextSubjectProps) {
         event.preventDefault();
         if (canStart) void next.start();
       }}
-      className="mx-auto flex w-full max-w-xl flex-col gap-1.5"
+      // `group`: on a phone the hint shows only while the field has the focus (#22).
+      className="group mx-auto flex w-full max-w-xl flex-col gap-1.5 phone:gap-1"
     >
       <label htmlFor={ids.field} className="text-sm font-medium">
         {t("round.subjectLabel")}
@@ -128,7 +130,17 @@ export function NextSubject({ next, nextNumber, canStart }: NextSubjectProps) {
           {problemMessage(t, next.problem ?? "bad_subject")}
         </p>
       ) : null}
-      <p id={ids.hint} className="m-0 text-sm text-ink-2">
+      {/*
+        On a phone the hint costs two lines above the table: it shows while the field has
+        the focus or after a refusal. Hidden, it still describes the field.
+      */}
+      <p
+        id={ids.hint}
+        className={cn(
+          "m-0 text-sm text-ink-2",
+          !refused && "phone:hidden phone:group-focus-within:block",
+        )}
+      >
         {canStart
           ? t("round.subjectHint", { round: nextNumber })
           : t("round.subjectHintVoting", { round: nextNumber })}

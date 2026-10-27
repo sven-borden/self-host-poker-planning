@@ -138,18 +138,21 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
   }
 
   return (
-    <RiseIn className="flex flex-col gap-10">
-      <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+    // On a phone (#22) the header is compact: the name in one size smaller, the code under
+    // it, the copy-link button an icon beside them (its name stays "Copy link"), and the
+    // connection and people count on one line (`RoomStatus`).
+    <RiseIn data-room-page className="flex flex-col gap-10 phone:gap-3">
+      <header className="flex items-start justify-between gap-3 sm:items-end sm:gap-5">
         <div className="min-w-0">
           {/* overflow-hidden: whatever the name stacks above or below its letters stays inside. */}
-          <h1 className="overflow-hidden py-1 text-3xl font-[760] break-words [font-stretch:110%] sm:text-4xl">
+          <h1 className="overflow-hidden py-1 text-3xl font-[760] break-words [font-stretch:110%] sm:text-4xl phone:py-0.5 phone:text-xl">
             {header.name !== null ? (
               <bdi>{header.name}</bdi>
             ) : (
               t("room.title", { code: header.code })
             )}
           </h1>
-          <dl className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <dl className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 phone:mt-1">
             <dt className="font-mono text-xs tracking-[0.08em] text-ink-2 uppercase">
               {t("room.codeLabel")}
             </dt>
@@ -161,9 +164,13 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
             </dd>
           </dl>
         </div>
-        <Button variant="outline" className="sm:shrink-0" onClick={copyLink}>
+        <Button
+          variant="outline"
+          className="shrink-0 phone:size-11 phone:has-[>svg]:px-0"
+          onClick={copyLink}
+        >
           <LinkIcon aria-hidden />
-          {t("room.copyLink")}
+          <span className="phone:sr-only">{t("room.copyLink")}</span>
         </Button>
       </header>
       {note && (
@@ -187,7 +194,7 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
         </div>
       )}
       {/* The room itself: the join form, or the table and the viewer's controls (#16). */}
-      <div data-room-slot className="flex flex-col gap-6">
+      <div data-room-slot className="flex flex-col gap-6 phone:gap-3">
         <RoomView />
       </div>
     </RiseIn>

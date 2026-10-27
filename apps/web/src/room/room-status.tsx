@@ -16,17 +16,20 @@ export function RoomStatus() {
 
   return (
     <div className="max-w-2xl">
-      {/* Announced politely: a reconnect must not interrupt a screen reader mid-sentence. */}
-      <p role="status" className="text-ink-2" data-testid="room-connection">
-        {status === "connecting" && t("room.statusConnecting")}
-        {status === "live" && t("room.statusLive")}
-        {status === "reconnecting" && t("room.statusReconnecting")}
-      </p>
-      {people !== undefined && status !== "error" && (
-        <p className="mt-2" data-testid="room-people">
-          {t("room.people", { count: people })}
+      {/* One line, wrapping when it must; on a phone part of the compact header (#22). */}
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 phone:text-sm">
+        {/* Announced politely: a reconnect must not interrupt a screen reader mid-sentence. */}
+        <p role="status" className="m-0 text-ink-2" data-testid="room-connection">
+          {status === "connecting" && t("room.statusConnecting")}
+          {status === "live" && t("room.statusLive")}
+          {status === "reconnecting" && t("room.statusReconnecting")}
         </p>
-      )}
+        {people !== undefined && status !== "error" && (
+          <p className="m-0" data-testid="room-people">
+            {t("room.people", { count: people })}
+          </p>
+        )}
+      </div>
       {status === "error" && error !== null && <RoomError error={error} />}
     </div>
   );

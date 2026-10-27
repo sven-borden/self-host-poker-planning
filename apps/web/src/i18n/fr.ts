@@ -124,6 +124,7 @@ export const fr: Catalog<"many"> = {
     seatNoVote: "{{name}}, pas de vote",
     seatCard: "{{name}}, carte {{card}}",
     seatCardWord: "{{name}}, {{card}}",
+    nameNumbered: "{{name}} ({{number, number}})",
     votedSoFar_one: "{{count, number}}/{{total, number}} a voté pour l’instant",
     votedSoFar_many: "{{count, number}}/{{total, number}} ont voté pour l’instant",
     votedSoFar_other: "{{count, number}}/{{total, number}} ont voté pour l’instant",

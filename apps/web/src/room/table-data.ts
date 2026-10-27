@@ -46,17 +46,41 @@ export function seatStatus(participant: ParticipantView, room: RoomView): SeatSt
     : { kind: "revealed", card: vote.card };
 }
 
-/** Away, product owner, the viewer, and the look the table gave them. */
+/** How two names compare when a screen reader says them: case and form aside. */
+const spoken = (name: string) => name.normalize("NFC").toLocaleLowerCase();
+
+/**
+ * For each person whose name someone who joined earlier already goes by (`spoken`), which
+ * one of that name they are in join order: 2, 3, …. The first keeps the name alone.
+ */
+export function namesakes(participants: readonly ParticipantView[]): Map<string, number> {
+  const count = new Map<string, number>();
+  const numbers = new Map<string, number>();
+  for (const { id, name } of participants) {
+    const key = spoken(name);
+    const n = (count.get(key) ?? 0) + 1;
+    count.set(key, n);
+    if (n > 1) numbers.set(id, n);
+  }
+  return numbers;
+}
+
+/**
+ * Away, product owner, the viewer, the look the table gave them, and, when someone who
+ * joined earlier has the same name, which one of that name they are (#22).
+ */
 export function personFlags(
   participant: ParticipantView,
   room: RoomView,
   looks?: Map<string, AvatarLook>,
+  numbers?: Map<string, number>,
 ): PersonFlags {
   return {
     away: participant.away,
     owner: participant.isOwner,
     you: participant.id === room.you,
     look: looks?.get(participant.id),
+    namesake: numbers?.get(participant.id),
   };
 }
 
@@ -65,12 +89,13 @@ export function toTablePerson(
   participant: ParticipantView,
   room: RoomView,
   looks?: Map<string, AvatarLook>,
+  numbers?: Map<string, number>,
 ): TablePerson {
   return {
     id: participant.id,
     name: participant.name,
     status: seatStatus(participant, room),
-    ...personFlags(participant, room, looks),
+    ...personFlags(participant, room, looks, numbers),
   };
 }
 
@@ -79,8 +104,13 @@ export function toObserver(
   participant: ParticipantView,
   room: RoomView,
   looks?: Map<string, AvatarLook>,
+  numbers?: Map<string, number>,
 ): Observer {
-  return { id: participant.id, name: participant.name, ...personFlags(participant, room, looks) };
+  return {
+    id: participant.id,
+    name: participant.name,
+    ...personFlags(participant, room, looks, numbers),
+  };
 }
 
 /**
@@ -91,14 +121,15 @@ export function toObserver(
  */
 export function tableData(room: RoomView): TableData {
   const looks = avatarLooks(room.participants);
+  const numbers = namesakes(room.participants);
   const voters = room.participants.filter((p) => p.role === "voter");
   const mine = voters.findIndex((p) => p.id === room.you);
   const seated = mine > 0 ? [...voters.slice(mine), ...voters.slice(0, mine)] : voters;
   return {
-    people: seated.map((p) => toTablePerson(p, room, looks)),
+    people: seated.map((p) => toTablePerson(p, room, looks, numbers)),
     observers: room.participants
       .filter((p) => p.role === "observer")
-      .map((p) => toObserver(p, room, looks)),
+      .map((p) => toObserver(p, room, looks, numbers)),
     looks,
   };
 }

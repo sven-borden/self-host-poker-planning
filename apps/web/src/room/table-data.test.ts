@@ -1,8 +1,10 @@
 import { apply, type Command, createRoom, type Participant, type RoomState } from "@pp/domain";
 import { toSnapshot } from "@pp/protocol";
 import { describe, expect, it } from "vitest";
+import { fixedT } from "../i18n/i18n.ts";
+import { nameWithFlags } from "../table/seat.tsx";
 import { isRoomFull } from "./room-full.ts";
-import { handView, tableData, voteCount } from "./table-data.ts";
+import { handView, namesakes, tableData, voteCount } from "./table-data.ts";
 
 function roomWith(
   people: Array<[string, Participant["role"]]>,
@@ -47,6 +49,38 @@ describe("tableData", () => {
 
   it("leaves the seats in join order when the viewer observes", () => {
     expect(tableData(view(state, "u2")).people.map((p) => p.id)).toEqual(["u1", "u3", "u4"]);
+  });
+
+  it("numbers a second person with the same name in every label (#22)", () => {
+    const room = roomWith([
+      ["u1", "voter"],
+      ["u2", "observer"],
+      ["u3", "voter"],
+      ["u4", "voter"],
+    ]);
+    const named = (id: string, name: string) => {
+      const person = room.participants[id];
+      if (person) room.participants[id] = { ...person, name };
+    };
+    named("u1", "Ana");
+    named("u2", "ANA");
+    named("u3", "Ben");
+    named("u4", "ana");
+    const t = fixedT("en");
+    const { people, observers } = tableData(view(room, "u3"));
+    // Ben at the bottom, then clockwise in join order; the observer in the row.
+    expect([...people, ...observers].map((person) => nameWithFlags(t, person))).toEqual([
+      "Ben, you",
+      "ana (3)",
+      "Ana",
+      "ANA (2)",
+    ]);
+    expect(namesakes(view(room, "u3").participants)).toEqual(
+      new Map([
+        ["u2", 2],
+        ["u4", 3],
+      ]),
+    );
   });
 });
 

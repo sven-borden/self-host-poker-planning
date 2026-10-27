@@ -175,6 +175,7 @@ export const en = {
     seatNoVote: "{{name}}, no vote",
     seatCard: "{{name}}, card {{card}}",
     seatCardWord: "{{name}}, {{card}}",
+    nameNumbered: "{{name}} ({{number, number}})",
     votedSoFar_one: "{{count, number}}/{{total, number}} voted so far",
     votedSoFar_other: "{{count, number}}/{{total, number}} voted so far",
     you: "you",

@@ -137,6 +137,7 @@ describe("catalogs", () => {
     fr: [
       "app.name",
       "table.seatCardWord",
+      "table.nameNumbered",
       "common.notifications",
       "decks.fib",
       "table.owner",
@@ -146,6 +147,7 @@ describe("catalogs", () => {
     de: [
       "app.name",
       "table.seatCardWord",
+      "table.nameNumbered",
       "theme.system",
       "dev.hand",
       "decks.fib",

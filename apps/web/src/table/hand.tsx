@@ -40,9 +40,9 @@ const NEXT: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -
  * null), Enter and Space do nothing for `PLACED_FOCUS_GUARD_MS`: the second press of a
  * double Enter on the button would otherwise vote for the first card.
  *
- * On a phone the hand scrolls sideways. The selected card is kept in view (after a
- * reload, a vote of 21 would sit out of sight while the seat says the viewer voted), and
- * a fade on either edge says more cards lie that way.
+ * On a phone the hand scrolls sideways, snapping a card to the middle (#22). The selected
+ * card is kept in view (after a reload, a vote of 21 would sit out of sight while the seat
+ * says the viewer voted), and a fade on either edge says more cards lie that way.
  *
  * The cards deal in on mount (rise 12 px, fade, 260 ms, 30 ms stagger; a cross-fade under
  * reduced motion), in CSS, so they never wait for Motion's chunk.
@@ -98,16 +98,19 @@ export function Hand({
     return () => observer.disconnect();
   }, [measure, deck]);
 
-  // The selected card in view, on mount and whenever the vote changes. Only the hand
-  // scrolls: `scrollIntoView` would scroll the page too.
+  // The selected card in view, on mount and whenever the vote changes: when it lies under
+  // a fade or beyond, the hand scrolls it to the middle, which is one of its snap points
+  // (#22), so the browser leaves it there. Only the hand scrolls: `scrollIntoView` would
+  // scroll the page too.
   useLayoutEffect(() => {
     const bar = toolbar.current;
     const button = selectedAt < 0 ? undefined : bar?.querySelectorAll("button")[selectedAt];
     if (!bar || !button) return;
     const box = bar.getBoundingClientRect();
     const at = button.getBoundingClientRect();
-    if (at.left < box.left + FADE_PX) bar.scrollLeft -= box.left + FADE_PX - at.left;
-    else if (at.right > box.right - FADE_PX) bar.scrollLeft += at.right - box.right + FADE_PX;
+    if (at.left < box.left + FADE_PX || at.right > box.right - FADE_PX) {
+      bar.scrollLeft += (at.left + at.right) / 2 - (box.left + box.right) / 2;
+    }
     measure();
   }, [selectedAt, measure]);
 
@@ -185,7 +188,9 @@ export function Hand({
         onFocus={onFocus}
         onBlur={onBlur}
         onScroll={measure}
-        className="flex min-w-0 gap-2 overflow-x-auto px-3 pt-5 pb-4 sm:justify-center-safe"
+        // Snap points: a swipe on a phone comes to rest with a card in the middle, never
+        // half under a fade. Cards keep 44 px of width, a whole touch target.
+        className="flex min-w-0 snap-x snap-mandatory gap-2 overflow-x-auto px-3 pt-5 pb-4 sm:justify-center-safe phone:pt-4 phone:pb-2"
       >
         {cards.map((value, i) => (
           <HandCard
@@ -204,7 +209,7 @@ export function Hand({
               // The second click of a double click would take the vote straight back.
               if (!disabled && event.detail <= 1) onPick(value, event.currentTarget);
             }}
-            className="animate-in fade-in slide-in-from-bottom-3 ease-standard animation-duration-260 fill-mode-backwards motion-reduce:[--tw-enter-translate-y:0]"
+            className="snap-center animate-in fade-in slide-in-from-bottom-3 ease-standard animation-duration-260 fill-mode-backwards motion-reduce:[--tw-enter-translate-y:0]"
             style={i > 0 ? { animationDelay: `${i * 30}ms` } : undefined}
           />
         ))}

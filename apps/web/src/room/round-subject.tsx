@@ -43,7 +43,7 @@ export function RoundSubject({ round }: { round: Pick<RoundView, "number" | "sub
   );
 }
 
-const LINE = "m-0 mb-3 flex min-w-0 justify-center gap-2 text-sm";
+const LINE = "m-0 mb-3 flex min-w-0 justify-center gap-2 text-sm phone:mb-1";
 
 function SubjectLink({ url, linkKey }: { url: string; linkKey: string | undefined }) {
   const t = useT();

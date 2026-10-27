@@ -2,6 +2,7 @@ import type { ParticipantView, RoomView as RoomSnapshotView } from "@pp/protocol
 import { OctagonXIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useT } from "../i18n/hooks.ts";
+import { cn } from "../lib/utils.ts";
 import { cardLabel } from "../table/cards.tsx";
 import { Hand } from "../table/hand.tsx";
 import { revealSettleMs } from "../table/reveal-motion.ts";
@@ -138,9 +139,13 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           ? t(me.isOwner ? "hand.hintLobbyOwner" : "hand.hintLobby")
           : t("hand.hintRevealed");
   const news = vote.news;
+  // While the team votes, an upright phone docks the hand at the bottom of the screen,
+  // within thumb reach whatever part of the table is in view (#22). Only then: the
+  // results, which come with the reveal, sit above the hand and must never be covered.
+  const docked = hand.kind === "cards" && hand.playable;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 phone:gap-3">
       {me.isOwner ? (
         <NextSubject
           next={next}
@@ -168,7 +173,14 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
         ) : null}
       </section>
       {hand.kind === "cards" ? (
-        <div data-room-hand className="rounded-xl border border-line bg-surface pb-3">
+        <div
+          data-room-hand
+          data-hand-dock={docked || undefined}
+          className={cn(
+            "rounded-xl border border-line bg-surface pb-3 phone:pb-2",
+            "thumb:data-hand-dock:sticky thumb:data-hand-dock:bottom-[max(0.5rem,env(safe-area-inset-bottom))] thumb:data-hand-dock:z-20 thumb:data-hand-dock:shadow-panel",
+          )}
+        >
           <Hand
             cards={hand.cards}
             selected={shown.round?.yourVote ?? null}
@@ -176,7 +188,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
             describedBy={ids.hint}
             onPick={pick}
           />
-          <p id={ids.hint} className="m-0 px-4 text-center text-sm text-ink-2">
+          <p id={ids.hint} className="m-0 px-4 text-center text-sm text-ink-2 phone:text-xs">
             {hint}
           </p>
           {vote.error !== null && vote.error.round === (room.round?.number ?? null) ? (
