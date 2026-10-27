@@ -11,6 +11,8 @@
  * Not breaking, so not bumped: an optional field on an outbound view (the web checks
  * shapes), or an optional field on an inbound command, such as the `restart` of
  * `castVote` and `retractVote` and the round view's `restarts` (#26), and the room view's
- * `ownerClaimableAt` (#30).
+ * `ownerClaimableAt` (#30), and the settings' `hasPassword` with the `password` of
+ * `settingsUpdated` (#31). New HTTP-only error codes (`bad_room_name`, `wrong_password`,
+ * `bad_password`) never reach a socket.
  */
 export const PROTOCOL_VERSION = 4;
