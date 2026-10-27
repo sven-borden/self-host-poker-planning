@@ -579,7 +579,7 @@ describe("the reveal (#19)", () => {
     run(ME, { type: "reveal" });
     expect(document.querySelector("[data-results]")).toBeNull();
     run("ana", { type: "leave" });
-    const left = await screen.findByRole("list", { name: "Left the room" });
+    const left = await screen.findByRole("list", { name: "Not at the table" });
     expect(left.textContent).toContain("Name ana, card 8");
     // A departed vote the server sent without a name still shows its card.
     const round = useRoomStore.getState().snapshot?.room.round;
@@ -597,5 +597,39 @@ describe("the reveal (#19)", () => {
       });
     });
     await waitFor(() => expect(left.textContent).toContain("Someone who left, card 8"));
+  });
+
+  it("shows the card of a voter who became an observer after a named reveal", async () => {
+    await renderRoom(ownerRound());
+    run(ME, { type: "reveal" });
+    expect(run("ana", { type: "setRole", role: "observer" })).toBeNull();
+    const row = await screen.findByRole("list", { name: "Not at the table" });
+    const items = within(row).getAllByRole("listitem");
+    expect(items.map((item) => item.querySelector(".sr-only")?.textContent)).toEqual([
+      "Name ana, card 8",
+    ]);
+    // One accessible name: the visible name is hidden from assistive tech, whole on hover.
+    const visible = items[0]?.querySelector("[aria-hidden='true'][title]");
+    expect(visible?.getAttribute("title")).toBe("Name ana");
+    expect(document.querySelectorAll("[data-face='up']")).toHaveLength(0);
+  });
+
+  it("shows the card of a voter who left and came back as an observer", async () => {
+    await renderRoom(ownerRound());
+    run(ME, { type: "reveal" });
+    run("ana", { type: "leave" });
+    expect(run("ana", { type: "join", name: "Ana again", role: "observer" })).toBeNull();
+    const row = await screen.findByRole("list", { name: "Not at the table" });
+    expect(row.textContent).toMatch(/, card 8$/);
+    expect(within(row).getAllByRole("listitem")).toHaveLength(1);
+  });
+
+  it("lists nobody off the table in an anonymous reveal: its row holds every card", async () => {
+    await renderRoom(ownerRound({ revealNames: false }));
+    run(ME, { type: "reveal" });
+    run("ana", { type: "setRole", role: "observer" });
+    expect(screen.queryByRole("list", { name: "Not at the table" })).toBeNull();
+    const row = await screen.findByRole("list", { name: "Cards played" });
+    expect(row.outerHTML).not.toContain("ana");
   });
 });

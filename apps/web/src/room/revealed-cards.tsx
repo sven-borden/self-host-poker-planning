@@ -5,7 +5,8 @@ import type { TFunction } from "../i18n/i18n.ts";
 import { cardLabel, isSpecialCard, MiniCard } from "../table/cards.tsx";
 import { cancelAll, dealIn, play, prefersReducedMotion } from "../table/reveal-motion.ts";
 
-type NamedVote = { who: string; card: string; name?: string | undefined };
+/** A named vote whose person has no seat; `name` is unknown for an old departed vote. */
+type OffTableVote = { who: string; card: string; name: string | undefined };
 
 /**
  * Under the table after a reveal (#19): the seam #20 builds the results around
@@ -13,8 +14,10 @@ type NamedVote = { who: string; card: string; name?: string | undefined };
  * - Anonymous: every card played, face up, in the deck's order (`round.cards`), dealt in
  *   when the reveal happens on screen (`live`), shown at rest after a reload. Nothing
  *   here belongs to a person: no name, id, order or attribute ties a card to anyone.
- * - Named: the seats show the cards; this lists only the cards of voters who left after
- *   the reveal, with the name they had, since they no longer have a seat.
+ * - Named: the seats show the cards of the voters at the table; this lists every other
+ *   vote, "Not at the table": a voter who left after the reveal (with the name the server
+ *   kept), one who switched to observer after it, or one who left and came back as an
+ *   observer. The vote still counts, so it shows somewhere.
  */
 export function RevealedCards({ room, live }: { room: RoomView; live: boolean }) {
   const round = room.round;
@@ -22,9 +25,13 @@ export function RevealedCards({ room, live }: { room: RoomView; live: boolean })
   if (round.anonymous) {
     return round.cards.length > 0 ? <DealtCards cards={round.cards} live={live} /> : null;
   }
-  const present = new Set(room.participants.map((p) => p.id));
-  const departed = round.votes.filter((vote) => !present.has(vote.who));
-  return departed.length > 0 ? <DepartedVotes votes={departed} /> : null;
+  const people = new Map(room.participants.map((p) => [p.id, p]));
+  const offTable = round.votes.flatMap((vote): OffTableVote[] => {
+    const person = people.get(vote.who);
+    if (person?.role === "voter") return [];
+    return [{ who: vote.who, card: vote.card, name: vote.name ?? person?.name }];
+  });
+  return offTable.length > 0 ? <OffTableVotes votes={offTable} /> : null;
 }
 
 const CAPTION = "m-0 font-mono text-[11px] tracking-[0.08em] text-ink-2 uppercase";
@@ -67,22 +74,22 @@ function DealtCards({ cards, live }: { cards: readonly string[]; live: boolean }
   );
 }
 
-function departedLabel(t: TFunction, name: string, card: string): string {
+function offTableLabel(t: TFunction, name: string, card: string): string {
   return isSpecialCard(card)
     ? t("table.seatCardWord", { name, card: cardLabel(t, card) })
     : t("table.seatCard", { name, card });
 }
 
-function DepartedVotes({ votes }: { votes: readonly NamedVote[] }) {
+function OffTableVotes({ votes }: { votes: readonly OffTableVote[] }) {
   const t = useT();
   const caption = useId();
   return (
     <div
-      data-results="departed"
+      data-results="off-table"
       className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-2"
     >
       <p id={caption} className={CAPTION}>
-        {t("results.left")}
+        {t("results.offTable")}
       </p>
       <ul
         aria-labelledby={caption}
@@ -91,16 +98,19 @@ function DepartedVotes({ votes }: { votes: readonly NamedVote[] }) {
         {votes.map((vote) => {
           const name = vote.name ?? t("results.someone");
           return (
-            <li key={vote.who} data-departed className="flex items-center gap-1.5">
+            <li key={vote.who} data-off-table className="flex items-center gap-1.5">
               <MiniCard value={vote.card} />
+              {/* Up to two lines, the whole name on hover; the list item's one accessible
+                  name is the sr-only sentence. */}
               <span
                 aria-hidden="true"
                 dir="auto"
-                className="max-w-32 truncate text-[12px] text-ink-2"
+                title={name}
+                className="line-clamp-2 max-w-32 text-[12px] leading-tight break-words text-ink-2"
               >
                 <bdi>{name}</bdi>
               </span>
-              <span className="sr-only">{departedLabel(t, name, vote.card)}</span>
+              <span className="sr-only">{offTableLabel(t, name, vote.card)}</span>
             </li>
           );
         })}

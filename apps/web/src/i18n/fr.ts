@@ -143,7 +143,7 @@ export const fr: Catalog<"many"> = {
   },
   results: {
     cards: "Cartes jouées",
-    left: "Ont quitté la salle",
+    offTable: "Hors de la table",
     someone: "Une personne partie",
   },
   hand: {

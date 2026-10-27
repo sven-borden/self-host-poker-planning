@@ -193,7 +193,7 @@ export const en = {
   },
   results: {
     cards: "Cards played",
-    left: "Left the room",
+    offTable: "Not at the table",
     someone: "Someone who left",
   },
   hand: {

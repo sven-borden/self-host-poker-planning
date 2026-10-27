@@ -142,7 +142,7 @@ export const de: Catalog = {
   },
   results: {
     cards: "Gespielte Karten",
-    left: "Haben den Raum verlassen",
+    offTable: "Nicht am Tisch",
     someone: "Jemand, der gegangen ist",
   },
   hand: {
