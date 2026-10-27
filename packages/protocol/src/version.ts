@@ -10,6 +10,7 @@
  *
  * Not breaking, so not bumped: an optional field on an outbound view (the web checks
  * shapes), or an optional field on an inbound command, such as the `restart` of
- * `castVote` and `retractVote` and the round view's `restarts` (#26).
+ * `castVote` and `retractVote` and the round view's `restarts` (#26), and the room view's
+ * `ownerClaimableAt` (#30).
  */
 export const PROTOCOL_VERSION = 4;
