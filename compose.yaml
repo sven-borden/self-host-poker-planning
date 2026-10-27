@@ -1,0 +1,53 @@
+# Poker Planning with its Postgres. Quick start (README, "Self-hosting"):
+#   cp .env.example .env   then set POSTGRES_PASSWORD, BETTER_AUTH_SECRET and BASE_URL
+#   docker compose up -d --build
+# Compose reads .env only to fill in the ${...} below; the app sees just the variables
+# listed under `environment`. Upgrade: git pull, then docker compose up -d --build.
+
+name: poker-planning
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-}
+        APP_VERSION: ${APP_VERSION:-}
+    image: poker-planning:local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://poker:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (letters and digits only, see .env.example)}@db:5432/poker
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env (openssl rand -base64 32)}
+      BASE_URL: ${BASE_URL:?set BASE_URL in .env to the address people open, such as http://localhost:3000}
+      # false: the port above faces the clients directly. Set true in .env when a reverse
+      # proxy that appends X-Forwarded-For sits in front.
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ROOM_TTL_DAYS: ${ROOM_TTL_DAYS:-90}
+    # The server drains and exits within 10 s of SIGTERM.
+    stop_grace_period: 15s
+
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: poker
+      POSTGRES_DB: poker
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (letters and digits only, see .env.example)}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U poker -d poker"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    # Not published on the host: only `app` reaches it, on the compose network.
+
+volumes:
+  pgdata:
