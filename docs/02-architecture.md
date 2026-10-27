@@ -319,12 +319,14 @@ Server: `apps/server/src/sync/room-sync.ts` (the `handlers` of `createRealtime`)
   hand rolls back without a message (the new round's hand is empty anyway). The pick changes only the viewer's own screen; the others learn
   the vote from the server's `voted`, never the card.
 - **Revealing from the web** (#19, `apps/web/src/room/round-centre.tsx`): the PO's
-  "Reveal cards" (or the key R) sends `reveal` and renders nothing of its own: the
+  "Reveal cards" (or the key R, on the table or the hand) sends `reveal` and renders nothing of its own: the
   forced, automatic and timer reveals all reach the page as the same revealed snapshot,
   and the page shows them alike. A non-PO's `reveal` is refused with `not_allowed` and
   stores nothing; the last two votes sent together reveal once, one version each, on one
   instance or two (`room-sync.db.test.ts`). The page animates only a change it saw (a
-  slot it showed face down); a reload or a late joiner gets the revealed room at rest.
+  slot it showed face down or empty); a reload or a late joiner gets the revealed room at
+  rest. A named vote whose voter has no seat (gone, or an observer now) shows under the
+  table, so every vote the results count is on screen.
 - Measured on one instance with Postgres (`room-sync.db.test.ts`): a join reaches the
   other client in about 4 ms median, 17 ms worst of ten.
 

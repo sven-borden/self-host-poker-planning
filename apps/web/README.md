@@ -123,17 +123,21 @@ server sends and never decides the outcome of a round.
   Copy: `round.*` and `hand.*`.
   The reveal (#19): while Voting the PO's centre adds `RevealButton` ("Reveal cards",
   `[data-reveal]`), which sends `reveal` through the `commandSender()` taken at the
-  press; the key R does the same (`isRevealKey`: no modifier, no repeat, not while an
-  input method composes, not in a text field; `aria-keyshortcuts="R"`). `not_voting`
+  press; the key R does the same (`isRevealKey`: only while the focus is inside
+  `[data-room-table]` or `[data-room-hand]` (WCAG 2.1.4), never inside a menu, menubar,
+  listbox, dialog or popover, no modifier, no repeat, not while an input method
+  composes, not in a text field; `aria-keyshortcuts="R"`, and the button's title,
+  `round.revealKey`, says where R works). `not_voting`
   says nothing (the last vote revealed the round meanwhile); other refusals show. When
   the button leaves with the voting round while it has the focus (a layout cleanup runs
-  while it is still in the document), or after R with the focus nowhere, the focus goes
-  to "Next round". The page treats the forced, automatic and timer reveals alike: they
+  while it is still in the document), the focus goes to "Next round"; after R on a hand
+  card or a seat it stays where it was. The page treats the forced, automatic and timer reveals alike: they
   are one revealed snapshot. `seatStatus` gives `revealed {card}` after a named reveal
   and `voted {dealt: true}` after an anonymous one. `SlotCard` (table/cards.tsx) keeps
   a `Cover` (the brass back, `[data-cover]`, hidden at rest) mounted over a face-up or
   `gone` card; a card it showed `down` that turns `up` flips, one that turns `gone`
-  shrinks and fades. A card that mounts revealed (a reload, a late joiner) shows at rest.
+  shrinks and fades. A slot it showed `empty` that turns `up` flips too (the last vote
+  arrives with the reveal), its back drawn during the delay (`fill: backwards`). A card that mounts revealed (a reload, a late joiner) shows at rest.
   `TableStage` gives each face-up card a `turnDelay`: 90 ms per face-up card before it in
   seat order, from the viewer. `table/reveal-motion.ts` holds the keyframes (pure:
   `turnUp`, `fadeAway`, `dealIn`) and `play`/`cancelAll` for `Element.animate`; a new
@@ -141,10 +145,14 @@ server sends and never decides the outcome of a round.
   is the seam #20 builds on, under the table: after an anonymous reveal the "Cards
   played" row (`[data-results-row]`, mini cards in the snapshot's deck order, keyed by
   place, with no name, id or person-ordered attribute), dealt in only when `Seated` saw
-  the round voting just before (`liveReveal`); after a named reveal the "Left the room"
-  row for votes whose voter is no longer a participant, with the `name` the server kept
-  (or "Someone who left"). The table's live region says "Cards revealed." once per
-  reveal (`announcements.ts`). Copy: `results.*`, `round.reveal`, `live.revealed`.
+  the round voting just before (`liveReveal`); after a named reveal the "Not at the
+  table" row (`[data-results="off-table"]`, items `[data-off-table]`) for every vote
+  whose voter has no seat: no longer a participant, or an observer now. It shows
+  `vote.name`, else the participant's name, else "Someone who left", on up to two lines
+  with the whole name in `title`. The table's live region says "Cards revealed." once
+  per reveal (`announcements.ts`), also after a reconnect whose snapshot has no causes
+  (derived from the round turning from voting to revealed). Copy: `results.*`,
+  `round.reveal`, `round.revealKey`, `live.revealed`.
   `failure.ts` turns refusal codes into copy. Focus: after joining it moves to the "You"
   heading, after leaving or when a seat frees up to the name field (a free seat is also
   announced in a polite live region, `[data-room-notice]`); each request is cleared once
