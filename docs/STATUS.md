@@ -16,8 +16,8 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   system themes, shadcn/ui, Motion and fonts.
 - i18n from #9: our own typed `t()` (ADR-012 amended), en/fr/de with catalogs loaded
   on demand, numbers in the reader's regional format, a switcher in the header, and
-  copy checks in the gate. The room route loads 160.2 kB of JS (after #15) against a
-  200 kB budget.
+  copy checks in the gate. The room route loads 164.0 kB of JS (after #24) against a
+  200 kB budget; see the budget watch in the build log.
 - The table from #13: a pure layout engine with a pixel geometry proof for 1 to 16
   people, the seat and card components, and a `/dev/table` bench.
 - The server skeleton from #6: Hono and Socket.IO on one port, `/api/health`, the
@@ -38,7 +38,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   snapshots, idempotent command ids, one message bucket and at most 8 sockets per
   person, `room:<id>` channels, deadline timers, and a drain on shutdown. On the web:
   `openRoom`, the room store and `sendCommand`. `PROTOCOL_VERSION` is 2.
-- **W0 is done except #12** (deploy), which is half done; see Owner items.
+- Landing, join by code, not-found and error pages from #24. A link to another host
+  shows a warning instead of opening here, and the not-found page never shows the
+  code.
+- **W0 is done except #12** (deploy). It is ready on Coolify; the first webhook deploy
+  failed only because the two secrets are missing (see Owner items).
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -49,12 +53,10 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#24 (PP-024)** landing page, join by code, not-found and error pages: PR #77.
-  The review found no blocker. A fixer handles four should-fixes (forced-colours
-  buttons, focus after a failed retry, the "0, O, I, l" glyphs, links from another
-  host), the nits, the copy changes, and the merge of `main` (#76).
-- **#16 (PP-016)** join a room as voter or observer: building in `../pp-wt-16`.
-- **#12** deploy: waiting for Sven (Owner items), then I deploy and check
+- **#16 (PP-016)** join a room as voter or observer: PR #78, CI green, review running.
+  Its fixer merges `main` (#77 touched `routes/r/$code.tsx`, the catalogs and the
+  READMEs).
+- **#12** deploy: waiting for Sven (Owner items). Then I redeploy and check
   `/api/health` and a WebSocket through the proxies.
 
 ## Next
