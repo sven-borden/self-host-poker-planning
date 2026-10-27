@@ -18,6 +18,8 @@ export const de: Catalog = {
   language: {
     current: "Sprache: {{language}}",
     label: "Sprache",
+    loadFailed:
+      "Diese Sprache konnte nicht geladen werden. Laden Sie die Seite neu und versuchen Sie es erneut.",
   },
   home: {
     title: "Gemeinsam schätzen, an einem Tisch",
@@ -61,7 +63,7 @@ export const de: Catalog = {
   },
   notFound: {
     title: "Seite nicht gefunden",
-    body: "Diese Adresse führt nirgendwohin. Prüfen Sie den Link oder beginnen Sie auf der Startseite.",
+    body: "Diese Adresse führt nirgendwohin. Prüfen Sie den Link oder kehren Sie zur Startseite zurück.",
   },
   common: {
     close: "Schließen",
@@ -74,8 +76,8 @@ export const de: Catalog = {
       "Sie sind nicht mehr in diesem Raum. Laden Sie die Seite neu, um wieder beizutreten.",
     not_owner: "Nur der Product Owner kann das tun.",
     already_joined: "Sie sind bereits in diesem Raum.",
-    bad_name: "Dieser Name kann nicht verwendet werden. Wählen Sie einen anderen.",
-    bad_role: "Diese Rolle gibt es nicht. Wählen Sie Abstimmen oder Beobachten.",
+    bad_name: "Ein Name hat {{min, number}} bis {{max, number}} Zeichen. Wählen Sie einen anderen.",
+    bad_role: "Diese Rolle gibt es nicht. Wählen Sie „Abstimmen“ oder „Beobachten“.",
     room_full:
       "Dieser Raum ist voll. Bitten Sie jemanden, ihn zu verlassen, und versuchen Sie es dann erneut.",
     cannot_kick_self: "Sie können sich nicht selbst entfernen. Verlassen Sie stattdessen den Raum.",
@@ -85,25 +87,26 @@ export const de: Catalog = {
     no_round: "Es läuft keine Runde. Starten Sie zuerst eine Runde.",
     not_voter: "Beobachter stimmen nicht ab. Wechseln Sie zum Abstimmen, um eine Karte zu spielen.",
     bad_card: "Diese Karte gehört nicht zum Kartensatz des Raums. Wählen Sie eine andere.",
-    round_revealed: "Die Karten sind bereits aufgedeckt, Stimmen lassen sich nicht mehr ändern.",
+    round_revealed: "Die Karten sind bereits aufgedeckt. Stimmen lassen sich nicht mehr ändern.",
     not_voting: "In dieser Runde kann gerade nicht abgestimmt werden.",
     not_allowed: "Die Einstellungen dieses Raums erlauben das nicht.",
     not_revealed: "Decken Sie zuerst die Karten auf.",
-    bad_seconds: "Diese Timerdauer ist nicht erlaubt. Wählen Sie eine andere.",
+    bad_seconds:
+      "Ein Timer läuft {{min, number}} Sekunden bis {{max, number}} Minuten. Wählen Sie eine andere Dauer.",
     no_timer: "Es läuft kein Timer.",
     target_not_present:
       "Diese Person ist gerade nicht im Raum. Nur wer anwesend ist, kann Product Owner werden.",
     already_owner: "Sie sind bereits der Product Owner.",
     owner_present:
-      "Der Product Owner ist noch da. Sie können übernehmen, sobald er zwei Minuten abwesend war.",
+      "Der Product Owner ist noch da. Nach zwei Minuten Abwesenheit können Sie übernehmen.",
     bad_settings: "Diese Einstellungen sind ungültig. Prüfen Sie sie und versuchen Sie es erneut.",
     deck_empty: "Ein Kartensatz braucht mindestens eine Karte.",
     deck_too_many_cards:
-      "Dieser Kartensatz hat zu viele Karten. Entfernen Sie einige und versuchen Sie es erneut.",
+      "Ein Kartensatz hat höchstens {{max, number}} Karten. Entfernen Sie einige und versuchen Sie es erneut.",
     card_empty: "Eine Karte darf nicht leer sein.",
     card_invalid:
       "Diese Karte enthält Zeichen, die sich nicht anzeigen lassen. Geben Sie sie erneut ein.",
-    card_too_long: "Diese Kartenbeschriftung ist zu lang. Kürzen Sie sie.",
+    card_too_long: "Eine Kartenbeschriftung hat höchstens {{max, number}} Zeichen. Kürzen Sie sie.",
     card_duplicate: "Diese Karte ist bereits im Kartensatz.",
     card_special:
       "Die Sonderkarten (?, ☕, ∞) schalten Sie in den Raumeinstellungen ein, nicht im Kartensatz.",

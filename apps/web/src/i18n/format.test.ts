@@ -73,6 +73,20 @@ describe("formatRelativeTime", () => {
     expect(formatRelativeTime(ago(-10 * 60), "de", now)).toBe("in 10 Minuten");
   });
 
+  it("rounds before it picks the unit, so no amount reads as a full next unit", () => {
+    expect(formatRelativeTime(ago(59.4), "en", now)).toBe("59 seconds ago");
+    expect(formatRelativeTime(ago(59.6), "en", now)).toBe("1 minute ago");
+    expect(formatRelativeTime(ago(59.6 * 60), "en", now)).toBe("1 hour ago");
+    expect(formatRelativeTime(ago(23.6 * 3600), "en", now)).toBe("yesterday");
+    expect(formatRelativeTime(ago(-59.6), "de", now)).toBe("in 1 Minute");
+    expect(formatRelativeTime(ago(6.6 * 86_400), "en", now)).toBe("last week");
+  });
+
+  it("uses the region's clock: 24 hours for en-GB", () => {
+    const moment = Date.UTC(2026, 9, 27, 14, 5);
+    expect(formatTime(moment, "en-GB", { timeStyle: "short", timeZone: "UTC" })).toBe("14:05");
+  });
+
   it("defaults to the current time", () => {
     expect(formatRelativeTime(Date.now() - 60_000, "en")).toBe("1 minute ago");
   });

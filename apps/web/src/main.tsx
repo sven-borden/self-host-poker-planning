@@ -21,8 +21,10 @@ const router = createAppRouter();
 
 // The first render waits for the language's catalog (French and German are separate
 // chunks) and, in parallel, for the route's own chunk, which the router would fetch
-// before showing the page anyway. So the page never paints in the wrong language, and a
-// French or German start costs no extra round trip. startLanguage never rejects.
+// before showing the page anyway. So the page does not paint in the wrong language, and a
+// French or German start costs no extra round trip. startLanguage never rejects and
+// settles within 3 s: a hung catalog shows the page in English, and the catalog still
+// applies when it lands, unless the reader has picked a language by then.
 void Promise.all([startLanguage(), router.load().catch(() => {})]).then(() => {
   createRoot(container).render(
     <StrictMode>

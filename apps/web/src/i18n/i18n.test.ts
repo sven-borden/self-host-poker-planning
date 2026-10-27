@@ -9,7 +9,6 @@ import {
   chooseLanguage,
   currentLanguage,
   fixedT,
-  i18n,
   loadLanguage,
   startLanguage,
 } from "./i18n.ts";
@@ -81,7 +80,8 @@ describe("catalogs", () => {
   });
 
   it("knows that French needs a many form", () => {
-    // i18next falls back to English, not to `_other`, when `_many` is missing.
+    // Our `t` would fall back to `_other`, but i18next and translation platforms expect
+    // every form, so the catalogs keep them all.
     expect(new Intl.PluralRules("fr").select(1_000_000)).toBe("many");
   });
 
@@ -112,7 +112,7 @@ describe("catalogs", () => {
     for (const language of LANGUAGES) {
       for (const [key, value] of leaves(CATALOGS[language])) {
         for (const placeholder of placeholders(String(value))) {
-          if (/^(count|total|value)\|/.test(placeholder)) {
+          if (/^(count|total|value|min|max)\|/.test(placeholder)) {
             expect(placeholder, `${language}: ${key}`).toMatch(/\|number/);
           }
         }
@@ -219,6 +219,8 @@ describe("language choice", () => {
     [["DE"], "de"],
     [["it-IT", "de-CH", "fr"], "de"],
     [["es", "pt-BR"], "en"],
+    [["gsw-CH", "en"], "de"],
+    [["fr_CA"], "fr"],
     [[], "en"],
   ] as const)("picks from the browser's %j: %s", (preferences, expected) => {
     expect(pickLanguage(preferences)).toBe(expected);
@@ -253,6 +255,6 @@ describe("language choice", () => {
     await changeLanguage("en");
     expect(document.documentElement.lang).toBe("en");
     await startLanguage();
-    expect(i18n.resolvedLanguage).toBe("fr");
+    expect(currentLanguage()).toBe("fr");
   });
 });

@@ -19,6 +19,7 @@ export const fr: Catalog<"many"> = {
   language: {
     current: "Langue : {{language}}",
     label: "Langue",
+    loadFailed: "Impossible de charger cette langue. Rechargez la page et réessayez.",
   },
   home: {
     title: "Estimez ensemble, autour d’une même table",
@@ -77,20 +78,22 @@ export const fr: Catalog<"many"> = {
       "Vous ne faites plus partie de cette salle. Rechargez la page pour la rejoindre à nouveau.",
     not_owner: "Seul le product owner peut faire cela.",
     already_joined: "Vous êtes déjà dans cette salle.",
-    bad_name: "Ce nom ne peut pas être utilisé. Choisissez-en un autre.",
+    bad_name:
+      "Un nom compte de {{min, number}} à {{max, number}} caractères. Choisissez-en un autre.",
     bad_role: "Ce rôle n’existe pas. Choisissez votant ou observateur.",
     room_full: "Cette salle est complète. Demandez à quelqu’un de partir, puis réessayez.",
     cannot_kick_self: "Vous ne pouvez pas vous retirer vous-même. Quittez plutôt la salle.",
     unknown_participant: "Cette personne n’est plus dans la salle.",
     bad_subject: "Le sujet du tour n’est pas valide. Vérifiez le titre ou le lien et réessayez.",
     no_round: "Aucun tour n’est en cours. Lancez d’abord un tour.",
-    not_voter: "Les observateurs ne votent pas. Passez en votant pour jouer une carte.",
+    not_voter: "Les observateurs ne votent pas. Passez au rôle de votant pour jouer une carte.",
     bad_card: "Cette carte ne fait pas partie du jeu de la salle. Choisissez-en une autre.",
     round_revealed: "Les cartes sont déjà retournées : les votes ne peuvent plus changer.",
     not_voting: "Ce tour n’est pas ouvert au vote.",
     not_allowed: "Les réglages de cette salle ne vous permettent pas de faire cela.",
     not_revealed: "Retournez d’abord les cartes.",
-    bad_seconds: "Cette durée de minuteur n’est pas permise. Choisissez-en une autre.",
+    bad_seconds:
+      "Cette durée de minuteur n’est pas autorisée : un minuteur dure de {{min, number}} secondes à {{max, number}} minutes. Choisissez-en une autre.",
     no_timer: "Aucun minuteur n’est en cours.",
     target_not_present:
       "Cette personne n’est pas dans la salle en ce moment. Seule une personne présente peut devenir product owner.",
@@ -99,14 +102,16 @@ export const fr: Catalog<"many"> = {
       "Le product owner est toujours là. Vous pourrez prendre le relais après deux minutes d’absence de sa part.",
     bad_settings: "Ces réglages ne sont pas valides. Vérifiez-les et réessayez.",
     deck_empty: "Un jeu doit contenir au moins une carte.",
-    deck_too_many_cards: "Ce jeu contient trop de cartes. Retirez-en quelques-unes et réessayez.",
+    deck_too_many_cards:
+      "Un jeu contient au plus {{max, number}} cartes. Retirez-en quelques-unes et réessayez.",
     card_empty: "Une carte ne peut pas être vide.",
     card_invalid:
       "Cette carte contient des caractères impossibles à afficher. Saisissez-la à nouveau.",
-    card_too_long: "Le libellé de cette carte est trop long. Raccourcissez-le.",
+    card_too_long:
+      "Le libellé d’une carte compte au plus {{max, number}} caractères. Raccourcissez-le.",
     card_duplicate: "Cette carte est déjà dans le jeu.",
     card_special:
-      "Les cartes spéciales (?, ☕, ∞) s’activent dans les réglages de la salle, elles ne s’ajoutent pas au jeu.",
+      "Les cartes spéciales (?, ☕, ∞) s’activent dans les réglages de la salle, pas dans le jeu.",
     bad_payload: "Le serveur n’a pas pu lire cette demande. Rechargez la page et réessayez.",
     protocol_mismatch: "Une nouvelle version de l’application est disponible. Rechargez la page.",
     room_not_found:

@@ -13,7 +13,7 @@ const errors = {
   not_participant: "You are no longer in this room. Reload the page to join again.",
   not_owner: "Only the product owner can do that.",
   already_joined: "You are already in this room.",
-  bad_name: "This name cannot be used. Choose another one.",
+  bad_name: "A name needs {{min, number}} to {{max, number}} characters. Choose another one.",
   bad_role: "That role does not exist. Choose voter or observer.",
   room_full: "This room is full. Ask someone to leave, then try again.",
   cannot_kick_self: "You cannot remove yourself. Leave the room instead.",
@@ -26,7 +26,8 @@ const errors = {
   not_voting: "This round is not open for votes.",
   not_allowed: "This room’s settings do not let you do that.",
   not_revealed: "Reveal the cards first.",
-  bad_seconds: "That timer length is not allowed. Pick another one.",
+  bad_seconds:
+    "A timer runs from {{min, number}} seconds to {{max, number}} minutes. Pick another length.",
   no_timer: "No timer is running.",
   target_not_present:
     "That person is not in the room right now. Only someone present can become product owner.",
@@ -35,10 +36,10 @@ const errors = {
     "The product owner is still here. You can take over after they have been away for two minutes.",
   bad_settings: "These settings are not valid. Check them and try again.",
   deck_empty: "A deck needs at least one card.",
-  deck_too_many_cards: "This deck has too many cards. Remove some and try again.",
+  deck_too_many_cards: "A deck holds at most {{max, number}} cards. Remove some and try again.",
   card_empty: "A card cannot be empty.",
   card_invalid: "This card holds characters that cannot be shown. Type it again.",
-  card_too_long: "This card label is too long. Shorten it.",
+  card_too_long: "A card label holds at most {{max, number}} characters. Shorten it.",
   card_duplicate: "This card is already in the deck.",
   card_special:
     "The special cards (?, ☕, ∞) are turned on in the room settings, not added to the deck.",
@@ -70,6 +71,7 @@ export const en = {
   language: {
     current: "Language: {{language}}",
     label: "Language",
+    loadFailed: "Could not load this language. Reload the page and try again.",
   },
   home: {
     title: "Estimate together, around one table",
