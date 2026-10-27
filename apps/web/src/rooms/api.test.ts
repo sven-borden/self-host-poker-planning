@@ -85,4 +85,22 @@ describe("fetchRoomHeader", () => {
     serve({ "GET /api/rooms/x": () => json({}, 200) });
     await expect(fetchRoomHeader("x")).rejects.toMatchObject({ code: "internal" });
   });
+
+  it("keeps the retention period a 404 states, and drops one that is not a whole number", async () => {
+    serve({
+      "GET /api/rooms/Abc1234567": () => json({ code: "room_not_found", retentionDays: 90 }, 404),
+    });
+    await expect(fetchRoomHeader("Abc1234567")).rejects.toMatchObject({
+      code: "room_not_found",
+      retentionDays: 90,
+    });
+    for (const retentionDays of [0, -3, 1.5, "90", null]) {
+      serve({
+        "GET /api/rooms/Abc1234567": () => json({ code: "room_not_found", retentionDays }, 404),
+      });
+      const error: unknown = await fetchRoomHeader("Abc1234567").catch((caught) => caught);
+      expect(error, String(retentionDays)).toBeInstanceOf(RoomApiError);
+      expect((error as RoomApiError).retentionDays, String(retentionDays)).toBeUndefined();
+    }
+  });
 });

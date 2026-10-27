@@ -8,10 +8,13 @@ import { ensureIdentity, UNAUTHENTICATED } from "../identity/identity.ts";
 /** A failed room call: the server's code (`rate_limited`, `room_not_found`, …), or `network`. */
 export class RoomApiError extends Error {
   readonly code: string;
-  constructor(code: string) {
+  /** With `room_not_found`: how many idle days this server keeps a room, when it says. */
+  readonly retentionDays: number | undefined;
+  constructor(code: string, retentionDays?: number) {
     super(code);
     this.name = "RoomApiError";
     this.code = code;
+    this.retentionDays = retentionDays;
   }
 }
 
@@ -44,7 +47,11 @@ async function call(path: string, init: RequestInit = {}): Promise<unknown> {
   const body = await json(response);
   if (!response.ok) {
     const code = field(body, "code");
-    throw new RoomApiError(typeof code === "string" ? code : "internal");
+    const days = field(body, "retentionDays");
+    throw new RoomApiError(
+      typeof code === "string" ? code : "internal",
+      Number.isSafeInteger(days) && (days as number) > 0 ? (days as number) : undefined,
+    );
   }
   return body;
 }

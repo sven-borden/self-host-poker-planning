@@ -151,7 +151,7 @@ export function YouControls({ me, focusOnMount, onLeaving }: YouControlsProps) {
         >
           <div className="flex min-w-0 flex-1 flex-col gap-2">
             <label htmlFor={ids.name} className="font-medium">
-              {t("join.nameLabel")}
+              {t("seat.nameLabel")}
             </label>
             <Input
               ref={nameInput}
@@ -166,7 +166,7 @@ export function YouControls({ me, focusOnMount, onLeaving }: YouControlsProps) {
               aria-describedby={failure?.nameRefused ? `${ids.error} ${ids.hint}` : ids.hint}
             />
             <p id={ids.hint} className="text-sm text-ink-2">
-              {t("join.nameHint", { max: MAX_NAME_LENGTH })}
+              {t("seat.nameHint", { max: MAX_NAME_LENGTH })}
             </p>
           </div>
           <div className="flex gap-2 sm:mb-7">

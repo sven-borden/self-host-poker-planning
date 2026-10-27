@@ -89,10 +89,10 @@ function RoomFull() {
       className="max-w-xl rounded-xl border border-line bg-surface p-5 outline-none sm:p-7"
     >
       <h2 id={heading} className="text-2xl font-[760] [font-stretch:110%]">
-        {t("join.fullTitle")}
+        {t("seat.fullTitle")}
       </h2>
       <p role="status" className="mt-2 text-ink-2">
-        {t("join.fullBody", { max: MAX_PARTICIPANTS })}
+        {t("seat.fullBody", { max: MAX_PARTICIPANTS })}
       </p>
       <Link to="/" className={buttonVariants({ variant: "outline", className: "mt-6" })}>
         {t("room.backHome")}

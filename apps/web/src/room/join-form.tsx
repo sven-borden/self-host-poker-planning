@@ -17,8 +17,8 @@ import { codeOf, failureMessage } from "./failure.ts";
 export const NAME_INPUT_MAX_UNITS = MAX_NAME_LENGTH * 4;
 
 const ROLE_OPTIONS = [
-  { role: "voter", label: "join.voter", hint: "join.voterHint" },
-  { role: "observer", label: "join.observer", hint: "join.observerHint" },
+  { role: "voter", label: "seat.voter", hint: "seat.voterHint" },
+  { role: "observer", label: "seat.observer", hint: "seat.observerHint" },
 ] as const satisfies ReadonlyArray<{ role: Role; label: string; hint: string }>;
 
 interface JoinFormProps {
@@ -92,7 +92,7 @@ export function JoinForm({ observersCount, focusOnMount, onJoining, onFull }: Jo
     // Only voters are refused when observers do not count: the seats are taken, not the room.
     const message =
       code === "room_full"
-        ? t("join.seatsFull", { max: MAX_PARTICIPANTS })
+        ? t("seat.seatsFull", { max: MAX_PARTICIPANTS })
         : failureMessage(t, code);
     setFailure({ message, nameRefused });
     if (nameRefused) nameInput.current?.focus();
@@ -105,13 +105,13 @@ export function JoinForm({ observersCount, focusOnMount, onJoining, onFull }: Jo
       className="max-w-xl rounded-xl border border-line bg-surface p-5 sm:p-7"
     >
       <h2 id={ids.heading} className="text-2xl font-[760] [font-stretch:110%]">
-        {t("join.title")}
+        {t("seat.title")}
       </h2>
-      <p className="mt-2 text-ink-2">{t("join.lede")}</p>
+      <p className="mt-2 text-ink-2">{t("seat.lede")}</p>
       <form className="mt-6 flex flex-col gap-6" onSubmit={submit} noValidate>
         <div className="flex flex-col gap-2">
           <label htmlFor={ids.name} className="font-medium">
-            {t("join.nameLabel")}
+            {t("seat.nameLabel")}
           </label>
           <Input
             ref={nameInput}
@@ -129,11 +129,11 @@ export function JoinForm({ observersCount, focusOnMount, onJoining, onFull }: Jo
             aria-describedby={failure?.nameRefused ? `${ids.error} ${ids.hint}` : ids.hint}
           />
           <p id={ids.hint} className="text-sm text-ink-2">
-            {t("join.nameHint", { max: MAX_NAME_LENGTH })}
+            {t("seat.nameHint", { max: MAX_NAME_LENGTH })}
           </p>
         </div>
         <fieldset className="flex flex-col gap-2">
-          <legend className="mb-2 font-medium">{t("join.roleLabel")}</legend>
+          <legend className="mb-2 font-medium">{t("seat.roleLabel")}</legend>
           <div className="grid gap-2 sm:grid-cols-2">
             {ROLE_OPTIONS.map((option) => (
               <label
@@ -173,7 +173,7 @@ export function JoinForm({ observersCount, focusOnMount, onJoining, onFull }: Jo
           className="w-full sm:w-auto sm:self-start aria-disabled:pointer-events-none aria-disabled:opacity-50"
           aria-disabled={busy || undefined}
         >
-          {busy ? t("join.joining") : t("join.submit")}
+          {busy ? t("seat.joining") : t("seat.submit")}
         </Button>
       </form>
     </section>

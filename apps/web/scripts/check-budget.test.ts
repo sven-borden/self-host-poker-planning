@@ -1,6 +1,13 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { formatKb, initialChunks, type Manifest, ROOM_ROUTE } from "./check-budget.ts";
+import {
+  BUDGET_ROUTES,
+  formatKb,
+  initialChunks,
+  LANDING_ROUTE,
+  type Manifest,
+  ROOM_ROUTE,
+} from "./check-budget.ts";
 
 const manifest: Manifest = {
   "index.html": {
@@ -16,7 +23,10 @@ const manifest: Manifest = {
     imports: ["index.html", "_room-shared.js"],
   },
   "_room-shared.js": { file: "assets/room-shared.js", imports: ["_vendor.js"] },
-  "src/routes/index.tsx?tsr-split=component": { file: "assets/home.js" },
+  [`${LANDING_ROUTE}?tsr-split=component`]: {
+    file: "assets/home.js",
+    imports: ["index.html", "_room-shared.js"],
+  },
 };
 
 describe("initialChunks", () => {
@@ -24,6 +34,18 @@ describe("initialChunks", () => {
     expect(initialChunks(manifest, ROOM_ROUTE).sort()).toEqual(
       ["index.html", "_vendor.js", `${ROOM_ROUTE}?tsr-split=component`, "_room-shared.js"].sort(),
     );
+  });
+
+  it("counts the landing page with its own chunks, and covers both routes", () => {
+    expect(initialChunks(manifest, LANDING_ROUTE).sort()).toEqual(
+      [
+        "index.html",
+        "_vendor.js",
+        `${LANDING_ROUTE}?tsr-split=component`,
+        "_room-shared.js",
+      ].sort(),
+    );
+    expect(BUDGET_ROUTES.map((route) => route.source)).toEqual([ROOM_ROUTE, LANDING_ROUTE]);
   });
 
   it("fails loudly when the route is missing, rather than measuring the wrong thing", () => {

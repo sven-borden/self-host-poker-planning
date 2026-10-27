@@ -55,3 +55,9 @@ export {
   WHO_CAN_REVEAL,
   type WhoCanReveal,
 } from "./room.ts";
+export {
+  isRoomCode,
+  ROOM_CODE_ALPHABET,
+  ROOM_CODE_LENGTH,
+  ROOM_CODE_PATTERN,
+} from "./room-code.ts";

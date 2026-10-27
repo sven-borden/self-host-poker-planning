@@ -80,6 +80,15 @@ export const en = {
     title: "Estimate together, around one table",
     lede: "Everyone picks a card, the cards turn over together, and the team talks about the difference. No account needed.",
     createRoom: "Create a room",
+    howTitle: "How it works",
+    step1Title: "Create a room",
+    step1Body: "Name it if you like and pick a deck. You become its product owner.",
+    step2Title: "Share the link",
+    step2Body: "Your team opens it and types a name. No account, nothing to install.",
+    step3Title: "Vote",
+    step3Body: "Everyone picks a card in private. The table shows who has voted, never what.",
+    step4Title: "Reveal",
+    step4Body: "The cards turn over together. Talk about the difference, then play the next round.",
   },
   createRoom: {
     lede: "You become its product owner. Share the link and your team joins, no account needed.",
@@ -120,7 +129,7 @@ export const en = {
     backHome: "Back to the home page",
     tableHeading: "The table",
   },
-  join: {
+  seat: {
     title: "Take a seat",
     lede: "Choose the name the team sees at the table.",
     nameLabel: "Your name",
@@ -182,6 +191,35 @@ export const en = {
   notFound: {
     title: "Page not found",
     body: "This address leads nowhere. Check the link or start again from the home page.",
+  },
+  join: {
+    title: "Join with a code",
+    label: "Room code or link",
+    hint: "Paste the link your team sent, or type the {{length, number}}-character code. Spaces do not matter.",
+    submit: "Join",
+    empty: "Enter a room code, or paste the room link.",
+    malformed:
+      "This is not a room code. A code has {{length, number}} letters and digits, never {{excluded}}. Check it, or paste the whole link.",
+    excluded: "0, O, I or l",
+    otherHost: "This link is for {{host}}.",
+    openThere: "Open it there",
+  },
+  roomGone: {
+    lede: "There is no room at this address. One of these may have happened:",
+    typo: "The code or link was mistyped or cut short. Compare it with the one you were sent.",
+    expired_one:
+      "The room was deleted: rooms on this server are removed after {{count, number}} day without activity.",
+    expired_other:
+      "The room was deleted: rooms on this server are removed after {{count, number}} days without activity.",
+    expiredUnknown:
+      "The room was deleted: rooms on this server are removed after a long time without activity.",
+    tryAnother: "Try another code",
+    createRoom: "Create a new room",
+  },
+  errorPage: {
+    title: "Something went wrong",
+    body: "This page ran into a problem and stopped. Reloading usually fixes it. If it keeps happening, start again from the home page.",
+    reload: "Reload the page",
   },
   identity: {
     reconnecting: "Connecting to the server…",
