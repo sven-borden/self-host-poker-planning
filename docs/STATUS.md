@@ -12,8 +12,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 - CI from #2 runs on every pull request: `check` runs `pnpm gate`, `db-tests` runs
   `pnpm test:db` against Postgres 17, and `web-e2e` (from #13) runs Playwright.
 - The web shell from #8: routes `/` and `/r/$code`, design tokens with light, dark and
-  system themes, shadcn/ui, Motion, fonts, and en/fr/de copy. The room route loads
-  140.0 kB of JS against a 200 kB budget.
+  system themes, shadcn/ui, Motion and fonts.
+- i18n from #9: our own typed `t()` (ADR-012 amended), en/fr/de with catalogs loaded
+  on demand, numbers in the reader's regional format, a switcher in the header, and
+  copy checks in the gate. The room route loads 141.4 kB of JS against a 200 kB
+  budget.
 - The table from #13: a pure layout engine with a pixel geometry proof for 1 to 16
   people, the seat and card components, and a `/dev/table` bench.
 - The server skeleton from #6: Hono and Socket.IO on one port, `/api/health`, the
@@ -29,15 +32,15 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#9 (PP-009)** i18n with react-i18next, in worktree `../pp-wt-09`.
-- **#7 (PP-007)** the database: Drizzle, migrations at start, the room repository
-  with compare-and-set, in worktree `../pp-wt-07`.
+- **#7 (PP-007)** the database: PR #72. Its review fixes are in progress: the driver
+  moves from postgres.js to `pg`, because postgres.js crashed the process when a
+  connection died inside a transaction.
 
 ## Next
 
-- Server chain: #10 (identity) after #7, then #11 (Docker needs #6, #7 and #8).
-- Web chain: #9 is the last W0 web issue. W1 web work (#16 onward) needs the server
-  chain first.
+- #10 (identity) and #11 (Docker) start in parallel when #7 merges; they touch
+  different parts of the repo.
+- W1 needs #10: #14 needs #7, #9 and #10; #15 needs #5, #6, #7 and #10.
 - **W1 starts without a new go** once the W0 issues other than #12 are merged (Sven,
   2026-10-26). No W1 issue depends on #11 or #12.
 - **#12** waits for Sven's go on Coolify and DNS (see Owner items). It is asked for
