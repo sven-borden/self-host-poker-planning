@@ -475,14 +475,17 @@ const labelSizes = (scope: Locator) =>
     })),
   );
 
-/** The cards whose label leaves its card or wraps (as `table.spec.ts` checks the bench). */
+/**
+ * The cards whose label leaves its card or wraps (as `table.spec.ts` checks the bench). A
+ * label clipped on the dense phone slot is measured by its clip box, which must stay inside.
+ */
 const spills = (page: Page) =>
   page.evaluate(() =>
     [...document.querySelectorAll("[data-hand-card], [data-face='up'], [data-mini-card]")].flatMap(
       (card) => {
         const c = card.getBoundingClientRect();
         return [...card.querySelectorAll("[data-card-value]")].flatMap((value) => {
-          const v = value.getBoundingClientRect();
+          const v = (value.closest("[data-label-clip]") ?? value).getBoundingClientRect();
           const size = Number.parseFloat(getComputedStyle(value).fontSize);
           const inside =
             v.left >= c.left + 0.5 &&
@@ -494,6 +497,26 @@ const spills = (page: Page) =>
       },
     ),
   );
+
+/** Custom labels as wide as four characters get (#26 review), one for each of 16 people. */
+const WIDEST = [
+  "WWWW",
+  "MMMM",
+  "HUGE",
+  "Huge",
+  "mmmm",
+  "wwww",
+  "ææææ",
+  "œœœœ",
+  "ÆÆÆÆ",
+  "½½½½",
+  "9999",
+  "👨‍👩‍👧👍🏽",
+  "👍🏽👍🏽",
+  "щщщщ",
+  "ЖЖЖЖ",
+  "XXXL",
+];
 
 const TWENTY = [
   "0",
@@ -624,5 +647,81 @@ test("a 20-card deck with the three specials stays playable and legible at 360 a
   } finally {
     for (const guest of guests) guest.close();
     await ben.context.close();
+  }
+});
+
+test("16 people play the widest custom labels at 360 px: none under 7 px, none spills but a clipped slot, a 16-way tie shows four cards and +12", async ({
+  page,
+  baseURL,
+}) => {
+  test.setTimeout(150_000);
+  const code = await createRoom(page);
+  await join(page, "Ana");
+  const names = Array.from({ length: 15 }, (_, i) => `G${i + 1}`);
+  const guests = await guestsJoin(baseURL ?? "", code, names);
+  try {
+    await page.getByRole("button", { name: "Room settings" }).click();
+    await applyCustomDeck(page, WIDEST.join(", "));
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Start voting" }).click();
+    await page.setViewportSize({ width: 360, height: 780 });
+    await expect(hand(page).getByRole("button")).toHaveCount(18);
+    for (const size of await labelSizes(hand(page))) expect(size.px).toBeGreaterThanOrEqual(7);
+
+    // Everyone plays a different card: a 16-way tie.
+    await vote(guests, WIDEST.slice(1));
+    await handCard(page, "WWWW").click();
+    await expect(results(page)).toBeVisible();
+    await expect(page.locator("[data-room-table] [data-face='up']")).toHaveCount(16);
+    await page.waitForTimeout(2_600);
+    await settle(page);
+    const drawn = [
+      ...(await labelSizes(page.locator("[data-room-table]"))),
+      ...(await labelSizes(results(page))),
+      ...(await labelSizes(hand(page))),
+    ];
+    expect(drawn.filter(({ px }) => px < 7)).toEqual([]);
+    expect(await spills(page)).toEqual([]);
+    // Only the dense 20 by 28 slot clips, and only a label that does not fit at 7 px.
+    const clipped = await page.locator("[data-clipped]").evaluateAll((values) =>
+      values.map((value) => ({
+        card: value.textContent,
+        slot: value.closest("[data-face='up']")?.getBoundingClientRect().width ?? 0,
+      })),
+    );
+    expect(clipped.length).toBeGreaterThan(0);
+    for (const { card, slot } of clipped) expect(slot, `${card}`).toBeLessThanOrEqual(20.5);
+    expect(clipped.map(({ card }) => card)).not.toContain("Huge");
+
+    // The centre shows four tied cards and "+12", clear of every slot card.
+    const centre = page.locator("[data-room-table] [data-centre-result='tie']");
+    await expect(centre.locator("[data-mini-card]")).toHaveCount(4);
+    await expect(centre.locator("[data-tie-more]")).toHaveText("+12");
+    const covered = await page.evaluate(() => {
+      const box = document
+        .querySelector("[data-room-table] [data-centre-result='tie'] [data-show]")
+        ?.getBoundingClientRect();
+      if (!box) return ["no centre"];
+      return [...document.querySelectorAll("[data-room-table] [data-face='up']")].flatMap(
+        (card) => {
+          const c = card.getBoundingClientRect();
+          const apart =
+            c.right <= box.left + 0.5 ||
+            box.right <= c.left + 0.5 ||
+            c.bottom <= box.top + 0.5 ||
+            box.bottom <= c.top + 0.5;
+          return apart ? [] : [card.textContent ?? ""];
+        },
+      );
+    });
+    expect(covered).toEqual([]);
+    // The panel says how many tie; the distribution shows each card.
+    await expect(stat(results(page), "mostVoted")).toHaveText("16 cards tie");
+    await expect(results(page).locator("[data-bar]")).toHaveCount(16);
+    await expect(page.getByRole("button", { name: "Next round" })).toBeVisible();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: `${SHOTS}deck-widest-16-360.png`, fullPage: true });
+  } finally {
+    for (const guest of guests) guest.close();
   }
 });

@@ -224,7 +224,8 @@ test.describe("cards", () => {
           return cards.flatMap((card) => {
             const c = card.getBoundingClientRect();
             return [...card.querySelectorAll("[data-card-value]")].flatMap((value) => {
-              const v = value.getBoundingClientRect();
+              // A label clipped on the dense phone slot (#26) is measured by its clip box.
+              const v = (value.closest("[data-label-clip]") ?? value).getBoundingClientRect();
               const size = Number.parseFloat(getComputedStyle(value).fontSize);
               // Inside the 1 px border, give or take rounding, and a single line.
               const inside =
