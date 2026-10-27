@@ -17,12 +17,19 @@ import {
   toDomainCommand,
 } from "@pp/protocol";
 import { type ExtendedError, Server, type Socket } from "socket.io";
+import type { SocketUser } from "./auth.ts";
 import type { Logger } from "./logger.ts";
 
-/** Per-socket server data. #10 adds the resolved user, W1 the room. */
+/** Per-socket server data. W1 adds the room. */
 export interface SocketData {
   /** Random id that ties a socket's log lines together; never sent to clients. */
   conn: string;
+  /**
+   * The person behind the socket, from the handshake's session cookie (`auth.ts`,
+   * `sessionMiddleware`). Set before `connection` fires whenever the server runs with
+   * identity (`setupServer`): a socket without a valid session never connects.
+   */
+  user?: SocketUser;
 }
 
 type InterServerEvents = Record<string, never>;

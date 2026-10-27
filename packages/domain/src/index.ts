@@ -1,4 +1,5 @@
 export { apply } from "./apply.ts";
+export { cleanName } from "./apply-input.ts";
 export type {
   ApplyContext,
   ApplyResult,
