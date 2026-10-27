@@ -382,7 +382,27 @@ server sends and never decides the outcome of a round.
   150 % text) checks with `dockAtTop` and `expectClearOfDock`. Not part of `pnpm gate`. `e2e/next-round.spec.ts`
   reads `round_history` and the room's stored round straight from Postgres through `pg`,
   a dev dependency pinned to the server's version; #33's history API should replace that
-  direct read.
+  direct read (`dbQuery` and `historyOf` in `e2e/support.ts`).
+- The four-person round (#23), `e2e/four-person.spec.ts`: the proof of W1 on every pull
+  request. Four browser contexts, the PO, Ben on a Pixel 7, Cleo and the observer Dee,
+  play three rounds: a Jira round with a changed card that the PO reveals, a titled round
+  the last vote reveals, and an anonymous round a 5-second timer reveals (both settings
+  set over the protocol until W2's panel). The results each person sees equal
+  `computeResults`; `round_history` holds each round. Every frame each page receives goes
+  through the protocol's leak scan (`packetsIn` in `support.ts`, then `stringLeaves` and
+  `isPublicCardPath`): no card before the reveal, and in the anonymous round no vote list
+  and no `who` on a vote cause. It never retries, and takes about 18 s locally. Run it alone,
+  with a Postgres as above:
+  `DATABASE_URL=… pnpm --filter @pp/web exec playwright test e2e/four-person.spec.ts`;
+  add `--repeat-each=10 --workers=1` to check it for flakiness.
+- A failure keeps its trace and one video per page in `test-results/<test>/`
+  (`trace: "retain-on-failure"`, `video: "retain-on-failure"`); CI uploads `test-results/`,
+  the HTML report and the screenshots as the `playwright-report` artifact, only when the
+  job fails, for 5 days. Open a trace with
+  `pnpm --filter @pp/web exec playwright show-trace <path>/trace.zip`, or drop it on
+  trace.playwright.dev: each step shows the page before and after, the console and the
+  network, where the WebSocket frames are. The CI job installs Chromium's system packages
+  through apt only when Playwright's dry run of `install-deps` finds one missing.
 - Tests: the `web` Vitest project extends `vite.config.ts` and runs in jsdom
   (`src/test-setup.ts` stubs `matchMedia`).
 
