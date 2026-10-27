@@ -106,8 +106,18 @@ Positions are percentages of the stage, so one formula serves every width:
   points at a person. After a named reveal, every vote without a seat shows in a "Not
   at the table" row under the table (mini card, then the name on up to two lines): a
   voter who left after the reveal keeps their name, and one who switched to observer, or
-  came back as one, shows there too, since their vote still counts. #20 builds the
-  results around these rows.
+  came back as one, shows there too, since their vote still counts.
+- The results (#20). After the reveal the centre shows the suggested card as a mini
+  card with its agreement ("29%"), or the card and a **Consensus** pill (brass-soft,
+  brass-ink) when at least three votes agree, or "Nothing to count." when no card
+  counts. A deck without numbers suggests its most voted card. The PO's centre puts the
+  two side by side above "Next round", and on phones shrinks the card to an 18 px chip,
+  so the stack stays as tall as the reveal's: at most 71 px in English and French and
+  84 px in German, clear of every card with 16 seats (measured in `results.spec.ts`).
+  The others' centre stacks the card over the pill or the percentage. Named rounds whose
+  cards differ mark the lowest and highest voters with an arrow (down, up) in a spruce
+  disc at the avatar's bottom right, the voted check's corner, free after a reveal; the
+  seat's label adds "lowest card" or "highest card". Anonymous rounds never do.
 - Observers sit off the table (a small row under it) so voters keep the seats.
 - The others follow the viewer clockwise in join order, starting with whoever joined
   after the viewer, so the order around the table is the same for everyone (#16).
@@ -165,7 +175,7 @@ Positions are percentages of the stage, so one formula serves every width:
   Observers have no hand; a PO who does not vote reads a line instead.
 - **Back**: brass diagonal stripes framed by the card face colour.
 - **Specials**: `?` unsure, `☕` break, `∞` too big; never counted in statistics.
-- **Mini cards** (anonymous results): 28 × 39 px.
+- **Mini cards** (results): 28 × 39 px.
 
 ## Results
 
@@ -173,6 +183,19 @@ Under the table: Average, Median, Agreement, Spread as large tabular numbers wit
 mono captions; a distribution of columns (one per card value, height by count). For
 T-shirt decks: Most voted, Agreement, Spread. In named mode the lowest and highest
 voters are highlighted to start the discussion.
+
+As built (#20): a surface panel, a region labelled "Results". The numbers are the
+domain's `computeResults`, formatted in the reader's region (5,3 and 33 % in French):
+the average and median to one decimal, the agreement as a whole percentage, the spread
+as "2–13" ("2 to 13" for screen readers), a tie for most voted as "M · L"; a statistic
+with no value shows "—". In named rounds a line under the numbers names the lowest and
+highest voters, each with its arrow and mini card. The distribution has one column per
+card played that counts, in deck order: the count above a spruce bar (at most 56 px,
+`CanvasText` in forced colours) above the card's mini card, with an arrow on the lowest
+and highest in named rounds; screen readers hear "5: 2 votes". Special cards sit beside
+it under "Not counted", with a note that they stay out of the numbers. In anonymous
+rounds these columns replace #19's "Cards played" row: the row and the columns said the
+same twice, and the columns say it once, in deck order, with nothing tied to a person.
 
 ## Motion spec
 
@@ -188,7 +211,7 @@ interruptible and disabled under `prefers-reduced-motion` (120 ms cross-fades in
 | Voted badge | 300 ms pop with slight overshoot |
 | Reveal flip | `rotateY(180deg)` 650 ms, 90 ms stagger in seat order from the viewer (#19: only the face-up cards count, so an empty seat adds no pause; the last vote, which arrives with the reveal, turns from its empty slot in its place, its back showing while it waits; built as a turn to the edge with the back on, then back bare, so nothing keeps a transform at rest) |
 | Anonymous reveal | slot cards shrink to 0.6 and fade (350 ms); mini cards deal into the results row, 70 ms stagger (#19: the row starts as the seats' cards are gone, at 350 ms; each card drops 12 px and fades in over 320 ms; a card whose vote came with the reveal never lay on its seat, so only the row shows it) |
-| Results | columns rise 500 ms, 60 ms stagger, starting after the last flip |
+| Results | columns rise 500 ms, 60 ms stagger, starting after the last flip (#20: or 350 ms after an anonymous reveal, once the seats' cards are gone; the numbers fade in 300 ms then, and the lowest and highest seats' arrows pop in 300 ms) |
 | Consensus | pill pops (400 ms) and one soft ring pulse; no confetti storm |
 | Timer | ring drains linearly; last 10 s turns `--warn` and pulses at 1 Hz |
 | Seat join / leave | fade and scale from 0.9, 220 ms |
@@ -214,7 +237,9 @@ interruptible and disabled under `prefers-reduced-motion` (120 ms cross-fades in
   1.5 s at most, and the viewer's own actions are never announced there. The reveal (#19)
   is said once, to everyone, the PO too, whether forced, automatic or at the deadline:
   "Cards revealed.", after the votes of its batch ("Ana voted. Cards revealed."); a new
-  round in the same batch drops it. It never reads the cards out; #20 says the results.
+  round in the same batch drops it. It never says whose card is what; #20 adds the
+  result, which belongs to nobody: "Cards revealed. Consensus on 8.", "Cards revealed.
+  Suggested 5, agreement 60%.".
 - Touch targets at least 44 px; no hover-only controls.
 
 ## Copy

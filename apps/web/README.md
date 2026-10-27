@@ -115,10 +115,10 @@ server sends and never decides the outcome of a round.
   lands) and back on a retract, with the Web Animations API (see "Motion" below);
   `flightKeyframes` is pure. `round-centre.tsx` (`RoundCentre`) fills the table's centre:
   "5/8 voted so far" while Voting (`voteCount`: voters, less a PO who does not vote, less
-  people away who have not voted), and in the lobby or
-  after a reveal a minimal `StartRound` button for the PO (`startRound` without a
-  subject, "Start voting" or "Next round"; #21 replaces it) and a calm line for the
-  others ("Waiting for the PO", "Cards revealed"; #20 puts the results there). A refused
+  people away who have not voted), in the lobby a minimal `StartRound` button for the PO
+  (`startRound` without a subject, "Start voting") and "Waiting for the PO" for the
+  others, and after a reveal the result (#20, below) with, for the PO, `StartRound`'s
+  "Next round" under it (the seam #21 replaces with its subject field). A refused
   start or reveal shows under the table, and clears when the round or its phase changes.
   Copy: `round.*` and `hand.*`.
   The reveal (#19): while Voting the PO's centre adds `RevealButton` ("Reveal cards",
@@ -141,18 +141,49 @@ server sends and never decides the outcome of a round.
   `TableStage` gives each face-up card a `turnDelay`: 90 ms per face-up card before it in
   seat order, from the viewer. `table/reveal-motion.ts` holds the keyframes (pure:
   `turnUp`, `fadeAway`, `dealIn`) and `play`/`cancelAll` for `Element.animate`; a new
-  face cancels a running turn. `revealed-cards.tsx` (`RevealedCards`, `[data-results]`)
-  is the seam #20 builds on, under the table: after an anonymous reveal the "Cards
-  played" row (`[data-results-row]`, mini cards in the snapshot's deck order, keyed by
-  place, with no name, id or person-ordered attribute), dealt in only when `Seated` saw
-  the round voting just before (`liveReveal`); after a named reveal the "Not at the
-  table" row (`[data-results="off-table"]`, items `[data-off-table]`) for every vote
-  whose voter has no seat: no longer a participant, or an observer now. It shows
-  `vote.name`, else the participant's name, else "Someone who left", on up to two lines
-  with the whole name in `title`. The table's live region says "Cards revealed." once
-  per reveal (`announcements.ts`), also after a reconnect whose snapshot has no causes
-  (derived from the round turning from voting to revealed). Copy: `results.*`,
-  `round.reveal`, `round.revealKey`, `live.revealed`.
+  face cancels a running turn. `revealed-cards.tsx` (`RevealedCards`) lists, under the
+  table after a named reveal, the "Not at the table" row (`[data-results="off-table"]`,
+  items `[data-off-table]`) for every vote whose voter has no seat: no longer a
+  participant, or an observer now. It shows `vote.name`, else the participant's name,
+  else "Someone who left", on up to two lines with the whole name in `title`. The
+  table's live region says "Cards revealed." once per reveal (`announcements.ts`), also
+  after a reconnect whose snapshot has no causes (derived from the round turning from
+  voting to revealed), followed by the result (#20). Copy: `round.reveal`,
+  `round.revealKey`, `live.revealed`.
+  The results (#20) are the server's `round.results`: the domain's `computeResults` over
+  the round's votes (a named round's `votes`, the off-table and departed ones included;
+  an anonymous round's unmapped cards) and its deck. The web never computes them again:
+  `results-view.ts` (pure) only sorts them for the page. `resultsModel(room)` splits the
+  distribution into the counted columns (the cards in `results.core`, deck order) and
+  the `uncounted` ones (specials, or a card outside the deck), finds a tie for most voted
+  in the counts, and in a named round with a spread names the lowest and highest voters
+  (`extremes`); `extremeOf(round, card)` also marks the seats (`seatStatus` gives
+  `revealed {card, extreme}`; never in an anonymous round); `revealSummary` and
+  `summarySentence` give the centre and the live region "Consensus on 8.", "Suggested
+  5, agreement 60%.", "Most voted M, agreement 50%." (a deck without numbers) or
+  "Nothing to count.". `results.tsx` is a chunk of its own (`results-chunk.ts`:
+  `loadResults`, and `React.lazy` wrappers), which `Seated` prefetches as soon as a round
+  is on: `CentreResult` (`[data-centre-status="revealed"]`, `[data-centre-result]` =
+  `consensus`, `suggested` or `none`; the card as a mini card and the agreement, or a
+  `Consensus` pill (`[data-pop]`, with a `[data-pulse]` ring); for the PO a one-line
+  `compact` form that shrinks the card to a chip on phones, above "Next round"; a
+  sentence in `.sr-only`; "Cards revealed" while the chunk loads) and `ResultsPanel`
+  (`[data-results-panel="named|anonymous"]`, a region labelled "Results": a `<dl>` of
+  statistics, `[data-stat=average|median|mostVoted|agreement|spread]`, numbers formatted
+  by `useFormat` in the reader's region, "—" with "no value" for screen readers; the
+  `[data-extremes]` list; the columns `[data-distribution]`, each `[data-column]` with
+  its count, a `[data-bar]` (`.pp-bar`, `CanvasText` in forced colours) and a mini card,
+  read as "5: 3 votes"; the special cards under "Not counted" with a note). In an
+  anonymous round the columns replace #19's "Cards played" row: one presentation, in
+  deck order, keyed by card, with nothing that points at a person. Motion
+  (`results-motion.ts`, `Element.animate`): only when `Seated` saw the reveal
+  (`liveReveal`), from `revealSettleMs` (the last flip's end, `650 + (n - 1) × 90` ms
+  for `n` face-up cards, or 350 ms after an anonymous reveal): the columns rise 500 ms,
+  60 ms apart, the numbers fade in, the consensus pops (400 ms) with one ring pulse;
+  `TableStage` gives each seat the same `settle`, and a lowest or highest badge
+  (`ExtremeMark`, an arrow in a spruce disc, bottom right of the avatar) pops in then.
+  Under reduced motion each is a 120 ms cross-fade at once. Copy: `results.*`,
+  `table.lowest`, `table.highest`, `table.lowestTag`, `table.highestTag`.
   `failure.ts` turns refusal codes into copy. Focus: after joining it moves to the "You"
   heading, after leaving or when a seat frees up to the name field (a free seat is also
   announced in a polite live region, `[data-room-notice]`); each request is cleared once
@@ -211,7 +242,8 @@ server sends and never decides the outcome of a round.
   nothing). Two splits
   keep Motion within budget, measured by #18's review: one lazy boundary for every
   Motion component (room route 167.6 kB), or a dynamic `import("motion/mini")` inside the
-  effect (3.2 kB lazy). #20's columns may use either, or `Element.animate`;
+  effect (3.2 kB lazy). #20's results use `Element.animate` in their own lazy chunk
+  (`results` 2.7 kB; the room route grew 0.3 kB with the English copy);
   check the budget before reaching for `m` in a lazy chunk (ADR-008). An animated
   component wraps its `m.div` elements in `<MotionFeatures>`
   (`<MotionFeatures layout>` when it needs layout animations): the features chunk

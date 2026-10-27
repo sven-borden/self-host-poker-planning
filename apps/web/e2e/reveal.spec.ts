@@ -1,12 +1,14 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { cardLeaks } from "../../../packages/protocol/src/leak-scan.ts";
 import {
+  animated,
   createRoom,
   type Guest,
   join,
   newGuest,
   newPerson,
   ownAddress,
+  recordAnimations,
   recordFrames,
   SHOTS,
   sameUser,
@@ -17,7 +19,7 @@ import {
 
 // The reveal (#19) in real browsers, against the real server and Postgres: the PO's
 // button and the key R, the flip in seat order from the viewer, the automatic reveal,
-// the anonymous reveal dealing the cards under the table without tying any to a person
+// the anonymous reveal showing the cards under the table without tying any to a person
 // (on the frames and in the page), a voter who leaves after a named reveal keeping their
 // name, and reduced motion (AC 3). Needs DATABASE_URL; skipped without it locally,
 // failing without it in CI.
@@ -71,47 +73,6 @@ async function guestsVote(guests: Guest[], skip = 0) {
   }
 }
 
-interface Animated {
-  keyframes: string;
-  duration: number;
-  delay: number;
-  /** `cover` (a slot card's back), `up` (a slot card's face), or the element's tag. */
-  target: string;
-  /** On the viewer's own slot. */
-  you: boolean;
-}
-
-/**
- * Records every `Element.animate` call on the page from now on, in `window.__animated`;
- * with `reload`, from the next page load on.
- */
-async function recordAnimations(page: Page, { reload = false } = {}) {
-  const install = () => {
-    const seen: unknown[] = [];
-    Object.assign(window, { __animated: seen });
-    const original = Element.prototype.animate;
-    Element.prototype.animate = function (keyframes, options) {
-      const timing = typeof options === "number" ? { duration: options } : (options ?? {});
-      seen.push({
-        keyframes: JSON.stringify(keyframes),
-        duration: Number(timing.duration ?? 0),
-        delay: Number(timing.delay ?? 0),
-        target: this.hasAttribute("data-cover")
-          ? "cover"
-          : (this.getAttribute("data-face") ?? this.tagName.toLowerCase()),
-        you: this.closest("[data-slot-card]")?.hasAttribute("data-you") === true,
-      });
-      return original.call(this, keyframes, options);
-    };
-  };
-  if (!reload) return page.evaluate(install);
-  await page.addInitScript(install);
-  await page.reload();
-}
-
-const animated = (page: Page) =>
-  page.evaluate(() => (window as unknown as { __animated: Animated[] }).__animated);
-
 async function closeAll(guests: Guest[], browsers: Array<{ context: { close(): Promise<void> } }>) {
   for (const guest of guests) guest.close();
   for (const person of browsers) await person.context.close();
@@ -155,9 +116,10 @@ test("the PO reveals a named round; the cards turn over in seat order from the v
 
     // Everyone sees the cards, the seats say them, and the PO's focus is on Next round.
     await expect(page.getByRole("button", { name: "Next round" })).toBeFocused();
-    await expect(status(ben.page)).toHaveText("Cards revealed");
-    await expect(tableLive(ben.page)).toContainText("Cards revealed.");
-    await expect(tableLive(page)).toContainText("Cards revealed.");
+    await expect(status(ben.page)).toHaveAttribute("data-centre-status", "revealed");
+    // The result comes with the reveal (#20): 3, 5, 5, 8, 8 and 13 average 7.
+    await expect(tableLive(ben.page)).toContainText("Cards revealed. Suggested 8, agreement 33%.");
+    await expect(tableLive(page)).toContainText("Cards revealed. Suggested 8, agreement 33%.");
     const benSeats = seats(ben.page);
     await expect(benSeats.getByRole("button", { name: "Gus, card unsure" })).toHaveCount(0);
     await expect(benSeats.getByRole("button", { name: "Gus, unsure" })).toHaveCount(1);
@@ -253,7 +215,7 @@ test("the last vote reveals a named round; its card turns in its place, back fir
     await freezeAnimations(ben.page);
     expect(await guests[5]?.cmd("castVote", { card: "2", round: 1 })).toMatchObject({ ok: true });
 
-    await expect(status(ben.page)).toHaveText("Cards revealed");
+    await expect(status(ben.page)).toHaveAttribute("data-centre-status", "revealed");
     await expect(ben.page.locator("[data-face='up']")).toHaveCount(8);
     // Eight cards turn, 90 ms apart, Hana's among them: none is skipped or face up early.
     const turns = (await animated(ben.page)).filter((a) => a.target === "up");
@@ -378,33 +340,43 @@ test("an anonymous round reveals itself when everyone voted, and ties no card to
     // The last vote reveals the round by itself, shown as the PO's reveal would be.
     await guestsVote(guests);
 
-    await expect(status(ben.page)).toHaveText("Cards revealed");
-    await expect(tableLive(ben.page)).toContainText("Cards revealed.");
-    const row = ben.page.getByRole("list", { name: "Cards played" });
-    await expect(row.getByRole("listitem")).toHaveText(
-      ["2", "3", "5", "5", "8", "8", "13", "?"].map((card) =>
-        card === "?" ? "?unsure" : `${card}${card}`,
-      ),
+    await expect(status(ben.page)).toHaveAttribute("data-centre-status", "revealed");
+    // 2, 3, 5, 5, 8, 8 and 13 average 6.3, nearest 5: two votes in seven.
+    await expect(tableLive(ben.page)).toContainText("Cards revealed. Suggested 5, agreement 29%.");
+    // The cards show in the results' columns (#20), which replace #19's row.
+    const row = ben.page.getByRole("list", { name: "Votes per card" });
+    await expect(row.locator(".sr-only")).toHaveText([
+      "2: 1 vote",
+      "3: 1 vote",
+      "5: 2 votes",
+      "8: 2 votes",
+      "13: 1 vote",
+    ]);
+    await expect(ben.page.getByRole("list", { name: "Not counted" })).toContainText(
+      "unsure: 1 vote",
     );
-    // The seats keep only who voted; their cards left for the row.
+    // The seats keep only who voted; their cards left for the columns.
     await expect(ben.page.locator("[data-face='up']")).toHaveCount(0);
     await expect(ben.page.locator("[data-face='gone']")).toHaveCount(8);
     await expect(seats(ben.page).getByRole("button", { name: "Cleo, voted" })).toHaveCount(1);
-    // Nothing in the row names, counts or points at a person.
-    const rowHtml = await ben.page.locator("[data-results]").innerHTML();
+    // Nothing in the results names or points at a person, and nobody is lowest or highest.
+    const rowHtml = await ben.page.locator("[data-results-panel]").innerHTML();
     for (const name of ["Ana", "Ben", ...GUESTS.map(([guest]) => guest)]) {
       expect(rowHtml).not.toContain(name);
     }
-    expect(rowHtml).not.toMatch(/data-(you|seat|who)/);
+    expect(rowHtml).not.toMatch(/data-(you|seat|who|extreme|badge)/);
+    await expect(ben.page.locator("[data-badge='lowest'], [data-badge='highest']")).toHaveCount(0);
+    await expect(ben.page.locator("[data-results]")).toHaveCount(0);
 
-    // The seats' cards faded, the row dealt in 70 ms apart after them. The last vote and
-    // the reveal came in one snapshot: that card never lay face down on a seat.
+    // The seats' cards faded, then the columns rose 60 ms apart. The last vote and the
+    // reveal came in one snapshot: that card never lay face down on a seat.
     const motion = await animated(ben.page);
     const fades = motion.filter((a) => a.target === "cover");
     expect(fades).toHaveLength(7);
     expect(fades.every((a) => a.duration === 350 && a.keyframes.includes("scale(0.6)"))).toBe(true);
-    const dealt = motion.filter((a) => a.target === "li").map((a) => a.delay);
-    expect(dealt).toEqual([350, 420, 490, 560, 630, 700, 770, 840]);
+    const risen = motion.filter((a) => a.target === "bar");
+    expect(risen.map((a) => a.delay)).toEqual([350, 410, 470, 530, 590]);
+    expect(risen.every((a) => a.duration === 500 && a.keyframes.includes("scaleY(0)"))).toBe(true);
 
     // On the wire: before the reveal no card but Ben's own; after it, cards in the deck's
     // order with no voter, and no vote cause that names anyone.
@@ -426,10 +398,11 @@ test("an anonymous round reveals itself when everyone voted, and ties no card to
     for (const frame of ben.frames) expect(frame).not.toContain('"votes"');
     expect(snapshotsIn(ben.frames).some((s) => s.room.round !== null)).toBe(true);
     await shoot(page, "reveal-anonymous");
+    await shoot(ben.page, "results-anonymous");
 
-    // A late look (a reload) shows the row and the seats at rest.
+    // A late look (a reload) shows the columns and the seats at rest.
     await recordAnimations(ben.page, { reload: true });
-    await expect(row.getByRole("listitem")).toHaveCount(8);
+    await expect(row.getByRole("listitem")).toHaveCount(5);
     await expect(ben.page.locator("[data-face='gone']")).toHaveCount(8);
     await ben.page.waitForTimeout(300);
     expect(await animated(ben.page)).toEqual([]);
