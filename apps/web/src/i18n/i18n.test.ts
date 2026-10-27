@@ -125,7 +125,8 @@ describe("catalogs", () => {
       // Placeholders keep their own syntax, such as "number(maximumFractionDigits: 1)".
       const text = String(value).replace(/{{[^}]*}}/g, "{{}}");
       expect(text, `fr: ${key}`).not.toMatch(/[ \u00a0][:;!?]/);
-      expect(text, `fr: ${key}`).not.toMatch(/[\p{L}\p{N}}][:;!?]/u);
+      // A clock ("1:30", #27) is not punctuation: its colon sits between digits.
+      expect(text, `fr: ${key}`).not.toMatch(/[\p{L}\p{N}}][:;!?](?!\d)/u);
     }
   });
 
@@ -144,6 +145,13 @@ describe("catalogs", () => {
       "table.ownerTag",
       "results.consensus",
       "results.moreCards",
+      // The timer (#27): units and a clock read the same in French.
+      "timer.minutes_one",
+      "timer.minutes_other",
+      "timer.minutesSeconds",
+      "timer.shortSeconds",
+      "timer.shortMinutes",
+      "timer.add",
     ],
     de: [
       "app.name",
@@ -156,6 +164,11 @@ describe("catalogs", () => {
       "deckField.rangeStart",
       "final.short",
       "results.moreCards",
+      // The timer (#27): units and a clock read the same in German.
+      "timer.minutesSeconds",
+      "timer.shortSeconds",
+      "timer.shortMinutes",
+      "timer.add",
     ],
   };
 

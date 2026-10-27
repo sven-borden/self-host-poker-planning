@@ -20,7 +20,6 @@ import {
   phone,
   ROOM_PATH,
   recordFrames,
-  sameUser,
   seats,
   subjectField,
   subjectLine,
@@ -31,8 +30,10 @@ import {
 // with a deck from the landing page; a voter on a Pixel 7, a voter and an observer open
 // the link and join. Round 1 has a Jira link, a changed card and the PO's reveal; round 2
 // a title and the last vote's reveal; round 3 is anonymous (the PO turns it on in her
-// settings panel, #25) and the timer reveals it; round 4 is anonymous and the last vote
-// reveals it. Every page shows both anonymous rounds' "Anonymous" chip.
+// settings panel, #25, and gives every round a 12 s timer there, #27) and the server's
+// own timeout reveals it while every page stays idle; in round 4 the PO starts, extends
+// and stops a timer from the table's centre, everyone sees the countdown, and the last
+// vote reveals the round. Every page shows both anonymous rounds' "Anonymous" chip.
 // Everyone sees the results `computeResults` gives for the votes, `round_history` holds
 // each finished round, and every frame each person receives is scanned: no card before
 // the reveal, and in the anonymous round no frame that ties a person to a card.
@@ -55,9 +56,13 @@ const DECK = { kind: "preset", id: "mfib" } as const;
 const ROOM_NAME = "Payments team";
 const JIRA = "https://acme.atlassian.net/browse/PAY-482";
 const TITLE = "Split invoices by currency";
-const TIMER_SECONDS = 5;
+/** Round 3's timer: long enough for every page to show it and two people to vote. */
+const TIMER_SECONDS = 12;
 
 const centre = (page: Page) => page.locator("[data-centre] [data-centre-status]");
+/** Everyone's countdown in the centre (#27): the chip, the PO's being a button. */
+const timer = (page: Page) => page.locator("[data-centre] [data-timer]");
+const timerText = (page: Page) => timer(page).locator("[data-timer-text]");
 const handLive = (page: Page) => page.locator("[data-hand-live]");
 const pressedCards = (page: Page) => hand(page).locator("[aria-pressed='true']");
 const tableLive = (page: Page) => page.locator("[data-table-live]");
@@ -344,7 +349,6 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
       ]);
     }
   };
-  let po: Awaited<ReturnType<typeof sameUser>> | undefined;
   try {
     // The PO creates a named room with the modified Fibonacci deck, from the landing page.
     await ana.page.goto("/");
@@ -460,21 +464,22 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
 
     // Round 3, anonymous, with a timer: Ana and Ben vote, Cleo does not, and the server
     // reveals the round at its deadline. The PO turns anonymity on in her settings panel
-    // (#25); the timer's control comes with #27, so she sets it over the protocol, as her
-    // own user. Both apply from the next round.
+    // (#25) and gives each round a custom 12 s timer there (#27). Both apply from the next
+    // round.
     await ana.press(ana.page.getByRole("button", { name: "Room settings" }));
     const settings = ana.page.getByRole("dialog", { name: "Room settings" });
     const anonymous = settings.getByRole("switch", { name: "Anonymous voting" });
     await ana.press(anonymous);
     await expect(anonymous).toHaveAttribute("aria-checked", "true");
     await expect(anonymous).not.toHaveAttribute("aria-busy", "true");
+    const timerSetting = settings.locator("[data-setting='timer']");
+    await ana.press(timerSetting.getByRole("radio", { name: "Custom" }));
+    await timerSetting.getByRole("textbox", { name: "Custom length" }).fill(String(TIMER_SECONDS));
+    await ana.press(timerSetting.getByRole("button", { name: "Set" }));
+    await expect(timerSetting.getByRole("radio", { name: "Custom" })).toBeChecked();
+    await expect(timerSetting.locator("[data-setting-saving]")).toHaveCount(0);
     await ana.page.keyboard.press("Escape");
     await expect(settings).toBeHidden();
-    po = await sameUser(base, ana.context);
-    expect(await po.enter(code)).toMatchObject({ ok: true });
-    expect(
-      await po.cmd("updateSettings", { patch: { timer: { seconds: TIMER_SECONDS } } }),
-    ).toMatchObject({ ok: true });
     const from3 = mark();
     await ana.page.getByRole("button", { name: "Next round" }).click();
     await expectRoundStarted(everyone, "Round 3", true);
@@ -482,10 +487,21 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
     expect((await historyOf(code)).map((row) => row.number)).toEqual([1, 2]);
     // Ana plays the higher card first, so the people's order is not the deck's.
     const own3 = { Ana: ["5"], Ben: ["2"] };
+    // Every page counts the round's timer down, from 12 s; it never shows more.
+    for (const { page } of everyone) {
+      await expect(timer(page)).toHaveAttribute("data-timer", /^(running|warn)$/);
+      await expect(timerText(page)).toHaveText(/^0:(0\d|1[0-2])$/);
+    }
     await ana.press(handCard(ana.page, "5"));
     await ben.press(handCard(ben.page, "2"));
     for (const { page } of everyone) await expect(centre(page)).toHaveText("2/3 voted so far");
-    // The deadline is the server's: nobody acts, and the round reveals itself.
+    // The deadline is the server's: nobody acts, and the round reveals itself. Every page
+    // goes through the last 10 s on its way.
+    for (const { page } of everyone) {
+      await expect(timer(page)).toHaveAttribute("data-timer", /^(warn|zero)$/, {
+        timeout: TIMER_SECONDS * 1000,
+      });
+    }
     for (const { page } of everyone) {
       await expect(centre(page)).toHaveAttribute("data-centre-status", "revealed", {
         timeout: (TIMER_SECONDS + 10) * 1000,
@@ -498,11 +514,19 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
       expectAnonymousRound(person, from3[i] ?? 0, 3, ["2", "5"], own3);
     }
 
-    // Round 4, still anonymous, without the timer: the last vote reveals it, so its vote
-    // causes come after an anonymous reveal. Round 3 is history with its cards and no name.
-    expect(await po.cmd("updateSettings", { patch: { timer: { seconds: null } } })).toMatchObject({
-      ok: true,
-    });
+    for (const { page } of everyone) {
+      await expect(tableLive(page)).toContainText("Time is up. Cards revealed.");
+    }
+
+    // Round 4, still anonymous, without the round's timer (Off in the panel): the last
+    // vote reveals it, so its vote causes come after an anonymous reveal. Round 3 is
+    // history with its cards and no name.
+    await ana.press(ana.page.getByRole("button", { name: "Room settings" }));
+    await ana.press(timerSetting.getByRole("radio", { name: "Off" }));
+    await expect(timerSetting.getByRole("radio", { name: "Off" })).toBeChecked();
+    await expect(timerSetting.locator("[data-setting-saving]")).toHaveCount(0);
+    await ana.page.keyboard.press("Escape");
+    await expect(settings).toBeHidden();
     const from4 = mark();
     await ana.page.getByRole("button", { name: "Next round" }).click();
     await expectRoundStarted(everyone, "Round 4", true);
@@ -528,6 +552,30 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
     for (const word of [...everyone.map(({ name }) => name), ...ids]) {
       expect(rows[2]?.text).not.toContain(word);
     }
+
+    // The PO's controls in the centre (#27): she starts 2 min, adds 30 s and stops it;
+    // every page counts down with her, then shows no timer.
+    for (const { page } of everyone) {
+      await expect(timer(page)).toHaveCount(page === ana.page ? 1 : 0);
+    }
+    await ana.press(ana.page.getByRole("button", { name: "Timer", exact: true }));
+    await ana.press(ana.page.locator("[data-timer-preset='120']"));
+    for (const { page } of everyone) {
+      await expect(timer(page)).toHaveAttribute("data-timer", "running");
+      await expect(timerText(page)).toHaveText(/^(2:00|1:5\d)$/);
+      await expect(tableLive(page)).toContainText("Timer started: 2 minutes.");
+    }
+    await ana.press(ana.page.getByRole("button", { name: "Add 30 seconds" }));
+    for (const { page } of everyone) {
+      await expect(timerText(page)).toHaveText(/^2:[23]\d$/);
+      await expect(tableLive(page)).toContainText("30 seconds added.");
+    }
+    await ana.press(ana.page.getByRole("button", { name: "Stop the timer" }));
+    for (const { page } of everyone) {
+      await expect(timer(page)).toHaveCount(page === ana.page ? 1 : 0);
+      await expect(tableLive(page)).toContainText("Timer stopped.");
+    }
+    await expect(ana.page.locator("[data-timer-button]")).toHaveAttribute("data-timer", "idle");
 
     const own4 = { Ana: ["3"], Ben: ["2"], Cleo: ["2"] };
     await ana.press(handCard(ana.page, "3"));
@@ -558,7 +606,6 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
     await attachFrames(everyone, ROOM_PATH.exec(ana.page.url())?.[1]);
     throw error;
   } finally {
-    po?.close();
     for (const person of everyone) await person.context.close();
   }
 });

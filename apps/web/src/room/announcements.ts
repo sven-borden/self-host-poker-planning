@@ -5,11 +5,12 @@ import { cardLabel } from "../table/cards.tsx";
 import { type RevealSummary, revealSummary, summarySentence } from "./results-view.ts";
 import { deckInSentence, SETTING_KEYS, type SettingKey, sameSetting } from "./settings-words.ts";
 import { subjectName } from "./subject.ts";
+import { durationWords } from "./timer-view.ts";
 
 // What the table's live region says (#17): joins, leaves, away and back, votes, a new
 // round (#18) or a re-vote (#32), the reveal (#19), the PO's final estimate (#32), the
-// PO's settings changes (#25), and the PO role handed over or claimed and people removed
-// (#30), read from a snapshot's causes. Never a person's card: a
+// PO's settings changes (#25), the timer (#27), and the PO role handed over or claimed
+// and people removed (#30), read from a snapshot's causes. Never a person's card: a
 // vote cause carries who, never what, the reveal says the round's result (#20: "Cards
 // revealed. Consensus on 8."), and the final is the PO's decision; both belong to nobody.
 // Pure, so the batching rules are tested without timers; `live-announcer.tsx` runs them.
@@ -24,8 +25,16 @@ export type LiveKind =
   | "away"
   | "back"
   | "voted"
+  | "timer"
+  | "timeUp"
   | "revealed"
   | "final";
+
+/** What happened to the round's timer (#27), and by how many seconds when that is known. */
+export interface TimerNews {
+  what: "started" | "extended" | "stopped";
+  seconds?: number;
+}
 
 export interface LiveEvent {
   kind: LiveKind;
@@ -62,6 +71,8 @@ export interface LiveEvent {
     /** The change shows in the voting round on the table, which a reconnect missed starting. */
     now?: true;
   };
+  /** The timer started, got more time or stopped (#27): said to everyone, the PO too. */
+  timer?: TimerNews;
 }
 
 /**
@@ -71,6 +82,7 @@ export interface LiveEvent {
  */
 const ORDER: readonly Exclude<LiveKind, "settings">[] = [
   "roundStarted",
+  "timer",
   "joined",
   "left",
   "removed",
@@ -78,6 +90,7 @@ const ORDER: readonly Exclude<LiveKind, "settings">[] = [
   "back",
   "owner",
   "voted",
+  "timeUp",
   "revealed",
   "final",
 ];
@@ -109,6 +122,12 @@ function nameOf(id: string, ...rooms: (RoomView | null)[]): string | null {
  * reveal when it shows the round revealed that `previous` showed voting: the cards turn
  * over on screen, so the reveal is news, once. A change of PO is said to everyone, the
  * people it names too (#30): it moves the room's controls under their eyes.
+ *
+ * The timer (#27) is said to everyone, the PO too, as the reveal is: "Timer started: 1
+ * minute." (also with a new round that starts one), "30 seconds added.", "Timer
+ * stopped.", and "Time is up." at the deadline, before "Cards revealed." when the timer
+ * revealed the round. Its length comes from the round itself (`deadlineAt −
+ * timerStartedAt`, an extension from the deadline it moved), never from a clock.
  */
 export function liveEvents(
   next: RoomView,
@@ -124,8 +143,12 @@ export function liveEvents(
     let kind: LiveKind;
     switch (cause.type) {
       case "roundStarted":
-        // A deck change restarted the round: the settings event says it, with its deck.
-        if (cause.restarted) continue;
+        // A deck change restarted the round: the settings event says it, with its deck,
+        // and its fresh timer follows it, once (the settings events come first).
+        if (cause.restarted) {
+          events.push(...startedTimer(next));
+          continue;
+        }
         events.push({
           kind: cause.type,
           who: "",
@@ -137,6 +160,23 @@ export function liveEvents(
           },
           ...(cause.revote ? { revote: true } : {}),
         });
+        events.push(...startedTimer(next));
+        continue;
+      case "timerStarted":
+        events.push(...startedTimer(next));
+        continue;
+      case "timerExtended": {
+        const seconds = addedSeconds(previous, next);
+        events.push(
+          timerEvent(seconds === null ? { what: "extended" } : { what: "extended", seconds }),
+        );
+        continue;
+      }
+      case "timerStopped":
+        events.push(timerEvent({ what: "stopped" }));
+        continue;
+      case "timeUp":
+        events.push({ kind: "timeUp", who: "", name: "" });
         continue;
       case "finalSet":
         events.push({
@@ -147,6 +187,7 @@ export function liveEvents(
         });
         continue;
       case "revealed":
+        if (cause.by === "timer") events.push({ kind: "timeUp", who: "", name: "" });
         events.push(revealedEvent(next));
         continue;
       case "joined":
@@ -212,6 +253,31 @@ function settingEvents(previous: RoomView | null, next: RoomView): LiveEvent[] {
   }));
 }
 
+const timerEvent = (timer: TimerNews): LiveEvent => ({ kind: "timer", who: "", name: "", timer });
+
+/** A timer that `next` shows running from its start: its whole length, in seconds. */
+function startedTimer(next: RoomView): LiveEvent[] {
+  const round = next.round;
+  if (round?.phase !== "voting" || round.deadlineAt === undefined) return [];
+  if (round.timerStartedAt === undefined) return [];
+  return [
+    timerEvent({
+      what: "started",
+      seconds: Math.round((round.deadlineAt - round.timerStartedAt) / 1000),
+    }),
+  ];
+}
+
+/** How far an extension moved the deadline of the round `previous` showed, in seconds. */
+function addedSeconds(previous: RoomView | null, next: RoomView): number | null {
+  const was = previous?.round;
+  const now = next.round;
+  if (was?.deadlineAt === undefined || now?.deadlineAt === undefined) return null;
+  if (was.number !== now.number || was.startedAt !== now.startedAt) return null;
+  const seconds = Math.round((now.deadlineAt - was.deadlineAt) / 1000);
+  return seconds > 0 ? seconds : null;
+}
+
 /**
  * The number of the voting round a deck or specials change restarted between `previous`
  * and `next` (#26: same number, one more restart), or null.
@@ -259,7 +325,9 @@ function revealedSince(previous: RoomView | null, next: RoomView): boolean {
  * a reveal still waiting in the batch moot (a timer's reveal resolved by the next round's
  * start): the revealed cards are already gone, and so is a final waiting with them. Of
  * two new rounds in one batch, the later one is said, with its own subject. Of two finals,
- * the later card is said, as recorded when the first one was recorded (#32).
+ * the later card is said, as recorded when the first one was recorded (#32). A new round
+ * also drops the old round's timer news; of two timer events, the later is said, and a
+ * start followed by an extension is said as one start of the whole length (#27).
  */
 export function mergeEvents(pending: readonly LiveEvent[], events: readonly LiveEvent[]) {
   let merged = [...pending];
@@ -275,8 +343,19 @@ export function mergeEvents(pending: readonly LiveEvent[], events: readonly Live
     }
     if (event.kind === "roundStarted") {
       merged = merged.filter(
-        (e) => e.kind !== "revealed" && e.kind !== "roundStarted" && e.kind !== "final",
+        (e) =>
+          e.kind !== "revealed" &&
+          e.kind !== "roundStarted" &&
+          e.kind !== "final" &&
+          e.kind !== "timer" &&
+          e.kind !== "timeUp",
       );
+    }
+    if (event.kind === "timer" && event.timer) {
+      const earlier = merged.find((e) => e.kind === "timer");
+      merged = merged.filter((e) => e !== earlier);
+      merged.push({ ...event, timer: mergedTimer(earlier?.timer, event.timer) });
+      continue;
     }
     const earlier = merged.find((e) => e.kind === "final");
     if (event.kind === "final" && earlier?.final && event.final) {
@@ -294,6 +373,26 @@ export function mergeEvents(pending: readonly LiveEvent[], events: readonly Live
     merged.push(event);
   }
   return merged;
+}
+
+/** Two timer events in one batch, said as one. */
+function mergedTimer(earlier: TimerNews | undefined, later: TimerNews): TimerNews {
+  if (earlier?.what === "started" && later.what === "extended") {
+    return earlier.seconds !== undefined && later.seconds !== undefined
+      ? { what: "started", seconds: earlier.seconds + later.seconds }
+      : earlier;
+  }
+  return later;
+}
+
+function timerSentence(t: TFunction, timer: TimerNews | undefined): string {
+  if (timer === undefined) return "";
+  if (timer.what === "stopped") return t("live.timerStopped");
+  if (timer.seconds === undefined) {
+    return timer.what === "extended" ? t("live.timerExtendedSome") : "";
+  }
+  const duration = durationWords(t, timer.seconds);
+  return t(timer.what === "started" ? "live.timerStarted" : "live.timerExtended", { duration });
 }
 
 function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): string {
@@ -331,6 +430,10 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
       return one ? t("live.back", { name }) : t("live.backMany", { count });
     case "voted":
       return one ? t("live.voted", { name }) : t("live.votedMany", { count });
+    case "timer":
+      return timerSentence(t, first?.timer);
+    case "timeUp":
+      return t("live.timeUp");
     case "revealed":
       return first?.summary
         ? `${t("live.revealed")} ${summarySentence(t, first.summary)}`
@@ -393,7 +496,8 @@ export function describeEvents(t: TFunction, events: readonly LiveEvent[]): stri
   const sayRun = () => {
     for (const kind of ORDER) {
       const ofKind = run.filter((e) => e.kind === kind);
-      if (ofKind.length > 0) parts.push(sentence(t, kind, ofKind));
+      const said = ofKind.length > 0 ? sentence(t, kind, ofKind) : "";
+      if (said !== "") parts.push(said);
     }
     run = [];
   };

@@ -107,7 +107,24 @@ describe("toSnapshot", () => {
 
   it("carries a running timer's deadline", () => {
     const { state } = run([join("po"), start, ["po", { type: "startTimer", seconds: 30 }]]);
-    expect(toSnapshot(state, "po", META).room.round).toMatchObject({ deadlineAt: T + 2 + 30_000 });
+    expect(toSnapshot(state, "po", META).room.round).toMatchObject({
+      deadlineAt: T + 2 + 30_000,
+      timerStartedAt: T + 2,
+    });
+  });
+
+  it("says that time is up while the round waits for the PO (#27)", () => {
+    const { state } = run([
+      join("po"),
+      ["po", { type: "updateSettings", patch: { timer: { revealAtEnd: false } } }],
+      start,
+      ["po", { type: "startTimer", seconds: 5 }],
+    ]);
+    const up = apply(state, { type: "timeUp" }, { actor: "po", now: T + 3 + 5_000 });
+    const round = toSnapshot(up.state, "po", META).room.round;
+    expect(round).toMatchObject({ phase: "voting", timeUpAt: T + 3 + 5_000 });
+    expect(round).not.toHaveProperty("deadlineAt");
+    expect(round).not.toHaveProperty("timerStartedAt");
   });
 
   it("after a named reveal, lists every vote with its voter and the results", () => {

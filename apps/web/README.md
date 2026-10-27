@@ -136,7 +136,7 @@ server sends and never decides the outcome of a round.
   (`[data-record-final]`, `setFinal`), "Next round" (`[data-start-round]`, the same
   `useNextRound.start`) and "Vote again" (`[data-revote]`, `revote`), the three in
   `[data-decision-actions]`. The reveal moves the PO's focus to "Record 8"
-  (`focusAfterReveal` in `round-centre.tsx`; `focusSoon` never scrolls), and the bar
+  (`focusAfterReveal` in `focus.ts`; `focusSoon` never scrolls), and the bar
   ignores Enter and Space for `PLACED_FOCUS_GUARD_MS` after such a placed focus. While
   its place is out of view the bar docks at the bottom of the screen (`useDecisionDock`
   in `decision-dock.ts`, `[data-decision-dock]`, `--decision-dock` for the scroll
@@ -146,6 +146,40 @@ server sends and never decides the outcome of a round.
   fallback's sentence says it too; the live region's `final` events and the re-vote's
   sentences are in `announcements.ts`. Copy: `final.*`, `round.revote`, `live.final*`,
   `live.revote*`.
+  The timer (#27): `realtime/server-clock.ts` keeps the server's clock offset (each
+  snapshot's `serverNow` plus half the last `enter`'s round trip, minus its arrival on
+  `localNow()`, the monotonic clock; the median of the last 9, started over by a sample
+  more than 1 s above it). Anything that compares a server time with now reads
+  `serverTime()` and draws again on `useClockOffset()` (or `onClockOffset`), never
+  `Date.now()`. `room/timer-view.ts` is pure: the
+  round's `timerState` (none, running from `timerStartedAt`, or up from `timeUpAt`),
+  `clockText` ("0:45", never negative), `inWarnPhase` (the last 10 s), `ringLeft`,
+  `durationWords` and `shortDuration`, `parseDuration` (seconds or m:ss, 5 s to 60 min).
+  `room/timer.tsx` (in the `seated` chunk): `useCountdown` draws again just past each
+  whole second of the time left and when the offset moves; `TimerChip` is everyone's
+  `[data-timer]` (`role="timer"`, never live; `data-timer` is `running`, `warn`, `zero`
+  or `up`; `data-ends-at` is the deadline in the page's own clock), a stadium SVG ring
+  (`.pp-timer-*` in `table/table.css`) drained in `ringSteps` steps (a device pixel of
+  its length each, at most 20 a second) by a timeout that sets `stroke-dashoffset`, not
+  an animation (one restyled the page every frame, `steps()` easing or not), or stepped
+  once a second under reduced motion (`useReducedMotionQuery`), with a 1 Hz scale pulse
+  in the warn phase (never under reduced motion; Playwright cannot click a pulsing chip,
+  so the e2e opens its menu by keyboard). `TimerControls` is the PO's: the same chip as
+  `[data-timer-button]`, a popover trigger whose menu (`timer-menu.tsx`, a lazy chunk,
+  `[data-timer-menu]`) starts 30 s, 60 s, 2 min or a typed length and, on a phone, holds
+  "+30 s" and "Stop" (`[data-menu-extend]`, `[data-menu-stop]`); on a desktop
+  `[data-timer-stop]` and `[data-timer-extend]` flank the chip. The chip's name says its
+  state only; the time is in the sr-only `[data-timer-spoken]` (`role="timer"`) beside it.
+  `useMenuHandOff` sends the focus to the PO's decision when the menu leaves with the round.
+  `useTimeUpPing` sends `timeUp` once per deadline, 1 to 2 s after it, while the store's
+  round still votes with that deadline. `useLastSecondsWarning`
+  says "10 seconds left." once per deadline through the store's `announce`; the start,
+  extension, stop and time up are `timer` and `timeUp` events in `announcements.ts`
+  (their lengths from the round, never a clock). The room's timer is `TimerSetting`
+  (`timer-setting.tsx`), a `layout: "block"` control in the panel. The centre's grid
+  centres content taller than its box (`place-content-center`), and a phone's count
+  keeps the box's 68 px. Copy: `timer.*`, `settings.timer*`, `live.timer*`,
+  `live.timeUp`, `live.tenLeft`.
   The next round (#21): `next-round.tsx` holds `useNextRound` (in `Seated`) and the PO's
   field, `NextSubject` (`[data-next-subject]`, "Subject of the next round", above the
   table in every phase, so the table never jumps and the PO can prepare the next ticket
@@ -299,7 +333,8 @@ server sends and never decides the outcome of a round.
   (show it `aria-disabled`), `id` (the `<label for>` points at it), `labelId` (for
   `aria-labelledby` on a radio group, which `<label for>` cannot name) and `describedBy`
   (the hint, a lock's reason, a refusal). `layout: "block"` puts the control across the
-  row under the hint (a deck picker, a radio group, the timer); the default `inline`
+  row under the hint (a deck picker, a radio group, the timer: `TimerSetting` in
+  `timer-setting.tsx` is the first one, #27); the default `inline`
   keeps it at the row's end, at most 11 rem wide. `refusals` maps a server code to the
   field's own words (observers' `room_full` says `settings.observersCountRefused`);
   other codes say `errorMessage`'s. `toggle.locked(room, t)` returns why the switch

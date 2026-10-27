@@ -84,3 +84,37 @@
     background: CanvasText;
   }
 }
+
+/*
+ * The vote timer's ring (#27): a faint track, the time left in brass, `--warn` in the
+ * last 10 s and once time is up. In forced colours the ring keeps system colours: the
+ * track GrayText, the time left CanvasText (the text says the same).
+ */
+.pp-timer-track {
+  stroke: var(--table-ink);
+  opacity: 0.28;
+}
+
+.pp-timer-progress {
+  stroke: var(--brass);
+}
+
+.pp-timer-progress.pp-timer-warn {
+  stroke: var(--warn);
+}
+
+@media (forced-colors: active) {
+  .pp-timer-ring {
+    forced-color-adjust: none;
+  }
+
+  .pp-timer-track {
+    stroke: GrayText;
+    opacity: 1;
+  }
+
+  .pp-timer-progress,
+  .pp-timer-progress.pp-timer-warn {
+    stroke: CanvasText;
+  }
+}

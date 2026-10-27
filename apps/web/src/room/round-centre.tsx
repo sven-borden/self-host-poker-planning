@@ -3,9 +3,17 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { commandSender } from "../realtime/room-connection.ts";
+import { focusAfterReveal } from "./focus.ts";
 import type { NextRound } from "./next-round.tsx";
 import { CentreResult, type RevealMotion } from "./results-chunk.tsx";
 import { voteCount } from "./table-data.ts";
+import {
+  TimerChip,
+  TimerControls,
+  useCountdown,
+  useLastSecondsWarning,
+  useTimeUpPing,
+} from "./timer.tsx";
 
 interface RoundCentreProps {
   /** The room as the viewer sees it, their unconfirmed pick included. */
@@ -43,19 +51,7 @@ export function RoundCentre({
   const round = room.round;
   const owner = room.you !== null && room.you === room.ownerId;
   if (round?.phase === "voting") {
-    const { count, total } = voteCount(room);
-    const status = (
-      <p data-centre-status="voting" tabIndex={-1} className="m-0 outline-none">
-        {t("table.votedSoFar", { count, total })}
-      </p>
-    );
-    if (!owner) return status;
-    return (
-      <div className="flex flex-col items-center gap-1.5 in-data-[variant=phone]:gap-0.5 in-data-[variant=phone]:text-[10px]/tight">
-        {status}
-        <RevealButton onFailure={onFailure} />
-      </div>
-    );
+    return <VotingCentre room={room} owner={owner} onFailure={onFailure} />;
   }
   if (round === null) {
     return owner ? (
@@ -71,39 +67,54 @@ export function RoundCentre({
   return <CentreResult room={room} motion={reveal} />;
 }
 
-/**
- * Once the screen changed under the focus, it goes to `selector`, after a frame for React
- * to draw it, unless the person already moved it somewhere. The page never scrolls for it
- * (`preventScroll`): after a reveal the table, its flips and its result stay where the
- * person was looking, and the PO's decision docks at the bottom of the screen when it
- * fits (#32, `decision-dock.ts`).
- */
-export function focusSoon(...selectors: string[]) {
-  requestAnimationFrame(() => {
-    const active = document.activeElement;
-    if (active !== null && active !== document.body) return;
-    for (const selector of selectors) {
-      const target = document.querySelector<HTMLElement>(selector);
-      if (target) {
-        target.focus({ preventScroll: true });
-        return;
-      }
-    }
-  });
-}
+export { focusAfterReveal, focusSoon } from "./focus.ts";
 
 /**
- * After the reveal the PO's next step is the final estimate (#32): the focus goes to
- * "Record 8" when a card is preselected, so one press records the suggestion; else to the
- * picker, where the PO picks; then to "Next round" if neither is there.
+ * The centre while Voting: the timer when one runs (#27: the ring and the time left, or
+ * "Time is up"), the count, and for the PO the timer's controls above the count and
+ * "Reveal cards" under it. Without a timer, anyone else reads the count alone.
  */
-const focusAfterReveal = () =>
-  focusSoon(
-    "[data-record-final]:not([aria-disabled])",
-    "[data-final-picker] input:checked",
-    "[data-final-picker] input",
-    "[data-start-round]",
+function VotingCentre({
+  room,
+  owner,
+  onFailure,
+}: {
+  room: RoomView;
+  owner: boolean;
+  onFailure: (code: string | null) => void;
+}) {
+  const t = useT();
+  const countdown = useCountdown(room.round);
+  useLastSecondsWarning(countdown);
+  useTimeUpPing(countdown);
+  const { count, total } = voteCount(room);
+  const status = (
+    // On a phone the count keeps the centre box's 68 px, however wide the timer above it.
+    <p
+      data-centre-status="voting"
+      tabIndex={-1}
+      className="m-0 outline-none in-data-[variant=phone]:max-w-17"
+    >
+      {t("table.votedSoFar", { count, total })}
+    </p>
   );
+  if (!owner) {
+    if (countdown.state.kind === "none") return status;
+    return (
+      <div className="flex flex-col items-center gap-1.5 in-data-[variant=phone]:gap-1">
+        <TimerChip countdown={countdown} />
+        {status}
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col items-center gap-1.5 in-data-[variant=phone]:gap-0.5 in-data-[variant=phone]:text-[10px]/tight">
+      <TimerControls countdown={countdown} onFailure={onFailure} />
+      {status}
+      <RevealButton onFailure={onFailure} />
+    </div>
+  );
+}
 
 /** Fields where R is a letter being typed, not the reveal. */
 const NOT_TYPING = new Set([

@@ -365,6 +365,31 @@ describe("settings (#25)", () => {
     expect(said(liveEvents(started.room, [], seated.room))).toBe("");
   });
 
+  it("says a restart's fresh timer once, right after the restart (#26, #27)", () => {
+    const { run } = anasRoom();
+    run("me", { type: "updateSettings", patch: { timer: { seconds: 60 } } });
+    run("me", { type: "startRound", subject: { kind: "none" } });
+    const before = run("ana", { type: "castVote", card: "5" });
+    const restarted = run("me", {
+      type: "updateSettings",
+      patch: { deck: { kind: "preset", id: "tshirt" } },
+    });
+    const events = liveEvents(restarted.room, restarted.causes, before.room);
+    expect(said(events)).toBe(
+      "The product owner restarted round 1 with “T-shirt sizes”. Vote again. Timer started: 1 minute.",
+    );
+    expect(events.filter((e) => e.kind === "timer")).toHaveLength(1);
+    // The PO hears the timer too, as for any start, but not the restart they made.
+    const po = story("me");
+    po.run("me", { type: "join", name: "Me", role: "voter" });
+    po.run("ana", { type: "join", name: "Ana", role: "voter" });
+    po.run("me", { type: "updateSettings", patch: { timer: { seconds: 60 } } });
+    po.run("me", { type: "startRound", subject: { kind: "none" } });
+    const voted = po.run("me", { type: "castVote", card: "5" });
+    const again = po.run("me", { type: "updateSettings", patch: { specials: [] } });
+    expect(said(liveEvents(again.room, again.causes, voted.room))).toBe("Timer started: 1 minute.");
+  });
+
   it("tells an observer of a restart without asking them to vote (#26)", async () => {
     const { run } = story("obs");
     run("me", { type: "join", name: "Me", role: "voter" });
@@ -666,5 +691,107 @@ describe("the PO's powers (#30)", () => {
     expect(describeEvents(fixedT("de"), events)).toBe(
       "Me hat die Rolle des Product Owners an Ben übergeben.",
     );
+  });
+});
+
+describe("the timer (#27)", () => {
+  /** A room with the PO ("me") and Ana voting, each step at its own time. */
+  function timed(viewer: string, settings: Partial<RoomState["settings"]> = {}) {
+    let state: RoomState = { ...createRoom({ ownerId: "me" }) };
+    state = { ...state, settings: { ...state.settings, ...settings } };
+    let version = 1;
+    const run = (actor: string, command: Command, now: number) => {
+      const result = apply(state, command, { actor, now });
+      if (!result.ok) throw new Error(result.error);
+      state = result.state;
+      version += 1;
+      return toSnapshot(state, viewer, { code: CODE, version, now, causes: result.causes });
+    };
+    run("me", { type: "join", name: "Me", role: "voter" }, 1);
+    run("ana", { type: "join", name: "Ana", role: "voter" }, 2);
+    return run;
+  }
+
+  it.each(["me", "ana"])("says a start, an extension and a stop to everyone (%s)", (viewer) => {
+    const run = timed(viewer);
+    const started0 = run("me", { type: "startRound", subject: { kind: "none" } }, 1_000);
+    const started = run("me", { type: "startTimer", seconds: 60 }, 2_000);
+    expect(said(liveEvents(started.room, started.causes, started0.room))).toBe(
+      "Timer started: 1 minute.",
+    );
+    const extended = run("me", { type: "extendTimer", seconds: 30 }, 3_000);
+    expect(said(liveEvents(extended.room, extended.causes, started.room))).toBe(
+      "30 seconds added.",
+    );
+    // A reconnect that missed the deadline before: the extension is said without its length.
+    expect(said(liveEvents(extended.room, extended.causes, null))).toBe("Time added.");
+    const stopped = run("me", { type: "stopTimer" }, 4_000);
+    expect(said(liveEvents(stopped.room, stopped.causes, extended.room))).toBe("Timer stopped.");
+  });
+
+  it("says the timer a round starts with, after the round", () => {
+    const run = timed("ana", { timer: { seconds: 90, revealAtEnd: true } });
+    const started = run("me", { type: "startRound", subject: { kind: "none" } }, 1_000);
+    expect(said(liveEvents(started.room, started.causes, null))).toBe(
+      "Voting started: Round 1. Timer started: 1 minute 30 seconds.",
+    );
+  });
+
+  it("says time is up, before the reveal when the timer revealed the round", () => {
+    const run = timed("ana");
+    run("me", { type: "startRound", subject: { kind: "none" } }, 1_000);
+    const started = run("me", { type: "startTimer", seconds: 5 }, 2_000);
+    const up = run(":server", { type: "timeUp" }, 7_000);
+    expect(said(liveEvents(up.room, up.causes, started.room))).toBe(
+      "Time is up. Cards revealed. Nothing to count.",
+    );
+    const waiting = timed("ana", { timer: { seconds: null, revealAtEnd: false } });
+    waiting("me", { type: "startRound", subject: { kind: "none" } }, 1_000);
+    const before = waiting("me", { type: "startTimer", seconds: 5 }, 2_000);
+    const over = waiting(":server", { type: "timeUp" }, 7_000);
+    expect(said(liveEvents(over.room, over.causes, before.room))).toBe("Time is up.");
+  });
+
+  it("says a start then an extension in one batch as one start, and drops news a new round made moot", () => {
+    const start: LiveEvent = {
+      kind: "timer",
+      who: "",
+      name: "",
+      timer: { what: "started", seconds: 60 },
+    };
+    const more: LiveEvent = {
+      kind: "timer",
+      who: "",
+      name: "",
+      timer: { what: "extended", seconds: 30 },
+    };
+    const stop: LiveEvent = { kind: "timer", who: "", name: "", timer: { what: "stopped" } };
+    const some: LiveEvent = { kind: "timer", who: "", name: "", timer: { what: "extended" } };
+    expect(said(mergeEvents([start], [more]))).toBe("Timer started: 1 minute 30 seconds.");
+    expect(said(mergeEvents([{ ...start, timer: { what: "started" } }], [more]))).toBe("");
+    expect(said(mergeEvents([start], [stop]))).toBe("Timer stopped.");
+    expect(said(mergeEvents([some], [more]))).toBe("30 seconds added.");
+    const up: LiveEvent = { kind: "timeUp", who: "", name: "" };
+    const round: LiveEvent = {
+      kind: "roundStarted",
+      who: "",
+      name: "",
+      round: { number: 2, subject: { kind: "none" }, anonymous: false },
+    };
+    expect(said(mergeEvents([start, up, up], [round]))).toBe("Voting started: Round 2.");
+    expect(said(mergeEvents([up], [up]))).toBe("Time is up.");
+  });
+
+  it("speaks French and German", async () => {
+    await loadLanguage("fr");
+    await loadLanguage("de");
+    const events: LiveEvent[] = [
+      { kind: "timer", who: "", name: "", timer: { what: "started", seconds: 60 } },
+    ];
+    expect(describeEvents(fixedT("fr"), events)).toBe("Minuteur lancé\u{202f}: 1 minute.");
+    expect(describeEvents(fixedT("de"), events)).toBe("Zeitlimit gestartet: 1 Minute.");
+    const up: LiveEvent[] = [{ kind: "timeUp", who: "", name: "" }];
+    expect(describeEvents(fixedT("fr"), up)).toBe("Temps écoulé.");
+    expect(describeEvents(fixedT("de"), up)).toBe("Die Zeit ist um.");
   });
 });
