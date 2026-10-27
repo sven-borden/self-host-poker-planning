@@ -410,3 +410,146 @@ describe("the table's centre", () => {
     expect(screen.queryByRole("button", { name: "Next round" })).toBeNull();
   });
 });
+
+describe("the reveal (#19)", () => {
+  /** A voting round where the viewer is the PO; Ana voted 8. */
+  function ownerRound(settings: Partial<RoomSettings> = {}): RoomState {
+    let state: RoomState = { ...stateWith(table, settings), ownerId: ME };
+    const started = apply(
+      state,
+      { type: "startRound", subject: { kind: "none" } },
+      {
+        actor: ME,
+        now: 50,
+      },
+    );
+    if (!started.ok) throw new Error(started.error);
+    state = started.state;
+    const voted = apply(state, { type: "castVote", card: "8" }, { actor: "ana", now: 60 });
+    if (!voted.ok) throw new Error(voted.error);
+    return voted.state;
+  }
+  const revealButton = () => screen.queryByRole("button", { name: "Reveal cards" });
+  const press = (key: string, init: KeyboardEventInit = {}, target: Element = document.body) =>
+    fireEvent.keyDown(target, { key, ...init });
+
+  it("gives the PO a reveal button, also on the key R, and nobody else", async () => {
+    await renderRoom(ownerRound());
+    expect(centre()).toBe("1/3 voted so far");
+    expect(revealButton()?.getAttribute("aria-keyshortcuts")).toBe("R");
+    revealButton()?.focus();
+    fireEvent.click(revealButton() as HTMLElement);
+    await waitFor(() => expect(server.round?.phase).toBe("revealed"));
+    expect(sent).toEqual([{ type: "reveal" }]);
+    expect(revealButton()).toBeNull();
+    // The button left with the focus: it goes on to the next round's button.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Next round" })),
+    );
+    expect(card("8").getAttribute("aria-disabled")).toBe("true");
+    expect(
+      screen.getByText("The cards are revealed. Votes can no longer change in this round."),
+    ).toBeTruthy();
+
+    cleanup();
+    sent = [];
+    await renderRoom(voting());
+    expect(centre()).toBe("0/3 voted so far");
+    expect(revealButton()).toBeNull();
+    press("r");
+    expect(sent).toEqual([]);
+  });
+
+  it("reveals on R alone, never while typing or with a modifier", async () => {
+    await renderRoom(ownerRound());
+    const field = document.createElement("input");
+    document.body.append(field);
+    try {
+      press("r", {}, field);
+      press("R", { ctrlKey: true });
+      press("r", { metaKey: true });
+      press("r", { altKey: true });
+      press("R", { shiftKey: true });
+      press("r", { repeat: true });
+      press("e");
+      expect(sent).toEqual([]);
+      press("r");
+      await waitFor(() => expect(server.round?.phase).toBe("revealed"));
+      expect(sent).toEqual([{ type: "reveal" }]);
+    } finally {
+      field.remove();
+    }
+  });
+
+  it("shows a refused reveal, but not one the last vote made moot", async () => {
+    await renderRoom(ownerRound());
+    mocks.commandSender.mockImplementation(() => async () => ({ ok: false, code: "not_allowed" }));
+    fireEvent.click(revealButton() as HTMLElement);
+    await screen.findByText("This room’s settings do not let you do that.");
+    mocks.commandSender.mockImplementation(() => async () => ({ ok: false, code: "not_voting" }));
+    fireEvent.click(revealButton() as HTMLElement);
+    await waitFor(() =>
+      expect(screen.queryByText("This room’s settings do not let you do that.")).toBeNull(),
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows the automatic reveal as the forced one", async () => {
+    await renderRoom(ownerRound());
+    fireEvent.click(card("5"));
+    await waitFor(() => expect(handLive()).toBe("Your vote: 5."));
+    run("po", { type: "castVote", card: "3" });
+    expect(server.round?.phase).toBe("revealed");
+    expect(revealButton()).toBeNull();
+    expect(screen.getByRole("button", { name: "Next round" })).toBeTruthy();
+    expect(mySlot()?.getAttribute("data-face")).toBe("up");
+    const seat = (name: string) =>
+      [...document.querySelectorAll("[data-seat]")].find((s) => s.textContent?.includes(name));
+    expect(seat("Name ana")?.textContent).toContain("Name ana, card 8");
+    expect(card("5").getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("deals an anonymous round's cards under the table, tied to nobody", async () => {
+    await renderRoom(ownerRound({ revealNames: false }));
+    expect(document.querySelector("[data-results]")).toBeNull();
+    fireEvent.click(card("5"));
+    await waitFor(() => expect(handLive()).toBe("Your vote: 5."));
+    run("po", { type: "castVote", card: "?" });
+    const row = await screen.findByRole("list", { name: "Cards played" });
+    const spoken = (item: HTMLElement) => item.querySelector(".sr-only")?.textContent;
+    expect(within(row).getAllByRole("listitem").map(spoken)).toEqual(["5", "8", "unsure"]);
+    // Nothing in the row names a person or points at one.
+    const html = row.outerHTML;
+    for (const leak of ["Name", "ana", ME, "po", "data-you", "data-seat"]) {
+      expect(html).not.toContain(leak);
+    }
+    // The seats keep only who voted; their cards left for the row.
+    expect(document.querySelectorAll("[data-face='gone']")).toHaveLength(3);
+    expect(document.querySelectorAll("[data-face='up']")).toHaveLength(0);
+  });
+
+  it("names a voter who left after a named reveal, under the table", async () => {
+    await renderRoom(ownerRound());
+    run(ME, { type: "reveal" });
+    expect(document.querySelector("[data-results]")).toBeNull();
+    run("ana", { type: "leave" });
+    const left = await screen.findByRole("list", { name: "Left the room" });
+    expect(left.textContent).toContain("Name ana, card 8");
+    // A departed vote the server sent without a name still shows its card.
+    const round = useRoomStore.getState().snapshot?.room.round;
+    if (round?.phase !== "revealed" || round.anonymous) throw new Error("named reveal expected");
+    act(() => {
+      const snapshot = useRoomStore.getState().snapshot;
+      if (!snapshot) return;
+      useRoomStore.getState().receive({
+        ...snapshot,
+        version: snapshot.version + 1,
+        room: {
+          ...snapshot.room,
+          round: { ...round, votes: round.votes.map(({ name: _, ...vote }) => vote) },
+        },
+      });
+    });
+    await waitFor(() => expect(left.textContent).toContain("Someone who left, card 8"));
+  });
+});
