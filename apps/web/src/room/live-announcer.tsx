@@ -12,12 +12,16 @@ export const LIVE_MAX_WAIT_MS = 1500;
  * The table's polite live region (#17): "Ana joined.", "Ben is away.", "Ana voted.", or
  * "3 people voted." for a burst. It follows every snapshot the room store keeps (not each
  * render, which could merge two), reads its causes (and, for a snapshot without any, the
- * reveal it shows), and batches what they say.
+ * reveal it shows), and batches what they say. What it says is kept in the store's `said`:
+ * the settings panel (#25), which hides the page from screen readers while it is open,
+ * says the same words in a region of its own.
  */
 export function LiveAnnouncer() {
   const t = useT();
   const tRef = useRef(t);
-  const [said, setSaid] = useState({ id: 0, text: "" });
+  const said = useRoomStore((state) => state.said);
+  // Only what is said from now on: a region that appears with words in it says nothing.
+  const [since] = useState(() => useRoomStore.getState().said.id);
 
   useEffect(() => {
     tRef.current = t;
@@ -31,7 +35,7 @@ export function LiveAnnouncer() {
       timer = undefined;
       const text = describeEvents(tRef.current, pending);
       pending = [];
-      if (text !== "") setSaid((before) => ({ id: before.id + 1, text }));
+      if (text !== "") useRoomStore.getState().announce(text);
     };
     const unsubscribe = useRoomStore.subscribe((state, before) => {
       const next = state.snapshot;
@@ -55,7 +59,7 @@ export function LiveAnnouncer() {
   // A new element per announcement: the same words twice in a row are still read out.
   return (
     <div role="status" data-table-live className="sr-only">
-      <span key={said.id}>{said.text}</span>
+      <span key={said.id}>{said.id > since ? said.text : ""}</span>
     </div>
   );
 }

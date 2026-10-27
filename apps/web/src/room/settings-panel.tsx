@@ -1,11 +1,13 @@
 import { baseCards, MAX_MEMBERS, MAX_PARTICIPANTS, type SettingsPatch } from "@pp/domain";
 import type { RoomSettingsView, RoomView } from "@pp/protocol";
-import { OctagonXIcon, XIcon } from "lucide-react";
+import { LockIcon, OctagonXIcon, XIcon } from "lucide-react";
 import {
   type ComponentType,
   type ReactNode,
   type RefObject,
+  useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -33,23 +35,32 @@ import { deckName, type SettingKey } from "./settings-words.ts";
 // setting whose control is not built yet, reads the value and what it means. A lazy
 // chunk of its own (`settings-button.tsx` loads it on the first open).
 //
-// Adding a control (#26 to #30): give the setting's field in `GROUPS` a `Control`, a
-// component that renders the input with `ControlProps.id` and calls `change` with only
-// the keys it changes. The panel does the rest: the label points at the control, the hint
-// describes it, the change shows at once and stays pending until the server's snapshot
-// confirms it, and a refusal rolls it back with its message under the setting.
+// Adding a control (#26 to #29): give the setting's field in `GROUPS` a `toggle` (an
+// on-off switch) or a `Control`, a component that renders the input with
+// `ControlProps.id` (or labels a group with `aria-labelledby={labelId}`) and calls
+// `change` with only the keys it changes. `layout: "block"` gives it the row's whole width.
+// The panel does the rest: the label points at the control, the hint describes it, the
+// change shows at once and stays pending until the server's snapshot confirms it, and a
+// refusal rolls it back with its message under the setting (`refusals` words a code).
 
 /** What a setting's control gets from the panel. */
 export interface ControlProps {
+  /** The room as the viewer sees it: the round's phase and anonymity, the people. */
+  room: RoomView;
   /** The settings as shown: the room's, with the PO's unconfirmed changes folded in. */
   settings: RoomSettingsView;
   /** Sends `updateSettings` with this patch: only the keys that change. */
   change: (patch: SettingsPatch) => void;
-  /** A change of this setting is on its way; a second one waits until it is answered. */
+  /**
+   * A change of this setting is on its way. Show the control `aria-disabled`, keep it
+   * focusable: the panel ignores another change of it until the first is answered.
+   */
   pending: boolean;
-  /** The control's id: the setting's `<label>` points at it. */
+  /** The control's id: the setting's `<label for>` points at it. */
   id: string;
-  /** The ids that describe the control (the hint, and a refusal when there is one). */
+  /** The label's id, for `aria-labelledby` (a radio group cannot use `<label for>`). */
+  labelId: string;
+  /** The ids that describe the control (the hint, a lock's reason, a refusal). */
   describedBy: string;
 }
 
@@ -62,15 +73,27 @@ export interface SettingField {
   value: (t: TFunction, settings: RoomSettingsView, format: Formatters) => string;
   /** A line under the hint, or null: the deck's cards, the timer's end, the round's names. */
   detail?: (t: TFunction, settings: RoomSettingsView, room: RoomView) => string | null;
+  /**
+   * Where the PO's control sits: `inline` (the default) at the row's end, beside the label,
+   * for a switch; `block` across the row under the hint, for a deck picker, a radio group
+   * or the timer.
+   */
+  layout?: "inline" | "block";
   /** The PO's switch, for an on-off setting. */
   toggle?: Toggle;
   /** The PO's control for any other setting. */
   Control?: ComponentType<ControlProps>;
-  // A field with neither shows its value to the PO too, until its issue adds one.
+  /**
+   * The words for a refusal of this setting, by the server's code, when the generic ones
+   * (`errorMessage`) would not say why. A code not listed falls back to those.
+   */
+  refusals?: Readonly<Partial<Record<string, (t: TFunction) => string>>>;
+  // A field with neither a toggle nor a Control shows its value to the PO too, until its
+  // issue adds one.
 }
 
-interface SettingGroup {
-  id: "cards" | "round" | "people";
+export interface SettingGroup {
+  id: string;
   title: (t: TFunction) => string;
   fields: readonly SettingField[];
 }
@@ -84,27 +107,36 @@ export interface Toggle {
   read: (settings: RoomSettingsView) => boolean;
   /** The patch for the new position: only the keys that change. */
   write: (on: boolean) => SettingsPatch;
+  /**
+   * Why the switch cannot move now, or null when it can: the reason shows under the
+   * setting and describes the switch, which stays focusable but `aria-disabled`.
+   */
+  locked?: (room: RoomView, t: TFunction) => string | null;
 }
 
 /** The switch of an on-off setting (`SettingField.toggle`). */
 function SettingSwitch({
   toggle,
+  locked,
   settings,
   change,
   pending,
   id,
   describedBy,
-}: ControlProps & { toggle: Toggle }) {
+}: ControlProps & { toggle: Toggle; locked: boolean }) {
+  const still = pending || locked;
   return (
     <Switch
       id={id}
       checked={toggle.read(settings)}
       aria-describedby={describedBy}
       aria-busy={pending || undefined}
-      aria-disabled={pending || undefined}
+      aria-disabled={still || undefined}
       // 44 px to touch, whatever the switch draws (design brief).
       className="relative after:absolute after:-inset-x-2 after:-inset-y-3.5 aria-disabled:opacity-60"
-      onCheckedChange={(on) => change(toggle.write(on))}
+      onCheckedChange={(on) => {
+        if (!still) change(toggle.write(on));
+      }}
     />
   );
 }
@@ -113,7 +145,7 @@ function SettingSwitch({
  * The settings in the order the panel shows them (ADR-011's list). Editable now: the
  * settings whose behaviour the room already shows end to end. The deck and specials
  * (#26), the timer (#27), who can reveal (#28) and changes after the reveal (#29) are
- * read-only until their issue adds a `Control`.
+ * read-only until their issue adds a control.
  */
 export const GROUPS: readonly SettingGroup[] = [
   {
@@ -209,6 +241,10 @@ export const GROUPS: readonly SettingGroup[] = [
         hint: (t) => t("settings.observersCountHint", { total: MAX_MEMBERS }),
         value: (t, s) => onOff(t, s.observersCount),
         toggle: { read: (s) => s.observersCount, write: (on) => ({ observersCount: on }) },
+        // Turning observers on in a room past 16 counted: say why, with the numbers.
+        refusals: {
+          room_full: (t) => t("settings.observersCountRefused", { max: MAX_PARTICIPANTS }),
+        },
       },
     ],
   },
@@ -230,10 +266,14 @@ export function withPatch(settings: RoomSettingsView, patch: SettingsPatch): Roo
   return { ...settings, ...patch, timer: { ...settings.timer, ...patch.timer } };
 }
 
-type Pending = Partial<Record<SettingKey, SettingsPatch>>;
+/** The refusal of a change the page gave up on: the connection dropped while it was on its way. */
+export const CONNECTION_DROPPED = "connection_dropped";
 
-function without(pending: Pending, key: SettingKey): Pending {
-  const rest = { ...pending };
+type Pending = Partial<Record<SettingKey, SettingsPatch>>;
+type Failures = Partial<Record<SettingKey, string>>;
+
+function without<V>(record: Partial<Record<SettingKey, V>>, key: SettingKey) {
+  const rest = { ...record };
   delete rest[key];
   return rest;
 }
@@ -242,33 +282,74 @@ function without(pending: Pending, key: SettingKey): Pending {
  * The PO's changes: each is shown at once and sent as `updateSettings` through the
  * `commandSender()` taken at the press. It stays pending until the ack, which comes once
  * the store holds the server's snapshot (the server broadcasts before it acks); a refusal
- * drops it, so the setting rolls back to the room's value and the reason shows.
+ * drops it, so the setting rolls back to the room's value and the reason shows. Another
+ * change of the same setting while one is pending is ignored. When the connection drops,
+ * a pending change is given up at once (rolled back, "Not saved: the connection
+ * dropped."), and a change made while it is down fails the same way; the message goes on
+ * reconnect or at the next change.
  */
 function useSettingChanges(confirmed: RoomSettingsView) {
   const [pending, setPending] = useState<Pending>({});
-  const inFlight = useRef(new Set<SettingKey>());
-  const [failure, setFailure] = useState<{ key: SettingKey; code: string } | null>(null);
+  const [failures, setFailures] = useState<Failures>({});
+  const inFlight = useRef(new Map<SettingKey, AbortController>());
+
+  useEffect(() => {
+    const unsubscribe = useRoomStore.subscribe((state, before) => {
+      if (state.status === before.status) return;
+      if (state.status === "live") {
+        setFailures((now) => {
+          const kept = Object.entries(now).filter(([, code]) => code !== CONNECTION_DROPPED);
+          return kept.length === Object.keys(now).length ? now : Object.fromEntries(kept);
+        });
+        return;
+      }
+      const dropped = [...inFlight.current.entries()];
+      if (dropped.length === 0) return;
+      inFlight.current.clear();
+      for (const [, controller] of dropped) controller.abort();
+      setPending({});
+      setFailures((now) => ({
+        ...now,
+        ...Object.fromEntries(dropped.map(([key]) => [key, CONNECTION_DROPPED])),
+      }));
+    });
+    const sends = inFlight.current;
+    return () => {
+      unsubscribe();
+      for (const controller of sends.values()) controller.abort();
+    };
+  }, []);
 
   async function change(key: SettingKey, patch: SettingsPatch) {
     if (inFlight.current.has(key)) return;
-    inFlight.current.add(key);
+    setFailures({});
+    if (useRoomStore.getState().status !== "live") {
+      setFailures({ [key]: CONNECTION_DROPPED });
+      return;
+    }
+    const controller = new AbortController();
+    inFlight.current.set(key, controller);
     const send = commandSender();
     setPending((before) => ({ ...before, [key]: patch }));
-    setFailure(null);
     let code: string | null = null;
     try {
-      const ack = await send({ type: "updateSettings", payload: { patch } });
+      const ack = await send(
+        { type: "updateSettings", payload: { patch } },
+        { signal: controller.signal },
+      );
       if (!ack.ok) code = ack.code;
     } catch (error) {
       code = codeOf(error);
     }
+    // Given up when the connection dropped: already rolled back and said.
+    if (controller.signal.aborted) return;
     inFlight.current.delete(key);
     setPending((before) => without(before, key));
-    if (code !== null) setFailure({ key, code });
+    if (code !== null) setFailures((now) => ({ ...now, [key]: code }));
   }
 
   const shown = Object.values(pending).reduce<RoomSettingsView>(withPatch, confirmed);
-  return { shown, pending, failure, change };
+  return { shown, pending, failures, change };
 }
 
 interface SettingsPanelProps {
@@ -276,14 +357,27 @@ interface SettingsPanelProps {
   onOpenChange: (open: boolean) => void;
   /** Where the focus returns when the panel closes: the button that opened it. */
   returnFocus: RefObject<HTMLElement | null>;
+  /** The settings to show; `GROUPS` but in a test of the plug-in contract. */
+  groups?: readonly SettingGroup[];
 }
+
+/** A control the panel can focus: what the first Tab inside a setting's control reaches. */
+const FOCUSABLE =
+  "[data-setting-control] :is(button, input, select, textarea, [tabindex]:not([tabindex='-1']))";
 
 /**
  * "Room settings" for the PO, "Room rules" for everyone else: a side sheet on a wide
  * screen, a bottom sheet on a phone. A modal dialog: the focus stays inside while it is
- * open, Esc closes it, and the focus goes back to the header's button.
+ * open, Esc closes it, and the focus goes back to the header's button. It opens at its
+ * top; the sticky title never covers the focus (`scroll-padding-top` follows its height),
+ * and the sheet keeps clear of a notch and the home indicator (safe areas).
  */
-export function SettingsPanel({ open, onOpenChange, returnFocus }: SettingsPanelProps) {
+export function SettingsPanel({
+  open,
+  onOpenChange,
+  returnFocus,
+  groups = GROUPS,
+}: SettingsPanelProps) {
   const phone = useSyncExternalStore(subscribePhone, isPhone);
   const room = useRoomStore((state) => state.snapshot?.room);
   const content = useRef<HTMLDivElement>(null);
@@ -295,40 +389,110 @@ export function SettingsPanel({ open, onOpenChange, returnFocus }: SettingsPanel
         showCloseButton={false}
         className={cn(
           "gap-0 overflow-y-auto overscroll-contain border-line bg-surface",
+          "scroll-pt-[var(--panel-head,0px)] scroll-pb-[env(safe-area-inset-bottom)]",
+          "pb-[env(safe-area-inset-bottom)]",
           phone
-            ? "max-h-[88dvh] rounded-t-2xl pb-[env(safe-area-inset-bottom)]"
-            : "w-full sm:max-w-md",
+            ? "max-h-[88dvh] rounded-t-2xl pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]"
+            : "w-full pr-[env(safe-area-inset-right)] sm:max-w-md",
         )}
         onOpenAutoFocus={(event) => {
-          // The PO lands on the first control; anyone else on "Close".
-          const label = content.current?.querySelector("[data-setting] label");
-          const first = label instanceof HTMLLabelElement ? label.control : null;
-          if (!(first instanceof HTMLElement)) return;
           event.preventDefault();
-          first.focus();
+          openAtTop(content.current);
         }}
         onCloseAutoFocus={(event) => {
           // The button lives outside this chunk, so the dialog has no trigger of its own.
           event.preventDefault();
           returnFocus.current?.focus();
         }}
+        onFocus={(event) => keepClearOfHead(content.current, event.target)}
       >
-        {room !== undefined ? <PanelBody room={room} /> : null}
+        {room !== undefined ? <PanelBody room={room} groups={groups} side={!phone} /> : null}
       </SheetContent>
     </Sheet>
   );
 }
 
-function PanelBody({ room }: { room: RoomView }) {
+/** The sticky head's height, which the content's `scroll-padding-top` keeps clear. */
+const headHeight = (box: HTMLElement) =>
+  box.querySelector<HTMLElement>("[data-panel-head]")?.getBoundingClientRect().height ?? 0;
+
+/**
+ * Opens at the top: the PO's first control takes the focus when it shows whole under the
+ * sticky head; otherwise (anyone else, or a short screen) the title does.
+ */
+function openAtTop(box: HTMLElement | null) {
+  if (!box) return;
+  box.scrollTop = 0;
+  const first = box.querySelector<HTMLElement>(FOCUSABLE);
+  const title = box.querySelector<HTMLElement>("[data-panel-title]");
+  if (first) {
+    // Relative to the sheet, which may still be sliding in.
+    const frame = box.getBoundingClientRect();
+    const rect = first.getBoundingClientRect();
+    const top = rect.top - frame.top;
+    if (top >= headHeight(box) && rect.bottom - frame.top <= box.clientHeight) {
+      first.focus({ preventScroll: true });
+      return;
+    }
+  }
+  title?.focus({ preventScroll: true });
+}
+
+/** Scrolls a focused element out from under the sticky head, where the browser left it. */
+function keepClearOfHead(box: HTMLElement | null, target: EventTarget) {
+  if (!box || !(target instanceof HTMLElement) || target.closest("[data-panel-head]")) return;
+  requestAnimationFrame(() => {
+    const head = box.querySelector("[data-panel-head]")?.getBoundingClientRect();
+    if (!head || document.activeElement !== target) return;
+    const gap = head.bottom - target.getBoundingClientRect().top;
+    if (gap > 0) box.scrollTop -= gap + 8;
+  });
+}
+
+function PanelBody({
+  room,
+  groups,
+  side,
+}: {
+  room: RoomView;
+  groups: readonly SettingGroup[];
+  side: boolean;
+}) {
   const t = useT();
   const owner = room.you !== null && room.you === room.ownerId;
   const changes = useSettingChanges(room.settings);
+  const head = useRef<HTMLDivElement>(null);
+
+  // The content's scroll padding follows the sticky head's height (a title on two lines,
+  // a larger text size).
+  useLayoutEffect(() => {
+    const element = head.current;
+    const box = element?.closest<HTMLElement>("[data-slot=sheet-content]");
+    if (!element || !box || typeof ResizeObserver === "undefined") return;
+    const follow = () => box.style.setProperty("--panel-head", `${element.offsetHeight}px`);
+    follow();
+    const observer = new ResizeObserver(follow);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div data-settings-panel={owner ? "owner" : "rules"}>
       {/* The title and "Close" stay in sight while the settings scroll under them. */}
-      <div className="sticky top-0 z-10 flex items-start gap-2 border-b border-line bg-surface py-2 pr-2 pl-4">
+      <div
+        ref={head}
+        data-panel-head
+        className={cn(
+          "sticky top-0 z-10 flex items-start gap-2 border-b border-line bg-surface py-2 pr-2 pl-4",
+          side && "pt-[calc(0.5rem+env(safe-area-inset-top))]",
+        )}
+      >
         <SheetHeader className="flex-1 gap-1 px-0 py-2">
-          <SheetTitle className="text-xl font-[760] [font-stretch:110%]">
+          <SheetTitle
+            data-panel-title
+            tabIndex={-1}
+            className="text-xl font-[760] [font-stretch:110%] focus:outline-none"
+          >
             {t(owner ? "settings.openOwner" : "settings.openOthers")}
           </SheetTitle>
           <SheetDescription className="text-ink-2">
@@ -342,8 +506,9 @@ function PanelBody({ room }: { room: RoomView }) {
           </Button>
         </SheetClose>
       </div>
+      <PanelLive />
       <div className="divide-y divide-line">
-        {GROUPS.map((group) => (
+        {groups.map((group) => (
           <SettingsGroup key={group.id} group={group}>
             {group.fields.map((field) => (
               <FieldRow
@@ -353,13 +518,28 @@ function PanelBody({ room }: { room: RoomView }) {
                 settings={changes.shown}
                 editable={owner}
                 pending={changes.pending[field.key] !== undefined}
-                failure={changes.failure?.key === field.key ? changes.failure.code : null}
+                failure={changes.failures[field.key] ?? null}
                 change={(patch) => changes.change(field.key, patch)}
               />
             ))}
           </SettingsGroup>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The table's live region, said again inside the panel: a modal dialog hides the page
+ * from screen readers, so while it is open the table's announcements ("Voting started:
+ * Round 1.", "Cards revealed.") are heard from here instead, each once.
+ */
+function PanelLive() {
+  const said = useRoomStore((state) => state.said);
+  const [since] = useState(() => useRoomStore.getState().said.id);
+  return (
+    <div role="status" data-panel-live className="sr-only">
+      <span key={said.id}>{said.id > since ? said.text : ""}</span>
     </div>
   );
 }
@@ -387,49 +567,102 @@ interface FieldRowProps {
   change: (patch: SettingsPatch) => void;
 }
 
+/** What a refusal of `field` says: the offline case, the field's own words, or the generic ones. */
+function refusalMessage(t: TFunction, field: SettingField, code: string): string {
+  if (code === CONNECTION_DROPPED) return t("settings.connectionDropped");
+  return field.refusals?.[code]?.(t) ?? failureMessage(t, code);
+}
+
 function FieldRow({ field, room, settings, editable, pending, failure, change }: FieldRowProps) {
   const t = useT();
   const format = useFormat();
-  const ids = { control: useId(), hint: useId(), error: useId() };
+  const ids = { control: useId(), label: useId(), hint: useId(), lock: useId(), error: useId() };
+  const alert = useRef<HTMLParagraphElement>(null);
   const label = field.label(t);
   const detail = field.detail?.(t, settings, room) ?? null;
-  // Turning observers on in a room past 16 counted: say why, with the numbers.
-  const message =
-    failure === null
-      ? null
-      : failure === "room_full" && field.key === "observersCount"
-        ? t("settings.observersCountRefused", { max: MAX_PARTICIPANTS })
-        : failureMessage(t, failure);
+  const message = failure === null ? null : refusalMessage(t, field, failure);
+  const { toggle, Control } = field;
+  const lock = editable ? (toggle?.locked?.(room, t) ?? null) : null;
+
+  // A refusal can land below the fold of a long panel: bring it into view.
+  useEffect(() => {
+    if (message !== null) alert.current?.scrollIntoView?.({ block: "nearest" });
+  }, [message]);
+
   const props: ControlProps = {
+    room,
     settings,
     change,
     pending,
     id: ids.control,
-    describedBy: message === null ? ids.hint : `${ids.hint} ${ids.error}`,
+    labelId: ids.label,
+    describedBy: [ids.hint, lock !== null && ids.lock, message !== null && ids.error]
+      .filter(Boolean)
+      .join(" "),
   };
-  const { toggle, Control } = field;
   const control = !editable ? null : toggle ? (
-    <SettingSwitch toggle={toggle} {...props} />
+    <SettingSwitch toggle={toggle} locked={lock !== null} {...props} />
   ) : Control ? (
     <Control {...props} />
   ) : null;
+  const block = control !== null && field.layout === "block";
+
+  const status = (
+    <>
+      {pending ? (
+        <p data-setting-saving className="m-0 mt-1 text-sm text-ink-2">
+          {t("settings.saving")}
+        </p>
+      ) : null}
+      {lock !== null ? (
+        <p id={ids.lock} data-setting-locked className="m-0 mt-1 flex items-start gap-2 text-sm">
+          <LockIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-2" />
+          {lock}
+        </p>
+      ) : null}
+      {message !== null ? (
+        <p
+          ref={alert}
+          id={ids.error}
+          role="alert"
+          className="m-0 mt-2 flex scroll-my-4 items-start gap-2 text-sm text-ink"
+        >
+          <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
+          {message}
+        </p>
+      ) : null}
+    </>
+  );
+
   return (
     <div
       data-setting={field.key}
+      data-layout={block ? "block" : "inline"}
       data-pending={pending || undefined}
       className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 gap-y-1 py-3"
     >
-      <dt className="font-medium">
-        {control !== null ? <label htmlFor={ids.control}>{label}</label> : label}
-      </dt>
-      <dd className="col-start-2 row-span-2 row-start-1 m-0 flex max-w-44 justify-end pt-0.5 text-right">
-        {control ?? (
-          <span data-setting-value className="font-semibold">
-            {field.value(t, settings, format)}
-          </span>
+      <dt className={cn("font-medium", block && "col-span-2")}>
+        {control !== null ? (
+          <label id={ids.label} htmlFor={ids.control}>
+            {label}
+          </label>
+        ) : (
+          label
         )}
-      </dd>
-      <dd className="m-0 text-sm text-ink-2">
+      </dt>
+      {block ? null : (
+        <dd
+          data-setting-control={control !== null || undefined}
+          className="col-start-2 row-span-2 row-start-1 m-0 flex max-w-44 justify-end pt-0.5 text-right"
+        >
+          {control ?? (
+            <span data-setting-value className="font-semibold">
+              {field.value(t, settings, format)}
+            </span>
+          )}
+        </dd>
+      )}
+      <dd className={cn("m-0 text-sm text-ink-2", block && "col-span-2")}>
         <p id={ids.hint} className="m-0">
           {field.hint(t)}
         </p>
@@ -438,18 +671,14 @@ function FieldRow({ field, room, settings, editable, pending, failure, change }:
             {detail}
           </p>
         ) : null}
-        {pending ? (
-          <p data-setting-saving className="m-0 mt-1">
-            {t("settings.saving")}
-          </p>
-        ) : null}
-        {message !== null ? (
-          <p id={ids.error} role="alert" className="m-0 mt-2 flex items-start gap-2 text-ink">
-            <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
-            {message}
-          </p>
-        ) : null}
+        {block ? null : status}
       </dd>
+      {block ? (
+        <dd data-setting-control className="col-span-2 m-0 pt-2">
+          {control}
+          {status}
+        </dd>
+      ) : null}
     </div>
   );
 }
