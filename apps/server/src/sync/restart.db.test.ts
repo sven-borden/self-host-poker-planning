@@ -3,6 +3,11 @@
  * as a child process; two guests enter a room and one votes mid-round; the process is
  * killed hard and started again on the same port. The clients reconnect on their own,
  * enter again and get the same round, the hidden vote included.
+ *
+ * #27 (AC 3): a timer running when the server dies still reveals at its deadline, once.
+ * Nothing arms the deadline at start-up: the first socket that enters the room arms it
+ * again (`armDeadline` on enter), and `apply` stamps the reveal with the deadline itself,
+ * so the stored round is the same whoever resolves it.
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -154,4 +159,63 @@ it("restores the round, hidden vote included, after a hard kill and a restart", 
     { who: ada.id, card: "8", changedAfterReveal: false },
     { who: bob.id, card: "3", changedAfterReveal: false },
   ]);
+}, 60_000);
+
+it("reveals at the deadline, once, when the server restarts mid-countdown (#27)", async () => {
+  const [ada, bob] = await Promise.all([signInGuest(base, base), signInGuest(base, base)]);
+  let state = createRoom({ ownerId: ada.id });
+  state = step(state, ada.id, { type: "join", name: "Ada", role: "voter" });
+  state = step(state, bob.id, { type: "join", name: "Bob", role: "voter" });
+  state = step(state, ada.id, { type: "startRound", subject: { kind: "none" } });
+  state = step(state, ada.id, { type: "startTimer", seconds: 12 });
+  const deadlineAt = state.round?.deadlineAt ?? 0;
+  const code = roomCode();
+  expect(await database.store.insertRoom({ code, name: null, state })).not.toBeNull();
+
+  const a = roomClient(ada, code);
+  const b = roomClient(bob, code);
+  await a.waitFor((s) => s.version === 1);
+  await b.waitFor((s) => s.version === 1);
+  expect(await a.cmd("castVote", { card: "5", round: 1 })).toEqual({ ok: true, version: 2 });
+  await b.waitFor((s) => s.room.round?.voted.includes(ada.id) === true);
+
+  const fromA = a.received.length;
+  const dropped = new Promise((done) => b.socket.once("disconnect", done));
+  await killServer();
+  await dropped;
+  await startServer();
+  // Both clients are back before the deadline: the countdown goes on where it was.
+  const back = await a.waitFor(
+    (s) => s.room.round?.deadlineAt === deadlineAt,
+    10_000,
+    fromA,
+  );
+  expect(back.snapshot.room.round?.phase).toBe("voting");
+  expect(Date.now()).toBeLessThan(deadlineAt);
+
+  const shown = await Promise.all(
+    [a, b].map((client) =>
+      client.waitFor((s) => s.room.round?.phase === "revealed", deadlineAt - Date.now() + 5_000),
+    ),
+  );
+  for (const [i, client] of [a, b].entries()) {
+    const reveals = client.received.flatMap((r) =>
+      r.snapshot.causes.filter((cause) => cause.type === "revealed"),
+    );
+    expect(reveals, `client ${i}`).toEqual([{ type: "revealed", by: "timer" }]);
+    const round = shown[i]?.snapshot.room.round;
+    expect(round?.phase === "revealed" && round.revealedAt).toBe(deadlineAt);
+  }
+  // Not before the deadline, and stored as the timer's reveal.
+  const stored = await database.store.loadRoom(code);
+  expect(stored?.state.round).toMatchObject({ phase: "revealed", revealedAt: deadlineAt });
+  expect(stored?.state.round?.votes).toEqual({ [ada.id]: { card: "5" } });
+  // One more second: nothing reveals twice.
+  await new Promise((wake) => setTimeout(wake, 1_000));
+  for (const client of [a, b]) {
+    const count = client.received.filter((r) =>
+      r.snapshot.causes.some((cause) => cause.type === "revealed"),
+    ).length;
+    expect(count).toBe(1);
+  }
 }, 60_000);
