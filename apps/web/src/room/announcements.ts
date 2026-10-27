@@ -1,17 +1,20 @@
-import type { CauseView, RoomView, RoundView } from "@pp/protocol";
+import { MAX_PARTICIPANTS } from "@pp/domain";
+import type { CauseView, RoomSettingsView, RoomView, RoundView } from "@pp/protocol";
 import type { TFunction } from "../i18n/i18n.ts";
 import { cardLabel } from "../table/cards.tsx";
 import { type RevealSummary, revealSummary, summarySentence } from "./results-view.ts";
+import { deckName, SETTING_KEYS, type SettingKey, sameSetting } from "./settings-words.ts";
 import { subjectName } from "./subject.ts";
 
 // What the table's live region says (#17): joins, leaves, away and back, votes, a new
-// round (#18) or a re-vote (#32), the reveal (#19) and the PO's final estimate (#32), read
-// from a snapshot's causes. Never a person's card: a vote cause carries who, never what,
-// the reveal says the round's result (#20: "Cards revealed. Consensus on 8."), and the
-// final is the PO's decision; both belong to nobody. Pure, so the batching rules are
-// tested without timers; `live-announcer.tsx` runs them.
+// round (#18) or a re-vote (#32), the reveal (#19), the PO's final estimate (#32) and the
+// PO's settings changes (#25), read from a snapshot's causes. Never a person's card: a
+// vote cause carries who, never what, the reveal says the round's result (#20: "Cards
+// revealed. Consensus on 8."), and the final is the PO's decision; both belong to nobody.
+// Pure, so the batching rules are tested without timers; `live-announcer.tsx` runs them.
 
 export type LiveKind =
+  | "settings"
   | "roundStarted"
   | "joined"
   | "left"
@@ -29,16 +32,28 @@ export interface LiveEvent {
   name: string;
   /** The reveal's result, when the snapshot shows the round revealed (#20). */
   summary?: RevealSummary;
-  /** A new round: its number and subject, said with it (#21: "Voting started: ABC-123."). */
-  round?: Pick<RoundView, "number" | "subject">;
+  /**
+   * A new round: its number and subject, said with it (#21: "Voting started: ABC-123."),
+   * and whether it is anonymous (#25: "Voting started: Round 4, anonymous.").
+   */
+  round?: Pick<RoundView, "number" | "subject" | "anonymous">;
   /** A new round that is a re-vote (#32): "a new vote on the same subject". */
   revote?: boolean;
   /** The final estimate the PO recorded, and whether it replaced an earlier one (#32). */
   final?: { card: string; changed: boolean };
+  /**
+   * A setting the PO changed (#25), with the room's settings before and after, and the
+   * number of the next round, from which a change of anonymity applies.
+   */
+  setting?: { key: SettingKey; from: RoomSettingsView; to: RoomSettingsView; nextRound: number };
 }
 
-/** Said in this order, whatever order the events came in: the last vote, then the reveal. */
-const ORDER: readonly LiveKind[] = [
+/**
+ * Said in this order, whatever order the events came in: the last vote, then the reveal.
+ * A settings change is the exception: it is said where it happened among the others
+ * (`describeEvents`), so a change made just after "Start voting" follows it.
+ */
+const ORDER: readonly Exclude<LiveKind, "settings">[] = [
   "roundStarted",
   "joined",
   "left",
@@ -94,7 +109,11 @@ export function liveEvents(
           kind: cause.type,
           who: "",
           name: "",
-          round: next.round ?? { number: cause.number, subject: { kind: "none" } },
+          round: next.round ?? {
+            number: cause.number,
+            subject: { kind: "none" },
+            anonymous: !next.settings.revealNames,
+          },
           ...(cause.revote ? { revote: true } : {}),
         });
         continue;
@@ -133,7 +152,27 @@ export function liveEvents(
   if (!events.some((e) => e.kind === "revealed") && revealedSince(previous, next)) {
     events.push(revealedEvent(next));
   }
-  return events;
+  return [...settingEvents(previous, next), ...events];
+}
+
+/**
+ * The settings that differ between `previous` and `next` (#25), one event each. Read from
+ * the settings themselves rather than the `settingsUpdated` cause, so a reconnect that
+ * missed a change still says it. Never to the PO: they made the change in their own
+ * panel, whose switch says it.
+ */
+function settingEvents(previous: RoomView | null, next: RoomView): LiveEvent[] {
+  if (previous === null || next.you === next.ownerId) return [];
+  const from = previous.settings;
+  const to = next.settings;
+  // A round starts with the room's anonymity; the one on the table keeps its own.
+  const nextRound = (next.round?.number ?? 0) + 1;
+  return SETTING_KEYS.filter((key) => !sameSetting(from, to, key)).map((key) => ({
+    kind: "settings",
+    who: key,
+    name: "",
+    setting: { key, from, to, nextRound },
+  }));
 }
 
 /** The reveal, with the result `next` shows (none when a new round already replaced it). */
@@ -173,6 +212,15 @@ function revealedSince(previous: RoomView | null, next: RoomView): boolean {
 export function mergeEvents(pending: readonly LiveEvent[], events: readonly LiveEvent[]) {
   let merged = [...pending];
   for (const event of events) {
+    if (event.setting) {
+      // A setting changed twice in one batch: said once, from where it started to where
+      // it ended, or not at all when it came back.
+      const earlier = merged.find((e) => e.kind === "settings" && e.who === event.who);
+      merged = merged.filter((e) => e !== earlier);
+      const setting = { ...event.setting, from: earlier?.setting?.from ?? event.setting.from };
+      if (!sameSetting(setting.from, setting.to, setting.key)) merged.push({ ...event, setting });
+      continue;
+    }
     if (event.kind === "roundStarted") {
       merged = merged.filter(
         (e) => e.kind !== "revealed" && e.kind !== "roundStarted" && e.kind !== "final",
@@ -202,9 +250,11 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
   const name = first?.name ?? "";
   const count = events.length;
   switch (kind) {
+    case "settings":
+      return events.flatMap((e) => (e.setting ? [settingSentence(t, e.setting)] : [])).join(" ");
     case "roundStarted":
       if (first?.revote) return t("live.revote");
-      return t("live.roundStarted", {
+      return t(first?.round?.anonymous ? "live.roundStartedAnonymous" : "live.roundStarted", {
         subject: first?.round ? subjectName(t, first.round) : "",
       });
     case "joined":
@@ -228,13 +278,61 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
   }
 }
 
+/** What a changed setting means for the room, in plain words. */
+function settingSentence(
+  t: TFunction,
+  { key, to, nextRound }: NonNullable<LiveEvent["setting"]>,
+): string {
+  switch (key) {
+    case "deck":
+      return t("live.deckChanged", { deck: deckName(t, to.deck) });
+    case "specials":
+      return t("live.specialsChanged");
+    case "timer":
+      return t("live.timerChanged");
+    case "revealWhenAllVoted":
+      return t(to.revealWhenAllVoted ? "live.autoRevealOn" : "live.autoRevealOff");
+    case "whoCanReveal":
+      return t(to.whoCanReveal === "anyone" ? "live.revealAnyone" : "live.revealOwner");
+    case "revealNames":
+      return t(to.revealNames ? "live.anonymousOff" : "live.anonymousOn", { round: nextRound });
+    case "allowChangeAfterReveal":
+      return t(
+        to.allowChangeAfterReveal ? "live.changeAfterRevealOn" : "live.changeAfterRevealOff",
+      );
+    case "poVotes":
+      return t(to.poVotes ? "live.poVotesOn" : "live.poVotesOff");
+    case "observersCount":
+      return t(to.observersCount ? "live.observersCountOn" : "live.observersCountOff", {
+        max: MAX_PARTICIPANTS,
+      });
+  }
+}
+
 /**
  * One announcement for a batch: a sentence per kind, naming the person when there is one
- * ("Ana voted."), counting them when there are several ("3 people voted.").
+ * ("Ana voted."), counting them when there are several ("3 people voted."). A settings
+ * change keeps its place in the batch: the events before it are said first, then the
+ * change, then the events after it.
  */
 export function describeEvents(t: TFunction, events: readonly LiveEvent[]): string {
-  return ORDER.flatMap((kind) => {
-    const ofKind = events.filter((e) => e.kind === kind);
-    return ofKind.length > 0 ? [sentence(t, kind, ofKind)] : [];
-  }).join(" ");
+  const parts: string[] = [];
+  let run: LiveEvent[] = [];
+  const sayRun = () => {
+    for (const kind of ORDER) {
+      const ofKind = run.filter((e) => e.kind === kind);
+      if (ofKind.length > 0) parts.push(sentence(t, kind, ofKind));
+    }
+    run = [];
+  };
+  for (const event of events) {
+    if (event.kind !== "settings") {
+      run.push(event);
+      continue;
+    }
+    sayRun();
+    parts.push(sentence(t, "settings", [event]));
+  }
+  sayRun();
+  return parts.join(" ");
 }

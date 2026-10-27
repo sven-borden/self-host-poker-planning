@@ -32,6 +32,23 @@ export default defineConfig({
     // manifest after every build; Vite's default warning counts raw bytes.
     chunkSizeWarningLimit: 600,
     manifest: true,
+    rolldownOptions: {
+      output: {
+        // React, React DOM and the scheduler in one chunk of their own. Without it, once
+        // the lazy settings panel (#25) shared them with the entry, Rolldown split them
+        // into several small common chunks that the landing page and the room route loaded
+        // too, about 1 kB more gzipped. One vendor chunk also stays cached across deploys.
+        codeSplitting: {
+          groups: [
+            {
+              name: "vendor",
+              test: /node_modules[\\/]\.pnpm[\\/](react|react-dom|scheduler)@/,
+              priority: 10,
+            },
+          ],
+        },
+      },
+    },
   },
   resolve: {
     alias: { "@": src("") },

@@ -348,6 +348,20 @@ describe("commandSender", () => {
     expect(await send({ type: "leave" })).toEqual({ ok: false, code: "offline" });
     expect(fake.sent.filter((s) => s.event === "cmd")).toEqual([]);
   });
+
+  it("stops waiting and sends nothing once its signal aborts", async () => {
+    const fake = live();
+    open(fake);
+    const send = commandSender();
+    const controller = new AbortController();
+    // The room is not live yet: the send waits, then is given up.
+    const pending = send({ type: "leave" }, { signal: controller.signal });
+    controller.abort();
+    expect(await pending).toEqual({ ok: false, code: "offline" });
+    fake.up();
+    await vi.waitFor(() => expect(status()).toBe("live"));
+    expect(fake.sent.filter((s) => s.event === "cmd")).toEqual([]);
+  });
 });
 
 describe("message guards", () => {

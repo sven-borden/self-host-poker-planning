@@ -9,6 +9,7 @@ import { RiseIn } from "../../motion/motion.tsx";
 import { openRoom } from "../../realtime/room-connection.ts";
 import { RoomPresence } from "../../room/room-status.tsx";
 import { RoomView } from "../../room/room-view.tsx";
+import { RoomSettingsButton } from "../../room/settings-button.tsx";
 import { fetchRoomHeader, RoomApiError, type RoomHeader } from "../../rooms/api.ts";
 import { RoomNotFound } from "../../rooms/room-not-found.tsx";
 import { useRoomStore } from "../../stores/room-store.ts";
@@ -171,14 +172,18 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
             <RoomPresence />
           </div>
         </div>
-        <Button
-          variant="outline"
-          className="shrink-0 phone:col-start-2 phone:row-start-1 phone:size-11 phone:has-[>svg]:px-0"
-          onClick={copyLink}
-        >
-          <LinkIcon aria-hidden />
-          <span className="phone:sr-only">{t("room.copyLink")}</span>
-        </Button>
+        {/* The header's actions: the link to share, and the room's settings or rules (#25). */}
+        <div className="flex shrink-0 flex-wrap justify-end gap-2 phone:col-start-2 phone:row-start-1 phone:flex-nowrap">
+          <Button
+            variant="outline"
+            className="shrink-0 phone:size-11 phone:has-[>svg]:px-0"
+            onClick={copyLink}
+          >
+            <LinkIcon aria-hidden />
+            <span className="phone:sr-only">{t("room.copyLink")}</span>
+          </Button>
+          <RoomSettingsButton />
+        </div>
       </header>
       {note && (
         <p role="status" className="max-w-xl text-sm text-ink-2">

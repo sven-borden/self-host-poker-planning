@@ -1,5 +1,5 @@
 import type { RoundView } from "@pp/protocol";
-import { ExternalLinkIcon } from "lucide-react";
+import { ExternalLinkIcon, EyeOffIcon } from "lucide-react";
 import { useT } from "../i18n/hooks.ts";
 import { keyLabel, safeHref, shortUrl } from "./subject.ts";
 
@@ -9,15 +9,23 @@ import { keyLabel, safeHref, shortUrl } from "./subject.ts";
  * line; at most two lines, the whole title in its `title`) or before the link. A link
  * opens in a new tab with `rel="noopener noreferrer"` and shows as its key's chip
  * ("ABC-123", "#12345") or as a shortened URL, the full one in its title. Only an `http(s)` link without credentials becomes a link (`safeHref`).
+ * An anonymous round (#25) says so after its number, in every phase, so that everyone
+ * knows before voting that the cards will show without names.
  */
-export function RoundSubject({ round }: { round: Pick<RoundView, "number" | "subject"> }) {
+export function RoundSubject({
+  round,
+}: {
+  round: Pick<RoundView, "number" | "subject" | "anonymous">;
+}) {
   const t = useT();
   const { subject } = round;
   const number = t("round.number", { round: round.number });
+  const anonymous = round.anonymous ? <AnonymousChip /> : null;
   if (subject.kind === "none") {
     return (
       <p data-round-subject="none" className={`${LINE} items-center`}>
         <span className="font-semibold">{number}</span>
+        {anonymous}
       </p>
     );
   }
@@ -28,6 +36,7 @@ export function RoundSubject({ round }: { round: Pick<RoundView, "number" | "sub
       className={`${LINE} ${subject.kind === "title" ? "items-baseline" : "items-center"}`}
     >
       <span className="shrink-0 text-ink-2">{number}</span>
+      {anonymous}
       {subject.kind === "title" ? (
         <bdi
           data-subject-title
@@ -44,6 +53,26 @@ export function RoundSubject({ round }: { round: Pick<RoundView, "number" | "sub
 }
 
 const LINE = "m-0 mb-3 flex min-w-0 justify-center gap-2 text-sm phone:mb-1";
+
+/**
+ * "Anonymous", a small chip after the round's number; its hint on hover, and the whole
+ * of it in one phrase for a screen reader.
+ */
+function AnonymousChip() {
+  const t = useT();
+  return (
+    <span
+      data-round-anonymous
+      className="inline-flex shrink-0 items-center gap-1 self-center rounded-full border border-line bg-surface-2 px-2 py-0.5 text-xs font-semibold text-ink"
+    >
+      <EyeOffIcon aria-hidden className="size-3.5 text-ink-2" />
+      <span aria-hidden title={t("round.anonymousHint")}>
+        {t("round.anonymous")}
+      </span>
+      <span className="sr-only">{t("round.anonymousSpoken")}</span>
+    </span>
+  );
+}
 
 function SubjectLink({ url, linkKey }: { url: string; linkKey: string | undefined }) {
   const t = useT();

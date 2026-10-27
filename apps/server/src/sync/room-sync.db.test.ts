@@ -2,12 +2,20 @@
  * The room sync against Postgres with real guests (Better Auth sessions, the real
  * handshake): join latency (AC 1), a burst past the message limit (AC 3), secrecy on the
  * raw WebSocket frames, the reveal (#19: a non-PO is refused, the last two votes sent
- * together reveal once), idempotent ids, a revoked session, one session flooding a room
+ * together reveal once), the room settings (#25: the defaults, refusals on the wire, one
+ * snapshot for everyone), idempotent ids, a revoked session, one session flooding a room
  * from many sockets, and the deadline timeout on one and on two server instances sharing
  * the database. The restart (AC 2) is `restart.db.test.ts`.
  */
 import { performance } from "node:perf_hooks";
-import { apply, type Command, computeResults, createRoom, type RoomState } from "@pp/domain";
+import {
+  apply,
+  type Command,
+  computeResults,
+  createRoom,
+  DEFAULT_SETTINGS,
+  type RoomState,
+} from "@pp/domain";
 import type { Snapshot } from "@pp/protocol";
 import { cardLeaks } from "@pp/protocol/leak-scan";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -342,6 +350,66 @@ describe("the reveal (#19)", () => {
       expect(stored?.state.round?.phase).toBe("revealed");
     }
   }, 30_000);
+});
+
+describe("the room settings (#25)", () => {
+  /** Ada (PO) and Bob vote, Cy observes, in the lobby of a new room. */
+  function lobby(): RoomState {
+    let s = createRoom({ ownerId: ada.id });
+    s = step(s, ada.id, { type: "join", name: "Ada", role: "voter" });
+    s = step(s, bob.id, { type: "join", name: "Bob", role: "voter" });
+    return step(s, cy.id, { type: "join", name: "Cy", role: "observer" });
+  }
+
+  it("shows a new room's settings exactly as ADR-011 sets them (AC 3)", async () => {
+    const code = await insert(lobby());
+    const b = client(bob);
+    await b.enter(code);
+    expect(b.latest()?.room.settings).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it("refuses a change from a voter and from an observer, on the wire (AC 2)", async () => {
+    const code = await insert(lobby());
+    const b = client(bob);
+    const c = client(cy);
+    await Promise.all([b.enter(code), c.enter(code)]);
+    expect(await b.cmd("updateSettings", { patch: { revealNames: false } })).toEqual({
+      ok: false,
+      code: "not_owner",
+    });
+    expect(await c.cmd("updateSettings", { patch: { observersCount: false } })).toEqual({
+      ok: false,
+      code: "not_owner",
+    });
+    // Nothing was stored or broadcast.
+    await sleep(100);
+    expect(b.received).toHaveLength(1);
+    expect(c.received).toHaveLength(1);
+    const stored = await main().database.store.loadRoom(code);
+    expect(stored?.version).toBe(1);
+    expect(stored?.state.settings).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it("brings the PO's change to every client in one snapshot (AC 1)", async () => {
+    const code = await insert(lobby());
+    const watchers = [client(ada), client(bob), client(cy)];
+    await Promise.all(watchers.map((w) => w.enter(code)));
+    const [a] = watchers;
+    expect(
+      await a?.cmd("updateSettings", { patch: { revealNames: false, poVotes: false } }),
+    ).toEqual({ ok: true, version: 2 });
+    for (const w of watchers) {
+      const seen = await w.waitFor((s) => s.version === 2);
+      expect(seen.snapshot.causes).toEqual([{ type: "settingsUpdated" }]);
+      expect(seen.snapshot.room.settings).toEqual({
+        ...DEFAULT_SETTINGS,
+        revealNames: false,
+        poVotes: false,
+      });
+    }
+    await sleep(100);
+    for (const w of watchers) expect(w.received.map((r) => r.snapshot.version)).toEqual([1, 2]);
+  });
 });
 
 describe("the next round (#21)", () => {

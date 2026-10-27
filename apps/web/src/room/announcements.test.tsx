@@ -122,8 +122,8 @@ describe("liveEvents", () => {
     // belong to nobody; whose card is what is never said.
     expect(text).toBe("Me voted. Cards revealed. Suggested 13. Agreement 50%.");
     expect(text).not.toMatch(/21/);
-    // A settings change is not news for the live region.
-    const quiet = run("me", { type: "updateSettings", patch: { poVotes: false } });
+    // A rename is not news for the live region.
+    const quiet = run("me", { type: "rename", name: "Mo" });
     expect(liveEvents(quiet.room, quiet.causes, revealed.room)).toEqual([]);
   });
 
@@ -257,6 +257,152 @@ describe("the final estimate and the re-vote (#32)", () => {
     expect(describeEvents(fixedT("de"), events)).toBe(
       "Der PO hat 8 als endgültige Schätzung festgehalten.",
     );
+  });
+});
+
+describe("settings (#25)", () => {
+  /** Ana's view of a room whose PO ("me") changes settings. */
+  function anasRoom() {
+    const { run } = story("ana");
+    run("me", { type: "join", name: "Me", role: "voter" });
+    const seated = run("ana", { type: "join", name: "Ana", role: "voter" });
+    return { run, seated };
+  }
+
+  it("says each change in plain words to everyone but the PO", () => {
+    const { run, seated } = anasRoom();
+    const anonymous = run("me", { type: "updateSettings", patch: { revealNames: false } });
+    expect(said(liveEvents(anonymous.room, anonymous.causes, seated.room))).toBe(
+      "Anonymous voting starts with round 1.",
+    );
+    const several = run("me", {
+      type: "updateSettings",
+      patch: { poVotes: false, observersCount: false, revealWhenAllVoted: false },
+    });
+    expect(said(liveEvents(several.room, several.causes, anonymous.room))).toBe(
+      "The cards now wait for a reveal, even once everyone has voted. The product owner no longer votes. Observers no longer take one of the 16 places.",
+    );
+    const deck = run("me", {
+      type: "updateSettings",
+      patch: { deck: { kind: "preset", id: "tshirt" }, whoCanReveal: "anyone" },
+    });
+    expect(said(liveEvents(deck.room, deck.causes, several.room))).toBe(
+      "The product owner changed the deck: T-shirt sizes. Anyone who votes can now reveal the cards.",
+    );
+    const rest = run("me", {
+      type: "updateSettings",
+      patch: {
+        specials: [],
+        timer: { seconds: 60 },
+        allowChangeAfterReveal: true,
+        revealNames: true,
+        poVotes: true,
+        observersCount: true,
+        revealWhenAllVoted: true,
+        whoCanReveal: "po",
+        deck: { kind: "custom", cards: ["1", "2"] },
+      },
+    });
+    expect(said(liveEvents(rest.room, rest.causes, deck.room))).toBe(
+      [
+        "The product owner changed the deck: Custom deck.",
+        "The product owner changed the special cards.",
+        "The product owner changed the timer.",
+        "The cards now turn over once everyone has voted.",
+        "Only the product owner can reveal the cards now.",
+        "Voting is named again from round 1.",
+        "Votes can now change after the reveal.",
+        "The product owner now votes too.",
+        "Observers now take one of the 16 places.",
+      ].join(" "),
+    );
+    const back = run("me", { type: "updateSettings", patch: { allowChangeAfterReveal: false } });
+    expect(said(liveEvents(back.room, back.causes, rest.room))).toBe(
+      "Votes can no longer change after the reveal.",
+    );
+  });
+
+  it("says nothing to the PO, whose own switch says it", () => {
+    const { run } = story("me");
+    const seated = run("me", { type: "join", name: "Me", role: "voter" });
+    const changed = run("me", { type: "updateSettings", patch: { revealNames: false } });
+    expect(liveEvents(changed.room, changed.causes, seated.room)).toEqual([]);
+  });
+
+  it("says a change before the round it restarts, and a change a reconnect brings", () => {
+    const { run, seated } = anasRoom();
+    const started = run("me", { type: "startRound", subject: { kind: "none" } });
+    const restarted = run("me", {
+      type: "updateSettings",
+      patch: { deck: { kind: "preset", id: "mfib" } },
+    });
+    expect(said(liveEvents(restarted.room, restarted.causes, started.room))).toBe(
+      "The product owner changed the deck: Modified Fibonacci. Voting started: Round 1.",
+    );
+    // A reconnect's snapshot has no causes; the settings it shows are still news.
+    expect(said(liveEvents(restarted.room, [], seated.room))).toContain(
+      "The product owner changed the deck: Modified Fibonacci.",
+    );
+  });
+
+  it("says the changes in the order they happened, around a new round", () => {
+    const { run, seated } = anasRoom();
+    const started = run("me", { type: "startRound", subject: { kind: "none" } });
+    const anonymous = run("me", { type: "updateSettings", patch: { revealNames: false } });
+    const batch = mergeEvents(
+      liveEvents(started.room, started.causes, seated.room),
+      liveEvents(anonymous.room, anonymous.causes, started.room),
+    );
+    // Started first, changed within the same batch: said in that order, for round 2.
+    expect(said(batch)).toBe("Voting started: Round 1. Anonymous voting starts with round 2.");
+    // Votes either side of a change stay either side of it.
+    const vote = (who: string): LiveEvent => ({ kind: "voted", who, name: who });
+    expect(said([vote("Ben"), ...batch.slice(1), vote("Cleo")])).toBe(
+      "Ben voted. Anonymous voting starts with round 2. Cleo voted.",
+    );
+  });
+
+  it("says that a new round is anonymous", async () => {
+    await loadLanguage("fr");
+    await loadLanguage("de");
+    const { run, seated } = anasRoom();
+    run("me", { type: "updateSettings", patch: { revealNames: false } });
+    const started = run("me", { type: "startRound", subject: { kind: "none" } });
+    const events = liveEvents(started.room, started.causes, seated.room);
+    expect(said(events.filter((e) => e.kind === "roundStarted"))).toBe(
+      "Voting started: Round 1, anonymous.",
+    );
+    const roundOnly = events.filter((e) => e.kind === "roundStarted");
+    expect(describeEvents(fixedT("fr"), roundOnly)).toBe("Le vote a commencé : Tour 1, anonyme.");
+    expect(describeEvents(fixedT("de"), roundOnly)).toBe(
+      "Die Abstimmung hat begonnen: Runde 1, anonym.",
+    );
+  });
+
+  it("says a setting changed twice in a batch once, or not at all when it came back", () => {
+    const { run, seated } = anasRoom();
+    const on = run("me", { type: "updateSettings", patch: { revealNames: false } });
+    const off = run("me", { type: "updateSettings", patch: { revealNames: true } });
+    const poOff = run("me", { type: "updateSettings", patch: { poVotes: false } });
+    const first = liveEvents(on.room, on.causes, seated.room);
+    const cancelled = mergeEvents(first, liveEvents(off.room, off.causes, on.room));
+    expect(cancelled).toEqual([]);
+    const batch = mergeEvents(
+      mergeEvents(first, liveEvents(poOff.room, poOff.causes, off.room)),
+      liveEvents(off.room, off.causes, on.room),
+    );
+    expect(said(batch)).toBe("The product owner no longer votes.");
+    expect(said(mergeEvents([], first))).toBe("Anonymous voting starts with round 1.");
+  });
+
+  it("speaks French and German", async () => {
+    await loadLanguage("fr");
+    await loadLanguage("de");
+    const { run, seated } = anasRoom();
+    const changed = run("me", { type: "updateSettings", patch: { revealNames: false } });
+    const events = liveEvents(changed.room, changed.causes, seated.room);
+    expect(describeEvents(fixedT("fr"), events)).toBe("Le vote anonyme commence au tour 1.");
+    expect(describeEvents(fixedT("de"), events)).toBe("Ab Runde 1 wird anonym abgestimmt.");
   });
 });
 

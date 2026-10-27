@@ -226,17 +226,26 @@ export function sendCommand(command: CommandInput): Promise<CommandResult> {
  * returned function sends to that room as `sendCommand` would, or resolves `offline` at
  * once when the page has moved to another room (or none) in between. A form takes it when
  * it is submitted, so a join or a rename never lands in a room the person did not see.
+ * An aborted `signal` stops waiting and sends nothing more: the send resolves `offline`
+ * (a change the page gave up on once the connection dropped).
  */
-export function commandSender(): (command: CommandInput) => Promise<CommandResult> {
+export function commandSender(): (
+  command: CommandInput,
+  options?: { signal?: AbortSignal },
+) => Promise<CommandResult> {
   const target = active;
-  return (command) => send(target, command);
+  return (command, options) => send(target, command, options?.signal);
 }
 
-async function send(target: ActiveRoom | null, command: CommandInput): Promise<CommandResult> {
+async function send(
+  target: ActiveRoom | null,
+  command: CommandInput,
+  signal?: AbortSignal,
+): Promise<CommandResult> {
   const id = newCommandId();
-  for (let send = 0; target && send < MAX_SENDS; send++) {
-    const room = await whenLive(target);
-    if (!room) break;
+  for (let send = 0; target && send < MAX_SENDS && !signal?.aborted; send++) {
+    const room = await whenLive(target, LIVE_WAIT_MS, signal);
+    if (!room || signal?.aborted) break;
     let raw: unknown;
     try {
       raw = await room.socket
@@ -256,10 +265,14 @@ async function send(target: ActiveRoom | null, command: CommandInput): Promise<C
 }
 
 /**
- * `target` once it is live; null on `error`, once `target` is no longer the open room, or
- * after the wait.
+ * `target` once it is live; null on `error`, once `target` is no longer the open room,
+ * after the wait, or once `signal` aborts.
  */
-function whenLive(target: ActiveRoom, timeoutMs = LIVE_WAIT_MS): Promise<ActiveRoom | null> {
+function whenLive(
+  target: ActiveRoom,
+  timeoutMs = LIVE_WAIT_MS,
+  signal?: AbortSignal,
+): Promise<ActiveRoom | null> {
   return new Promise((resolve) => {
     const check = (): boolean => {
       const { status } = useRoomStore.getState();
@@ -269,9 +282,12 @@ function whenLive(target: ActiveRoom, timeoutMs = LIVE_WAIT_MS): Promise<ActiveR
     };
     let unsubscribe = () => {};
     const timer = setTimeout(() => finish(null), timeoutMs);
+    const abort = () => finish(null);
+    signal?.addEventListener("abort", abort);
     function finish(room: ActiveRoom | null): true {
       clearTimeout(timer);
       unsubscribe();
+      signal?.removeEventListener("abort", abort);
       resolve(room);
       return true;
     }

@@ -63,7 +63,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 - Phones from #22: the hand docks within thumb reach while voting when there is room,
   a compact header, numbered namesakes ("Ana Lima (2)"), narrow long labels, safe
   areas and a haptic tick.
-- **W0 is complete.**
+- The four-person e2e from #23 runs on every pull request: four browser contexts, one
+  of them a phone, five rounds (forced, last-vote, timer and anonymous reveals), the
+  results checked against hand-written sentences, and every frame scanned for leaks.
+  A failure keeps the trace and each person's frames, with room codes masked.
+- **W0 and W1 are complete.**
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -74,17 +78,27 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#23 (PP-023)** the four-person end-to-end round with secrecy on real frames, ten
-  runs without a flake, traces on failure, and a faster `web-e2e` job. It closes W1.
-  Building in `../pp-wt-23`.
+- **#25 (PP-025)** the room settings panel: "Room settings" for the PO, read-only
+  "Room rules" for everyone else, and an "Anonymous" chip on anonymous rounds. PR #87
+  is open, and a fixer is working on the review's findings in `../pp-wt-25`.
+- **#32 (PP-032)** the final estimate and "Vote again". Building in `../pp-wt-32`.
 
 ## Next
 
-- W1 order, by dependencies:
-  - #23 (the four-person e2e) closes W1. W2 (#25 to #32) starts after it without
-    a new go.
-  - #22 (mobile) needs #17, #18 and #20. #23 (four-person e2e) needs #21 and #22.
-- **W1 runs without a new go** (Sven, 2026-10-26).
+- W2 order, by dependencies:
+  - After #25 merges: #26 (decks), #27 (timer), #28 (reveal modes) and #30 (PO
+    powers), two at a time. #29 (change after reveal) needs #28; #31 (password) needs
+    #30.
+  - Each later setting drops its control into #25's panel (see the web README).
+- Notes to carry into the briefs:
+  - #29: change after reveal never applies to anonymous rounds. The panel's `locked`
+    toggle shows why.
+  - #30: when the PO leaves, the room can be claimed at once.
+  - #31: the header GET shows a password room's name.
+  - #27: the four-person spec asserts the countdown and keeps one round where every
+    client is idle, so the server's own timeout stays proven.
+- **W2 runs without a new go** (Sven, 2026-10-26: "once wave 0 is done, start the
+  next one").
 
 ## Order
 

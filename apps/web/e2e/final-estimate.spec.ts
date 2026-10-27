@@ -295,7 +295,7 @@ test("Vote again keeps the subject, a title or a link with its key, clears the v
     expect(rows.map((row) => row.number)).toEqual([1]);
     expect(rows[0]?.subject).toEqual({ kind: "title", text: "Login page" });
     expect(rows[0]?.votes).toMatchObject({ kind: "named" });
-    expect((rows[0]?.votes as { votes: unknown[] }).votes).toHaveLength(3);
+    expect((rows[0]?.votes as { votes?: unknown[] } | undefined)?.votes).toHaveLength(3);
 
     // Round 2 settles; round 3 is a Jira link, voted on again as round 4.
     await vote(guests, ["5", "5"], 2);
@@ -315,7 +315,7 @@ test("Vote again keeps the subject, a title or a link with its key, clears the v
     expect(rows.map((row) => row.number)).toEqual([1, 2, 3]);
     const third = rows[2];
     expect(third?.subject).toEqual({ kind: "link", url: JIRA, key: "PAY-482" });
-    expect((third?.votes as { votes: unknown[] }).votes).toHaveLength(3);
+    expect((third?.votes as { votes?: unknown[] } | undefined)?.votes).toHaveLength(3);
     expect(JSON.parse(third?.text ?? "{}").final).toBe("13");
   } finally {
     for (const guest of guests) guest.close();

@@ -6,7 +6,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./app.tsx";
 import { ErrorPage } from "./components/shell/error-page.tsx";
 import { changeLanguage } from "./i18n/i18n.ts";
@@ -66,6 +66,12 @@ afterEach(async () => {
   window.localStorage.clear();
   await act(() => changeLanguage("en"));
 });
+
+// The room route is a lazy chunk; load it once up front, so no test's wait pays for its
+// first transform (a slow machine took longer than findByRole's second).
+beforeAll(async () => {
+  await import("./routes/r/$code.tsx");
+}, 30_000);
 
 describe("the landing page", () => {
   const COPY = {
@@ -155,7 +161,10 @@ describe("join with a code", () => {
       serve({ [`GET /api/rooms/${CODE}`]: () => json({ code: CODE, name: "Sprint 42" }) });
       const router = await renderAt("/");
       await join(typed);
-      expect(await screen.findByRole("heading", { level: 1, name: "Sprint 42" })).toBeDefined();
+      // The room page renders after the route and its header fetch: slow under a covered, parallel run.
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "Sprint 42" }, { timeout: 5000 }),
+      ).toBeDefined();
       expect(router.state.location.pathname, typed).toBe(`/r/${CODE}`);
       cleanup();
     }
