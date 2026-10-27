@@ -242,6 +242,50 @@ describe("sendCommand", () => {
     expect(ids).toHaveLength(3);
     expect(new Set(ids).size).toBe(1);
   });
+  it("never carries a waiting command over to the next room opened", async () => {
+    const first = fakeSocket(({ event }) =>
+      event === "enter" ? { ok: true, snapshot: snapshot(1) } : { ok: true, version: 2 },
+    );
+    const closeFirst = open(first);
+    first.up();
+    await vi.waitFor(() => expect(status()).toBe("live"));
+    // The connection drops: the command waits for the room to be live again.
+    first.drop();
+    const pending = sendCommand({ type: "leave" });
+    await settle();
+    // The page leaves for another room, which goes live at once.
+    closeFirst();
+    const second = fakeSocket(({ event }) =>
+      event === "enter" ? { ok: true, snapshot: snapshot(1) } : { ok: true, version: 2 },
+    );
+    open(second);
+    second.up();
+    expect(await pending).toEqual({ ok: false, code: "offline" });
+    expect(second.sent.filter((s) => s.event === "cmd")).toEqual([]);
+    expect(first.sent.filter((s) => s.event === "cmd")).toEqual([]);
+  });
+
+  it("drops a retry after busy once the room it was sent to is closed", async () => {
+    let close: () => void = () => {};
+    const first = fakeSocket(({ event }) => {
+      if (event === "enter") return { ok: true, snapshot: snapshot(1) };
+      // Busy, and the page leaves the room before the retry.
+      close();
+      return { ok: false, code: "busy" };
+    });
+    close = open(first);
+    first.up();
+    await vi.waitFor(() => expect(status()).toBe("live"));
+    const pending = sendCommand({ type: "reveal" });
+    const second = fakeSocket(({ event }) =>
+      event === "enter" ? { ok: true, snapshot: snapshot(1) } : { ok: true, version: 2 },
+    );
+    await vi.waitFor(() => expect(first.sent.some((s) => s.event === "cmd")).toBe(true));
+    open(second);
+    second.up();
+    expect(await pending).toEqual({ ok: false, code: "offline" });
+    expect(second.sent.filter((s) => s.event === "cmd")).toEqual([]);
+  });
 });
 
 describe("message guards", () => {
