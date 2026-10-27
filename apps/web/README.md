@@ -472,9 +472,9 @@ server sends and never decides the outcome of a round.
   width (`data-narrow`). Since #26 it fits by the label's measured width
   (`table/label-width.ts`: a hidden span in the faces' classes, cached per label and
   width axis, re-rendered on `document.fonts` `loadingdone`; the `labelEms` estimate
-  stands in under jsdom and before the font loads), the size is `max(7px, …em)`, and on
-  the dense slot alone a label that does not fit at 7 px sits in a centred clip
-  (`data-label-clip`, `data-clipped`). Budgets after #22: the room route 168.5 kB (was 168.1), the
+  stands in under jsdom and before the font loads), the size is `max(7px, …em)`, and
+  after layout a label wider than its card's content box, as drawn in whatever font,
+  sits in a centred clip with a `title` (`data-label-clip`, `data-clipped`). Budgets after #22: the room route 168.5 kB (was 168.1), the
   landing page 152.1 kB (152.0), `seated` 13.0 kB (11.8), `table-stage` 8.3 kB (8.2),
   the stylesheet 13.4 kB (12.4). After #25: the room route 171.0 kB, the landing page
   153.6 kB, the lazy `settings-panel` chunk 7.8 kB (6.5 before the review's fixes) and `seated`

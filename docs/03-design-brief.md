@@ -304,7 +304,7 @@ As built (#22), for 640 px and below (the `phone:` variant) unless stated:
   Archivo's width axis at 70 % instead of 110 % and grows back: "13", "XL" and "XS" show
   at 11 px, "100" at 10 px, "XXL" at 7 px, and "XXL" in the PO's tie chip at 8.5 px. No
   label is drawn under 7 px (#26): a custom label that still does not fit at 7 px
-  ("WWWW", "ÆÆÆÆ", two emoji) is clipped on this slot alone, centred. The slot is a
+  ("WWWW", "ÆÆÆÆ", two emoji) is clipped on its card, centred. The slot is a
   glance; the seat's popover says the card in words and the results' columns repeat
   every card whole.
 - **A phone on its side** (844 × 390) is wider than 640 px, so it gets the desktop table
@@ -449,12 +449,13 @@ As built (#25):
 - **Mini cards** (results): 28 × 39 px.
 - **Labels** (#26): a label is fitted by its width as drawn, measured in the page in
   Archivo ExtraBold at the card's width axis (cached per label). It narrows to 70 %
-  width before it would shrink below 80 %, then shrinks, never under 7 px. On every card
-  but the dense phone slot (see "Phones") every label of up to four characters fits
-  whole at 7 px or more; on that slot one that does not is clipped, and its accessible
-  name, the seat's popover, the results and the hand show it whole. Before the font has
-  loaded, an estimate stands in: 0.72 em a digit, 1 em for ½, ¼, ¾ and any letter, 0.8
-  em for a lowercase ASCII letter other than m and w, 1.3 em an emoji.
+  width before it would shrink below 80 %, then shrinks, never under 7 px. After layout,
+  a label that still does not fit its fixed-size card (a slot, a results column, a mini
+  card), whatever font the system drew it in, is clipped on that card, centred, with
+  the whole label in a tooltip; the seat, its popover and the results' words say it
+  whole, and the hand's cards are wide enough to hold every label. Before the font has loaded, an estimate stands in:
+  0.72 em a digit, 1 em for ½, ¼, ¾ and any letter, 0.8 em for a lowercase ASCII letter
+  other than m and w, 1.3 em an emoji.
 
 ## Results
 
