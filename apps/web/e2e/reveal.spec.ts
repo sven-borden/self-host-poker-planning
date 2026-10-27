@@ -80,9 +80,12 @@ interface Animated {
   you: boolean;
 }
 
-/** Records every `Element.animate` call on the page from now on, in `window.__animated`. */
-async function recordAnimations(page: Page) {
-  await page.evaluate(() => {
+/**
+ * Records every `Element.animate` call on the page from now on, in `window.__animated`;
+ * with `reload`, from the next page load on.
+ */
+async function recordAnimations(page: Page, { reload = false } = {}) {
+  const install = () => {
     const seen: unknown[] = [];
     Object.assign(window, { __animated: seen });
     const original = Element.prototype.animate;
@@ -99,7 +102,10 @@ async function recordAnimations(page: Page) {
       });
       return original.call(this, keyframes, options);
     };
-  });
+  };
+  if (!reload) return page.evaluate(install);
+  await page.addInitScript(install);
+  await page.reload();
 }
 
 const animated = (page: Page) =>
@@ -184,6 +190,13 @@ test("the PO reveals a named round; the cards turn over in seat order from the v
     await expect(left).toContainText("Eve");
     await expect(left.getByRole("listitem")).toHaveText("8EveEve, card 8");
     await shoot(ben.page, "reveal-departed");
+
+    // A reload shows the revealed table at rest: nothing turns.
+    await recordAnimations(ben.page, { reload: true });
+    await expect(ben.page.locator("[data-face='up']")).toHaveCount(6);
+    await expect(left).toContainText("Eve");
+    await ben.page.waitForTimeout(300);
+    expect(await animated(ben.page)).toEqual([]);
   } finally {
     await closeAll(guests, [ben]);
   }
@@ -267,6 +280,13 @@ test("an anonymous round reveals itself when everyone voted, and ties no card to
     for (const frame of ben.frames) expect(frame).not.toContain('"votes"');
     expect(snapshotsIn(ben.frames).some((s) => s.room.round !== null)).toBe(true);
     await shoot(page, "reveal-anonymous");
+
+    // A late look (a reload) shows the row and the seats at rest.
+    await recordAnimations(ben.page, { reload: true });
+    await expect(row.getByRole("listitem")).toHaveCount(8);
+    await expect(ben.page.locator("[data-face='gone']")).toHaveCount(8);
+    await ben.page.waitForTimeout(300);
+    expect(await animated(ben.page)).toEqual([]);
   } finally {
     po.close();
     await closeAll(guests, [ben]);

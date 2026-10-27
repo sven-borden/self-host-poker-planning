@@ -463,9 +463,13 @@ describe("the reveal (#19)", () => {
   it("reveals on R alone, never while typing or with a modifier", async () => {
     await renderRoom(ownerRound());
     const field = document.createElement("input");
-    document.body.append(field);
+    const popover = document.createElement("div");
+    popover.setAttribute("role", "dialog");
+    popover.append(document.createElement("button"));
+    document.body.append(field, popover);
     try {
       press("r", {}, field);
+      press("r", {}, popover.firstElementChild as Element);
       press("R", { ctrlKey: true });
       press("r", { metaKey: true });
       press("r", { altKey: true });
@@ -478,6 +482,7 @@ describe("the reveal (#19)", () => {
       expect(sent).toEqual([{ type: "reveal" }]);
     } finally {
       field.remove();
+      popover.remove();
     }
   });
 

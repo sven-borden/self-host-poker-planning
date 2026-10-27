@@ -94,17 +94,21 @@ const NOT_TYPING = new Set([
   "image",
 ]);
 
+/** Typing in a field, or inside a dialog or popover over the table. */
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
+  if (target.isContentEditable || target.closest("[role='dialog'], [role='alertdialog']")) {
+    return true;
+  }
   if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
   return target instanceof HTMLInputElement && !NOT_TYPING.has(target.type);
 }
 
 /**
  * The key R alone reveals (docs/03-design-brief.md, "Accessibility"): no modifier, not a
- * held key's repeats, not inside a field where it is a letter, not while an input method
- * composes, and not when something else already used the key.
+ * held key's repeats, not inside a field where it is a letter or in a dialog or popover
+ * (a seat's), not while an input method composes, and not when something else already
+ * used the key.
  */
 export function isRevealKey(event: KeyboardEvent): boolean {
   if (event.key !== "r" && event.key !== "R") return false;
