@@ -5,6 +5,7 @@
  * real identity, see `room-sync.db.test.ts`.
  */
 import { createRoom, type RoomState } from "@pp/domain";
+import { PROTOCOL_VERSION } from "@pp/protocol";
 import { afterEach, describe, expect, it } from "vitest";
 import { play } from "../db/fixtures.ts";
 import { createCommandRunner } from "../db/runner.ts";
@@ -102,7 +103,10 @@ describe("enter", () => {
 
   it("answers protocol_mismatch to another protocol version", async () => {
     const { client } = await start(lobby());
-    expect(await client("ua").enter(CODE, 1)).toEqual({ ok: false, code: "protocol_mismatch" });
+    expect(await client("ua").enter(CODE, PROTOCOL_VERSION + 1)).toEqual({
+      ok: false,
+      code: "protocol_mismatch",
+    });
   });
 
   it("answers unauthenticated once the socket's session is gone, and stops the feed", async () => {
