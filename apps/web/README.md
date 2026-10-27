@@ -285,6 +285,25 @@ server sends and never decides the outcome of a round.
   panel does the pending state, the rollback, the messages and the focus; the unit test
   "the plug-in contract" plugs in a radio group and a locked switch through the
   `groups` prop without touching the panel.
+  **Worked example: the deck field (#26).** `room/deck-field.tsx` holds two `Control`s,
+  plugged into `GROUPS` with `layout: "block"` and no change to the panel's internals:
+  `DeckControl` (a radio group named by the field's label through `labelId`, `id` on the
+  group) and `SpecialsControl` (a fieldset of three switches). Both read `room` to know
+  when a change applies (`roundOfChange`) and whether to ask first (`restartToAsk`:
+  Voting with a vote cast), and call `change({ deck })` or `change({ specials })` with the
+  key they own; `pending` leaves them `aria-disabled`. A preset is chosen, then applied
+  with a button, so arrow keys never send. The restart question is the control's own
+  state (`RestartQuestion`, focused when it shows), not the panel's. The editor's rules
+  live in `room/deck-editor.ts`, pure: `splitCards`, `checkCustomDeck` (the domain's
+  `validateCustomDeck`, then the shortest refused prefix finds the card at fault),
+  `deckProblemMessage`, `parseDecimal` ("," or "."), `rangeCards` (`generateRange`) and
+  `rangeProblemMessage`. The validator sits in `@pp/domain`'s `custom-deck.ts`, not
+  `decks.ts`, so it ships in the panel's lazy chunk only. Copy: `deckField.*`,
+  `live.deckChanged`, `live.deckRestarted`, `live.specialsRestarted`, `live.voteAgain`,
+  `live.deckNow`. The live region (`settingEvents`) tells a restart from a change by the
+  round's `restarts` (protocol 5), and skips the restart's `roundStarted`. Votes carry
+  the round's `restart` with its number (`hand-state.ts`), so one in flight across a
+  restart is refused with `round_changed` and rolls back without a word.
   The live region (`announcements.ts`, `settingEvents`) compares the settings of each
   snapshot with the last one, so a reconnect still says a change, and says each changed
   setting in plain words where it happened in its batch ("Voting started: Round 1.
@@ -466,7 +485,15 @@ server sends and never decides the outcome of a round.
   icon button below 900 px and the sheet under reduced motion; its shots are
   `settings-owner-*`, `settings-rules-*` (360 and 1440 px, light, dark and forced
   colours, taken once the sheet has slid in), `round-anonymous-*` and
-  `phone-settings-*`.
+  `phone-settings-*`. `e2e/decks.spec.ts` (#26) plays the deck field by keyboard on a
+  desktop and a 360 px phone, the restart question cancelled and confirmed with a voter
+  and an observer listening (and a vote for the round before its restart refused),
+  decimal statistics read by a French and a German observer, an emoji deck's results,
+  and a 20-card deck with the three specials (no label under 7 px, the hand scrolling,
+  the statistics inside their panel); shots `deck-presets-*`, `deck-custom-error-*`,
+  `deck-range-*`, `deck-restart-question-*`, `deck-20-hand-*`, `deck-20-hand-phone-*`,
+  `deck-20-results-*`, `deck-decimals-fr-*`, `deck-emoji-results-*`. `E2E_WEB_PORT` and
+  `E2E_API_PORT` move the preview and the server, for two worktrees at once.
 - The four-person round (#23), `e2e/four-person.spec.ts`: the proof of W1 on every pull
   request. Four browser contexts, the PO, Ben on a Pixel 7, Cleo and the observer Dee,
   play four rounds: a Jira round with a changed card that the PO reveals, a titled round

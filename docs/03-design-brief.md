@@ -295,8 +295,8 @@ As built (#25):
   an anonymous round.
 - **Editable now (PO decision).** Only settings whose behaviour the room already shows:
   reveal when everyone has voted, anonymous voting (from the next round, said under it),
-  the PO votes too, observers count toward the 16 places. The deck and special cards
-  (#26), the timer (#27), who can reveal (#28) and changes after the reveal (#29) show
+  the PO votes too, observers count toward the 16 places, and since #26 the deck and the
+  special cards (below). The timer (#27), who can reveal (#28) and changes after the reveal (#29) show
   their value and explanation to the PO too until their issue adds the control in the
   same row: a switch at the row's end, or a wider control (the deck picker, a choice of
   who can reveal, the timer) across the row under its explanation. A setting that cannot
@@ -321,6 +321,46 @@ As built (#25):
   small "Anonymous" chip with an eye-off icon follows "Round N" in the round line above
   the table, in every phase, its hint "Cards are shown without names." on hover and for
   screen readers; the round's start says "Voting started: Round 4, anonymous."
+
+- **The deck field (#26).** Across the row under the deck's explanation, for the PO:
+  first a line saying when new cards apply ("New cards apply from round 4." in the lobby
+  and after the reveal; "New cards restart round 4: its votes are cleared, its subject
+  stays." while Voting), then a radio group of bordered rows: Fibonacci, Modified
+  Fibonacci, T-shirt sizes, Powers of 2, 1 to 10, each with its cards in small mono
+  under its name, and "Custom deck". The deck the room plays says "In use" at the row's
+  end. Choosing only moves the choice: a "Use T-shirt sizes" button under the group
+  applies it, so arrow keys never send a change (or ask to restart) on their way to the
+  deck wanted; after it the focus stays on the chosen radio. "Custom deck" opens a text
+  field, "Cards, separated by commas", whose hint gives the limits (20 cards of up to 4
+  characters, emoji too) and says that a decimal takes a point, since the comma
+  separates cards. Under it, a live preview of the cards as mini cards with the count
+  ("4 cards"), and the first fault in plain words with the octagon icon, naming the card
+  ("“Large” is too long: a card holds at most 4 characters.", "Card 2 is empty. Remove
+  the extra comma.", "“1.0” has the same value as “1”.") and ringing its mini card in
+  `--bad`; an empty field says nothing until the PO tries to use it. A trailing comma is
+  not an empty card. "Generate a range" (a disclosure with a chevron) shows Start, End
+  and Step, prefilled 0, 5 and 0.5 in the reader's notation; they accept a comma or a
+  point, being numbers rather than labels. "Fill in the cards" puts the cards in the
+  field, says "5 cards filled in. Check them, then use them." politely, and a range the
+  deck cannot hold says why in an alert. "Use these cards" (or Enter in the field)
+  applies the deck, or focuses the field when it has a fault.
+- **The special cards (#26)** are three rows, each a mini card, its meaning ("Not
+  sure", "Need a break", "Too big to estimate") and a switch, in a group labelled
+  "Special cards". A change applies like the deck's.
+- **The restart question (#26).** During Voting, once someone has voted, a new deck or
+  new special cards ask first, inline under the control, in a `--surface-2` box with a
+  `--warn` border and a restart icon: "Changing the deck restarts round 4. The 3 votes
+  cast so far are cleared; the subject stays." with "Restart with T-shirt sizes" and
+  "Cancel" ("Changing the special cards …", "Restart with the new special cards"). It
+  takes the focus as a group named by the question. Cancel gives the focus back to the
+  apply button or the switch; the restart sends the change and leaves the focus on the
+  chosen deck or the switch. With no vote cast the change applies at once (the round
+  still restarts, with nothing to clear).
+- **What everyone else hears.** "The product owner changed the deck to T-shirt sizes
+  from the next round." in the lobby or after the reveal; "The product owner restarted
+  round 4 with T-shirt sizes. Vote again." during Voting, without "Vote again." for an
+  observer, and no "Voting started" for the restart. Every voter's hand empties into the
+  new deck; a vote sent before the restart is refused and rolls back silently.
 
 ## Cards
 
@@ -357,7 +397,8 @@ a spruce bar (at most 56 px,
 and highest in named rounds; screen readers hear "5: 2 votes". On phones the columns
 narrow to 24 px, 2 px apart, so the eleven cards of the modified Fibonacci deck fit one
 row at 360 px. Spreads never break ("XS–XXL"): on a phone a deck without numbers puts
-the spread on its own row. Special cards sit beside it under "Not counted", with a note
+the spread on its own row. A tie of many cards for most voted wraps between its cards
+(#26: a custom deck's six-way tie). Card labels never draw below 7 px. Special cards sit beside it under "Not counted", with a note
 that they don't count toward these numbers. The "Not at the table" row marks a lowest
 or highest card with the seats' arrow and says it in the label. If the results' code
 cannot load (an old build gone after a redeploy), the centre says the result as a

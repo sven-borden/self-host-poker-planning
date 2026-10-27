@@ -81,6 +81,7 @@ type Round = {
   deck: RoomSettings["deck"];       // captured at the round's start: votes are checked
   specials: RoomSettings["specials"]; //   against deckCards(deck, specials)
   anonymous: boolean;               // !settings.revealNames at the start; a change applies next round
+  restarts?: number;                // deck or specials changes that restarted it (#26); absent for none
   votes: Record<UserId, { card: Card; changedAfterReveal?: true; name?: string }>;
                                     // name: kept when the voter leaves after a named reveal (#19)
   startedAt: number;
@@ -160,8 +161,8 @@ client that sends one gets `bad_payload`; the server's timers send it (section 9
 | `setRole {role}` | self | voter → observer drops the vote while Voting; observer → voter checks capacity when observers do not count |
 | `kick {who}` | PO | `cannot_kick_self`, `unknown_participant`; the vote as for `leave` |
 | `startRound {subject}` | PO | any phase; from Voting it abandons the round (the web offers it only in the lobby and after a reveal, #21); number + 1; captures deck, specials, anonymity; starts `timer.seconds` (`bad_subject`). A link's `key` is read here (`cleanSubject` → `linkKey`, in `apply-subject.ts`, so by the server; a client's own is dropped): a Jira key (`[A-Z][A-Z0-9_]{1,31}-[1-9][0-9]{0,9}`, read in any case, stored in capitals) from a path ending in `/browse/KEY` or Jira Cloud's `/projects/{project}/issues/KEY`, or a query's `selectedIssue=KEY`, on any host; an Azure DevOps work item id from a path ending in `/_workitems/edit/{id}` after one to three segments, on any host (Azure DevOps Server is self-hosted), or a query's `workitem={id}` on `dev.azure.com` and `*.visualstudio.com`, stored as the digits |
-| `castVote {card, round}` | voter | `no_round`; `round_changed` when `round` (the number of the round the press was made for) is not the current round's, so a vote in flight when the next round starts never lands in it; `not_voter` (observers; the PO when `poVotes` is off), `bad_card` (not in the round's cards); in Revealed only in a named round with `allowChangeAfterReveal` (a change or a first vote, marked `changedAfterReveal`); an anonymous round locks its votes at reveal, whatever the setting, decided by the round's own `anonymous` flag (`round_revealed`), because the people who could still change shrink as voters leave and a change would then point at someone; the `voteCast` cause always carries `who` |
-| `retractVote {round}` | self | `round_changed` as for `castVote`; Voting only (`not_voting`); no-op without a vote |
+| `castVote {card, round, restart}` | voter | `no_round`; `round_changed` when `round` (the number of the round the press was made for) is not the current round's, or `restart` not its `restarts` (#26: a deck change restarts the round under the same number), so a vote in flight when the next round starts or the round restarts never lands in it; `not_voter` (observers; the PO when `poVotes` is off), `bad_card` (not in the round's cards); in Revealed only in a named round with `allowChangeAfterReveal` (a change or a first vote, marked `changedAfterReveal`); an anonymous round locks its votes at reveal, whatever the setting, decided by the round's own `anonymous` flag (`round_revealed`), because the people who could still change shrink as voters leave and a change would then point at someone; the `voteCast` cause always carries `who` |
+| `retractVote {round, restart}` | self | `round_changed` as for `castVote`; Voting only (`not_voting`); no-op without a vote |
 | `reveal` | PO, or anyone if `whoCanReveal = "anyone"` | Voting only (`not_voting`, `not_allowed`); zero votes allowed; stops the timer |
 | `setFinal {card}` | PO | Revealed only (`not_revealed`); a non-special card of the round (`bad_card`) |
 | `revote` | PO | Revealed only; a new round with the same subject |
@@ -180,7 +181,8 @@ Socket.IO with typed event maps from `packages/protocol` (`ClientToServerEvents`
 `ServerToClientEvents`). The server validates every inbound payload with the protocol's
 zod schemas; the web checks the server's messages by shape (`isSnapshot`, `isEnterAck`,
 `isCmdAck`), not with zod, which would cost the room route about 27 kB gzipped.
-`PROTOCOL_VERSION` is 4 (4 added the `round` of `castVote` and `retractVote` and the
+`PROTOCOL_VERSION` is 5 (5 added the `restart` of `castVote` and `retractVote` and a
+round view's `restarts`, #26; 4 added the `round` of `castVote` and `retractVote` and the
 `round_changed` ack code, #18; 3 the `away` and `back` causes, #17; 2 the `busy` ack
 code, #15; 1 was the first deploy). Adding an optional field to an outbound view is not
 breaking (the web checks shapes, the schemas are lenient), so #19's departed `name`
@@ -315,8 +317,9 @@ Server: `apps/server/src/sync/room-sync.ts` (the `handlers` of `createRealtime`)
   the same command is never sent twice in a row). A refusal (`round_revealed`,
   `not_voting`, `offline`, a `busy` that gave up) drops the pick: the hand rolls back to
   the snapshot. A pick belongs to its round (number and `startedAt`), so a new round or
-  the reveal drops it. Each command carries the round number it was made for: one still
-  in flight when the PO starts the next round is refused with `round_changed`, and the
+  the reveal drops it. Each command carries the round number it was made for, and its
+  `restarts` (#26): one still in flight when the PO starts the next round, or restarts
+  this one with a new deck, is refused with `round_changed`, and the
   hand rolls back without a message (the new round's hand is empty anyway). The pick changes only the viewer's own screen; the others learn
   the vote from the server's `voted`, never the card.
 - **Revealing from the web** (#19, `apps/web/src/room/round-centre.tsx`): the PO's
