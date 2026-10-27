@@ -161,7 +161,10 @@ describe("join with a code", () => {
       serve({ [`GET /api/rooms/${CODE}`]: () => json({ code: CODE, name: "Sprint 42" }) });
       const router = await renderAt("/");
       await join(typed);
-      expect(await screen.findByRole("heading", { level: 1, name: "Sprint 42" })).toBeDefined();
+      // The room page renders after the route and its header fetch: slow under a covered, parallel run.
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "Sprint 42" }, { timeout: 5000 }),
+      ).toBeDefined();
       expect(router.state.location.pathname, typed).toBe(`/r/${CODE}`);
       cleanup();
     }

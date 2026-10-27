@@ -80,7 +80,12 @@ describe("app shell", () => {
     });
     fireEvent.click(screen.getByRole("radio", { name: /^T-shirt sizes/ }));
     fireEvent.click(screen.getByRole("button", { name: "Create the room" }));
-    const heading = await screen.findByRole("heading", { level: 1, name: "Sprint 42" });
+    // The room page renders after the route and its header fetch: slow under a covered, parallel run.
+    const heading = await screen.findByRole(
+      "heading",
+      { level: 1, name: "Sprint 42" },
+      { timeout: 5000 },
+    );
     expect(router.state.location.pathname).toBe("/r/Abc1234567");
     expect(heading.querySelector("bdi")?.textContent).toBe("Sprint 42");
     expect(document.querySelector("[data-room-code]")?.textContent).toBe("Abc1234567");
