@@ -111,13 +111,15 @@ const payloads = {
   startRound: z.strictObject({ subject: wireSubjectSchema }),
   // The round the press was made for, its number and restarts: one still in flight when
   // the next round starts, or when a deck change restarts this one, is refused
-  // (`round_changed`) instead of landing in it.
+  // (`round_changed`) instead of landing in it. `restart` is optional, so a client from
+  // before #26 keeps its room through the deploy: without it any restart goes, as for a
+  // command the server built. The web app always sends it.
   castVote: z.strictObject({
     card: cardSchema,
     round: roundNumberSchema,
-    restart: restartSchema,
+    restart: restartSchema.optional(),
   }),
-  retractVote: z.strictObject({ round: roundNumberSchema, restart: restartSchema }),
+  retractVote: z.strictObject({ round: roundNumberSchema, restart: restartSchema.optional() }),
   reveal: empty,
   setFinal: z.strictObject({ card: cardSchema }),
   revote: empty,

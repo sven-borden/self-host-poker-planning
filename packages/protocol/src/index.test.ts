@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PROTOCOL_VERSION } from "./index.ts";
 
 describe("PROTOCOL_VERSION", () => {
-  it("is 5 since votes carry their round's restarts too (#26)", () => {
-    expect(PROTOCOL_VERSION).toBe(5);
+  it("stays 4: the restart a vote carries (#26) is optional, so older tabs keep their room", () => {
+    expect(PROTOCOL_VERSION).toBe(4);
   });
 });

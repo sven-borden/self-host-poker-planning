@@ -181,13 +181,16 @@ Socket.IO with typed event maps from `packages/protocol` (`ClientToServerEvents`
 `ServerToClientEvents`). The server validates every inbound payload with the protocol's
 zod schemas; the web checks the server's messages by shape (`isSnapshot`, `isEnterAck`,
 `isCmdAck`), not with zod, which would cost the room route about 27 kB gzipped.
-`PROTOCOL_VERSION` is 5 (5 added the `restart` of `castVote` and `retractVote` and a
-round view's `restarts`, #26; 4 added the `round` of `castVote` and `retractVote` and the
+`PROTOCOL_VERSION` is 4 (4 added the `round` of `castVote` and `retractVote` and the
 `round_changed` ack code, #18; 3 the `away` and `back` causes, #17; 2 the `busy` ack
 code, #15; 1 was the first deploy). Adding an optional field to an outbound view is not
 breaking (the web checks shapes, the schemas are lenient), so #19's departed `name`
 kept version 4, and so did #21: the snapshot's link `key` was already in the schema,
-and `startRound {subject}` did not change.
+and `startRound {subject}` did not change. An optional field on an inbound command is
+not breaking either: #26's `restart` on `castVote` and `retractVote` (the round's
+`restarts` when the press was made) is optional, the server checks it when present and
+takes any restart when it is missing, as for a command it built, and the web app always
+sends it. So every tab open across that deploy kept its room instead of reloading.
 
 | Event | Direction | Payload | Ack |
 |---|---|---|---|

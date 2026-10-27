@@ -319,7 +319,7 @@ server sends and never decides the outcome of a round.
   `decks.ts`, so it ships in the panel's lazy chunk only. Copy: `deckField.*`,
   `live.deckChanged`, `live.deckRestarted`, `live.specialsRestarted`, `live.voteAgain`,
   `live.deckNow`. The live region (`settingEvents`) tells a restart from a change by the
-  round's `restarts` (protocol 5), and skips the restart's `roundStarted`. Votes carry
+  round's `restarts` (an optional view field, protocol 4), and skips the restart's `roundStarted`. Votes carry
   the round's `restart` with its number (`hand-state.ts`), so one in flight across a
   restart is refused with `round_changed` and rolls back without a word.
   The live region (`announcements.ts`, `settingEvents`) compares the settings of each

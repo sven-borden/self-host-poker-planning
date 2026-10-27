@@ -7,7 +7,9 @@
  * - 3: the `away` and `back` causes (#17, presence), which a version 2 client cannot parse.
  * - 4: `castVote` and `retractVote` carry their `round`, and the `round_changed` ack code
  *   (#18), which a version 3 client neither sends nor parses.
- * - 5: `castVote` and `retractVote` carry the round's `restart` too, and a round view its
- *   `restarts` (#26): a deck change restarts the round under the same number.
+ *
+ * Not breaking, so not bumped: an optional field on an outbound view (the web checks
+ * shapes), or an optional field on an inbound command, such as the `restart` of
+ * `castVote` and `retractVote` and the round view's `restarts` (#26).
  */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 4;

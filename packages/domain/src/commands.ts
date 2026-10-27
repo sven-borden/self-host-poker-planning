@@ -13,7 +13,8 @@ import type { Role, RoomState, Round, SettingsPatch, Subject, UserId } from "./r
  * (`round_changed`) instead of landing in it. They carry `restart` too, the round's
  * `restarts` when the press was made: a deck change restarts the round under the same
  * number (#26), and a vote for the old deck must not land in the new one. The wire
- * protocol always sends both; the domain checks each whenever it is given.
+ * requires `round`; `restart` is optional there (a tab from before #26 sends none), and
+ * the web app always sends it. The domain checks each whenever it is given.
  */
 export type Command =
   | { type: "join"; name: string; role: Role }
