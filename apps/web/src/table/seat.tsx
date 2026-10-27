@@ -177,6 +177,7 @@ export function Seat({ person, place, geometry }: SeatProps) {
         ref={nameRef}
         data-seat-part="name"
         aria-hidden="true"
+        dir="auto"
         className="block w-full truncate text-center font-semibold text-ink"
         style={{
           height: labelHeight,

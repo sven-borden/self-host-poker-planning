@@ -142,7 +142,7 @@ export function TableStage({
             {observers.map((observer) => (
               <li key={observer.id} data-observer className="flex items-center gap-1.5">
                 <Avatar id={observer.id} name={observer.name} size={24} />
-                <span className="max-w-32 truncate text-[12px] text-ink-2">
+                <span dir="auto" className="max-w-32 truncate text-[12px] text-ink-2">
                   <bdi>{observer.name}</bdi>
                 </span>
               </li>
