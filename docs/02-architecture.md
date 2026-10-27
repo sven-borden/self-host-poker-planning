@@ -197,7 +197,7 @@ sends it. So every tab open across that deploy kept its room instead of reloadin
 | `enter` | client → server | `{ code, protocol }`: subscribe to a room's snapshots | `{ ok: true, snapshot }` or `{ ok: false, code }` |
 | `cmd` | client → server | `{ id, type, payload }`: one domain command | `{ ok: true, version }` or `{ ok: false, code }` |
 | `snapshot` | server → client | the viewer's projection | none |
-| `kicked` | server → client | none; the server disconnects the socket next | none |
+| `kicked` | server → client | none; the server disconnects the socket next (the web app connects again and shows the join form, #30) | none |
 
 - **Commands**: one zod schema per domain command, a discriminated union on `type`;
   `id` is the client's correlation string; `payload` may be left out on commands without
@@ -218,7 +218,12 @@ sends it. So every tab open across that deploy kept its room instead of reloadin
 - **Snapshots** (server → client): after every change the server sends each socket
   its own projection, `toSnapshot(state, viewer, { code, version, now, causes })`:
   `{ protocol, version, serverNow, room, causes }`, where `room` is
-  `{ code, ownerId, settings, participants, you, round }`. `participants` is sorted by
+  `{ code, ownerId, ownerClaimableAt?, settings, participants, you, round }`.
+  `ownerClaimableAt` (#30, optional, so version 4 stayed) is when anyone else may claim
+  the PO role, in epoch ms by the server's clock: the PO's `awaySince` plus 120 s while
+  the PO is away, 0 while the PO is not in the room, absent while the PO is here. It is
+  the one place the PO's `awaySince` shows; the page shows "Claim the product owner role"
+  from then on, by its offset to `serverNow`, and `claimOwner` decides with the same rule. `participants` is sorted by
   `joinedAt`, then id (never by vote order), each `{ id, name, role, avatar?, connected,
   away, isOwner }`; `you` is the viewer's id once joined, else `null`; `round` is `null`
   in the lobby. Rooms are small (≤ 16 people), so a full snapshot is a few kilobytes;
@@ -567,7 +572,8 @@ password, no social provider before W5.
   in the room's queue, from the stored state and the sockets actually there, so a return
   during a run is not lost. An away run that fails (database error, lost
   compare-and-set) starts the grace again, at most 3 times in a row. PO claim opens
-  after 120 s away.
+  after 120 s away (#30): the snapshot's `ownerClaimableAt` says when, and the server
+  needs no timer for it, since nothing changes in the room at that moment.
 - After a restart the timers are gone: the first socket of a room on an instance starts
   a grace for everyone the room shows as connected who has no socket there. That grace
   is 60 s (`PRESENCE_RESTART_GRACE_MS`, a PO decision of 2026-10-27), not 15 s: every
