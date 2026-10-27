@@ -25,6 +25,18 @@ export const de: Catalog = {
     title: "Gemeinsam schätzen, an einem Tisch",
     lede: "Alle wählen eine Karte, die Karten werden gemeinsam aufgedeckt, und das Team bespricht die Unterschiede. Kein Konto nötig.",
     createRoom: "Raum erstellen",
+    howTitle: "So funktioniert es",
+    step1Title: "Raum erstellen",
+    step1Body:
+      "Geben Sie ihm nach Wunsch einen Namen und wählen Sie ein Kartendeck. Sie werden sein Product Owner.",
+    step2Title: "Link teilen",
+    step2Body: "Ihr Team öffnet ihn und gibt einen Namen ein. Kein Konto, keine Installation.",
+    step3Title: "Abstimmen",
+    step3Body:
+      "Alle wählen verdeckt eine Karte. Der Tisch zeigt, wer abgestimmt hat, aber nie, welche Karte.",
+    step4Title: "Aufdecken",
+    step4Body:
+      "Die Karten werden gemeinsam umgedreht. Besprechen Sie die Unterschiede und spielen Sie die nächste Runde.",
   },
   createRoom: {
     lede: "Sie werden sein Product Owner. Teilen Sie den Link, und Ihr Team kommt dazu, ohne Konto.",
@@ -97,6 +109,35 @@ export const de: Catalog = {
   notFound: {
     title: "Seite nicht gefunden",
     body: "Diese Adresse führt nirgendwohin. Prüfen Sie den Link oder kehren Sie zur Startseite zurück.",
+  },
+  join: {
+    title: "Mit Code beitreten",
+    label: "Raumcode oder Link",
+    hint: "Fügen Sie den Link ein, den Ihr Team geschickt hat, oder geben Sie den {{length, number}}-stelligen Code ein. Leerzeichen spielen keine Rolle.",
+    submit: "Beitreten",
+    empty: "Geben Sie einen Raumcode ein oder fügen Sie den Link zum Raum ein.",
+    malformed:
+      "Das ist kein Raumcode. Ein Code besteht aus {{length, number}} Buchstaben und Ziffern, ohne {{excluded}}. Prüfen Sie ihn oder fügen Sie den ganzen Link ein.",
+    excluded: "0, O, I und l",
+    otherHost: "Dieser Link gehört zu {{host}}.",
+    openThere: "Dort öffnen",
+  },
+  roomGone: {
+    lede: "Unter dieser Adresse gibt es keinen Raum. Möglicherweise ist Folgendes passiert:",
+    typo: "Der Code oder Link wurde falsch abgetippt oder abgeschnitten. Vergleichen Sie ihn mit dem, den Sie erhalten haben.",
+    expired_one:
+      "Der Raum wurde gelöscht: Auf diesem Server wird ein Raum nach {{count, number}} Tag ohne Aktivität entfernt.",
+    expired_other:
+      "Der Raum wurde gelöscht: Auf diesem Server wird ein Raum nach {{count, number}} Tagen ohne Aktivität entfernt.",
+    expiredUnknown:
+      "Der Raum wurde gelöscht: Auf diesem Server wird ein Raum nach längerer Zeit ohne Aktivität entfernt.",
+    tryAnother: "Anderen Code versuchen",
+    createRoom: "Neuen Raum erstellen",
+  },
+  errorPage: {
+    title: "Etwas ist schiefgelaufen",
+    body: "Auf dieser Seite ist ein Fehler aufgetreten. Meist hilft es, die Seite neu zu laden. Passiert es wieder, beginnen Sie auf der Startseite neu.",
+    reload: "Seite neu laden",
   },
   identity: {
     reconnecting: "Verbindung zum Server wird hergestellt…",

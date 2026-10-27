@@ -450,7 +450,11 @@ password, no social provider before W5.
 - Room API: `POST /api/rooms` (a session, this origin, a JSON body `{ name?, deck? }`,
   strict, `deck` a preset id, Fibonacci by default) answers 201 `{ code }`; the creator
   is the PO. `GET /api/rooms/:code` answers `{ code, name }` to anyone holding the code,
-  never the room's state, or 404 `room_not_found` (a malformed code is not looked up).
+  never the room's state, or 404 `{ code: "room_not_found", retentionDays }` (a
+  malformed code is not looked up; `retentionDays` is `ROOM_TTL_DAYS`, so the not-found
+  page can say how long an idle room is kept). The shape of a code (`isRoomCode`,
+  `ROOM_CODE_PATTERN`) lives in `@pp/domain`, shared by the server and the web app's
+  "Join with a code".
   Both are limited per client address: 20 creations in 10 minutes, 120 header reads a
   minute, the read counted before its database query.
   Errors are `{ code }` with an `AckErrorCode`: `unauthenticated` 401, `not_allowed`
@@ -525,8 +529,8 @@ language, and an unknown code gets a generic one.
 
 - pino JSON logs on stdout (request id, connection id, room id, no secrets, no vote
   values). A room code is a bearer capability: anyone holding it enters a room that has
-  no password. Treat it like a session token: never in a log line, an error message,
-  Sentry or Umami; logs name a room by its id. The request log writes the matched route
+  no password. Treat it like a session token: never in a log line, an error message, a
+  page title, Sentry or Umami; logs name a room by its id. The request log writes the matched route
   (`/r/:code`); for a path that matched only the web app's fallback or the 404 it
   writes a normalised path (decoded, `//` collapsed, case ignored) with the segment
   after `/r` or `/api/rooms` and every code-shaped segment replaced by `:code`.
@@ -655,6 +659,7 @@ language, and an unknown code gets a generic one.
 
 ## 14. Budgets
 
-- Initial JavaScript under 200 KB gzipped for the room route.
+- Initial JavaScript under 200 KB gzipped for the room route and for the landing page
+  (`apps/web/scripts/check-budget.ts` checks both after every build).
 - Command to snapshot under 150 ms p95 on one instance.
 - Reveal with 16 seats at 60 fps on a mid-range phone.

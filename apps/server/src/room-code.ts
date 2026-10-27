@@ -4,12 +4,10 @@
  * a password is set (W2), so it is drawn without bias and never logged.
  */
 import { randomBytes } from "node:crypto";
+import { ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH } from "@pp/domain";
 
-/** Bitcoin's base58: digits and letters without 0, O, I and l, which read alike. */
-export const ROOM_CODE_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-export const ROOM_CODE_LENGTH = 10;
-/** A well-formed room code; anything else cannot name a room. */
-export const ROOM_CODE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{10}$/;
+// The shape of a code lives in the domain, which the web app shares.
+export { isRoomCode, ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH, ROOM_CODE_PATTERN } from "@pp/domain";
 
 /** `crypto.randomBytes`, or a stub in tests. */
 export type RandomBytes = (size: number) => Uint8Array;
@@ -32,8 +30,4 @@ export function generateRoomCode(random: RandomBytes = randomBytes): string {
     }
   }
   return code;
-}
-
-export function isRoomCode(value: string): boolean {
-  return ROOM_CODE_PATTERN.test(value);
 }

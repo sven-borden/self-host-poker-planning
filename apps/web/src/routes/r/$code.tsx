@@ -9,6 +9,8 @@ import { RiseIn } from "../../motion/motion.tsx";
 import { openRoom } from "../../realtime/room-connection.ts";
 import { RoomStatus } from "../../room/room-status.tsx";
 import { fetchRoomHeader, RoomApiError, type RoomHeader } from "../../rooms/api.ts";
+import { RoomNotFound } from "../../rooms/room-not-found.tsx";
+import { useRoomStore } from "../../stores/room-store.ts";
 
 export const Route = createFileRoute("/r/$code")({
   component: RoomPage,
@@ -17,13 +19,14 @@ export const Route = createFileRoute("/r/$code")({
 type HeaderState =
   | { status: "loading" }
   | { status: "ready"; header: RoomHeader }
-  | { status: "error"; code: string };
+  | { status: "error"; code: string; retentionDays?: number | undefined };
 
 /**
  * The room page: its header (#14), the room's name and code from `GET /api/rooms/:code`
  * and the link to share, then the room itself, followed over its socket (#15) once the
- * header says the room exists. The table and joining fill the slot (#16, #17); #24
- * designs the full not-found page.
+ * header says the room exists. The table and joining fill the slot (#16, #17). An unknown
+ * code shows `RoomNotFound` (#24), from the header fetch here or from the socket's
+ * `enter` in `RoomStatus`.
  */
 function RoomPage() {
   const { code } = Route.useParams();
@@ -39,10 +42,11 @@ function RoomPage() {
       (header) => current && setState({ status: "ready", header }),
       (error: unknown) =>
         current &&
-        setState({
-          status: "error",
-          code: error instanceof RoomApiError ? error.code : "internal",
-        }),
+        setState(
+          error instanceof RoomApiError
+            ? { status: "error", code: error.code, retentionDays: error.retentionDays }
+            : { status: "error", code: "internal" },
+        ),
     );
     return () => {
       current = false;
@@ -56,18 +60,20 @@ function RoomPage() {
       </p>
     );
   }
+  if (state.status === "error" && state.code === "room_not_found") {
+    return <RoomNotFound retentionDays={state.retentionDays} />;
+  }
   if (state.status === "error") {
-    const notFound = state.code === "room_not_found";
     return (
       <RiseIn className="max-w-2xl">
         <h1 className="text-3xl font-[760] break-words [font-stretch:110%] sm:text-4xl">
-          {notFound ? t("room.notFoundTitle") : t("room.title", { code })}
+          {t("room.title", { code })}
         </h1>
-        <p className="mt-4 text-ink-2" role={notFound ? undefined : "alert"}>
+        <p className="mt-4 text-ink-2" role="alert">
           {state.code === "network" ? t("common.network") : errorMessage(t, state.code)}
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
-          {!notFound && <Button onClick={() => setAttempt((n) => n + 1)}>{t("room.retry")}</Button>}
+          <Button onClick={() => setAttempt((n) => n + 1)}>{t("room.retry")}</Button>
           <Link to="/" className={buttonVariants({ variant: "outline" })}>
             {t("room.backHome")}
           </Link>
@@ -97,6 +103,15 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
       linkInput.current?.select();
     }
   }, [showLink]);
+
+  // The room went away between the header and the socket's enter (the purge, or a
+  // deletion): the same page as an unknown code, without the code. The store's code is
+  // checked so that a room left behind never answers for this one.
+  const gone = useRoomStore(
+    (state) =>
+      state.code === header.code && state.status === "error" && state.error === "room_not_found",
+  );
+  if (gone) return <RoomNotFound />;
 
   async function copyLink() {
     let copied = false;

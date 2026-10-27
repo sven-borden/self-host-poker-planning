@@ -1,8 +1,9 @@
-// Fails the build when the room route's initial JavaScript exceeds its budget: 200 kB
-// gzipped (docs/02-architecture.md, "Budgets"). Reads Vite's manifest, so it counts what
-// the browser fetches before the room renders: the entry with its static imports, plus the
-// room route's split chunk with its own. Lazy chunks (Motion features, the toaster) do
-// not count. Runs after `vite build` under Node 24's type stripping, on Windows and Linux.
+// Fails the build when a route's initial JavaScript exceeds its budget: 200 kB gzipped
+// (docs/02-architecture.md, "Budgets"), for the room route and the landing page. Reads
+// Vite's manifest, so it counts what the browser fetches before the page renders: the
+// entry with its static imports, plus the route's split chunk with its own. Lazy chunks
+// (Motion features, the toaster) do not count. Runs after `vite build` under Node 24's
+// type stripping, on Windows and Linux.
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +23,14 @@ export const BUDGET_BYTES = 200_000;
 
 /** The room route's source in the manifest (TanStack Router splits it with a query). */
 export const ROOM_ROUTE = "src/routes/r/$code.tsx";
+/** The landing page's source (#24): the first page most people load. */
+export const LANDING_ROUTE = "src/routes/index.tsx";
+
+/** The routes the budget covers, each named as the build log prints it. */
+export const BUDGET_ROUTES = [
+  { name: "the room route", source: ROOM_ROUTE },
+  { name: "the landing page", source: LANDING_ROUTE },
+] as const;
 
 /**
  * Manifest keys loaded before the route renders: every entry, the route's chunks, and
@@ -60,23 +69,25 @@ if (isMain) {
   const manifest = JSON.parse(
     readFileSync(join(dist, ".vite", "manifest.json"), "utf8"),
   ) as Manifest;
-  const files = [
-    ...new Set(initialChunks(manifest, ROOM_ROUTE).map((key) => manifest[key]?.file ?? key)),
-  ].filter((file) => file.endsWith(".js"));
-  const sizes = files.map((file) => ({
-    file,
-    gzip: gzipSync(readFileSync(join(dist, file)), { level: 9 }).length,
-  }));
-  const total = sizes.reduce((sum, { gzip }) => sum + gzip, 0);
-  const detail = sizes.map(({ file, gzip }) => `${file} ${formatKb(gzip)}`).join(", ");
-  if (total > BUDGET_BYTES) {
-    console.error(
-      `Budget: the room route loads ${formatKb(total)} of JavaScript gzipped, over the ${formatKb(BUDGET_BYTES)} budget (${detail}).`,
-    );
-    process.exitCode = 1;
-  } else {
-    console.log(
-      `Budget: the room route loads ${formatKb(total)} of JavaScript gzipped, within ${formatKb(BUDGET_BYTES)} (${detail}).`,
-    );
+  for (const route of BUDGET_ROUTES) {
+    const files = [
+      ...new Set(initialChunks(manifest, route.source).map((key) => manifest[key]?.file ?? key)),
+    ].filter((file) => file.endsWith(".js"));
+    const sizes = files.map((file) => ({
+      file,
+      gzip: gzipSync(readFileSync(join(dist, file)), { level: 9 }).length,
+    }));
+    const total = sizes.reduce((sum, { gzip }) => sum + gzip, 0);
+    const detail = sizes.map(({ file, gzip }) => `${file} ${formatKb(gzip)}`).join(", ");
+    if (total > BUDGET_BYTES) {
+      console.error(
+        `Budget: ${route.name} loads ${formatKb(total)} of JavaScript gzipped, over the ${formatKb(BUDGET_BYTES)} budget (${detail}).`,
+      );
+      process.exitCode = 1;
+    } else {
+      console.log(
+        `Budget: ${route.name} loads ${formatKb(total)} of JavaScript gzipped, within ${formatKb(BUDGET_BYTES)} (${detail}).`,
+      );
+    }
   }
 }

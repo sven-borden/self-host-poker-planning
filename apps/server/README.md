@@ -23,7 +23,8 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   limiter, random? })` mounts `POST /api/rooms` and `GET /api/rooms/:code`;
   `insertNewRoom(store, { ownerId, name, deck }, random?)` stores a new room and draws
   the code again on a clash (`CODE_ATTEMPTS`, 5). `src/room-code.ts`: `generateRoomCode`
-  (base58, rejection sampling) and `isRoomCode`.
+  (base58, rejection sampling); the shape (`isRoomCode`, `ROOM_CODE_PATTERN`) comes from
+  `@pp/domain`, which the web app's join field shares.
 - `src/rate-limit.ts`: `memoryRateLimit()`, the bounded fixed-window limiter, and its
   `RateLimiter` interface (`consume(key, { window, max })`). `src/http.ts`: what the
   app's own routes share: `foreignOrigin`, `isJsonBody`, `requestIp`, `rateLimited`.
@@ -216,7 +217,8 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   403 `not_allowed`, 400, 413 or 415 `bad_payload`, 400 `bad_room_name`, 429 `rate_limited`
   (`Retry-After`), 500 `internal` (five codes in a row taken, or the database).
 - `GET /api/rooms/:code` (no session): 200 `{ code, name }`, never the state; 404
-  `room_not_found` for an unknown or a malformed code (no query then).
+  `room_not_found` for an unknown or a malformed code (no query then), with
+  `retentionDays` (`ROOM_TTL_DAYS`) for the not-found page.
 - `ROOM_CREATE_LIMIT`: 20 creations per client address in 10 minutes.
   `ROOM_HEADER_LIMIT`: 120 header reads per client address and minute, counted before the
   query.
