@@ -1,10 +1,12 @@
 import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   API_BODY_LIMIT_BYTES,
   type AppDeps,
+  type AppEnv,
   createApp,
   DB_CHECK_TIMEOUT_MS,
   listStaticFiles,
@@ -14,6 +16,11 @@ import { collectLogs, SECRET, testConfig } from "./test-support.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const IMMUTABLE = "public, max-age=31536000, immutable";
+
+/** A stand-in for the room API: a route with the room code in its path. */
+function registerFakeRooms(api: Hono<AppEnv>): void {
+  api.get("/api/rooms/:code", (c) => c.json({ code: "room_not_found" }, 404));
+}
 
 function app(deps: Partial<AppDeps> = {}, env: Record<string, string> = {}) {
   const logs = collectLogs();
@@ -104,11 +111,59 @@ describe("request ids and logs", () => {
     await a.request("/api/rooms/Secret1234");
     expect(logs.lines[0]).toMatchObject({ path: "/api/rooms/:code", status: 404 });
     expect(logs.raw.join("")).not.toContain("Secret1234");
-    expect(loggedPath("/r/Secret1234")).toBe("/r/:code");
-    expect(loggedPath("/r/Secret1234/extra")).toBe("/r/:code/extra");
-    expect(loggedPath("/api/rooms")).toBe("/api/rooms");
+  });
+
+  it("logs the matched route, or a normalised path, never a room code", () => {
+    // Where a route matched, its pattern.
+    expect(loggedPath("/api/rooms/Secret1234", "/api/rooms/:code")).toBe("/api/rooms/:code");
+    expect(loggedPath("/api/rooms", "/api/rooms")).toBe("/api/rooms");
+    // Otherwise the path, with the room segment and any code-shaped segment replaced.
+    expect(loggedPath("/r/Secret1234", "*")).toBe("/r/:code");
+    expect(loggedPath("/R/Secret1234/extra")).toBe("/R/:code/extra");
+    expect(loggedPath("//r//Secret1234//")).toBe("/r/:code");
+    expect(loggedPath("/Api/Rooms/Secret1234")).toBe("/Api/Rooms/:code");
+    expect(loggedPath("/%72/Secret1234")).toBe("/r/:code");
+    expect(loggedPath("/foo/Secret1234")).toBe("/foo/:code");
+    expect(loggedPath("/foo/%2553ecret1234")).toBe("/foo/:code");
+    expect(loggedPath("/foo/%E0%A4%A")).toBe("/foo/%E0%A4%A");
     expect(loggedPath("/rooms/abc")).toBe("/rooms/abc");
-    expect(loggedPath("/api/health")).toBe("/api/health");
+    expect(loggedPath("/assets/index-C0ffee12.js")).toBe("/assets/index-C0ffee12.js");
+    expect(loggedPath("/api/health", "/api/health")).toBe("/api/health");
+    expect(loggedPath("/")).toBe("/");
+  });
+
+  it("logs no line with a room code, whatever the spelling of the path", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pp-log-"));
+    try {
+      writeFileSync(join(root, "index.html"), "<!doctype html>");
+      const { app: a, logs } = app({ staticDir: root, registerApi: registerFakeRooms });
+      const code = "PXaA3oo1Fa";
+      const variants = [
+        `/r/${code}`,
+        `/R/${code}`,
+        `//r/${code}`,
+        `/r//${code}`,
+        `/r/${code}/`,
+        `/r/${code}?x=1`,
+        `/r/%${code.charCodeAt(0).toString(16)}${code.slice(1)}`,
+        `/%72/${code}`,
+        `/r/%50XaA3oo1Fa`,
+        `/r/${code}/extra`,
+        `/api/rooms/${code}`,
+        `/API/ROOMS/${code}`,
+        `/api/rooms/${code}/`,
+        `//api//rooms//${code}`,
+        `/api/rooms/%50XaA3oo1Fa`,
+        `/api/rooms/${code.toLowerCase()}`,
+        `/x/${code}`,
+      ];
+      for (const path of variants) await a.request(path);
+      expect(logs.lines.length).toBeGreaterThan(variants.length - 1);
+      // Any case: the router ignores it, and so does this check.
+      expect(logs.raw.join("").toLowerCase()).not.toContain(code.toLowerCase());
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("answers an unhandled error with a JSON 500 and logs it", async () => {
