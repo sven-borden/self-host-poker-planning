@@ -14,7 +14,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../stores/room-store.ts";
 import { RoomView } from "./room-view.tsx";
 
@@ -121,6 +121,11 @@ const voting = () => {
   if (!result.ok) throw new Error(result.error);
   return result.state;
 };
+
+// The table is a lazy chunk; load it once up front, so no test's wait pays for its transform.
+beforeAll(async () => {
+  await import("./seated.tsx");
+}, 30_000);
 
 beforeEach(() => {
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});

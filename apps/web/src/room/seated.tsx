@@ -1,11 +1,11 @@
 import type { ParticipantView, RoomView as RoomSnapshotView } from "@pp/protocol";
 import { OctagonXIcon } from "lucide-react";
-import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useT } from "../i18n/hooks.ts";
 import { cardLabel } from "../table/cards.tsx";
 import { Hand } from "../table/hand.tsx";
 import { TableStage } from "../table/table-stage.tsx";
-import type { Box, Flight } from "./card-flight.tsx";
+import { type Box, CardFlight, type Flight } from "./card-flight.tsx";
 import { failureMessage } from "./failure.ts";
 import { confirmedOf, shownCard, withShownVote } from "./hand-state.ts";
 import { LiveAnnouncer } from "./live-announcer.tsx";
@@ -14,10 +14,7 @@ import { handView, tableData } from "./table-data.ts";
 import { useVote } from "./use-vote.ts";
 import { YouControls } from "./you-controls.tsx";
 
-/** The card's trip from the hand to the seat: Motion's `m`, in a chunk of its own. */
-const CardFlight = lazy(() => import("./card-flight.tsx"));
-
-/** A flight that never reports its end (its chunk did not load) stops hiding the slot. */
+/** A flight that never reports its end (a background tab) stops hiding the slot. */
 const FLIGHT_TIMEOUT_MS = 1500;
 
 interface SeatedProps {
@@ -58,11 +55,6 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
   const [startFailure, setStartFailure] = useState<string | null>(null);
   const [flight, setFlight] = useState<Flight | null>(null);
   const flights = useRef(0);
-
-  useEffect(() => {
-    // Motion's features, fetched beside the hand, so the first vote does not wait.
-    import("../motion/features.ts").catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (flight === null) return;
@@ -154,11 +146,8 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           {t("hand.ownerDoesNotVote")}
         </p>
       ) : null}
-      {hand.kind === "cards" ? (
-        // Mounted with the hand, so its chunk is in before the first vote.
-        <Suspense fallback={null}>
-          <CardFlight flight={flight} onDone={() => setFlight(null)} />
-        </Suspense>
+      {flight !== null ? (
+        <CardFlight key={flight.id} flight={flight} onDone={() => setFlight(null)} />
       ) : null}
       <YouControls
         me={me}
