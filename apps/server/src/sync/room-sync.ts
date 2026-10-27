@@ -8,7 +8,7 @@
  * and no log line here holds a command's payload (a card): only the room code, the
  * command type, the version and the answer's code.
  */
-import { apply, type Command, type RoomState } from "@pp/domain";
+import { apply, type Cause, type Command, type RoomState } from "@pp/domain";
 import {
   type CmdAck,
   type EnterAck,
@@ -67,8 +67,10 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     options.recentAcks ?? RECENT_ACKS_SIZE,
     (ack) => !ack.ok && ack.code === "busy",
   );
-  /** The newest version this instance has sent to a room's sockets. */
-  const sent = new Map<string, number>();
+  /** The newest version this instance has seen of each room it has sockets in. */
+  const newest = new Map<string, number>();
+  /** The version each socket holds: it never gets the same or an older one again. */
+  const held = new WeakMap<RealtimeSocket, number>();
   const deadlines = createDeadlineTimers((code) => void timeUp(code), { now });
   let io: RealtimeServer | undefined;
 
@@ -85,29 +87,37 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   }
 
   /**
-   * Sends every socket of the room its own snapshot of `state`, unless this instance
-   * already sent this version or a newer one (an older answer arriving late, or nothing
-   * new). Then arms or clears the room's deadline from `state`.
+   * Records `version` as the room's newest if it is; false when a newer one is known (an
+   * answer that arrives late). The deadline follows the newest state only.
    */
-  function broadcast(code: string, version: number, state: RoomState, causes: Snapshot["causes"]) {
+  function advance(code: string, version: number, state: RoomState): boolean {
+    if (version < (newest.get(code) ?? 0)) return false;
+    newest.set(code, version);
+    armDeadline(code, state);
+    return true;
+  }
+
+  /**
+   * Sends every socket of the room its own snapshot of `state`, except those that already
+   * hold this version or a newer one. A late, older state goes nowhere.
+   */
+  function broadcast(code: string, version: number, state: RoomState, causes: readonly Cause[]) {
     const sockets = socketsOf(code);
-    if (sockets.length === 0) return;
-    if (version <= (sent.get(code) ?? 0)) return;
-    sent.set(code, version);
+    if (sockets.length === 0 || !advance(code, version, state)) return;
     const meta = { code, version, now: now(), causes };
     // Two tabs of one person get the same snapshot: build it once per viewer.
     const views = new Map<string, Snapshot>();
     for (const socket of sockets) {
       const viewer = socket.data.user?.id;
-      if (viewer === undefined) continue;
+      if (viewer === undefined || (held.get(socket) ?? 0) >= version) continue;
       let view = views.get(viewer);
       if (!view) {
         view = toSnapshot(state, viewer, meta);
         views.set(viewer, view);
       }
+      held.set(socket, version);
       socket.emit("snapshot", view);
     }
-    armDeadline(code, state);
   }
 
   function armDeadline(code: string, state: RoomState) {
@@ -194,6 +204,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     const code = socket.data.room;
     if (code === undefined) return;
     socket.data.room = undefined;
+    held.delete(socket);
     void socket.leave(channelOf(code));
     forgetIfEmpty(code);
   }
@@ -201,7 +212,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   function forgetIfEmpty(code: string) {
     if (socketsOf(code).length > 0) return;
     deadlines.clear(code);
-    sent.delete(code);
+    newest.delete(code);
   }
 
   return {
@@ -233,7 +244,8 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
         leaveRoom(socket);
         return refuse("room_not_found");
       }
-      armDeadline(code, loaded.state);
+      advance(code, loaded.version, loaded.state);
+      held.set(socket, Math.max(held.get(socket) ?? 0, loaded.version));
       log.debug({ room: code, version: loaded.version }, "socket entered");
       return {
         ok: true,

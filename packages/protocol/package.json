@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./leak-scan": "./src/leak-scan.ts"
   },
   "dependencies": {
     "@pp/domain": "workspace:*",
