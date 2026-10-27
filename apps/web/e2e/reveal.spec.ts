@@ -8,6 +8,7 @@ import {
   newPerson,
   ownAddress,
   recordFrames,
+  SHOTS,
   sameUser,
   seats,
   shoot,
@@ -186,7 +187,7 @@ test("the PO reveals a named round; the cards turn over in seat order from the v
 
     // Eve leaves after the reveal: her card stays under the table with her name.
     expect(await guests[2]?.cmd("leave")).toMatchObject({ ok: true });
-    const left = ben.page.getByRole("list", { name: "Left the room" });
+    const left = ben.page.getByRole("list", { name: "Not at the table" });
     await expect(left).toContainText("Eve");
     await expect(left.getByRole("listitem")).toHaveText("8EveEve, card 8");
     await shoot(ben.page, "reveal-departed");
@@ -199,6 +200,151 @@ test("the PO reveals a named round; the cards turn over in seat order from the v
     expect(await animated(ben.page)).toEqual([]);
   } finally {
     await closeAll(guests, [ben]);
+  }
+});
+
+/**
+ * From now on every animation on the page starts paused at its first frame, so a test
+ * can look at the flip at a moment of its choosing (`window.__frozen`).
+ */
+const freezeAnimations = (page: Page) =>
+  page.evaluate(() => {
+    const frozen: Animation[] = [];
+    Object.assign(window, { __frozen: frozen });
+    const original = Element.prototype.animate;
+    Element.prototype.animate = function (keyframes, options) {
+      const animation = original.call(this, keyframes, options);
+      animation.pause();
+      frozen.push(animation);
+      return animation;
+    };
+  });
+
+/** Moves every frozen animation to `ms` after its start; `null` lets them finish. */
+const seekAnimations = (page: Page, ms: number | null) =>
+  page.evaluate((at) => {
+    for (const animation of (window as unknown as { __frozen: Animation[] }).__frozen) {
+      if (at === null) animation.finish();
+      else animation.currentTime = at;
+    }
+  }, ms);
+
+test("the last vote reveals a named round; its card turns in its place, back first", async ({
+  page,
+  browser,
+  baseURL,
+}) => {
+  test.setTimeout(120_000);
+  const code = await createRoom(page);
+  await join(page, "Ana");
+  const ben = await secondBrowser(browser, page.url(), "Ben");
+  const guests = await fillTable(baseURL ?? "", code);
+  try {
+    await expect(seats(page).locator("[data-seat]")).toHaveCount(8);
+    await page.getByRole("button", { name: "Start voting" }).click();
+    await handCard(page, "5").click();
+    await handCard(ben.page, "8").click();
+    await guestsVote(guests, 1);
+    await expect(status(ben.page)).toHaveText("7/8 voted so far");
+    await expect(ben.page.locator("[data-card-flight]")).toHaveCount(0);
+    // On Ben's screen Hana's slot is empty until her vote arrives with the reveal.
+    await expect(ben.page.locator("[data-face='empty']")).toHaveCount(1);
+    await recordAnimations(ben.page);
+    await freezeAnimations(ben.page);
+    expect(await guests[5]?.cmd("castVote", { card: "2", round: 1 })).toMatchObject({ ok: true });
+
+    await expect(status(ben.page)).toHaveText("Cards revealed");
+    await expect(ben.page.locator("[data-face='up']")).toHaveCount(8);
+    // Eight cards turn, 90 ms apart, Hana's among them: none is skipped or face up early.
+    const turns = (await animated(ben.page)).filter((a) => a.target === "up");
+    expect(turns.map((a) => a.delay).sort((x, y) => x - y)).toEqual([
+      0, 90, 180, 270, 360, 450, 540, 630,
+    ]);
+    // At the start every face-up card, Hana's too, still shows its back.
+    await seekAnimations(ben.page, 0);
+    const covers = ben.page.locator("[data-face='up'] [data-cover]");
+    await expect(covers).toHaveCount(8);
+    expect(
+      await covers.evaluateAll((all) => all.map((cover) => getComputedStyle(cover).opacity)),
+    ).toEqual(Array(8).fill("1"));
+    // At 90 ms, the review's frame: Ben's card turning, every other one, Hana's too, on
+    // its back.
+    await seekAnimations(ben.page, 90);
+    await ben.page.screenshot({ path: `${SHOTS}reveal-named-auto-90ms.png` });
+    await seekAnimations(ben.page, null);
+    await expect(tableLive(ben.page)).toContainText("Cards revealed.");
+    await shoot(ben.page, "reveal-named-auto");
+  } finally {
+    await closeAll(guests, [ben]);
+  }
+});
+
+test("a named vote without a seat shows under the table: an observer now, or back as one", async ({
+  page,
+  browser,
+  baseURL,
+}) => {
+  test.setTimeout(120_000);
+  const code = await createRoom(page);
+  await join(page, "Ana");
+  const ben = await secondBrowser(browser, page.url(), "Ben");
+  const [cy] = await Promise.all([newGuest(baseURL ?? "")]);
+  try {
+    if (!cy) throw new Error("no guest");
+    expect(await cy.enter(code)).toMatchObject({ ok: true });
+    expect(
+      await cy.cmd("join", { name: "Cyrielle Montgomery-Fairweather", role: "voter" }),
+    ).toMatchObject({ ok: true });
+    await expect(seats(page).locator("[data-seat]")).toHaveCount(3);
+    await page.getByRole("button", { name: "Start voting" }).click();
+    await handCard(page, "5").click();
+    await handCard(ben.page, "8").click();
+    await expect(status(page)).toHaveText("2/3 voted so far");
+    await revealButton(page).click();
+    await expect(page.getByRole("button", { name: "Next round" })).toBeFocused();
+
+    // Ben switches to observer after the reveal: his card leaves the table, not the round.
+    await ben.page.getByRole("button", { name: "Switch to observer" }).click();
+    const row = page.getByRole("list", { name: "Not at the table" });
+    await expect(row.getByRole("listitem")).toHaveText(["8BenBen, card 8"]);
+    await expect(page.locator("[data-face='up']")).toHaveCount(1);
+    await shoot(page, "reveal-off-table-observer");
+  } finally {
+    cy?.close();
+    await ben.context.close();
+  }
+});
+
+test("a voter who left after a named reveal and came back as an observer keeps their card on screen", async ({
+  page,
+  baseURL,
+}) => {
+  const code = await createRoom(page);
+  await join(page, "Ana");
+  const [cy] = await Promise.all([newGuest(baseURL ?? "")]);
+  try {
+    if (!cy) throw new Error("no guest");
+    expect(await cy.enter(code)).toMatchObject({ ok: true });
+    const name = "Cyrielle Montgomery-Fairweather";
+    expect(await cy.cmd("join", { name, role: "voter" })).toMatchObject({ ok: true });
+    await expect(seats(page).locator("[data-seat]")).toHaveCount(2);
+    await page.getByRole("button", { name: "Start voting" }).click();
+    expect(await cy.cmd("castVote", { card: "13", round: 1 })).toMatchObject({ ok: true });
+    await expect(status(page)).toHaveText("1/2 voted so far");
+    await revealButton(page).click();
+    await expect(page.getByRole("button", { name: "Next round" })).toBeVisible();
+    expect(await cy.cmd("leave")).toMatchObject({ ok: true });
+    const row = page.getByRole("list", { name: "Not at the table" });
+    await expect(row.getByRole("listitem")).toHaveText([`13${name}${name}, card 13`]);
+    expect(await cy.cmd("join", { name, role: "observer" })).toMatchObject({ ok: true });
+    await expect(page.locator("[data-observer]")).toHaveCount(1);
+    await expect(row.getByRole("listitem")).toHaveText([`13${name}${name}, card 13`]);
+    // The long name wraps instead of being cut, and is whole in the title.
+    const visible = row.locator("[aria-hidden='true'][title]");
+    await expect(visible).toHaveAttribute("title", name);
+    await shoot(page, "reveal-off-table-rejoined");
+  } finally {
+    cy?.close();
   }
 });
 
