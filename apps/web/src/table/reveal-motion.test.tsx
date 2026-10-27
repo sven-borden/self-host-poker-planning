@@ -119,6 +119,25 @@ describe("SlotCard and the table at a reveal", () => {
     expect(cancel).toHaveBeenCalledTimes(2);
   });
 
+  it("turns the last vote's card from an empty slot, its back showing while it waits", () => {
+    // The last vote came with the reveal: on this screen the slot was still empty.
+    const { rerender } = render(<SlotCard face="empty" size={SIZE} />);
+    rerender(<SlotCard face="up" value="8" size={SIZE} turnDelay={180} />);
+    expect(calls()).toEqual([
+      { what: "up", turns: true, delay: 180 },
+      { what: "cover", turns: false, delay: 180 },
+    ]);
+    // `fill: backwards`: during the delay the first keyframe holds, the back drawn over.
+    const [, timing] = animate.mock.calls[1] ?? [];
+    expect((timing as KeyframeAnimationOptions).fill).toBe("backwards");
+    expect(JSON.stringify(animate.mock.calls[1]?.[0])).toMatch(/^\[\{"offset":0,"opacity":1\}/);
+    // An empty slot that stays empty, or is gone (anonymous), has nothing to move.
+    animate.mockClear();
+    rerender(<SlotCard face="empty" size={SIZE} />);
+    rerender(<SlotCard face="gone" size={SIZE} />);
+    expect(animate).not.toHaveBeenCalled();
+  });
+
   it("only fades the back off the face under reduced motion", () => {
     vi.spyOn(window, "matchMedia").mockImplementation(
       (query) => ({ matches: query.includes("reduce"), media: query }) as MediaQueryList,
@@ -136,25 +155,29 @@ describe("SlotCard and the table at a reveal", () => {
   });
 
   it("turns the cards 90 ms apart in seat order from the viewer, skipping empty seats", () => {
+    // Ana never votes; Cy's vote is the last one, which arrives with the reveal.
+    const before = { me: "voted", ana: "thinking", ben: "voted", cy: "thinking" } as const;
     const people = (revealed: boolean) =>
-      ["me", "ana", "ben", "cy"].map((id, i) => ({
+      (["me", "ana", "ben", "cy"] as const).map((id, i) => ({
         id,
         name: id,
-        status:
-          i === 1
-            ? revealed
-              ? ({ kind: "revealed", card: null } as const)
-              : ({ kind: "thinking" } as const)
-            : revealed
-              ? ({ kind: "revealed", card: String(i + 1) } as const)
-              : ({ kind: "voted" } as const),
+        status: !revealed
+          ? ({ kind: before[id] } as const)
+          : ({ kind: "revealed", card: id === "ana" ? null : String(i + 1) } as const),
       }));
     const { rerender } = render(<TableStage people={people(false)} variant="desktop" />);
     rerender(<TableStage people={people(true)} variant="desktop" />);
-    expect(calls().filter((c) => c.what === "up")).toEqual([
-      { what: "up", turns: true, delay: 0 },
-      { what: "up", turns: true, delay: 90 },
-      { what: "up", turns: true, delay: 180 },
+    const turned = animate.mock.contexts
+      .map((element, i) => ({ element: element as HTMLElement, i }))
+      .filter(({ element }) => element.dataset.face === "up")
+      .map(({ element, i }) => ({
+        value: element.querySelector("[data-card-value]")?.textContent,
+        delay: (animate.mock.calls[i]?.[1] as KeyframeAnimationOptions).delay,
+      }));
+    expect(turned).toEqual([
+      { value: "1", delay: 0 },
+      { value: "3", delay: 90 },
+      { value: "4", delay: 180 },
     ]);
   });
 });

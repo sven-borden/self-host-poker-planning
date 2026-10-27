@@ -166,10 +166,13 @@ function Cover({ radius, cover }: { radius: number; cover: RefObject<HTMLDivElem
 
 /**
  * The card on the table in front of a seat. Decorative: the seat says the same. A card
- * seen face down that turns `up` flips (after `turnDelay`), and one that is `gone` (an
- * anonymous reveal) shrinks and fades; both keep their back mounted over the slot for
- * that (`Cover`, hidden at rest). A card that is already up or gone when it mounts (a
- * late joiner, a reload) shows at rest, with no motion. A new face cancels the motion.
+ * seen face down or as an empty slot that turns `up` flips (after `turnDelay`, its back
+ * showing while it waits): the last vote arrives together with the reveal, so on every
+ * other screen its slot was still empty, and it turns in its place in the stagger like
+ * the others. One seen face down that is `gone` (an anonymous reveal) shrinks and fades.
+ * Both keep their back mounted over the slot for that (`Cover`, hidden at rest). A card
+ * that is already up or gone when it mounts (a late joiner, a reload) shows at rest, with
+ * no motion. A new face cancels the motion.
  */
 export function SlotCard({ face, value, size, turnDelay = 0, className }: SlotCardProps) {
   const root = useRef<HTMLDivElement>(null);
@@ -184,9 +187,11 @@ export function SlotCard({ face, value, size, turnDelay = 0, className }: SlotCa
   useLayoutEffect(() => {
     const was = before.current;
     before.current = shown;
-    if (was !== "down" || (shown !== "up" && shown !== "gone")) return;
+    const turns = shown === "up" && (was === "down" || was === "empty");
+    const fades = shown === "gone" && was === "down";
+    if (!turns && !fades) return;
     const reduced = prefersReducedMotion();
-    if (shown === "gone") {
+    if (fades) {
       const fading = play(cover.current, fadeAway(reduced));
       return () => cancelAll([fading]);
     }
