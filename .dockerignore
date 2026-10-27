@@ -1,0 +1,39 @@
+# Only what `pnpm install` and `pnpm build` need reaches the build context (see Dockerfile).
+
+# Dependencies, build output and caches: the image builds its own
+**/node_modules
+**/dist
+**/coverage
+**/.tsbuild
+**/*.tsbuildinfo
+**/.vite
+
+# Never send secrets to the builder
+**/.env
+**/.env.*
+!.env.example
+
+# Version control, CI, editors and local tooling
+.git
+.github
+.claude
+.vscode
+.idea
+**/.DS_Store
+**/Thumbs.db
+**/Desktop.ini
+
+# Scratch, logs and test artefacts
+**/tmp
+**/*.log
+**/test-results
+**/playwright-report
+**/blob-report
+**/playwright/.cache
+
+# Docs and the Docker files themselves: not part of the build
+docs
+input.md
+compose.yaml
+Dockerfile
+.dockerignore
