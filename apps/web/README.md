@@ -128,21 +128,28 @@ server sends and never decides the outcome of a round.
   after a reveal (not while Voting), call the same `start`: `draftSubject` (`subject.ts`,
   pure) turns the draft into `{ kind: "none" }`, a title (the domain's `cleanSubject`),
   or a link (text that starts with a scheme and `//`, or a `javascript:`, `data:`,
-  `vbscript:`, `file:` or `blob:` one), sent as `{ kind: "link", url }` without a key;
+  `vbscript:`, `file:` or `blob:` one with no space after the colon, so "File: upload
+  size limit" stays a title), sent as `{ kind: "link", url }` without a key;
   a refusal (`titleTooLong`, `linkTooLong`, `badLink`, or the domain's `bad_subject`)
   shows under the field with `aria-invalid`, takes the focus there and cuts nothing.
   The server's `bad_subject` shows there too; other refusals under the table. A started
-  round clears the draft and moves the focus to the hand, from the field too.
+  round clears the draft. A start from the field keeps the focus in it: Enter there does
+  nothing while Voting and the hint says "Round 3 will start with this subject after the
+  reveal." (`round.subjectHintVoting`), so a double Enter cannot reach a card. A start
+  from the centre's button, which leaves with the phase, moves the focus to the hand;
+  the hand ignores Enter and Space for `PLACED_FOCUS_GUARD_MS` (300 ms) after a focus
+  with no `relatedTarget`, so the button's second Enter does not vote either.
   `round-subject.tsx` (`RoundSubject`, `[data-round-subject]`) shows everyone the round
-  above the table: "Round 3", "Round 3" and the title in `<bdi>`, or "Round 3" and the
-  link (`[data-subject-link]`, `target="_blank"`, `rel="noopener noreferrer"`, the full
-  URL in `title`, "(opens in a new tab)" for screen readers) as the server's key
+  above the table: "Round 3", "Round 3" and the title in `<bdi>` (`line-clamp-2`, the
+  whole title in its `title`), or "Round 3" and the link (`[data-subject-link]`,
+  `target="_blank"`, `rel="noopener noreferrer"`, the full URL in `title`, "(opens in a new tab)" for screen readers) as the server's key
   (`[data-subject-key]`: "ABC-123", or "#12345" for an Azure DevOps id, `keyLabel`) or
   as `shortUrl` (no scheme, `www.`, query or fragment, at most 40 characters). Only a
   link `cleanSubject` accepts (`http(s)`, no credentials) becomes an `<a>` (`safeHref`);
   anything else shows as text. The live region says "Voting started: ABC-123.", the
-  title, or "Voting started: Round 3." (`subjectName`; a link without a key reads as the
-  number); of two new rounds in one batch, the later. Copy: `round.number`,
+  title without its own closing `.`, `?`, `!` or `…`, or "Voting started: Round 3."
+  (`subjectName`; a link without a key reads as the number); of two new rounds in one
+  batch, the later. Copy: `round.number`,
   `round.subject*`, `round.titleTooLong`, `round.linkTooLong`, `round.badLink`,
   `round.opensInNewTab`, `live.roundStarted`.
   The reveal (#19): while Voting the PO's centre adds `RevealButton` ("Reveal cards",
@@ -282,9 +289,10 @@ server sends and never decides the outcome of a round.
   Motion component (room route 167.6 kB), or a dynamic `import("motion/mini")` inside the
   effect (3.2 kB lazy). #20's results use `Element.animate` in their own lazy chunk
   (`results` 2.7 kB; the room route grew 0.3 kB with the English copy). #21's subject
-  field and display add 1.4 kB to the lazy `seated` chunk (11.2 kB); the room route
-  grew 0.7 kB (168.6 kB): the English copy, and the domain's `cleanSubject` with its key
-  detection, which share a module with the join form's `cleanName`;
+  field and display add 2.0 kB to the lazy `seated` chunk (11.8 kB), the domain's
+  `cleanSubject` and `linkKey` included: they sit in their own module
+  (`apply-subject.ts`), apart from the join form's `cleanName`, so the room route grew
+  only 0.2 kB with the English copy (168.1 kB) and the landing page 0.3 kB (152.0 kB);
   check the budget before reaching for `m` in a lazy chunk (ADR-008). An animated
   component wraps its `m.div` elements in `<MotionFeatures>`
   (`<MotionFeatures layout>` when it needs layout animations): the features chunk
@@ -327,7 +335,10 @@ server sends and never decides the outcome of a round.
   `vite preview` forwards `/api` and `/socket.io`; `e2e/identity.spec.ts` and
   `e2e/room.spec.ts` and `e2e/landing.spec.ts` need it and skip without it. Locally it builds first and uses the installed Microsoft Edge; in CI
   (`web-e2e` job) it uses Chromium on the build from the step before. Screenshots go to
-  `tmp/screenshots/` (gitignored). Not part of `pnpm gate`.
+  `tmp/screenshots/` (gitignored). Not part of `pnpm gate`. `e2e/next-round.spec.ts`
+  reads `round_history` and the room's stored round straight from Postgres through `pg`,
+  a dev dependency pinned to the server's version; #33's history API should replace that
+  direct read.
 - Tests: the `web` Vitest project extends `vite.config.ts` and runs in jsdom
   (`src/test-setup.ts` stubs `matchMedia`).
 
