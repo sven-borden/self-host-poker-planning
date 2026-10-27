@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 
 // The landing page, joining by code, the missing room and the generic error page (#24),
 // against the real server and Postgres: an unknown code must get the server's real 404.
@@ -43,6 +43,8 @@ test("an unknown code shows the not-found page, without the code", async ({ page
   await join(page, UNKNOWN);
   await expect(page).toHaveURL(`/r/${UNKNOWN}`);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Room not found");
+  // The heading takes the focus, so a screen reader announces the page.
+  await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
   // The server states its retention period (ROOM_TTL_DAYS, 90 by default).
   await expect(page.getByText("removed after 90 days without activity.")).toBeVisible();
   await expect(page).toHaveTitle("Room not found · Poker Planning");
@@ -67,17 +69,74 @@ test("a malformed code stays on the landing page with a message", async ({ page 
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Room not found");
 });
 
-test("a pasted link and a code with spaces open the room", async ({ page, baseURL }) => {
+test("a pasted link and a code with spaces or dashes open the room", async ({ page, baseURL }) => {
   const code = await createRoom(page, "Join by code");
   for (const typed of [
-    `${baseURL}/r/${code}`,
-    `https://poker.example.com/r/${code}?from=chat`,
+    `${baseURL}/r/${code}?from=chat`,
     ` ${code.slice(0, 3)} ${code.slice(3, 6)} ${code.slice(6)} `,
+    `"${code.slice(0, 5)}-${code.slice(5)}".`,
   ]) {
     await page.goto("/");
     await join(page, typed);
     await expect(page, typed).toHaveURL(`/r/${code}`);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Join by code");
+  }
+});
+
+test("a room link for another host is offered, not opened here", async ({ page }) => {
+  await page.goto("/");
+  const link = `https://poker.other.org/r/${UNKNOWN}?from=chat`;
+  await join(page, link);
+  await expect(page.getByRole("alert")).toHaveText(
+    "This link is for poker.other.org. Open it there",
+  );
+  const there = page.getByRole("link", { name: "Open it there" });
+  await expect(there).toHaveAttribute("href", link);
+  await expect(there).toHaveAttribute("rel", "noopener noreferrer");
+  await expect(page.getByRole("textbox", { name: "Room code or link" })).toBeFocused();
+  await expect(page).toHaveURL("/");
+});
+
+test("the landing page keeps both ways in above the fold, and the steps last", async ({ page }) => {
+  /** Where an element's box ends, from the top of the viewport. */
+  const bottomOf = async (locator: Locator) => {
+    const box = await locator.boundingBox();
+    return box ? box.y + box.height : Number.POSITIVE_INFINITY;
+  };
+  const topOf = async (locator: Locator) => (await locator.boundingBox())?.y ?? 0;
+  for (const [width, height] of [
+    [1440, 900],
+    [1366, 768],
+    [1024, 768],
+    [360, 800],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await page.goto("/");
+    await page.waitForFunction(() => document.getAnimations().length === 0);
+    const steps = page.getByRole("heading", { level: 2, name: "How it works" });
+    const joinCard = page.getByRole("heading", { level: 2, name: "Join with a code" });
+    const create = page.getByRole("button", { name: "Create the room" });
+    const field = page.getByRole("textbox", { name: "Room code or link" });
+    const joinButton = page.getByRole("button", { name: "Join", exact: true });
+    expect(await topOf(steps), `steps after join at ${width}`).toBeGreaterThan(
+      await bottomOf(joinButton),
+    );
+    if (width < 1024) {
+      expect(await topOf(steps), `steps after create at ${width}`).toBeGreaterThan(
+        await topOf(create),
+      );
+    }
+    expect(await topOf(joinCard)).toBeGreaterThan(0);
+    if (width === 1440) {
+      expect(await bottomOf(create), "create above the fold").toBeLessThanOrEqual(height);
+      expect(await bottomOf(joinButton), "join above the fold").toBeLessThanOrEqual(height);
+    }
+    if (width === 1366) {
+      expect(await bottomOf(field), "join field above the fold").toBeLessThanOrEqual(height);
+    }
+    if (width >= 1366) {
+      await page.screenshot({ path: `${SHOTS}landing-fold-${width}x${height}.png` });
+    }
   }
 });
 
@@ -131,6 +190,38 @@ test.describe("in German", () => {
     await page.getByRole("button", { name: "Beitreten" }).click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Raum nicht gefunden");
   });
+});
+
+test("screenshots of the other-host warning and of forced colours", async ({ page }) => {
+  for (const width of [360, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/r/${UNKNOWN}`);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Room not found");
+    await join(page, `https://poker.other.org/r/${UNKNOWN}`);
+    await expect(page.getByRole("link", { name: "Open it there" })).toBeVisible();
+    await page.waitForFunction(() => document.getAnimations().length === 0);
+    expect(await fitsWidth(page), `other host ${width}`).toBe(true);
+    await page.screenshot({ path: `${SHOTS}not-found-other-host-${width}.png`, fullPage: true });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ forcedColors: "active" });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  await page.screenshot({ path: `${SHOTS}landing-forced-colors-1440.png` });
+  await page.route(ROOM_CHUNK, (route) => route.abort());
+  await page.goto(`/r/${UNKNOWN}?forced`);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Something went wrong", {
+    timeout: 15_000,
+  });
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  // The filled button keeps an outline where forced colours drop its fill.
+  const border = await page
+    .getByRole("button", { name: "Reload the page" })
+    .evaluate((button) => getComputedStyle(button).borderTopWidth);
+  expect(border).toBe("1px");
+  await page.screenshot({ path: `${SHOTS}error-forced-colors-1440.png`, fullPage: true });
+  await page.unroute(ROOM_CHUNK);
 });
 
 test("screenshots of the landing, not-found and error pages", async ({ page }) => {
