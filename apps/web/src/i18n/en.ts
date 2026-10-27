@@ -375,6 +375,7 @@ export const en = {
     makeOwner: "Make product owner",
     remove: "Remove from the room",
     handOverVoter: "Hand the product owner role to {{name}}? You become a voter.",
+    handOverStayVoter: "Hand the product owner role to {{name}}? You stay a voter.",
     handOverObserver: "Hand the product owner role to {{name}}? You stay an observer.",
     handOverNoVote: "The product owner does not vote in this room, so {{name}} stops voting.",
     handOver: "Hand over",
@@ -383,13 +384,15 @@ export const en = {
     removeConfirm: "Remove",
     removing: "Removing…",
     cancel: "Cancel",
+    targetAway: "{{name}} is away.",
   },
   claim: {
     away: "{{name}}, the product owner, is away.",
-    gone: "The product owner is not in the room.",
+    gone: "The product owner left the room.",
     button: "Claim the product owner role",
     claiming: "Claiming…",
-    notYet: "Not yet: the product owner has been away for less than {{minutes, number}} minutes.",
+    notYet:
+      "Not yet: the product owner is back, or has been away for less than {{minutes, number}} minutes.",
   },
   live: {
     joined: "{{name}} joined.",

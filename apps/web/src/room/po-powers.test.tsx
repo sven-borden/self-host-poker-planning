@@ -67,6 +67,18 @@ async function renderView() {
   });
 }
 
+/** `state` with `who` away since a moment ago, as the server's presence step leaves it. */
+function withAway(state: RoomState, who: string): RoomState {
+  const person = state.participants[who] as Participant;
+  return {
+    ...state,
+    participants: {
+      ...state.participants,
+      [who]: { ...person, connected: false, awaySince: Date.now() },
+    },
+  };
+}
+
 const ana: Person = ["ua", "Ana", "voter"];
 const ben: Person = ["ub", "Ben", "observer"];
 const cleo: Person = ["uc", "Cleo", "voter"];
@@ -125,7 +137,7 @@ describe("the PO's actions in a popover", () => {
     const make = within(popover).getByRole("button", { name: "Make product owner" });
     fireEvent.click(make);
     const question = within(popover).getByRole("group", {
-      name: "Hand the product owner role to Ana? You become a voter.",
+      name: "Hand the product owner role to Ana? You stay a voter.",
     });
     expect(document.activeElement).toBe(question);
     expect(mocks.sendCommand).not.toHaveBeenCalled();
@@ -189,13 +201,78 @@ describe("the PO's actions in a popover", () => {
     const row = openPerson("Ben");
     fireEvent.click(within(row).getByRole("button", { name: "Make product owner" }));
     expect(within(row).getByRole("group").textContent).not.toContain("stops voting");
+    // A PO who does not vote becomes a voter by handing over.
+    expect(within(row).getByRole("group").textContent).toContain(
+      "Hand the product owner role to Ben? You become a voter.",
+    );
   });
 
-  it("offers no hand-over to someone away, and shows a refusal under the question", async () => {
+  it("keeps the hand-over for someone away, disabled and saying why", async () => {
     await renderView();
     await showSeated(stateWith(ME, [meVoter, ["ua", "Ana", "voter", { awaySince: 1 }], ben]));
     const popover = openPerson("Ana, away");
-    expect(within(popover).queryByRole("button", { name: "Make product owner" })).toBeNull();
+    const make = within(popover).getByRole("button", { name: "Make product owner" });
+    expect(make.getAttribute("aria-disabled")).toBe("true");
+    expect(make.getAttribute("aria-describedby")).toBe(
+      within(popover).getByText("Ana is away.").id,
+    );
+    fireEvent.click(make);
+    expect(within(popover).queryByRole("group")).toBeNull();
+  });
+
+  it("disables the focused Make product owner when the person goes away, the focus staying", async () => {
+    await renderView();
+    const before = stateWith(ME, [meVoter, ana, ben]);
+    await showSeated(before);
+    const popover = openPerson("Ana");
+    const make = within(popover).getByRole("button", { name: "Make product owner" });
+    make.focus();
+    show(withAway(before, "ua"));
+    expect(document.activeElement).toBe(make);
+    expect(make.getAttribute("aria-disabled")).toBe("true");
+    expect(within(popover).getByText("Ana is away.")).toBeTruthy();
+  });
+
+  it("disables Hand over when the person goes away while asked, the focus staying", async () => {
+    await renderView();
+    const before = stateWith(ME, [meVoter, ana, ben]);
+    await showSeated(before);
+    const popover = openPerson("Ana");
+    fireEvent.click(within(popover).getByRole("button", { name: "Make product owner" }));
+    const handOver = within(popover).getByRole("button", { name: "Hand over" });
+    handOver.focus();
+    show(withAway(before, "ua"));
+    expect(document.activeElement).toBe(handOver);
+    expect(handOver.getAttribute("aria-disabled")).toBe("true");
+    expect(handOver.getAttribute("aria-describedby")).toBe(
+      within(popover).getByText("Ana is away.").id,
+    );
+    fireEvent.click(handOver);
+    expect(mocks.sendCommand).not.toHaveBeenCalled();
+    // Back before the answer: the hand-over is open again.
+    show(before);
+    expect(handOver.getAttribute("aria-disabled")).toBeNull();
+  });
+
+  it("moves the focus to the next person when someone leaves with their question open", async () => {
+    await renderView();
+    const before = stateWith(ME, [meVoter, ana, cleo]);
+    await showSeated(before);
+    const popover = openPerson("Ana");
+    fireEvent.click(within(popover).getByRole("button", { name: "Remove from the room" }));
+    expect(document.activeElement).toBe(within(popover).getByRole("group"));
+    const { ua: _, ...rest } = before.participants;
+    show({ ...before, participants: rest });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cleo" })),
+    );
+  });
+
+  it("shows a refusal under the question", async () => {
+    await renderView();
+    await showSeated(stateWith(ME, [meVoter, ["ua", "Ana", "voter", { awaySince: 1 }], ben]));
+    const popover = openPerson("Ana, away");
     fireEvent.click(within(popover).getByRole("button", { name: "Remove from the room" }));
     mocks.sendCommand.mockResolvedValueOnce({ ok: false, code: "not_owner" });
     fireEvent.click(within(popover).getByRole("button", { name: "Remove" }));
@@ -254,7 +331,7 @@ describe("the claim banner", () => {
     await showSeated(stateWith("gone", [meVoter, ana]));
     // The banner's line is a polite live region, there before the banner shows.
     expect(document.querySelector("[data-claim] [role=status]")?.textContent).toBe(
-      "The product owner is not in the room.",
+      "The product owner left the room.",
     );
     expect(claimButton()).toBeTruthy();
   });
@@ -298,7 +375,7 @@ describe("the claim banner", () => {
     mocks.sendCommand.mockResolvedValueOnce({ ok: false, code: "owner_present" });
     fireEvent.click(claimButton() as HTMLElement);
     expect((await screen.findByRole("alert")).textContent).toBe(
-      "Not yet: the product owner has been away for less than 2 minutes.",
+      "Not yet: the product owner is back, or has been away for less than 2 minutes.",
     );
     expect(claimButton()).toBeNull();
     act(() => vi.advanceTimersByTime(CLAIM_REFUSAL_MS + 10));

@@ -332,6 +332,8 @@ export const de: Catalog = {
     makeOwner: "Zum Product Owner machen",
     remove: "Aus dem Raum entfernen",
     handOverVoter: "Die Rolle des Product Owners an {{name}} übergeben? Sie stimmen danach mit ab.",
+    handOverStayVoter:
+      "Die Rolle des Product Owners an {{name}} übergeben? Sie stimmen weiter mit ab.",
     handOverObserver: "Die Rolle des Product Owners an {{name}} übergeben? Sie beobachten weiter.",
     handOverNoVote:
       "Der Product Owner stimmt in diesem Raum nicht ab, also stimmt {{name}} danach nicht mehr ab.",
@@ -342,14 +344,15 @@ export const de: Catalog = {
     removeConfirm: "Entfernen",
     removing: "Wird entfernt…",
     cancel: "Abbrechen",
+    targetAway: "{{name}} ist abwesend.",
   },
   claim: {
     away: "{{name}}, der Product Owner, ist abwesend.",
-    gone: "Der Product Owner ist nicht im Raum.",
+    gone: "Der Product Owner hat den Raum verlassen.",
     button: "Rolle des Product Owners übernehmen",
     claiming: "Wird übernommen…",
     notYet:
-      "Noch nicht: Der Product Owner ist seit weniger als {{minutes, number}} Minuten abwesend.",
+      "Noch nicht: Der Product Owner ist zurück oder seit weniger als {{minutes, number}} Minuten abwesend.",
   },
   live: {
     joined: "{{name}} ist dem Raum beigetreten.",

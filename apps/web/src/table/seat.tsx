@@ -7,6 +7,7 @@ import { cn } from "../lib/utils.ts";
 import { Avatar, type AvatarLook } from "./avatar.tsx";
 import { cardLabel, isSpecialCard } from "./cards.tsx";
 import type { SeatGeometry, SeatPlace } from "./layout.ts";
+import { useFocusAfterRemoval } from "./person-focus.ts";
 import { cancelAll, play, popIn, prefersReducedMotion } from "./reveal-motion.ts";
 
 /** After a named reveal whose cards differ: the lowest or the highest card played (#20). */
@@ -355,6 +356,7 @@ interface SeatProps {
 export function Seat({ person, place, geometry, settle = 0, actions }: SeatProps) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  useFocusAfterRemoval(person.id, open);
   const label = seatLabel(t, person);
   const popover = (
     <PersonPopover

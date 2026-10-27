@@ -4,6 +4,7 @@ import { useId, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { commandSender } from "../realtime/room-connection.ts";
+import { focusAfterRemoval, personTriggers } from "../table/person-focus.ts";
 import { type ActionTarget, shownName } from "../table/seat.tsx";
 import { codeOf, failureMessage } from "./failure.ts";
 
@@ -19,32 +20,12 @@ interface PersonActionsProps {
   close: () => void;
 }
 
-/** Every person's button around the table and in the observers' row, in page order. */
-const triggers = () => [
-  ...document.querySelectorAll<HTMLElement>("[data-room-table] [data-person-trigger]"),
-];
-
-/**
- * After a removal the person's button is gone and the focus with it: it goes to the button
- * that took their place in the page's order (or the last one), once the table has drawn
- * the room without them, unless something else took the focus meanwhile.
- */
-function focusAfterRemoval(id: string, index: number, frames = 10) {
-  requestAnimationFrame(() => {
-    const list = triggers();
-    if (list.some((el) => el.dataset.personTrigger === id)) {
-      if (frames > 0) focusAfterRemoval(id, index, frames - 1);
-      return;
-    }
-    const active = document.activeElement;
-    if (active !== null && active !== document.body && active.isConnected) return;
-    list[Math.min(Math.max(index, 0), list.length - 1)]?.focus({ preventScroll: true });
-  });
-}
-
 /**
  * The PO's actions on someone else, in that person's popover (#30): "Make product owner"
- * (only for someone here: the server refuses an away target) and "Remove from the room".
+ * and "Remove from the room". The server refuses to hand over to someone away, so for
+ * them "Make product owner" (and "Hand over", when they go away while asked) stays where
+ * it is, focusable but disabled, with "Ben is away." under it: the focus never falls
+ * off a button that vanished.
  * Each asks first, inline, in a group that takes the focus and is named by the question;
  * "Cancel" gives the focus back to the action. The question says what the hand-over
  * means: the PO becomes a voter or stays an observer, and when the PO does not vote in
@@ -56,7 +37,7 @@ function focusAfterRemoval(id: string, index: number, frames = 10) {
  */
 export function PersonActions({ person, room, me, close }: PersonActionsProps) {
   const t = useT();
-  const ids = { question: useId(), note: useId() };
+  const ids = { question: useId(), note: useId(), away: useId() };
   const [asking, setAsking] = useState<Action | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -92,10 +73,10 @@ export function PersonActions({ person, room, me, close }: PersonActionsProps) {
   }
 
   async function confirm() {
-    if (busy || asking === null) return;
+    if (busy || asking === null || (asking === "owner" && person.away)) return;
     const action = asking;
     const send = commandSender();
-    const index = triggers().findIndex((el) => el.dataset.personTrigger === person.id);
+    const index = personTriggers().findIndex((el) => el.dataset.personTrigger === person.id);
     setBusy(true);
     setFailure(null);
     let code: string | null = null;
@@ -121,7 +102,14 @@ export function PersonActions({ person, room, me, close }: PersonActionsProps) {
 
   const question =
     asking === "owner"
-      ? t(me.role === "observer" ? "po.handOverObserver" : "po.handOverVoter", { name })
+      ? t(
+          me.role === "observer"
+            ? "po.handOverObserver"
+            : room.settings.poVotes
+              ? "po.handOverStayVoter"
+              : "po.handOverVoter",
+          { name },
+        )
       : t("po.removeQuestion", { name });
   // The PO does not vote in this room: a voter who takes over puts their cards down.
   const note =
@@ -129,23 +117,34 @@ export function PersonActions({ person, room, me, close }: PersonActionsProps) {
       ? t("po.handOverNoVote", { name })
       : null;
   const compact = "h-9 phone:h-11";
+  const disabledLook = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
+  // The hand-over needs someone here: away, the button stays, disabled, and says why.
+  const blocked = person.away === true;
+  const awayLine = (
+    <p id={ids.away} className="m-0 text-xs text-ink-2">
+      {t("po.targetAway", { name })}
+    </p>
+  );
 
   return (
     <div data-po-actions className="mt-2 border-t border-line pt-2">
       {asking === null ? (
         <div className="flex flex-col gap-1">
-          {person.away ? null : (
-            <Button
-              ref={ownerButton}
-              variant="ghost"
-              size="sm"
-              className={`${compact} justify-start`}
-              onClick={() => ask("owner")}
-            >
-              <CrownIcon aria-hidden />
-              {t("po.makeOwner")}
-            </Button>
-          )}
+          <Button
+            ref={ownerButton}
+            variant="ghost"
+            size="sm"
+            className={`${compact} justify-start ${disabledLook}`}
+            aria-disabled={blocked || undefined}
+            aria-describedby={blocked ? ids.away : undefined}
+            onClick={() => {
+              if (!blocked) ask("owner");
+            }}
+          >
+            <CrownIcon aria-hidden />
+            {t("po.makeOwner")}
+          </Button>
+          {blocked ? <div className="px-2.5 pb-1">{awayLine}</div> : null}
           <Button
             ref={removeButton}
             variant="ghost"
@@ -176,12 +175,14 @@ export function PersonActions({ person, room, me, close }: PersonActionsProps) {
               {note}
             </p>
           ) : null}
+          {asking === "owner" && blocked ? <div className="mt-1">{awayLine}</div> : null}
           <div className="mt-2.5 flex flex-wrap gap-2">
             <Button
               size="sm"
               variant={asking === "remove" ? "destructive" : "default"}
-              className={`${compact} aria-disabled:pointer-events-none aria-disabled:opacity-50`}
-              aria-disabled={busy || undefined}
+              className={`${compact} ${disabledLook}`}
+              aria-disabled={busy || (asking === "owner" && blocked) || undefined}
+              aria-describedby={asking === "owner" && blocked ? ids.away : undefined}
               onClick={confirm}
             >
               {busy

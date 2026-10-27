@@ -5,6 +5,7 @@ import { cn } from "../lib/utils.ts";
 import { Avatar } from "./avatar.tsx";
 import { SlotCard, type SlotFace } from "./cards.tsx";
 import { layoutTable, type TableVariant, variantFor } from "./layout.ts";
+import { useFocusAfterRemoval } from "./person-focus.ts";
 import { FLIP_STAGGER_MS, revealSettleMs } from "./reveal-motion.ts";
 import {
   flagWords,
@@ -201,6 +202,7 @@ function ObserverItem({
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  useFocusAfterRemoval(observer.id, open);
   const words = flagWords(t, observer);
   const tags = [
     observer.owner ? t("table.ownerTag") : null,

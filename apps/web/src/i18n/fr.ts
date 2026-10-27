@@ -337,6 +337,7 @@ export const fr: Catalog<"many"> = {
     makeOwner: "Nommer product owner",
     remove: "Retirer de la salle",
     handOverVoter: "Confier le rôle de product owner à {{name}} ? Vous devenez votant.",
+    handOverStayVoter: "Confier le rôle de product owner à {{name}} ? Vous restez votant.",
     handOverObserver: "Confier le rôle de product owner à {{name}} ? Vous restez observateur.",
     handOverNoVote:
       "Le product owner ne vote pas dans cette salle : {{name}} cessera donc de voter.",
@@ -346,14 +347,15 @@ export const fr: Catalog<"many"> = {
     removeConfirm: "Retirer",
     removing: "Retrait…",
     cancel: "Annuler",
+    targetAway: "{{name}} est hors ligne.",
   },
   claim: {
     away: "{{name}}, le product owner, est hors ligne.",
-    gone: "Le product owner n’est pas dans la salle.",
+    gone: "Le product owner a quitté la salle.",
     button: "Prendre le rôle de product owner",
     claiming: "Prise du rôle…",
     notYet:
-      "Pas encore : le product owner est hors ligne depuis moins de {{minutes, number}} minutes.",
+      "Pas encore : le product owner est revenu, ou est hors ligne depuis moins de {{minutes, number}} minutes.",
   },
   live: {
     joined: "{{name}} a rejoint la salle.",
