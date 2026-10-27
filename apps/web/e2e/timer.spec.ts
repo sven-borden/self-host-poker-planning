@@ -323,9 +323,14 @@ test("three pages whose clocks are 5 s apart show the same time left, within 0.5
   const people = await Promise.all(
     skews.map(async (skew) => {
       const person = await newPerson(browser);
+      // A computer whose clock is off: its wall clock and the epoch its monotonic clock
+      // counts from (`performance.timeOrigin`, taken from the wall clock at load) alike.
       await person.context.addInitScript((shift: number) => {
         const real = Date.now.bind(Date);
         Date.now = () => real() + shift;
+        const origin = performance.timeOrigin;
+        Object.defineProperty(window, "realTimeOrigin", { value: origin });
+        Object.defineProperty(performance, "timeOrigin", { get: () => origin + shift });
       }, skew);
       return person;
     }),
@@ -342,7 +347,8 @@ test("three pages whose clocks are 5 s apart show the same time left, within 0.5
     // Each page's clock really is off by its skew.
     for (const [i, { page }] of people.entries()) {
       const off = await page.evaluate(
-        () => Date.now() - (performance.timeOrigin + performance.now()),
+        () =>
+          performance.timeOrigin - (window as unknown as { realTimeOrigin: number }).realTimeOrigin,
       );
       expect(Math.abs(off - (skews[i] ?? 0))).toBeLessThan(50);
     }
@@ -359,10 +365,13 @@ test("three pages whose clocks are 5 s apart show the same time left, within 0.5
         people.map(({ page }) =>
           page.evaluate(() => {
             const element = document.querySelector<HTMLElement>("[data-centre] [data-timer]");
+            const local = performance.timeOrigin + performance.now();
+            const real = (window as unknown as { realTimeOrigin: number }).realTimeOrigin;
             return {
-              left: Number(element?.dataset.endsAt) - Date.now(),
-              // The real time of the reading, which no page's Date.now shift touches.
-              at: performance.timeOrigin + performance.now(),
+              // `data-ends-at` is the deadline on the page's own (shifted) clock.
+              left: Number(element?.dataset.endsAt) - local,
+              // The real time of the reading, which no page's shift touches.
+              at: real + performance.now(),
               text: element?.querySelector("[data-timer-text]")?.textContent ?? "",
             };
           }),
