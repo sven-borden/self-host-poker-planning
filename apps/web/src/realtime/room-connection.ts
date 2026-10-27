@@ -76,6 +76,12 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
   let reauthenticated = false;
   /** Set while this code itself closed the socket to sign in again: not a final offline. */
   let reauthenticating = false;
+  /**
+   * Set once the server said `kicked` (#30): it closes the socket next, and that close is
+   * not a final offline either. The socket connects again and enters as someone who is
+   * not in the room, so the page shows the join form and the person may join again.
+   */
+  let removed = false;
   let retry: ReturnType<typeof setTimeout> | undefined;
 
   const fail = (error: string) => {
@@ -150,7 +156,11 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
     if (stopped) return;
     if (isSnapshot(raw)) store().receive(raw);
   };
-  const onKicked = () => stop("kicked");
+  const onKicked = () => {
+    if (stopped) return;
+    removed = true;
+    store().setRemoved(true);
+  };
 
   socket.on("connect", onConnect);
   socket.on("snapshot", onSnapshot);
@@ -160,6 +170,12 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
     // The disconnect before a fresh sign-in is ours, and the socket connects again after.
     if (connection === "offline" && reauthenticating) {
       store().setConnection("reconnecting");
+      return;
+    }
+    if (connection === "offline" && removed) {
+      removed = false;
+      store().setConnection("reconnecting");
+      socket.connect();
       return;
     }
     store().setConnection(connection);

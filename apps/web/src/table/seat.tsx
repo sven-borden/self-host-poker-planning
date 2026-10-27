@@ -1,5 +1,5 @@
 import { ArrowDownIcon, ArrowUpIcon, CheckIcon, CrownIcon, MoonIcon } from "lucide-react";
-import { type Ref, useLayoutEffect, useRef } from "react";
+import { type ReactNode, type Ref, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover.tsx";
 import { useT } from "../i18n/hooks.ts";
 import type { TFunction } from "../i18n/i18n.ts";
@@ -49,6 +49,20 @@ export interface TablePerson extends PersonFlags {
   name: string;
   status: SeatStatus;
 }
+
+/** Someone the PO may act on from their seat or the observers' row (#30). */
+export interface ActionTarget extends PersonFlags {
+  id: string;
+  name: string;
+  role: "voter" | "observer";
+}
+
+/**
+ * What a person's popover holds beside their name and state: the PO's actions (#30),
+ * given by the room, which knows who is looking. `close` closes the popover, and the focus
+ * goes back to the person's button. Nothing (null) for anyone else.
+ */
+export type PersonActions = (person: ActionTarget, close: () => void) => ReactNode;
 
 /** What sets a person apart, in words for screen readers: ["you", "product owner", "away"]. */
 export function flagWords(t: TFunction, person: PersonFlags): string[] {
@@ -274,13 +288,9 @@ function SeatAvatar({ person, size, badge, settle }: SeatAvatarProps) {
   );
 }
 
-/**
- * The whole name and what the badges mean ("Product owner · Away · Voted") in a popover:
- * the name may be cut off or shown as initials, and a badge is a shape without words.
- */
-function SeatPopover({ person, side }: { person: TablePerson; side: SeatPlace["label"] }) {
-  const t = useT();
-  const state = [
+/** "Product owner · Away · Voted": what the badges and the slot say, in words. */
+function seatState(t: TFunction, person: TablePerson): string {
+  return [
     person.owner ? t("table.ownerTag") : null,
     person.away ? t("table.awayTag") : null,
     statusText(t, person.status),
@@ -290,15 +300,36 @@ function SeatPopover({ person, side }: { person: TablePerson; side: SeatPlace["l
   ]
     .filter((part) => part !== null)
     .join(" · ");
+}
+
+interface PersonPopoverProps {
+  person: { name: string; namesake?: number | undefined };
+  /** What the badges mean, in words; "" for nothing. */
+  state: string;
+  side: "top" | "bottom";
+  /** The PO's actions on this person (#30), if any. */
+  actions?: ReactNode;
+}
+
+/**
+ * The whole name and what the badges mean ("Product owner · Away · Voted") in a popover:
+ * the name may be cut off or shown as initials, and a badge is a shape without words.
+ * For the PO it also holds what they can do with this person (#30).
+ */
+export function PersonPopover({ person, state, side, actions }: PersonPopoverProps) {
+  const t = useT();
+  const hasActions = actions !== null && actions !== undefined && actions !== false;
   return (
     <PopoverContent
-      side={side === "above" ? "top" : "bottom"}
-      className="w-auto max-w-60 px-3 py-2 text-sm"
+      side={side}
+      data-person-popover
+      className={cn("w-auto px-3 py-2 text-sm", hasActions ? "max-w-72" : "max-w-60")}
     >
       <p className="m-0 font-semibold break-words">
         <bdi>{shownName(t, person)}</bdi>
       </p>
       {state !== "" ? <p className="m-0 text-xs text-ink-2">{state}</p> : null}
+      {actions}
     </PopoverContent>
   );
 }
@@ -309,6 +340,8 @@ interface SeatProps {
   geometry: SeatGeometry;
   /** When the cards are settled after a reveal, in ms (`revealSettleMs`). */
   settle?: number;
+  /** The PO's actions in the seat's popover (#30). */
+  actions?: PersonActions | undefined;
 }
 
 /**
@@ -319,9 +352,19 @@ interface SeatProps {
  * in words. A seat stays a button whatever its state, so the focus never drops when
  * someone votes or goes away.
  */
-export function Seat({ person, place, geometry, settle = 0 }: SeatProps) {
+export function Seat({ person, place, geometry, settle = 0, actions }: SeatProps) {
   const t = useT();
+  const [open, setOpen] = useState(false);
   const label = seatLabel(t, person);
+  const popover = (
+    <PersonPopover
+      person={person}
+      state={seatState(t, person)}
+      side={place.label === "above" ? "top" : "bottom"}
+      actions={open ? actions?.({ ...person, role: "voter" }, () => setOpen(false)) : null}
+    />
+  );
+  const trigger = { "data-person-trigger": person.id };
   const avatar = geometry.avatar;
   const badge = avatar >= 40 ? 17 : 15;
   const marks = {
@@ -344,18 +387,19 @@ export function Seat({ person, place, geometry, settle = 0 }: SeatProps) {
           height: size,
         }}
       >
-        <Popover>
+        <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <button
               type="button"
               aria-label={label}
+              {...trigger}
               data-seat-part="avatar"
               className="grid size-full cursor-pointer place-items-center rounded-full"
             >
               <SeatAvatar person={person} size={avatar} badge={badge} settle={settle} />
             </button>
           </PopoverTrigger>
-          <SeatPopover person={person} side={place.label} />
+          {popover}
         </Popover>
       </li>
     );
@@ -400,10 +444,11 @@ export function Seat({ person, place, geometry, settle = 0 }: SeatProps) {
         top: `calc(${place.y}% - ${above ? avatar / 2 + gap + labelHeight : avatar / 2}px)`,
       }}
     >
-      <Popover>
+      <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
             type="button"
+            {...trigger}
             data-seat-trigger
             className={`${column} w-full cursor-pointer rounded-md p-0`}
             style={direction}
@@ -413,7 +458,7 @@ export function Seat({ person, place, geometry, settle = 0 }: SeatProps) {
             {parts}
           </button>
         </PopoverTrigger>
-        <SeatPopover person={person} side={place.label} />
+        {popover}
       </Popover>
     </li>
   );

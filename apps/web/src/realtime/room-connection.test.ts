@@ -183,13 +183,27 @@ describe("openRoom", () => {
     expect(seen.some((entry) => entry.includes("error") || entry.includes("offline"))).toBe(false);
   });
 
-  it("reports kicked", async () => {
-    const fake = fakeSocket(() => ({ ok: true, snapshot: snapshot(1) }));
+  it("after kicked, connects again and enters as someone not in the room (#30)", async () => {
+    let version = 1;
+    const fake = fakeSocket(() => ({ ok: true, snapshot: snapshot(version) }));
     open(fake);
     fake.up();
     await settle();
     fake.fire("kicked");
-    expect(useRoomStore.getState()).toMatchObject({ status: "error", error: "kicked" });
+    expect(useRoomStore.getState()).toMatchObject({ status: "live", removed: true });
+    // The server closes the socket: not a final offline, the socket connects again.
+    Object.defineProperty(fake.socket, "active", { configurable: true, get: () => false });
+    fake.fire("disconnect", "io server disconnect");
+    expect(fake.socket.connect).toHaveBeenCalledTimes(1);
+    expect(useRoomStore.getState()).toMatchObject({ status: "live", error: null, removed: true });
+    version = 2;
+    fake.up();
+    await settle();
+    expect(fake.sent.filter((m) => m.event === "enter")).toHaveLength(2);
+    expect(useRoomStore.getState().snapshot?.version).toBe(2);
+    // A later close the server forces is final again.
+    fake.fire("disconnect", "io server disconnect");
+    expect(useRoomStore.getState()).toMatchObject({ status: "error", error: "offline" });
   });
 
   it("resets the store when closed", async () => {

@@ -77,7 +77,7 @@ export const de: Catalog = {
     people_one: "{{count, number}} Person im Raum",
     people_other: "{{count, number}} Personen im Raum",
     reload: "Neu laden",
-    kicked: "Sie wurden aus diesem Raum entfernt.",
+    kicked: "Der Product Owner hat Sie aus diesem Raum entfernt.",
     offline:
       "Die Verbindung zum Server wurde unterbrochen. Laden Sie die Seite neu, um es erneut zu versuchen.",
     backHome: "Zurück zur Startseite",
@@ -328,6 +328,29 @@ export const de: Catalog = {
     retracted: "Stimme zurückgenommen.",
     ownerDoesNotVote: "Als Product Owner stimmen Sie in diesem Raum nicht ab.",
   },
+  po: {
+    makeOwner: "Zum Product Owner machen",
+    remove: "Aus dem Raum entfernen",
+    handOverVoter: "Die Rolle des Product Owners an {{name}} übergeben? Sie stimmen danach mit ab.",
+    handOverObserver: "Die Rolle des Product Owners an {{name}} übergeben? Sie beobachten weiter.",
+    handOverNoVote:
+      "Der Product Owner stimmt in diesem Raum nicht ab, also stimmt {{name}} danach nicht mehr ab.",
+    handOver: "Übergeben",
+    handingOver: "Wird übergeben…",
+    removeQuestion:
+      "{{name}} aus dem Raum entfernen? Über den Link kann die Person wieder beitreten.",
+    removeConfirm: "Entfernen",
+    removing: "Wird entfernt…",
+    cancel: "Abbrechen",
+  },
+  claim: {
+    away: "{{name}}, der Product Owner, ist abwesend.",
+    gone: "Der Product Owner ist nicht im Raum.",
+    button: "Rolle des Product Owners übernehmen",
+    claiming: "Wird übernommen…",
+    notYet:
+      "Noch nicht: Der Product Owner ist seit weniger als {{minutes, number}} Minuten abwesend.",
+  },
   live: {
     joined: "{{name}} ist dem Raum beigetreten.",
     joinedMany_one: "{{count, number}} Person ist dem Raum beigetreten.",
@@ -335,6 +358,12 @@ export const de: Catalog = {
     left: "{{name}} hat den Raum verlassen.",
     leftMany_one: "{{count, number}} Person hat den Raum verlassen.",
     leftMany_other: "{{count, number}} Personen haben den Raum verlassen.",
+    removed: "Der Product Owner hat {{name}} aus dem Raum entfernt.",
+    removedMany_one: "Der Product Owner hat {{count, number}} Person aus dem Raum entfernt.",
+    removedMany_other: "Der Product Owner hat {{count, number}} Personen aus dem Raum entfernt.",
+    ownerHandedOver: "{{from}} hat die Rolle des Product Owners an {{to}} übergeben.",
+    ownerClaimed: "{{name}} hat die Rolle des Product Owners übernommen.",
+    ownerNow: "{{name}} ist jetzt der Product Owner.",
     away: "{{name}} ist abwesend.",
     awayMany_one: "{{count, number}} Person ist abwesend.",
     awayMany_other: "{{count, number}} Personen sind abwesend.",
