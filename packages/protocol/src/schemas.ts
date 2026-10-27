@@ -161,6 +161,12 @@ export const causeSchema = z.discriminatedUnion("type", [
 export const roomViewSchema = z.object({
   code: z.string().min(1).max(WIRE_LIMITS.roomCode),
   ownerId: userIdSchema,
+  /**
+   * From when (epoch ms, the server's clock) anyone else may claim the PO role (#30): set
+   * only while the PO is away (`awaySince` + 120 s) or not in the room (0). Optional, so
+   * adding it kept protocol version 4.
+   */
+  ownerClaimableAt: z.number().optional(),
   settings: roomSettingsSchema,
   /** Sorted by `joinedAt`, then by id. */
   participants: z.array(participantViewSchema),

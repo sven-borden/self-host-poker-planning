@@ -1,5 +1,6 @@
 import { MAX_PARTICIPANTS } from "@pp/domain";
 import { Link } from "@tanstack/react-router";
+import { UserRoundXIcon } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from "react";
 import { buttonVariants } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
@@ -29,6 +30,8 @@ export function RoomView() {
   const status = useRoomStore((state) => state.status);
   const room = useRoomStore((state) => state.snapshot?.room);
   const version = useRoomStore((state) => state.snapshot?.version);
+  // The PO removed the viewer (#30): the join form says so until they join again.
+  const removed = useRoomStore((state) => state.removed);
   // The version the server answered `room_full` at; any newer snapshot asks again.
   const [refusedAt, setRefusedAt] = useState<number | null>(null);
   // Set just before the screen changes, and cleared once the new screen took the focus.
@@ -61,6 +64,13 @@ export function RoomView() {
     }
   }, [screen, t]);
 
+  // Removed (#30): the focus, lost with the table, goes to the name field; once the person
+  // is back at the table the notice goes.
+  useEffect(() => {
+    if (removed && screen === "join") setFocus("join");
+    if (removed && screen === "seated") useRoomStore.getState().setRemoved(false);
+  }, [removed, screen]);
+
   return (
     <>
       {/* The connection and the people count sit in the header (`RoomPresence`). */}
@@ -69,6 +79,7 @@ export function RoomView() {
         {notice}
       </p>
       {ready && screen === "full" ? <RoomFull /> : null}
+      {ready && screen === "join" && removed ? <RemovedNotice /> : null}
       {ready && screen === "join" ? (
         <JoinForm
           observersCount={room.settings.observersCount}
@@ -90,6 +101,25 @@ export function RoomView() {
         </Suspense>
       ) : null}
     </>
+  );
+}
+
+/**
+ * The PO removed the viewer from the room (#30). Said at once (an alert) and shown above
+ * the join form, since the table the person was looking at is gone. No ban: the form
+ * under it lets them join again.
+ */
+function RemovedNotice() {
+  const t = useT();
+  return (
+    <p
+      role="alert"
+      data-room-removed
+      className="m-0 flex max-w-xl items-start gap-2.5 rounded-xl border border-line bg-surface-2 px-4 py-3"
+    >
+      <UserRoundXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-2" />
+      {t("room.kicked")}
+    </p>
   );
 }
 

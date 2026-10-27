@@ -80,6 +80,11 @@ export function serverTime(local: number = localNow()): number {
   return local + clockOffset();
 }
 
+/** The last `enter`'s round trip in milliseconds (0 before the first). */
+export function roundTripMs(): number {
+  return roundTrip;
+}
+
 /** Calls `listener` whenever the offset changes; returns the unsubscribe. */
 export function onClockOffset(listener: () => void): () => void {
   listeners.add(listener);

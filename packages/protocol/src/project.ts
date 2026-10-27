@@ -10,6 +10,7 @@ import {
   type Cause,
   computeResults,
   type DeckSpec,
+  OWNER_CLAIM_AFTER_MS,
   type Participant,
   type RoomSettings,
   type RoomState,
@@ -50,6 +51,7 @@ export function toSnapshot(state: RoomState, viewer: UserId, meta: SnapshotMeta)
     room: {
       code: meta.code,
       ownerId: state.ownerId,
+      ...ownerClaimable(state),
       settings: settingsView(state.settings),
       participants: people.map(([id, p]) => participantView(id, p, state.ownerId)),
       you: Object.hasOwn(state.participants, viewer) ? viewer : null,
@@ -112,6 +114,23 @@ function causeView(cause: Cause, hideVoter: boolean): CauseView | null {
     default:
       return null;
   }
+}
+
+/**
+ * When anyone else in the room may claim the PO role (#30): `awaySince` plus two minutes
+ * while the PO is away, 0 when the PO is not in the room (claimable at once), absent while
+ * the PO is here. The domain's `claimOwner` decides with the same rule; the page only
+ * shows the button from then on, by the server's clock. It tells the PO's `awaySince`,
+ * which no participant view carries: the room needs it to know when the role is free.
+ */
+function ownerClaimable(state: RoomState): { ownerClaimableAt?: number } {
+  const owner = Object.hasOwn(state.participants, state.ownerId)
+    ? state.participants[state.ownerId]
+    : undefined;
+  if (owner === undefined) return { ownerClaimableAt: 0 };
+  return owner.awaySince === undefined
+    ? {}
+    : { ownerClaimableAt: owner.awaySince + OWNER_CLAIM_AFTER_MS };
 }
 
 /** Code-unit order: the same on every engine and locale. */

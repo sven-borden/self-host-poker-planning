@@ -44,7 +44,12 @@ server sends and never decides the outcome of a round.
   page calls it in an effect and returns its cleanup); `sendCommand({ type, payload? })`
   resolves with the ack. `src/stores/room-store.ts` holds `{ code, status, error,
   snapshot, connection }`; `status` is `connecting`, `live`, `reconnecting` or `error`
-  (`error` holds an ack code, or `kicked` or `offline`). `receive` keeps only a newer
+  (`error` holds an ack code, or `offline`). `removed` (#30) is set when the server said
+  `kicked`: the server then closes the socket, and `openRoom` takes that close as a cue to
+  connect again (not a final offline), so the page enters as someone not in the room and
+  `RoomView` shows the join form under "The product owner removed you from this room."
+  (`[data-room-removed]`, an alert) with the focus on the name; joining clears it.
+  `receive` keeps only a newer
   version of the open room. A command belongs to the room open when it was sent: once
   that room closes, a send still waiting resolves `offline` and never reaches the next
   room. A command sent after an `await` takes `commandSender()` first: it binds to the
@@ -80,8 +85,10 @@ server sends and never decides the outcome of a round.
   initials-only one) whose name is an sr-only span inside it; the popover says the whole
   name and what the badges mean. `isRoomFull` lives in
   `room-full.ts`, so the room route does not pull the table's code. The live region:
-  `announcements.ts` turns a snapshot's causes into events (joins, leaves and kicks, away,
-  back, first votes of others; never the viewer's own, never a card), merges a batch
+  `announcements.ts` turns a snapshot's causes into events (joins, leaves, away, back,
+  first votes of others; never the viewer's own, never a card; since #30 removals, "The
+  product owner removed Cleo from the room.", and the PO role handed over or claimed,
+  said to everyone, the people it names too), merges a batch
   (repeats dropped, away-then-back cancelled) and words it ("Ana voted.", "3 people
   voted."); `live-announcer.tsx` follows every snapshot the store keeps
   (`useRoomStore.subscribe`, not renders) and speaks after 600 ms of quiet or 1.5 s at
@@ -370,6 +377,24 @@ server sends and never decides the outcome of a round.
   panel's own `role="status"` region (`PanelLive`, `[data-panel-live]`) says the same
   announcements, each once.
   Copy: `settings.*`, `decks.custom`, `live.*`, `round.anonymous*`.
+  The PO's powers (#30): every person's popover, on a seat or in the observers' row (now
+  buttons too, `data-person-trigger` = the id, a 44 px hit area through `after:`), takes
+  a `PersonActions` slot from `TableStage` (`actions`). `room/person-actions.tsx` shows
+  the PO "Make product owner" (`aria-disabled` with `po.targetAway` for someone away,
+  and "Hand over" likewise when they go away while asked) and "Remove from the room";
+  each asks in an inline group that takes the focus (`[data-po-question]`), "Cancel"
+  gives it back, and a sent question stays until its ack, since a hand-over makes the
+  viewer someone else first. After a removal, or when a seat or an observer unmounts with
+  its popover open, the focus goes to the button that took the person's place
+  (`table/person-focus.ts`: `focusAfterRemoval`, `useFocusAfterRemoval`).
+  `room/claim-banner.tsx` reads the room's `ownerClaimableAt` against #27's
+  `serverTime()` (`useClockOffset()` redraws it when the estimate moves) and shows "Claim
+  the product owner role" 20 ms or half a round trip after that moment, above the table
+  (`[data-claim]`); its status line stays mounted so the banner is heard; a refused claim
+  hides the button for `CLAIM_REFUSAL_MS` with "Not yet"; a claim that lost to another
+  says nothing; a claim after a reveal sends the focus to `AFTER_REVEAL`. Copy: `po.*`, `claim.*`,
+  `live.removed*`, `live.owner*`, `room.kicked`. Tests: `po-powers.test.tsx`,
+  `e2e/po-powers.spec.ts`.
   `failure.ts` turns refusal codes into copy. Focus: after joining it moves to the "You"
   heading, after leaving or when a seat frees up to the name field (a free seat is also
   announced in a polite live region, `[data-room-notice]`); each request is cleared once

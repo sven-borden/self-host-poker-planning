@@ -45,7 +45,8 @@ export function RoomPresence() {
 
 /**
  * The room's state below its header: with `presence`, the line above (`RoomPresence`),
- * then the errors that end the visit (kicked, offline, an old app after a redeploy).
+ * then the errors that end the visit (offline, an old app after a redeploy). Being removed
+ * by the PO (#30) is not one of them: the page goes back to the join form (`RoomView`).
  */
 export function RoomStatus({ presence = true }: { presence?: boolean }) {
   const status = useRoomStore((state) => state.status);
@@ -73,12 +74,7 @@ function RoomError({ error }: { error: string }) {
       </div>
     );
   }
-  const message =
-    error === "kicked"
-      ? t("room.kicked")
-      : error === "offline"
-        ? t("room.offline")
-        : errorMessage(t, error);
+  const message = error === "offline" ? t("room.offline") : errorMessage(t, error);
   return (
     <div role="alert" className="mt-6">
       <p>{message}</p>

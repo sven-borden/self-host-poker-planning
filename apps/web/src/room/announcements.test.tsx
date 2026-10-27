@@ -65,7 +65,9 @@ describe("liveEvents", () => {
     const left = run("ben", { type: "leave" });
     expect(said(liveEvents(left.room, left.causes, back.room))).toBe("Ben left.");
     const kicked = run("me", { type: "kick", who: "ana" });
-    expect(said(liveEvents(kicked.room, kicked.causes, left.room))).toBe("Ana left.");
+    expect(said(liveEvents(kicked.room, kicked.causes, left.room))).toBe(
+      "The product owner removed Ana from the room.",
+    );
   });
 
   it("says a new round started, to everyone, before the rest of its batch", () => {
@@ -621,6 +623,74 @@ describe("LiveAnnouncer", () => {
     });
     expect(region()?.textContent).toBe("Ana is away.");
     expect(region()?.firstElementChild).not.toBe(span);
+  });
+});
+
+describe("the PO's powers (#30)", () => {
+  /** Me (the PO), Ana and Ben vote, Cleo observes; snapshots as `viewer` sees them. */
+  function room(viewer: string) {
+    const { run } = story(viewer);
+    run("me", { type: "join", name: "Me", role: "voter" });
+    run("ana", { type: "join", name: "Ana", role: "voter" });
+    run("ben", { type: "join", name: "Ben", role: "voter" });
+    const before = run("cleo", { type: "join", name: "Cleo", role: "observer" });
+    return { run, before };
+  }
+
+  it("says a hand-over to everyone, the two people it names too", () => {
+    for (const viewer of ["me", "ben", "ana"]) {
+      const { run, before } = room(viewer);
+      const after = run("me", { type: "transferOwner", to: "ben" });
+      expect(liveEvents(after.room, after.causes, before.room)).toEqual([
+        { kind: "owner", who: "ben", name: "Ben", owner: { by: "transfer", from: "Me" } },
+      ]);
+      expect(said(liveEvents(after.room, after.causes, before.room))).toBe(
+        "Me handed the product owner role to Ben.",
+      );
+    }
+  });
+
+  it("says a claim to everyone, the claimant too", () => {
+    for (const viewer of ["ana", "ben"]) {
+      const { run, before } = room(viewer);
+      const left = run("me", { type: "leave" });
+      const after = run("ana", { type: "claimOwner" });
+      expect(said(liveEvents(after.room, after.causes, left.room))).toBe(
+        "Ana claimed the product owner role.",
+      );
+      expect(before.room.ownerId).toBe("me");
+    }
+  });
+
+  it("says who the PO removed, and counts several in one batch", () => {
+    const { run, before } = room("ana");
+    const one = run("me", { type: "kick", who: "cleo" });
+    const first = liveEvents(one.room, one.causes, before.room);
+    expect(said(first)).toBe("The product owner removed Cleo from the room.");
+    const two = run("me", { type: "kick", who: "ben" });
+    const both = mergeEvents(first, liveEvents(two.room, two.causes, one.room));
+    expect(said(both)).toBe("The product owner removed 2 people from the room.");
+  });
+
+  it("names the new PO alone when the old one is unknown", () => {
+    const events: LiveEvent[] = [
+      { kind: "owner", who: "ben", name: "Ben", owner: { by: "transfer", from: null } },
+    ];
+    expect(said(events)).toBe("Ben is now the product owner.");
+  });
+
+  it("says it in French and German", async () => {
+    await loadLanguage("fr");
+    await loadLanguage("de");
+    const { run, before } = room("ana");
+    const after = run("me", { type: "transferOwner", to: "ben" });
+    const events = liveEvents(after.room, after.causes, before.room);
+    expect(describeEvents(fixedT("fr"), events)).toBe(
+      "Me a confié le rôle de product owner à Ben.",
+    );
+    expect(describeEvents(fixedT("de"), events)).toBe(
+      "Me hat die Rolle des Product Owners an Ben übergeben.",
+    );
   });
 });
 

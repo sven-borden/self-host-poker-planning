@@ -4,8 +4,9 @@
  * raw WebSocket frames, the reveal (#19: a non-PO is refused, the last two votes sent
  * together reveal once), the room settings (#25: the defaults, refusals on the wire, one
  * snapshot for everyone), idempotent ids, a revoked session, one session flooding a room
- * from many sockets, and the deadline timeout on one and on two server instances sharing
- * the database. The restart (AC 2) is `restart.db.test.ts`.
+ * from many sockets, the PO's powers (#30: a claim refused before 120 s, two claims at
+ * once, a removed person disconnected within 1 s), and the deadline timeout on one and on
+ * two server instances sharing the database. The restart (AC 2) is `restart.db.test.ts`.
  */
 import { performance } from "node:perf_hooks";
 import {
@@ -778,6 +779,83 @@ describe("one session flooding a room from many sockets", () => {
       quiet.acks[0],
     );
     expect((await main().database.store.loadRoom(code))?.version).toBe(before);
+  });
+});
+
+describe("the PO's powers (#30)", () => {
+  /** Ada (PO), away since `ms` ago; Bob votes and Cy observes, both here. */
+  function ownerAway(ms: number): { state: RoomState; since: number } {
+    const state = votingRoom();
+    const since = Date.now() - ms;
+    const po = state.participants[ada.id];
+    if (!po) throw new Error("no PO");
+    const participants = {
+      ...state.participants,
+      [ada.id]: { ...po, connected: false, awaySince: since },
+    };
+    return { state: { ...state, participants }, since };
+  }
+
+  it("refuses a claim before 120 s of absence, on the wire, and says when the role is free (AC 2)", async () => {
+    const { state, since } = ownerAway(60_000);
+    const code = await insert(state);
+    const b = client(bob);
+    await b.enter(code);
+    expect(b.latest()?.room.ownerClaimableAt).toBe(since + 120_000);
+    expect(await b.cmd("claimOwner")).toEqual({ ok: false, code: "owner_present" });
+    expect((await main().database.store.loadRoom(code))?.state.ownerId).toBe(ada.id);
+  });
+
+  it("gives the role to exactly one of two claims sent at once, on two instances (AC 1)", async () => {
+    const second = instances[1] ?? (await startInstance());
+    const code = await insert(ownerAway(121_000).state);
+    const b = client(bob);
+    const c = client(cy, second);
+    await Promise.all([b.enter(code), c.enter(code)]);
+    const acks = await Promise.all([b.cmd("claimOwner"), c.cmd("claimOwner")]);
+    expect(acks.filter((ack) => ack.ok)).toHaveLength(1);
+    expect(acks.filter((ack) => !ack.ok)).toEqual([{ ok: false, code: "owner_present" }]);
+    const winner = acks[0]?.ok ? bob.id : cy.id;
+    const stored = await main().database.store.loadRoom(code);
+    expect(stored?.state.ownerId).toBe(winner);
+    for (const watcher of [b, c]) {
+      const seen = await watcher.waitFor((s) => s.room.ownerId === winner);
+      const owners = seen.snapshot.room.participants.filter((p) => p.isOwner).map((p) => p.id);
+      expect(owners).toEqual([winner]);
+      expect(seen.snapshot.room.ownerClaimableAt).toBeUndefined();
+    }
+    // The winner's instance says why; the other one may pass the new state on without causes.
+    const said = await (winner === bob.id ? b : c).waitFor((s) => s.room.ownerId === winner);
+    expect(said.snapshot.causes).toEqual([{ type: "ownerChanged", by: "claim", to: winner }]);
+  });
+
+  it("closes a removed person's sockets within 1 s, and they can join again (AC 3)", async () => {
+    const code = await insert(votingRoom());
+    const a = client(ada);
+    const tabs = [client(bob), client(bob)];
+    await Promise.all([a.enter(code), ...tabs.map((tab) => tab.enter(code))]);
+    const closed = tabs.map(
+      (tab) =>
+        new Promise<number>((resolve) =>
+          tab.socket.on("disconnect", () => resolve(performance.now())),
+        ),
+    );
+    const sent = performance.now();
+    expect((await a.cmd("kick", { who: bob.id })).ok).toBe(true);
+    for (const at of await Promise.all(closed)) expect(at - sent).toBeLessThan(1000);
+    for (const tab of tabs) {
+      expect(tab.kicked.count).toBe(1);
+      // The snapshot before the close already shows the room without them.
+      expect(tab.latest()?.room.you).toBeNull();
+    }
+    const seen = await a.waitFor((s) => s.causes.some((cause) => cause.type === "kicked"));
+    expect(seen.snapshot.causes).toEqual([{ type: "kicked", who: bob.id }]);
+
+    // No ban: Bob opens the room again and joins.
+    const again = client(bob);
+    expect((await again.enter(code)).ok).toBe(true);
+    expect(await again.cmd("join", { name: "Bob", role: "voter" })).toMatchObject({ ok: true });
+    expect((await again.waitFor((s) => s.room.you === bob.id)).snapshot.room.ownerId).toBe(ada.id);
   });
 });
 
