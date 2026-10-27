@@ -80,9 +80,11 @@ describe("wire commands", () => {
     expect(
       toDomainCommand({ id: "1", type: "castVote", payload: { card: "5", round: 1 } }),
     ).toStrictEqual({ ok: true, id: "1", command: { type: "castVote", card: "5", round: 1 } });
-    expect(
-      toDomainCommand({ id: "1", type: "retractVote", payload: { round: 1 } }),
-    ).toStrictEqual({ ok: true, id: "1", command: { type: "retractVote", round: 1 } });
+    expect(toDomainCommand({ id: "1", type: "retractVote", payload: { round: 1 } })).toStrictEqual({
+      ok: true,
+      id: "1",
+      command: { type: "retractVote", round: 1 },
+    });
   });
 
   it("accept ids of letters, digits, dash and underscore, up to the cap", () => {

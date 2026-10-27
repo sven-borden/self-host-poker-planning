@@ -730,7 +730,12 @@ describe("one session flooding a room from many sockets", () => {
       insert(withDeadline(timed, Date.now() + 700)),
     ]);
     const [a1, c1, a2, c2] = [client(ada), client(cy), client(ada), client(cy)];
-    await Promise.all([a1.enter(codes[0]), c1.enter(codes[0]), a2.enter(codes[1]), c2.enter(codes[1])]);
+    await Promise.all([
+      a1.enter(codes[0]),
+      c1.enter(codes[0]),
+      a2.enter(codes[1]),
+      c2.enter(codes[1]),
+    ]);
     const tshirt = { deck: { kind: "preset", id: "tshirt" } };
     const before = Date.now();
     expect((await a1.cmd("updateSettings", { patch: tshirt })).ok).toBe(true);
