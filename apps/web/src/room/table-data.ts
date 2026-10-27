@@ -21,17 +21,22 @@ export interface TableData {
  * Where a voter stands in the round: present in the lobby; thinking or voted while
  * Voting; after a named reveal, their card (or none). After an anonymous reveal no card
  * belongs to anyone, so a seat shows only that its person voted; who did not vote is
- * public, so their seat says "no vote" as in a named reveal. #19 builds the flip on the
- * `revealed` status.
+ * public, so their seat says "no vote" as in a named reveal. A PO who does not vote
+ * (`poVotes` off) is never thinking and never missing a vote: their seat stays present.
+ * #19 builds the flip on the `revealed` status.
  */
 export function seatStatus(participant: ParticipantView, room: RoomView): SeatStatus {
   const round = room.round;
   if (round === null) return { kind: "present" };
   const voted = round.voted.includes(participant.id);
-  if (round.phase === "voting") return { kind: voted ? "voted" : "thinking" };
-  if (round.anonymous) return voted ? { kind: "voted" } : { kind: "revealed", card: null };
+  const counts = canVote(participant, room);
+  const missing: SeatStatus = counts ? { kind: "revealed", card: null } : { kind: "present" };
+  if (round.phase === "voting") {
+    return voted ? { kind: "voted" } : counts ? { kind: "thinking" } : { kind: "present" };
+  }
+  if (round.anonymous) return voted ? { kind: "voted" } : missing;
   const vote = round.votes.find((v) => v.who === participant.id);
-  return { kind: "revealed", card: vote?.card ?? null };
+  return vote ? { kind: "revealed", card: vote.card } : missing;
 }
 
 /** Away, product owner, the viewer, and the look the table gave them. */

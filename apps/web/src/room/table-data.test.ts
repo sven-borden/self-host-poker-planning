@@ -197,6 +197,28 @@ describe("the round's centre and the hand (#18)", () => {
     expect(handView(voter.room, voter.person)).toMatchObject({ kind: "cards", playable: true });
   });
 
+  it("never shows a PO who does not vote as thinking or without a vote", () => {
+    const noPo = (s: RoomState): RoomState => ({
+      ...s,
+      settings: { ...s.settings, poVotes: false },
+    });
+    const status = (s: RoomState) =>
+      tableData(view(s, "u1")).people.find((p) => p.id === "u0")?.status;
+    expect(status(noPo(voting))).toEqual({ kind: "present" });
+    expect(status(voting)).toEqual({ kind: "thinking" });
+    const revealed = step(voting, "u0", { type: "reveal" });
+    expect(status(noPo(revealed))).toEqual({ kind: "present" });
+    expect(status(revealed)).toEqual({ kind: "revealed", card: null });
+    const anonymous = step(
+      step(base, "u0", { type: "updateSettings", patch: { revealNames: false } }),
+      "u0",
+      { type: "startRound", subject: { kind: "none" } },
+    );
+    const hidden = step(anonymous, "u0", { type: "reveal" });
+    expect(status(noPo(hidden))).toEqual({ kind: "present" });
+    expect(status(hidden)).toEqual({ kind: "revealed", card: null });
+  });
+
   it("deals the round's deck and specials, playable only while Voting", () => {
     const voter = me(voting, "u1");
     expect(handView(voter.room, voter.person)).toEqual({

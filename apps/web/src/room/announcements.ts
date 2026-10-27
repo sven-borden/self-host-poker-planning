@@ -1,21 +1,22 @@
 import type { CauseView, RoomView } from "@pp/protocol";
 import type { TFunction } from "../i18n/i18n.ts";
 
-// What the table's live region says (#17): joins, leaves, away and back, and votes, read
-// from a snapshot's causes. Never a card: a vote cause carries who, never what. Pure, so
+// What the table's live region says (#17): joins, leaves, away and back, votes, and a new
+// round (#18), read from a snapshot's causes. Never a card: a vote cause carries who, never what. Pure, so
 // the batching rules are tested without timers; `live-announcer.tsx` runs them.
 
-export type LiveKind = "joined" | "left" | "away" | "back" | "voted";
+export type LiveKind = "roundStarted" | "joined" | "left" | "away" | "back" | "voted";
 
 export interface LiveEvent {
   kind: LiveKind;
+  /** The person, or "" for the room's own events (a new round). */
   who: string;
   /** The name as the room showed it when the event happened. */
   name: string;
 }
 
 /** Said in this order, whatever order the events came in. */
-const ORDER: readonly LiveKind[] = ["joined", "left", "away", "back", "voted"];
+const ORDER: readonly LiveKind[] = ["roundStarted", "joined", "left", "away", "back", "voted"];
 
 /** Events that undo each other inside one batch: nothing is said for either. */
 const UNDOES: Partial<Record<LiveKind, LiveKind>> = {
@@ -38,7 +39,8 @@ function nameOf(id: string, ...rooms: (RoomView | null)[]): string | null {
  * own actions are left out: they see them happen, and their own controls speak for them.
  * A vote counts only when the person had not voted yet in this round: changing a card is
  * not news, and saying so would hint that something changed. A person who left is named
- * from `previous`.
+ * from `previous`. A new round is said to everyone, the PO who started it too: the hand
+ * and the centre change under their focus.
  */
 export function liveEvents(
   next: RoomView,
@@ -53,6 +55,9 @@ export function liveEvents(
   for (const cause of causes) {
     let kind: LiveKind;
     switch (cause.type) {
+      case "roundStarted":
+        events.push({ kind: "roundStarted", who: "", name: "" });
+        continue;
       case "joined":
       case "left":
       case "away":
@@ -102,6 +107,8 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
   const name = first?.name ?? "";
   const count = events.length;
   switch (kind) {
+    case "roundStarted":
+      return t("live.roundStarted");
     case "joined":
       return one ? t("live.joined", { name }) : t("live.joinedMany", { count });
     case "left":

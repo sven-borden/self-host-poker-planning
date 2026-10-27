@@ -25,7 +25,7 @@ export function RoundCentre({ room, onFailure }: RoundCentreProps) {
   if (round?.phase === "voting") {
     const { count, total } = voteCount(room);
     return (
-      <p data-centre-status="voting" className="m-0">
+      <p data-centre-status="voting" tabIndex={-1} className="m-0 outline-none">
         {t("table.votedSoFar", { count, total })}
       </p>
     );
@@ -38,6 +38,23 @@ export function RoundCentre({ room, onFailure }: RoundCentreProps) {
       {round === null ? t("round.waiting") : t("round.revealed")}
     </p>
   );
+}
+
+/**
+ * The button is gone once the round starts, and the focus with it: it goes to the hand's
+ * tab stop, or to the centre's status for a PO without a hand. The snapshot is already in
+ * the store when the ack resolves; the frame waits for React to draw it.
+ */
+function focusAfterStart() {
+  requestAnimationFrame(() => {
+    // Someone who already moved on keeps their focus.
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    const target =
+      document.querySelector<HTMLElement>("[data-hand] [tabindex='0']") ??
+      document.querySelector<HTMLElement>("[data-centre-status='voting']");
+    target?.focus();
+  });
 }
 
 function StartRound({
@@ -57,7 +74,8 @@ function StartRound({
     onFailure(null);
     try {
       const ack = await sendCommand({ type: "startRound", payload: { subject: { kind: "none" } } });
-      if (!ack.ok) onFailure(ack.code);
+      if (ack.ok) focusAfterStart();
+      else onFailure(ack.code);
     } finally {
       setBusy(false);
     }

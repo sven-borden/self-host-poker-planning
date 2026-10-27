@@ -90,7 +90,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
       : hand.reason === "voting"
         ? t("hand.hintVoting")
         : hand.reason === "lobby"
-          ? t("hand.hintLobby")
+          ? t(me.isOwner ? "hand.hintLobbyOwner" : "hand.hintLobby")
           : t("hand.hintRevealed");
   const news = vote.news;
 
@@ -127,7 +127,11 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           {vote.error !== null && vote.error.round === (room.round?.number ?? null) ? (
             <p role="alert" className="mx-4 mt-2 flex items-start justify-center gap-2 text-sm">
               <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
-              {failureMessage(t, vote.error.code)}
+              {/* A take-back refused after the reveal says what a refused vote says. */}
+              {failureMessage(
+                t,
+                vote.error.code === "not_voting" ? "round_revealed" : vote.error.code,
+              )}
             </p>
           ) : null}
           {/* The viewer's own vote, said to them once it is confirmed; never to anyone else. */}
@@ -155,6 +159,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
         focusOnMount={focusOnMount}
         onFocused={onFocused}
         onLeaving={onLeaving}
+        votes={hand.kind !== "owner"}
       />
     </div>
   );

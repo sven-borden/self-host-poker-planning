@@ -261,6 +261,43 @@ describe("the hand", () => {
     expect(server.round?.phase).toBe("revealed");
   });
 
+  it("says a take-back refused after the reveal as a refused vote", async () => {
+    await renderRoom(voting());
+    fireEvent.click(card("5"));
+    await waitFor(() => expect(handLive()).toBe("Your vote: 5."));
+    let open = () => {};
+    gate = new Promise((resolve) => {
+      open = resolve;
+    });
+    fireEvent.click(card("5"));
+    run("po", { type: "reveal" });
+    await act(async () => open());
+    await screen.findByText("The cards are already revealed, so votes can no longer change.");
+    expect(pressed()).toEqual(["5"]);
+  });
+
+  it("counts a double click once, and ignores a held Enter's repeats", async () => {
+    await renderRoom(voting());
+    fireEvent.click(card("5"), { detail: 1 });
+    fireEvent.click(card("5"), { detail: 2 });
+    await waitFor(() => expect(handLive()).toBe("Your vote: 5."));
+    expect(sent).toHaveLength(1);
+    expect(pressed()).toEqual(["5"]);
+    // A repeated keydown is cancelled, so the button never clicks; the first one is not.
+    expect(fireEvent.keyDown(card("5"), { key: "Enter", repeat: true })).toBe(false);
+    expect(fireEvent.keyDown(card("5"), { key: " ", repeat: true })).toBe(false);
+    expect(fireEvent.keyDown(card("5"), { key: "Enter" })).toBe(true);
+  });
+
+  it("moves the focus to the nearest card when a deck change removes the focused one", async () => {
+    await renderRoom(voting());
+    card("needs a break").focus();
+    run("po", { type: "updateSettings", patch: { specials: [] } });
+    expect(within(hand()).queryByRole("button", { name: "needs a break" })).toBeNull();
+    const buttons = within(hand()).getAllByRole("button");
+    expect(document.activeElement).toBe(buttons.at(-1));
+  });
+
   it("rolls back when the room is offline", async () => {
     await renderRoom(voting());
     mocks.commandSender.mockImplementation(() => async () => ({ ok: false, code: "offline" }));
@@ -325,9 +362,31 @@ describe("the table's centre", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start voting" }));
     await waitFor(() => expect(centre()).toBe("0/3 voted so far"));
     expect(sent).toEqual([{ type: "startRound", payload: { subject: { kind: "none" } } }]);
+    // The button is gone: the focus goes to the hand's tab stop.
+    await waitFor(() => expect(document.activeElement).toBe(card("0")));
     run(ME, { type: "reveal" });
+    screen.getByRole("button", { name: "Next round" }).focus();
     fireEvent.click(screen.getByRole("button", { name: "Next round" }));
     await waitFor(() => expect(server.round?.number).toBe(2));
+    await waitFor(() => expect(document.activeElement).toBe(card("0")));
+  });
+
+  it("tells the PO in the lobby that starting the round opens their cards", async () => {
+    await renderRoom({ ...stateWith(table), ownerId: ME });
+    expect(screen.getByText("Start voting to play your cards.")).toBeTruthy();
+    expect(screen.getByText("At the table, voting")).toBeTruthy();
+  });
+
+  it("gives a PO who does not vote the centre's status as focus, and no thinking seat", async () => {
+    const owner = { ...stateWith(table, { poVotes: false }), ownerId: ME };
+    await renderRoom(owner);
+    expect(screen.getByText("At the table, not voting")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Start voting" }));
+    await waitFor(() => expect(centre()).toBe("0/2 voted so far"));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(document.querySelector("[data-centre-status]")),
+    );
+    expect(document.querySelector("[data-seat][data-you]")?.textContent).not.toMatch(/Thinking/);
   });
 
   it("says the PO does not vote, and shows a refused start", async () => {
