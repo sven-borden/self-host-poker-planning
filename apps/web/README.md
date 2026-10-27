@@ -29,6 +29,14 @@ server sends and never decides the outcome of a round.
   presentational: props in, no store. `/dev/table` (`src/routes/dev/table.tsx`, lazy,
   noindex) shows them: `?n=1..16&state=lobby|voting|revealed&observers=0..4`.
 - `src/stores/`: Zustand stores. `src/realtime/`: the typed Socket.IO client.
+- `src/identity/identity.ts`: who this browser is (#10). `ensureIdentity({ force? })`
+  reads `/api/auth/get-session` and, without a session, signs in as a guest
+  (`/api/auth/sign-in/anonymous`); concurrent calls share one request. `setDisplayName(name)`
+  posts to `/api/me/name` and keeps the name the server stored. Both reject with
+  `IdentityError` carrying the server's code. `useIdentityStore` holds `status`
+  (`idle`, `loading`, `ready`, `error`), `userId`, `name` (null until picked) and
+  `error`. Typed `fetch` calls, not `better-auth/client` (12 kB gzipped). `main.tsx`
+  starts the bootstrap next to the first render.
 
 ## Rules
 
@@ -61,6 +69,10 @@ server sends and never decides the outcome of a round.
   static imports) exceeds 200 kB gzipped. Lazy chunks (Motion features, the toaster, the
   French and German catalogs) do not count.
 - Nothing connects at module load: `createSocket()` returns an unconnected socket.
+  `connectWhenIdentified(socket)` connects it once `ensureIdentity()` resolved; on
+  `connect_error` `unauthenticated` it runs the bootstrap once more and reconnects, and a
+  second refusal sets the identity store's error, which the root layout shows as a toast
+  (`errors.unauthenticated`). The session cookie is httpOnly: never read it.
 - Browser code only: `tsconfig.app.json` covers `src/` with DOM types and no Node types;
   `tsconfig.node.json` covers `vite.config.ts` and `scripts/`, which run under Node 24's
   type stripping.
@@ -68,7 +80,10 @@ server sends and never decides the outcome of a round.
   measures the room its container gives it (`useRoomWidth()`) and picks its variant
   with `variantFor()`; inside the stage, style by `in-data-[variant=phone]:`.
 - End-to-end: `pnpm --filter @pp/web test:e2e` runs Playwright (`e2e/`) against
-  `vite preview`. Locally it builds first and uses the installed Microsoft Edge; in CI
+  `vite preview`. With `DATABASE_URL` set (a Postgres the server may migrate, such as
+  the one in the server README), it also starts the real server on 3000, where
+  `vite preview` forwards `/api` and `/socket.io`; `e2e/identity.spec.ts` needs it and
+  skips without it. Locally it builds first and uses the installed Microsoft Edge; in CI
   (`web-e2e` job) it uses Chromium on the build from the step before. Screenshots go to
   `tmp/screenshots/` (gitignored). Not part of `pnpm gate`.
 - Tests: the `web` Vitest project extends `vite.config.ts` and runs in jsdom

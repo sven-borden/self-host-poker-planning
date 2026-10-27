@@ -222,6 +222,12 @@ Socket.IO with typed event maps from `packages/protocol` (`ClientToServerEvents`
     while Voting no string in a snapshot equals a card label outside the decks and
     `yourVote`, and changing the others' cards changes nothing; in an anonymous round,
     swapping votes between people or reordering how they were cast changes nothing.
+- **Handshake**: a browser handshake must come from `BASE_URL`'s origin (checked first,
+  on both transports), then carry the session cookie (section 7): the middleware
+  resolves it and sets `socket.data.user = { id, name, isAnonymous }`, or refuses the
+  socket with `connect_error` `unauthenticated`. The web app connects only once it has a
+  session (`connectWhenIdentified`), runs the identity bootstrap once more on
+  `unauthenticated`, and shows `errors.unauthenticated` after a second refusal.
 - **Reconnect**: Socket.IO reconnects automatically; on every (re)join the server
   sends a fresh snapshot. `protocol` mismatch → the client reloads.
 
@@ -300,14 +306,41 @@ parameters (a room's state, vote values, a password hash); neither may reach a l
 
 ## 7. Identity
 
-Better Auth with the anonymous plugin (ADR-009).
+Better Auth with the Drizzle adapter on the app's `pg` pool and the anonymous plugin
+(ADR-009), mounted under `/api/auth/*` (`apps/server/src/auth.ts`). No email and
+password, no social provider before W5.
 
-- The first visit creates a guest user and an httpOnly session cookie (`SameSite=Lax`,
-  `Secure` in production). The display name lives on the user.
-- The Socket.IO middleware reads the cookie from the handshake and resolves the session
-  with `auth.api.getSession`; unauthenticated sockets are refused.
-- W5 adds Google and Microsoft Entra ID; signing in links the guest so rooms, PO
-  ownership and history carry over (`onLinkAccount`).
+- **Guests**: every page load runs the web app's bootstrap: `GET /api/auth/get-session`,
+  and without a session `POST /api/auth/sign-in/anonymous`, which creates a `user` row
+  (`is_anonymous`, a placeholder email, no personal data) and a session. User ids are
+  Better Auth's 32 alphanumeric characters, within `userIdSchema`. The web app uses a
+  few typed `fetch` calls, not `better-auth/client` (12 kB gzipped).
+- **Cookie**: `pp.session_token`, the session token signed with `BETTER_AUTH_SECRET`;
+  httpOnly, `SameSite=Lax`, path `/`; with an https `BASE_URL` also `Secure` with the
+  `__Secure-` prefix. `trustedOrigins` is `BASE_URL` alone.
+- **Lifetime**: a session lasts `ROOM_TTL_DAYS` (90) after the last visit, so a guest
+  keeps their identity as long as their rooms live; a visit extends it at most once a
+  day. Changing `BETTER_AUTH_SECRET` signs everybody out (new guests).
+- **Display name**: `user.name`, `""` until the person picks one (#16 asks on joining;
+  the plugin's English "Anonymous" is never stored). `POST /api/me/name { name }` cleans
+  it with the domain's `cleanName` (whitespace collapsed, 1 to 32 characters within the
+  code-unit cap, well-formed) and answers `{ name }` or `{ code: "bad_name" }`; it
+  refuses another `Origin` and a non-JSON body. Better Auth's `/update-user` and
+  `/delete-anonymous-user` are disabled.
+- **Privacy**: sessions store neither the client address nor the user agent (a database
+  hook nulls both); Better Auth's telemetry is off; its log calls keep the message and
+  drop the arguments.
+- **Sockets**: see section 5, "Handshake". The handshake never refreshes a session.
+- **Errors**: Better Auth's 404, 429 and 5xx answers become `not_found`, `rate_limited`
+  and `internal`. A database failure while reading a session is a 500, never "no
+  session", so an outage cannot hand out a new guest identity.
+- **W5**: Google and Microsoft Entra ID. Better Auth's anonymous plugin, on a social
+  sign-in, calls `onLinkAccount({ anonymousUser, newUser })` and then deletes the guest:
+  the user id changes. To keep the id, rooms and PO ownership, either link the provider
+  to the guest row (`linkSocial`, then clear `is_anonymous`), or move what the guest owns
+  in `onLinkAccount` (room `owner_user_id`, `live.ownerId`, participants, history), and
+  set `disableDeleteAnonymousUser` until that move is proven. Provider names must go
+  through `cleanName` too.
 
 ## 8. Rooms, access and security
 
@@ -317,11 +350,20 @@ Better Auth with the anonymous plugin (ADR-009).
 - Limits: names 32 characters, subjects 200, custom cards 4 characters × 20, payloads
   16 KB. HTTP rate limits on room creation, join and password; per-socket command rate
   limit.
+- Client address for every rate limit: `clientIp(request, TRUST_PROXY)`, the entry
+  `TRUST_PROXY` places from the right of `X-Forwarded-For` (each proxy appends the
+  address it received the request from), else the socket address. Never logged.
+- Identity limits (Better Auth's limiter, keyed on that same address, which the server
+  passes in a header of its own after dropping any client copy): anonymous sign-in 60 per
+  address and minute, so a team of 30 behind one office address joins at once; every
+  other auth endpoint 100 per 10 s. Answer: 429 `rate_limited`. The counters live in the
+  process (per instance with #39).
 - Headers: strict CSP (no inline scripts), HSTS, `X-Content-Type-Options`,
   `Referrer-Policy`. Subject links are rendered with `rel="noopener noreferrer"` and
   only `http(s)` schemes.
 - Retention: rooms, their history and orphan guests are deleted after
-  `ROOM_TTL_DAYS` (default 90) without activity.
+  `ROOM_TTL_DAYS` (default 90) without activity. A guest's session expires after the
+  same number of days without a visit.
 
 ## 9. Timers and presence
 
@@ -353,8 +395,8 @@ language, and an unknown code gets a generic one.
 - pino JSON logs on stdout (request id, connection id, room code, no secrets, no vote
   values). Each HTTP request gets an id (an incoming `x-request-id` is kept when it is at
   most 64 safe characters) echoed in `x-request-id`; each socket gets a random connection
-  id. Never logged: bodies, cookies, auth headers, query strings, config values, client
-  addresses; the logger redacts cookies, auth headers and `auth` payloads as a backstop.
+  id. Never logged: bodies, cookies, session tokens, the signing secret, auth headers,
+  query strings, config values, client addresses; the logger redacts cookies, auth headers and `auth` payloads as a backstop.
   `/api/*` requests log at `info`; `/api/health` and static files at `debug`; 5xx at
   `error`.
 - `GET /api/health` → `{ status, version, commit, db, uptime }`; used by the Docker
@@ -386,12 +428,12 @@ language, and an unknown code gets a generic one.
 | Env var | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | yes | Postgres connection, a real session (port 5432, no transaction-mode pooler); `?sslmode=` has libpq's meaning (`require` encrypts without checking the certificate, `verify-full` checks it) |
-| `BETTER_AUTH_SECRET` | yes | session signing |
+| `BETTER_AUTH_SECRET` | yes | signs the session cookies; at least 32 characters (`openssl rand -base64 32`); never logged; changing it signs everybody out |
 | `BASE_URL` | yes | public origin (no path, no credentials): cookies, OAuth callbacks, the only `Origin` Socket.IO accepts from a browser; `http://localhost:5173` for `pnpm dev` |
 | `PORT` | no (3000) | HTTP and Socket.IO port |
 | `ROOM_TTL_DAYS` | no (90) | retention |
 | `LOG_LEVEL` | no (info) | logging: `fatal` … `trace`, `silent` |
-| `TRUST_PROXY` | no (true) | client IPs for rate limits: the right-most `X-Forwarded-For` entry when true, the socket address when false |
+| `TRUST_PROXY` | no (true) | client IPs for rate limits: the number of reverse proxies in front (each appends to `X-Forwarded-For`; the client is the entry that many places from the right). `true` = 1 (Traefik alone), `2` for a TLS proxy in front of Traefik, `false` = 0 (the socket address). Too high a number lets clients forge their address |
 | `STATIC_DIR` | no (`apps/web/dist`) | built web app; the image sets its own path |
 | `MIGRATIONS_DIR` | no (`apps/server/drizzle`) | SQL migrations applied at start; the image copies the folder next to `dist/` or sets this |
 | `GIT_COMMIT`, `APP_VERSION` | no | reported by `/api/health`; set at image build |

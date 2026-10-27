@@ -1,14 +1,23 @@
 # @pp/server
 
 The Node server: Hono for `/api/*` and the built web app, Socket.IO for the room channel,
-both on one Node HTTP server, and Postgres through Drizzle; Better Auth (#10) plugs in
-next. It owns every round and, in production, serves the built web app. The database
+both on one Node HTTP server, Postgres through Drizzle, and guest identity through
+Better Auth (#10). It owns every round and, in production, serves the built web app. The database
 driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 
 ## Layout
 
 - `src/main.ts`: the only start path. Calls
-  `run(process.env, { ...processHooks(process), setup: setupDatabase })`.
+  `run(process.env, { ...processHooks(process), setup: setupServer })`.
+- `src/setup.ts`: `setupServer(config, logger, signal)`, the `setup` hook: `setupDatabase`,
+  then `createAuth` on its pool; returns `deps` with `checkDb`, `registerApi` (auth
+  routes) and `socketMiddleware` (the session), plus `database` and `auth`. W1 adds its
+  handlers here.
+- `src/auth.ts`: identity. `createAuth(config, db, logger)` builds Better Auth (Drizzle
+  adapter, anonymous plugin, options in `authOptions`); `registerAuthApi` mounts
+  `/api/auth/*` and `POST /api/me/name`; `sessionMiddleware(auth)` is the socket
+  handshake; `sessionUser(auth, headers)` resolves a cookie into a `SocketUser`
+  (`{ id, name, isAnonymous }`) or null, and rejects when the database fails.
 - `src/run.ts`: validates the config, installs the SIGTERM/SIGINT handler, runs the
   `setup` hook, listens and exits. A signal during `setup` aborts it through the
   `AbortSignal` it receives, logs one line and exits 0. A bad config, a failed `setup` or a failed listen logs
@@ -37,6 +46,8 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   and `runner` for the hooks that build on it. `openDatabase(url, logger, options)` and
   `migrateDatabase(...)` are the same steps for tests.
 - `src/db/schema.ts`: the tables `room` and `round_history` (architecture section 6).
+- `src/db/auth-schema.ts`: Better Auth's tables `user` (with `is_anonymous`), `session`,
+  `account` and `verification`, in the shape its Drizzle adapter checks at start.
 - `src/db/rooms.ts`: `createRoomStore(db)`: `insertRoom`, `loadRoom`, `commitRoom` (the
   compare-and-set, with the history row of a revealed round in the same transaction).
 - `src/db/runner.ts`: `createCommandRunner(store)`: `run(code, step)`, the per-room
@@ -93,6 +104,27 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   own). `src/test-support.ts` collects log lines in memory.
 - Import siblings with their `.ts` extension.
 
+## Identity
+
+- Who is behind a socket: `socket.data.user` (`SocketUser`: `id`, `name`, `isAnonymous`),
+  set by `sessionMiddleware` before `connection` fires. A socket without a valid session
+  never connects (`connect_error` `unauthenticated`). It is optional in `SocketData`
+  only because tests run servers without identity: a W1 handler answers
+  `unauthenticated` when it is missing. Over HTTP, `sessionUser(auth, c.req.raw.headers)`.
+- `user.name` is `""` until the person picks one; `POST /api/me/name` sets it through
+  the domain's `cleanName`. Never write `user.name` another way.
+- Client address for a rate limit: `clientIp(request, config.trustProxy)`, where
+  `trustProxy` counts the proxies (`TRUST_PROXY`). Better Auth gets the same address in
+  `x-pp-client-ip` (`CLIENT_IP_HEADER`), set by `registerAuthApi` after dropping the
+  client's copy; its own `X-Forwarded-For` reading is not used.
+- Each `createAuth` has its own rate-limit counters (`memoryRateLimit`): Better Auth's
+  memory store is shared by the whole process.
+- Never log a cookie, a session token or `config.betterAuthSecret`; Better Auth's log
+  calls go to pino with their message only. Tests use the fake secret of
+  `test-support.ts` and grep the logs for it and for every token they saw.
+- Better Auth's answers that are not codes (404 text, the 429 sentence, 5xx bodies)
+  become `not_found`, `rate_limited` and `internal` in `registerAuthApi`.
+
 ## Database
 
 - Change the schema in `src/db/schema.ts`, then generate a migration with a name that
@@ -125,7 +157,9 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 The `*.db.test.ts` files run against a real Postgres 17 (CI has a service). Each test
 file creates its own database and drops it at the end, so the user needs `CREATEDB`, and
 `connection-loss.db.test.ts` creates a role, so `CREATEROLE` too (the image's superuser
-has both). With Docker (Git Bash needs `MSYS_NO_PATHCONV=1` in front):
+has both). `auth.db.test.ts` covers identity: the cookie, same and different users, the
+name rules, the rate limit, refused and accepted sockets, a backend terminated mid
+sign-in, and logs free of secrets. With Docker (Git Bash needs `MSYS_NO_PATHCONV=1` in front):
 
 ```sh
 docker run --rm -d --name pp-postgres -p 55432:5432   -e POSTGRES_USER=pp -e POSTGRES_PASSWORD=pp -e POSTGRES_DB=pp_test postgres:17
