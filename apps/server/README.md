@@ -9,11 +9,12 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 
 - `src/main.ts`: the only start path. Calls
   `run(process.env, { ...processHooks(process), setup: setupServer })`.
-- `src/setup.ts`: `setupServer(config, logger, signal)`, the `setup` hook: `setupDatabase`,
+- `src/setup.ts`: `setupServer(config, logger, signal, tuning)`, the `setup` hook (`tuning`
+  is for tests only: `presenceGraceMs`): `setupDatabase`,
   then `createAuth` on its pool; returns `deps` with `checkDb`, `registerApi` (auth
   routes, then the room API), `socketMiddleware` (the session) and `handlers` (the room
-  sync), plus `database` and `auth`. `dispose` clears the deadline timeouts, then ends
-  the pool.
+  sync), plus `database` and `auth`. `dispose` clears the deadline and presence timers,
+  then ends the pool.
 - `src/auth.ts`: identity. `createAuth(config, db, logger)` builds Better Auth (Drizzle
   adapter, anonymous plugin, options in `authOptions`); `registerAuthApi` mounts
   `/api/auth/*` and `POST /api/me/name`; `sessionMiddleware(auth)` is the socket
@@ -162,16 +163,32 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   enter, cleared when the round changes or the last socket leaves. It runs `timeUp` (any
   actor, `SERVER_ACTOR`) through the runner: `apply` resolves the deadline, the
   compare-and-set makes two instances reveal once.
-- A server-only command (presence for #17, say) needs no new path: add it to the domain's
-  `Command` and `OPEN` set if non-participants may send it, leave it out of the protocol's
-  wire union (so `toDomainCommand` refuses it from a client), and run it like `timeUp`
-  in `room-sync.ts` (`runner.run` then `publish`).
+- Presence (#17, `sync/presence.ts` for the timers): connected while one of the person's
+  sockets has entered the room here (`isHere`). The last one leaving starts a grace
+  (`PRESENCE_GRACE_MS`, 15 s; `presenceGraceMs` in tests) for that person and room, unless
+  the room's last socket left (then `forgetIfEmpty` drops every timer of the room) or the
+  person is not a participant of the newest state seen (`members`). An entering socket
+  cancels its person's grace and, when the loaded state shows them away or not
+  connected, or a run is marking them away right now (`goingAway`), runs
+  `presence { connected: true }`. The grace's end runs `presence { connected: false }`.
+  Both steps decide inside the runner, at their turn in the room's queue, from the
+  sockets actually here (`runAsServer` takes a step that may return null). The room's
+  first socket on this instance (`watched`) starts a grace for everyone shown connected
+  without a socket here: the restart case. `close()` drops every timer and starts no new
+  one. Log lines: "presence: away" and "presence: back" with the room's id, never a name.
+- A server-only command needs no new path: add it to the domain's `Command` (and to
+  `ServerCommandType`, so the wire union leaves it out and `toDomainCommand` refuses it
+  from a client) and to `OPEN` if non-participants may send it, then run it with
+  `runAsServer` in `room-sync.ts`, as `timeUp` and `presence` are.
 - Logs hold the room code, the command type, versions and codes: never a payload, a card
   or a snapshot.
 - Tests: `room-sync.test.ts` on an in-memory store (`sync/test-support.ts`:
   `memoryRoomStore` with commit fates, `fakeIdentity`, a `testClient` that keeps raw
   frames); `room-sync.db.test.ts` with real guests on Postgres (join latency, the burst,
   secrecy on raw frames with `@pp/protocol/leak-scan`, two instances);
+  `presence.db.test.ts` (the grace, a reload inside it, coming back, the round settled by
+  someone going away, the restart case, presence frames through the leak scan, and no
+  name or code in the logs); `presence.test.ts` (the timers, fake clock);
   `restart.db.test.ts` runs the built `dist/main.mjs` (build it first; CI does).
 
 ## Identity

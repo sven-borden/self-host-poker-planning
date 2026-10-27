@@ -132,8 +132,8 @@ Every `apply` runs three steps:
    `"timer"`, `revealedAt = deadlineAt`) when `timer.revealAtEnd`, otherwise clear the
    deadline and emit `timeUp`. The deadline is cleared either way, so this happens once,
    whoever arrives first, and it stands even when the command is then refused.
-2. **Run the command.** Every command except `join` and `timeUp` needs the actor to be a
-   participant (`not_participant`); PO-only commands answer `not_owner`.
+2. **Run the command.** Every command except `join`, `timeUp` and `presence` needs the
+   actor to be a participant (`not_participant`); PO-only commands answer `not_owner`.
 3. **Settle** (on success, while Voting): drop the votes of people who are no longer
    voters, each with a `voteRetracted { who }` cause, then reveal (by `"everyoneVoted"`) when `revealWhenAllVoted` is on, the
    eligible voters are not empty and all of them have voted. Eligible: role `voter`, not
@@ -142,11 +142,14 @@ Every `apply` runs three steps:
    `timeUp` succeeds as a no-op command, so it runs this settle step too: the server's
    own timeout settles the round like any other command.
 
-TODO (presence, #17): `awaySince` changes the eligible voters, so presence must change
-it through `apply` with a server-only command (for example
-`presence { who, connected, awaySince }`, refused from a client), never by writing the
-state directly. Otherwise someone going away after everyone else voted leaves the round
-in Voting until the next command arrives. Not built in #3.
+Presence (#17): `awaySince` changes the eligible voters, so presence changes it through
+`apply` with the server-only command `presence { who, connected }`, never by writing the
+state. `connected: false` sets `awaySince` to `now` and `connected` to false (cause
+`away { who }`); `connected: true` clears `awaySince` and sets `connected` (cause
+`back { who }`); when the state already says so, nothing changes. Like every success it
+runs the settle step, so someone going away after everyone else voted reveals the round.
+The wire protocol has no schema for it (`ClientCommand` in the domain excludes it), so a
+client that sends one gets `bad_payload`; the server's timers send it (section 9).
 
 | Command | Who | Rule (error codes) |
 |---|---|---|
@@ -168,6 +171,7 @@ in Voting until the next command arrives. Not built in #3.
 | `updateSettings {patch}` | PO | shallow merge, `timer` one level deep; unknown keys and bad values give `bad_settings` or the custom-deck code; turning `observersCount` on past 16 gives `room_full`; a deck or specials change during Voting restarts the round (votes cleared, same subject and number); anonymity applies from the next round; a running timer ignores `timer.seconds` |
 | `transferOwner {to}` | PO | target present (participant, not away) and not the PO (`target_not_present`) |
 | `claimOwner` | participant | not the PO (`already_owner`); only when the PO is not in the room or away for 120 s (`owner_present`) |
+| `presence {who, connected}` | the server only (refused on the wire) | `unknown_participant`; away sets `awaySince = now`, back clears it; no change when the state already says so |
 
 ## 5. Sync protocol
 
@@ -175,7 +179,8 @@ Socket.IO with typed event maps from `packages/protocol` (`ClientToServerEvents`
 `ServerToClientEvents`). The server validates every inbound payload with the protocol's
 zod schemas; the web checks the server's messages by shape (`isSnapshot`, `isEnterAck`,
 `isCmdAck`), not with zod, which would cost the room route about 27 kB gzipped.
-`PROTOCOL_VERSION` is 2 (2 added the `busy` ack code, #15; 1 was the first deploy).
+`PROTOCOL_VERSION` is 3 (3 added the `away` and `back` causes, #17; 2 the `busy` ack
+code, #15; 1 was the first deploy).
 
 | Event | Direction | Payload | Ack |
 |---|---|---|---|
@@ -505,9 +510,25 @@ password, no social provider before W5.
   clock offset and count down locally. The server also sets a timeout for the room's
   deadline (one per room per instance with sockets in it, section 5); whichever fires
   first (timeout, `timeUp` ping, any command) reveals once.
-- Presence: a socket connect marks the participant connected. After the last socket of
-  a user closes, a 15 s grace period passes before `awaySince` is set, so reloads and
-  network blips do not flicker. PO claim opens after 120 s away.
+- Presence (#17, `apps/server/src/sync/room-sync.ts` and `sync/presence.ts`): a person
+  is connected while at least one of their sockets has entered the room on this
+  instance. When the last one leaves (closed, another room entered, session gone), a
+  grace timer of 15 s (`PRESENCE_GRACE_MS`) starts for that person and room; a socket of
+  theirs that enters again cancels it, so reloads and network blips change nothing and
+  store nothing. When it fires, the server runs `presence { who, connected: false }`
+  through the runner and broadcasts; an entering socket of a person the room shows as
+  away runs `presence { who, connected: true }`. Each run decides at its turn in the
+  room's queue, from the sockets actually there, so a return during a run is not lost.
+  PO claim opens after 120 s away.
+- After a restart the timers are gone: the first socket of a room on an instance starts
+  a grace for everyone the room shows as connected who has no socket there. A room's
+  timers are dropped when its last socket leaves the instance, and all of them on
+  shutdown; the people still shown connected then get their grace from the next first
+  socket.
+- Two instances (#39): each judges presence from its own sockets only, so a person whose
+  sockets sit on the other instance can be marked away by this one's first-socket timers,
+  until they enter again. The adapter in #39 must share presence (or route a room's
+  sockets to one instance) before the app runs on two.
 
 ## 10. Internationalisation
 

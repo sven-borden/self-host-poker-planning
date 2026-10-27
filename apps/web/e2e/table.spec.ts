@@ -62,12 +62,13 @@ async function measure(page: Page): Promise<Measured> {
       avatars: seats.map((seat) => {
         const part = seat.querySelector('[data-seat-part="avatar"]');
         const avatar = seat.querySelector("[data-avatar]");
-        const badge = seat.querySelector("[data-badge]");
+        const badges = [...seat.querySelectorAll("[data-badge]")];
         if (!part || !avatar) {
           throw new Error("A seat without an avatar.");
         }
-        // The avatar's 2 px ring, and the badge's own box.
-        return { part: box(part), paint: [box(avatar, 2), ...(badge ? [box(badge)] : [])] };
+        // The avatar's 2 px ring (4 px with the viewer's outline), and each badge's box.
+        const ring = seat.hasAttribute("data-you") ? 4 : 2;
+        return { part: box(part), paint: [box(avatar, ring), ...badges.map((b) => box(b))] };
       }),
       slots: [...stage.querySelectorAll("[data-slot-card] > *")].map((slot) => box(slot)),
     };
@@ -139,6 +140,32 @@ for (const theme of THEMES) {
       }
     });
   }
+
+  // #17: the viewer, the PO, some away and some voted, from 1 to 16 people (AC 2).
+  test.describe(`${theme} theme with presence`, () => {
+    test.use({ colorScheme: theme });
+
+    for (const width of [360, 1440]) {
+      for (const count of [1, 2, 5, 8, 12, 16]) {
+        test(`${count} people, some away and some voted, fit at ${width} px`, async ({ page }) => {
+          await page.setViewportSize({ width, height: 900 });
+          await open(page, `n=${count}&state=voting&observers=2&away=1`);
+          const measured = await measure(page);
+          expect(measured.layout.seats).toHaveLength(count);
+          expect(problems(measured)).toEqual([]);
+          const away = Math.floor(count / 4);
+          await expect(page.locator("[data-seat][data-away]")).toHaveCount(away);
+          await expect(page.locator('[data-seat] [data-badge="away"]')).toHaveCount(away);
+          await expect(page.locator('[data-seat] [data-badge="owner"]')).toHaveCount(1);
+          await expect(page.locator("[data-seat][data-you]")).toHaveCount(1);
+          await page.screenshot({
+            path: `${SHOTS}${theme}-${width}-n${count}-presence.png`,
+            fullPage: true,
+          });
+        });
+      }
+    }
+  });
 
   test.describe(`${theme} theme, revealed, at device pixel ratio 2`, () => {
     test.use({ colorScheme: theme, deviceScaleFactor: 2 });

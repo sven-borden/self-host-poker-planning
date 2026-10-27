@@ -99,6 +99,19 @@ Positions are percentages of the stage, so one formula serves every width:
   "You" panel renames, switches between voter and observer, and leaves the room.
 - With more than 10 people on a phone, seats show initials only; names on tap. A name
   cut off at its width opens the same way.
+- Seat states (#17). Badges sit on the avatar, never under the name (a chip there breaks
+  the geometry), each a shape in a disc overhanging by 4 px, inside the seat's halo:
+  the check (voted, `--good`) bottom right, a crown (the PO, `--brass-soft` with
+  `--brass-ink`) top left, a moon (away, `--surface-2` with `--ink-2`) top right. Away:
+  the avatar fades to 45 % and turns grey, and the name turns `--ink-2` (still 4.5:1);
+  the seat's label says "away" and its popover "Away". The viewer: a 2 px `--spruce`
+  outline 2 px outside the avatar's ring (an outline, so forced colours keep it) and the
+  name in `--spruce`. The observers' row writes "Product owner" and "Away" after the
+  name. A voter's face-down card stays in the slot while they are away.
+- Avatars (#17): initials and colour are unique at the table, given in join order: a
+  person keeps the colour drawn from their id when it is free, else takes the least used
+  one after it that nobody with the same initials has; up to 8 people get 8 different
+  colours, and past 8 twins the second letter becomes a number ("A2").
 - The table picks its variant from the width its container gives it, not from the
   viewport, so any page can host it.
 - #13 proves the geometry for 1–16 people in every room from 328 px (a 360 px phone)
@@ -148,6 +161,9 @@ interruptible and disabled under `prefers-reduced-motion` (120 ms cross-fades in
 - Text contrast at least 4.5:1 in both themes; focus ring 2 px `--brass`.
 - Full keyboard play: arrow keys move through the hand, Enter votes, `R` reveals for the PO.
 - Live region announces "Ana voted", "Cards revealed: average 5", never a hidden value.
+  The table's region (#17) says joins, leaves, away and back, and others' first votes; a
+  burst becomes one sentence per kind ("3 people voted."), after 600 ms of quiet or
+  1.5 s at most, and the viewer's own actions are never announced there.
 - Touch targets at least 44 px; no hover-only controls.
 
 ## Copy

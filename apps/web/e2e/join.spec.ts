@@ -1,7 +1,18 @@
-import { fileURLToPath } from "node:url";
-import { type Browser, type BrowserContext, expect, type Page, test } from "@playwright/test";
-import { io, type Socket } from "socket.io-client";
-import { PROTOCOL_VERSION } from "../../../packages/protocol/src/version.ts";
+import { expect, test } from "@playwright/test";
+import {
+  createRoom,
+  type Guest,
+  join,
+  newGuest,
+  newPerson,
+  observerRow,
+  ownAddress,
+  ROOM_PATH,
+  SHOTS,
+  sameUser,
+  seatNames,
+  shoot,
+} from "./support.ts";
 
 // Joining a room (#16) in real browsers, against the real server and Postgres: people
 // join with a name as voter or observer and see each other seated, the 17th person sees
@@ -18,122 +29,9 @@ test.beforeAll(() => {
   if (!process.env.DATABASE_URL) throw new Error("CI must run the join tests: set DATABASE_URL");
 });
 
-const SHOTS = fileURLToPath(new URL("../tmp/screenshots/", import.meta.url));
-const ROOM_PATH = /\/r\/([1-9A-HJ-NP-Za-km-z]{10})$/;
-const SESSION_COOKIE = "pp.session_token";
-
-type Ack = { ok: true; version?: number; snapshot?: unknown } | { ok: false; code: string };
-
-/** A person in the room without a browser: a guest's session and one socket. */
-interface Guest {
-  cookie: string;
-  socket: Socket;
-  enter: (code: string) => Promise<Ack>;
-  cmd: (type: string, payload?: Record<string, unknown>) => Promise<Ack>;
-  close: () => void;
-}
-
-let commandIds = 0;
-let addresses = 0;
-
-/**
- * A client address of its own, as an X-Forwarded-For header: the e2e server trusts one
- * proxy (playwright.config.ts), so each person here counts alone against the server's
- * per-address limits (20 rooms in 10 minutes, 60 sign-ins a minute), which the whole
- * suite from one machine would otherwise share.
- */
-function ownAddress(): Record<string, string> {
-  const n = ++addresses;
-  const worker = test.info().workerIndex % 256;
-  return { "x-forwarded-for": `10.${worker}.${(n >> 8) & 255}.${n & 255}` };
-}
-
 test.beforeEach(async ({ page }) => {
   await page.setExtraHTTPHeaders(ownAddress());
 });
-
-/** Opens a socket with `cookie`, as the web app does, over the preview's proxy. */
-async function connectGuest(base: string, cookie: string): Promise<Guest> {
-  const socket = io(base, {
-    transports: ["websocket"],
-    forceNew: true,
-    reconnection: false,
-    extraHeaders: { cookie },
-  });
-  await new Promise<void>((resolve, reject) => {
-    socket.once("connect", () => resolve());
-    socket.once("connect_error", reject);
-  });
-  const ask = (event: string, body: unknown) =>
-    socket.timeout(10_000).emitWithAck(event as never, body as never) as Promise<Ack>;
-  return {
-    cookie,
-    socket,
-    enter: (code) => ask("enter", { code, protocol: PROTOCOL_VERSION }),
-    cmd: (type, payload) => ask("cmd", { id: `e2e-${++commandIds}`, type, payload }),
-    close: () => socket.disconnect(),
-  };
-}
-
-/** A new guest (sign-in as the web app does it), connected. */
-async function newGuest(base: string): Promise<Guest> {
-  const response = await fetch(`${base}/api/auth/sign-in/anonymous`, {
-    method: "POST",
-    headers: { origin: base, "content-type": "application/json", ...ownAddress() },
-    body: "{}",
-  });
-  expect(response.status, "guest sign-in").toBe(200);
-  const cookie = response.headers
-    .getSetCookie()
-    .find((line) => line.startsWith(`${SESSION_COOKIE}=`))
-    ?.split(";")[0];
-  if (!cookie) throw new Error("sign-in gave no session cookie");
-  return connectGuest(base, cookie);
-}
-
-/** The browser's own guest, as a socket: the same user as the page. */
-async function sameUser(base: string, context: BrowserContext): Promise<Guest> {
-  const session = (await context.cookies()).find((c) => c.name === SESSION_COOKIE);
-  if (!session) throw new Error("the browser has no session yet");
-  return connectGuest(base, `${SESSION_COOKIE}=${session.value}`);
-}
-
-async function createRoom(page: Page): Promise<string> {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Create the room" }).click();
-  await expect(page).toHaveURL(ROOM_PATH);
-  return ROOM_PATH.exec(page.url())?.[1] ?? "";
-}
-
-async function join(page: Page, name: string, role: "Voter" | "Observer" = "Voter") {
-  await page.getByRole("textbox", { name: "Your name" }).fill(name);
-  await page.getByRole("radio", { name: new RegExp(`^${role}`) }).check();
-  await page.getByRole("button", { name: "Join the room" }).click();
-  await expect(page.getByRole("heading", { name: "You", exact: true })).toBeVisible();
-}
-
-const seats = (page: Page) => page.getByRole("list", { name: "People at the table" });
-const seatNames = (page: Page) => seats(page).locator("[data-seat-part=name] bdi");
-const observerRow = (page: Page) => page.getByRole("list", { name: "Observers" });
-
-async function newPerson(browser: Browser): Promise<{ context: BrowserContext; page: Page }> {
-  const context = await browser.newContext({ locale: "en-US", extraHTTPHeaders: ownAddress() });
-  return { context, page: await context.newPage() };
-}
-
-/** Screenshots at 360 and 1440 px, light and dark (the theme follows the system). */
-async function shoot(page: Page, name: string) {
-  for (const scheme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: scheme });
-    for (const width of [360, 1440]) {
-      await page.setViewportSize({ width, height: 900 });
-      // The table measures its container; let it settle at the new width.
-      await page.waitForTimeout(150);
-      await page.screenshot({ path: `${SHOTS}${name}-${width}-${scheme}.png`, fullPage: true });
-    }
-  }
-  await page.emulateMedia({ colorScheme: "light" });
-}
 
 test("three people join one room and each sees the other two seated", async ({
   page,

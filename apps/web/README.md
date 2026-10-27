@@ -59,15 +59,28 @@ server sends and never decides the outcome of a round.
     server answered `room_full` at the current version. When observers do not count,
     `room_full` for a voter is an inline message instead (the observer row is still open).
   - `you` is set: `seated.tsx`, a lazy chunk prefetched when `RoomView` mounts: the table
-    (`TableStage` with `tableData(room)`) and `YouControls` (`you-controls.tsx`: rename,
-    voter/observer switch, leave).
+    (`TableStage` with `tableData(room)`), the live region (`LiveAnnouncer`) and
+    `YouControls` (`you-controls.tsx`: rename, voter/observer switch, leave). The table's
+    centre (`TableStage` children) is still empty: #18's status goes there.
   `save-name.ts` (`saveName`) saves the name for the next room before a join or rename:
   skipped when it is already the saved one (`/api/me/name` allows 10 a minute), and a
   failed save never stops the command, which carries the name typed. The copy lives
   under `seat.*` (the landing page's "Join with a code" card has `join.*`) and `you.*`.
-  `table-data.ts` maps the snapshot to the table: voters in join order, rotated so the
-  viewer sits at the bottom, observers in the row; `toTablePerson` and `toObserver` are
-  where presence, the voted badge, the PO badge and the viewer highlight go (#17).
+  `table-data.ts` maps the snapshot to the table (#17): voters in join order, rotated so
+  the viewer sits at the bottom, observers in the row. `seatStatus` gives `thinking` or
+  `voted` while Voting (from `round.voted` only: no card exists before reveal), the card
+  after a named reveal (`revealed`, which #19 flips) and `voted` after an anonymous one;
+  `personFlags` gives `away`, `owner`, `you` and the `look` from `avatarLooks` (table/
+  avatar.tsx), computed over all participants in join order so every viewer sees the same
+  initials and colours and no two people look alike. `isRoomFull` lives in
+  `room-full.ts`, so the room route does not pull the table's code. The live region:
+  `announcements.ts` turns a snapshot's causes into events (joins, leaves and kicks, away,
+  back, first votes of others; never the viewer's own, never a card), merges a batch
+  (repeats dropped, away-then-back cancelled) and words it ("Ana voted.", "3 people
+  voted."); `live-announcer.tsx` follows every snapshot the store keeps
+  (`useRoomStore.subscribe`, not renders) and speaks after 600 ms of quiet or 1.5 s at
+  most, in `[data-table-live]`, a new element per announcement. Copy: `table.*` and
+  `live.*`.
   `failure.ts` turns refusal codes into copy. Focus: after joining it moves to the "You"
   heading, after leaving or when a seat frees up to the name field (a free seat is also
   announced in a polite live region, `[data-room-notice]`); each request is cleared once
