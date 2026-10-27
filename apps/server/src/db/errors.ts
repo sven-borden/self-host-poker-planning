@@ -1,5 +1,5 @@
 /**
- * Driver errors never reach a log line or a caller as they are. A postgres.js error can
+ * Driver errors never reach a log line or a caller as they are. A `pg` error can
  * carry connection details, and drizzle's `DrizzleQueryError` puts the query parameters in
  * its message: a room's whole state (vote values before reveal) or a password hash. Every
  * database call goes through `guard`, which rethrows a `DatabaseError` holding the step

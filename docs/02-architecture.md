@@ -227,7 +227,8 @@ Socket.IO with typed event maps from `packages/protocol` (`ClientToServerEvents`
 
 ## 6. Persistence
 
-Drizzle ORM (`drizzle-orm`, driver `postgres`) on PostgreSQL 17. The schema is
+Drizzle ORM (`drizzle-orm`, driver `node-postgres`, the `pg` package) on PostgreSQL 17.
+The server, and Better Auth on the same `db` (#10), use one `pg` pool. The schema is
 `apps/server/src/db/schema.ts`; drizzle-kit generates the SQL migrations into
 `apps/server/drizzle/` (`pnpm --filter @pp/server db:generate --name <what_it_does>`),
 and they are committed.
@@ -244,13 +245,19 @@ no separate `settings` column. The password hash stays in its own column and nev
 enters `live`, so it can never reach a snapshot. Timestamps are `timestamptz`.
 
 **Start** (`apps/server/src/database.ts`, the `setup` hook of `run()`): wait for
-Postgres, retrying with backoff (0.5 s doubling to 5 s) for up to 30 s with one log line
-per failed attempt, or failing at once when Postgres refuses the login; then apply the
-migrations on a single connection holding the session advisory lock `7000007`, so
-instances starting together migrate one after the other; then open the pool (10
+Postgres, retrying with backoff (0.5 s doubling to 5 s) for up to 30 s in all, each
+attempt's own time included (one attempt takes at most 10 s, and `pg` adds no backoff of
+its own), with one log line per failed attempt, or failing at once when Postgres refuses
+the login. The connection that answers becomes the one migrating session
+(`application_name` `poker-planning-migrate`, `lock_timeout` 10 s): it takes the session
+advisory lock `7000007` with `pg_try_advisory_lock` every 0.5 s, logging "waiting for
+another instance's migrations" every 5 s and giving up after 60 s, so instances starting
+together migrate one after the other and a killed instance's session never sits blocked
+holding the lock; it applies the migrations and ends. Then the pool opens (10
 connections). drizzle applies the pending migrations in one transaction, so a crash or a
-SIGTERM in the middle rolls them back and the lock dies with the connection; restarting
-applies nothing. The server listens only after all this, and `dispose` ends the pool on
+signal in the middle rolls them back and the lock dies with the session; restarting
+applies nothing. A `SIGTERM` or `SIGINT` during the start aborts it (the session ends),
+logs one line and exits 0. The server listens only after all this, and `dispose` ends the pool on
 shutdown. Migrations are additive and safe on a live database mid-deploy: a new column
 is nullable or has a default, nothing is renamed or dropped while an older instance may
 still run. drizzle wraps them in a transaction, so `CREATE INDEX CONCURRENTLY` is not
@@ -273,6 +280,18 @@ changedAfterReveal? }] }`, people still in the room by joining order, then those
 left by id with `name: null` (the room no longer knows it), or `{ kind: "anonymous",
 cards }`, the cards alone in display order (expanded from `stats.distribution`): no user
 id, no name, no order that follows the people.
+
+**A lost connection** (a Postgres restart or failover terminates the backends): every
+`pg` client, pooled or not, has an `error` handler, since `pg` emits that event even on a
+client checked out inside a transaction, and an unhandled one would crash the process.
+The call in flight rejects with a `DatabaseError`; a transaction is rolled back by
+Postgres, so the room and its history row land together or not at all; the pool drops
+the broken client and opens a new one for the next command. An idle client's loss logs
+one line with the code. Tests: `db/connection-loss.db.test.ts`. A rejected command may
+still have landed (the connection dropped after Postgres committed, before the reply):
+the caller reloads and broadcasts, it never applies the command again blindly (#15).
+Use a real Postgres session (port 5432), not a transaction-mode pooler such as Azure's
+PgBouncer: the session advisory lock needs one (#38).
 
 **Errors**: every database call goes through `guard`, which rethrows a `DatabaseError`
 holding the step and the SQLSTATE or Node error code, without a message or a cause.
@@ -347,9 +366,10 @@ language, and an unknown code gets a generic one.
   404 and 500.
 - A bad config stops the server with one log line naming the variables (never their
   values) and exit code 1; so do a failed startup step (the database unreachable for
-  30 s, a refused login or a failed migration, all before the server listens; section 6)
-  and an uncaught exception or unhandled rejection. `SIGTERM`/`SIGINT`
-  stop accepting connections, drop every socket, wait for open requests (cut after 8 s),
+  30 s, a refused login, the migration lock held elsewhere for 60 s or a failed migration,
+  all before the server listens; section 6) and an uncaught exception or unhandled
+  rejection. `SIGTERM`/`SIGINT` during the start abort it and exit 0 with one line; later
+  they stop accepting connections, drop every socket, wait for open requests (cut after 8 s),
   release the database pool and exit 0 within 10 s, one log line per phase.
 - Optional Sentry (`SENTRY_DSN`) and Umami (`UMAMI_URL`, `UMAMI_WEBSITE_ID`); nothing
   external loads when they are unset.
@@ -365,7 +385,7 @@ language, and an unknown code gets a generic one.
 
 | Env var | Required | Purpose |
 |---|---|---|
-| `DATABASE_URL` | yes | Postgres connection |
+| `DATABASE_URL` | yes | Postgres connection, a real session (port 5432, no transaction-mode pooler); `?sslmode=` has libpq's meaning (`require` encrypts without checking the certificate, `verify-full` checks it) |
 | `BETTER_AUTH_SECRET` | yes | session signing |
 | `BASE_URL` | yes | public origin (no path, no credentials): cookies, OAuth callbacks, the only `Origin` Socket.IO accepts from a browser; `http://localhost:5173` for `pnpm dev` |
 | `PORT` | no (3000) | HTTP and Socket.IO port |

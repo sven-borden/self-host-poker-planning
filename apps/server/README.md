@@ -2,16 +2,18 @@
 
 The Node server: Hono for `/api/*` and the built web app, Socket.IO for the room channel,
 both on one Node HTTP server, and Postgres through Drizzle; Better Auth (#10) plugs in
-next. It owns every round and, in production, serves the built web app.
+next. It owns every round and, in production, serves the built web app. The database
+driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 
 ## Layout
 
 - `src/main.ts`: the only start path. Calls
   `run(process.env, { ...processHooks(process), setup: setupDatabase })`.
-- `src/run.ts`: validates the config, runs the `setup` hook, listens, installs the
-  SIGTERM/SIGINT handler and exits. A bad config, a failed `setup` or a failed listen logs
+- `src/run.ts`: validates the config, installs the SIGTERM/SIGINT handler, runs the
+  `setup` hook, listens and exits. A signal during `setup` aborts it through the
+  `AbortSignal` it receives, logs one line and exits 0. A bad config, a failed `setup` or a failed listen logs
   one fatal line and exits 1; so does an uncaught exception or unhandled rejection
-  (`processHooks(process)` wires them). `setup(config, logger)` resolves with
+  (`processHooks(process)` wires them). `setup(config, logger, signal)` resolves with
   `{ deps, dispose? }`: `deps` reach `createServer` (#7 `checkDb`, #10 `registerApi` and
   `socketMiddleware`, W1 `handlers`); `dispose` (#7: end the pool) runs after the server
   has closed and before exit, inside the 10 s limit.
@@ -27,8 +29,10 @@ next. It owns every round and, in production, serves the built web app.
 - `src/client-ip.ts`: `clientIp(request, config.trustProxy)`, the client address for the
   rate limits (architecture section 8). Takes a Node request (`c.env.incoming` in Hono,
   `socket.request` in Socket.IO). Never logged.
-- `src/database.ts`: `setupDatabase(config, logger)`, the `setup` hook: waits for
-  Postgres (30 s), migrates under an advisory lock, opens the pool and returns
+- `src/database.ts`: `setupDatabase(config, logger, signal)`, the `setup` hook: waits
+  for Postgres (30 s in all), takes the migration lock with `pg_try_advisory_lock`
+  (60 s at most, a log line every 5 s), migrates on that one session
+  (`lock_timeout` 10 s), opens the `pg` pool and returns
   `{ deps: { checkDb }, dispose, database }`. `database` holds `db` (Drizzle), `store`
   and `runner` for the hooks that build on it. `openDatabase(url, logger, options)` and
   `migrateDatabase(...)` are the same steps for tests.
@@ -104,12 +108,24 @@ next. It owns every round and, in production, serves the built web app.
   `runner.run(code, step)` (or `store.commitRoom` with the version it loaded). Never
   write `live` directly, never put the password hash in it.
 - Only `guard`ed calls touch the database: log `DatabaseError`s, never a driver error.
+- Every `pg` client needs an `error` listener, including one checked out of the pool for
+  a transaction: `pg` emits `error` when its backend dies, and an unhandled one crashes
+  the process. The pool in `openDatabase` adds one to every client it opens; a client
+  made elsewhere (a test, a script) adds its own. `db/connection-loss.db.test.ts` checks
+  it.
+- drizzle orders migrations by the journal's `when`, not by hash: it applies an entry
+  only when its `when` is newer than the newest applied one. After merging main into a
+  branch that adds a migration, delete your migration (the SQL file, its snapshot and
+  its journal entry) and generate it again, so it comes last with the newest `when`.
+  Never merge `_journal.json` by hand. `db/journal.test.ts` fails on a `when` that does
+  not increase with `idx`, or on an entry without its SQL file.
 
 ### Local Postgres for `pnpm test:db`
 
 The `*.db.test.ts` files run against a real Postgres 17 (CI has a service). Each test
-file creates its own database and drops it at the end, so the user needs `CREATEDB` (the
-image's superuser has it). With Docker (Git Bash needs `MSYS_NO_PATHCONV=1` in front):
+file creates its own database and drops it at the end, so the user needs `CREATEDB`, and
+`connection-loss.db.test.ts` creates a role, so `CREATEROLE` too (the image's superuser
+has both). With Docker (Git Bash needs `MSYS_NO_PATHCONV=1` in front):
 
 ```sh
 docker run --rm -d --name pp-postgres -p 55432:5432   -e POSTGRES_USER=pp -e POSTGRES_PASSWORD=pp -e POSTGRES_DB=pp_test postgres:17

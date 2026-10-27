@@ -41,6 +41,15 @@ export interface CommandRunner {
    * the clock itself, for example `(state) => apply(state, command, { actor, now: Date.now() })`.
    * A database failure rejects with a `DatabaseError`; a throwing step rejects with its
    * error. Neither blocks the queue.
+   *
+   * A retry reads the clock again: the step's own `now` and the history row's
+   * `finished_at` are those of the retry, so a deadline is judged at the time of the
+   * attempt that lands. That is on purpose: the state it runs on is that of the retry too.
+   *
+   * A rejection does not prove that nothing was stored: when the connection drops after
+   * Postgres committed but before the reply arrived, the new version is stored and `run`
+   * still rejects. Callers reload and broadcast on a `DatabaseError`; they never apply the
+   * command again blindly.
    */
   run<R extends StepResult>(code: string, step: (state: RoomState) => R): Promise<RunOutcome<R>>;
   /** Rooms with a queued or running command; for tests and metrics. */
