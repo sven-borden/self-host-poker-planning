@@ -49,7 +49,9 @@ function Owner({ round, onFailure = () => {} }: { round: RoundView; onFailure?: 
 }
 
 let reduced = false;
-const animate = vi.fn(() => ({ cancel: vi.fn() }));
+const animate = vi.fn((_frames: Keyframe[], _options?: KeyframeAnimationOptions) => ({
+  cancel: vi.fn(),
+}));
 let observed: (() => void) | null = null;
 
 beforeEach(() => {
@@ -114,10 +116,10 @@ describe("the countdown (#27)", () => {
   it("drains the ring smoothly to the deadline, linearly", () => {
     render(<Everyone round={running(45_000)} />);
     const drain = animate.mock.calls.find(
-      ([frames]) => "strokeDashoffset" in (frames as object[])[0],
+      ([frames]) => frames[0] !== undefined && "strokeDashoffset" in frames[0],
     );
     expect(drain).toBeDefined();
-    const [frames, options] = drain as unknown as [object[], KeyframeAnimationOptions];
+    const [frames, options] = drain ?? [];
     expect(frames).toEqual([{ strokeDashoffset: 25 }, { strokeDashoffset: 100 }]);
     expect(options).toMatchObject({ duration: 45_000, easing: "linear", fill: "forwards" });
   });
@@ -139,7 +141,7 @@ describe("the countdown (#27)", () => {
     expect(text()).toBe("0:10");
     expect(document.querySelector("[data-timer]")?.getAttribute("data-timer")).toBe("warn");
     expect(ring()?.classList.contains("pp-timer-warn")).toBe(true);
-    const pulse = animate.mock.calls.find(([frames]) => "transform" in (frames as object[])[0]);
+    const pulse = animate.mock.calls.find(([frames]) => frames[0] && "transform" in frames[0]);
     expect(pulse?.[1]).toMatchObject({ duration: 1_000, iterations: Number.POSITIVE_INFINITY });
     expect(useRoomStore.getState().said.text).toBe("10 seconds left.");
     const id = useRoomStore.getState().said.id;

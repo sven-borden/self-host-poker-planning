@@ -16,7 +16,7 @@ const choiceOf = (seconds: number | null): Choice =>
       ? (seconds as Choice)
       : "custom";
 
-/** A segment of the length picker: a native radio under a 44 px label. */
+/** A segment of the length picker: a 44 px label with its native radio laid over it. */
 const SEGMENT =
   "relative inline-flex h-11 min-w-16 flex-1 cursor-pointer items-center justify-center rounded-md border border-line bg-surface px-2 text-sm font-medium tabular-nums has-checked:border-spruce has-checked:bg-spruce has-checked:text-on-spruce has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-brass has-aria-disabled:opacity-60 forced-colors:has-checked:border-[Highlight] forced-colors:has-checked:outline-2 forced-colors:has-checked:outline-[Highlight]";
 
@@ -91,7 +91,8 @@ export function TimerSetting({
               checked={shown === choice.value}
               aria-disabled={pending || undefined}
               onChange={() => pick(choice.value)}
-              className="sr-only"
+              // The whole segment is the radio: a click or a tap lands on it.
+              className="absolute inset-0 m-0 cursor-pointer appearance-none rounded-md opacity-0"
             />
             {choice.label}
           </label>
