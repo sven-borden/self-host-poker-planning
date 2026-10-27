@@ -186,6 +186,74 @@ describe("the settings panel", () => {
     expect(within(row(dialog, "revealNames")).queryByText("Saving…")).toBeNull();
   });
 
+  it("sets the timer for each round: a preset, a custom length, and the reveal at its end (#27)", async () => {
+    mocks.sendCommand.mockResolvedValue({ ok: true, version: 2 });
+    render(<RoomSettingsButton />);
+    show(newRoom(), PO);
+    const dialog = await openPanel("Room settings");
+    const timer = row(dialog, "timer");
+    expect(timer.getAttribute("data-layout")).toBe("block");
+    expect(within(timer).getByText("Timer for each round")).toBeTruthy();
+    // The hint says a change applies from the next round, as the domain does.
+    expect(timer.textContent).toContain("A change applies from the next round.");
+    const lengths = within(timer)
+      .getAllByRole("radio")
+      .map((radio) => radio.closest("label")?.textContent);
+    expect(lengths).toEqual(["Off", "30\u{a0}s", "60\u{a0}s", "2\u{a0}min", "Custom"]);
+    await act(async () =>
+      fireEvent.click(within(timer).getByRole("radio", { name: "2\u{a0}min" })),
+    );
+    expect(mocks.sendCommand).toHaveBeenLastCalledWith({
+      type: "updateSettings",
+      payload: { patch: { timer: { seconds: 120 } } },
+    });
+
+    // Custom: nothing is sent until a valid length is set.
+    const calls = mocks.sendCommand.mock.calls.length;
+    fireEvent.click(within(timer).getByRole("radio", { name: "Custom" }));
+    const field = within(timer).getByRole("textbox", { name: "Custom length" });
+    fireEvent.change(field, { target: { value: "61:00" } });
+    fireEvent.click(within(timer).getByRole("button", { name: "Set" }));
+    expect(within(timer).getByRole("alert").textContent).toContain("5 seconds to 60 minutes");
+    expect(mocks.sendCommand).toHaveBeenCalledTimes(calls);
+    fireEvent.change(field, { target: { value: "2:30" } });
+    await act(async () => fireEvent.click(within(timer).getByRole("button", { name: "Set" })));
+    expect(mocks.sendCommand).toHaveBeenLastCalledWith({
+      type: "updateSettings",
+      payload: { patch: { timer: { seconds: 150 } } },
+    });
+
+    const atEnd = within(timer).getByRole("switch", { name: "Reveal when the timer ends" });
+    expect(atEnd.getAttribute("aria-checked")).toBe("true");
+    await act(async () => fireEvent.click(atEnd));
+    expect(mocks.sendCommand).toHaveBeenLastCalledWith({
+      type: "updateSettings",
+      payload: { patch: { timer: { revealAtEnd: false } } },
+    });
+  });
+
+  it("shows a custom length as a custom choice, and the timer in words to everyone else (#27)", async () => {
+    render(<RoomSettingsButton />);
+    const custom = {
+      ...newRoom(),
+      settings: { ...DEFAULT_SETTINGS, timer: { seconds: 90, revealAtEnd: false } },
+    };
+    show(custom, PO);
+    const dialog = await openPanel("Room settings");
+    expect(within(row(dialog, "timer")).getByRole("radio", { name: "Custom" })).toHaveProperty(
+      "checked",
+      true,
+    );
+    expect(
+      within(row(dialog, "timer")).getByRole("textbox", { name: "Custom length" }),
+    ).toHaveProperty("value", "90");
+    show(custom, ANA);
+    expect(shownValue(dialog, "timer")).toBe("1 minute 30 seconds");
+    expect(row(dialog, "timer").querySelector("[data-setting-detail]")?.textContent).toBe(
+      "When it ends, everyone sees that time is up.",
+    );
+  });
+
   it("says this round keeps its names when anonymity applies from the next one", async () => {
     render(<RoomSettingsButton />);
     const started = apply(

@@ -242,7 +242,7 @@ function TimerRing({
 
 /** The chip's look: a stadium on the felt, its text in tabular numerals. */
 const CHIP =
-  "relative inline-flex h-7 min-w-14 items-center justify-center gap-1 rounded-full px-3 text-[13px] leading-none font-bold whitespace-nowrap text-table-ink tabular-nums in-data-[variant=phone]:h-6 in-data-[variant=phone]:min-w-10 in-data-[variant=phone]:px-2 in-data-[variant=phone]:text-[11px]";
+  "relative inline-flex h-9 min-w-16 items-center justify-center gap-1.5 rounded-full px-3.5 text-[15px] leading-none font-bold whitespace-nowrap text-table-ink tabular-nums in-data-[variant=phone]:h-6 in-data-[variant=phone]:min-w-10 in-data-[variant=phone]:gap-1 in-data-[variant=phone]:px-2 in-data-[variant=phone]:text-[11px]";
 
 /** The 1 Hz pulse of the last 10 s; never under reduced motion, where colour and text say it. */
 function usePulse<E extends HTMLElement>(on: boolean) {
@@ -333,9 +333,9 @@ export function TimerChip({ countdown }: { countdown: Countdown }) {
   );
 }
 
-/** The PO's small buttons beside the chip on a desktop: card faces, 28 px, 44 px to touch. */
+/** The PO's small buttons beside the chip on a desktop: card faces, 32 px, 44 px to touch. */
 const SIDE_BUTTON =
-  "relative inline-flex h-7 items-center gap-1 rounded-md border border-card-edge bg-card-face px-2 text-[12px] leading-none font-semibold whitespace-nowrap text-card-ink shadow-sm outline-none after:absolute after:-inset-y-2 after:inset-x-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass aria-disabled:opacity-60 in-data-[variant=phone]:hidden";
+  "relative inline-flex h-8 items-center gap-1 rounded-md border border-card-edge bg-card-face px-2 text-[12px] leading-none font-semibold whitespace-nowrap text-card-ink shadow-sm outline-none after:absolute after:-inset-y-1.5 after:inset-x-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass aria-disabled:opacity-60 in-data-[variant=phone]:hidden";
 
 /** Sends the PO's timer commands one at a time; a refusal shows under the table. */
 function useTimerCommands(onFailure: (code: string | null) => void) {
