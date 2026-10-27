@@ -143,6 +143,14 @@ export const de: Catalog = {
     revealed: "Karten aufgedeckt",
     reveal: "Karten aufdecken",
     revealKey: "Taste R, solange der Fokus auf dem Tisch oder Ihren Karten liegt",
+    number: "Runde {{round, number}}",
+    subjectLabel: "Thema der nächsten Runde",
+    subjectHint:
+      "Für Runde {{round, number}} leer lassen, einen Titel eingeben oder den Link zum Ticket einfügen.",
+    opensInNewTab: "(öffnet in einem neuen Tab)",
+    titleTooLong: "Ein Titel hat höchstens {{max, number}} Zeichen.",
+    linkTooLong: "Ein Link hat höchstens {{max, number}} Zeichen.",
+    badLink: "Nur http- und https-Links funktionieren, ohne Benutzername oder Passwort.",
   },
   results: {
     title: "Ergebnisse",
@@ -205,7 +213,7 @@ export const de: Catalog = {
     voted: "{{name}} hat abgestimmt.",
     votedMany_one: "{{count, number}} Person hat abgestimmt.",
     votedMany_other: "{{count, number}} Personen haben abgestimmt.",
-    roundStarted: "Die Abstimmung hat begonnen.",
+    roundStarted: "Die Abstimmung hat begonnen: {{subject}}.",
     revealed: "Die Karten sind aufgedeckt.",
   },
   cards: {

@@ -2,15 +2,18 @@ import type { RoomView } from "@pp/protocol";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
-import { commandSender, sendCommand } from "../realtime/room-connection.ts";
+import { commandSender } from "../realtime/room-connection.ts";
+import type { NextRound } from "./next-round.tsx";
 import { CentreResult, type RevealMotion } from "./results-chunk.tsx";
 import { voteCount } from "./table-data.ts";
 
 interface RoundCentreProps {
   /** The room as the viewer sees it, their unconfirmed pick included. */
   room: RoomView;
-  /** A refused start or reveal, as an error code, or null when a new attempt begins. */
+  /** A refused reveal, as an error code, or null when a new attempt begins. */
   onFailure: (code: string | null) => void;
+  /** The PO's next round (#21): the subject field's draft, sent by the centre's button. */
+  next: NextRound;
   /** How the results arrive after a reveal (#20): live, and when the cards are settled. */
   reveal?: RevealMotion;
 }
@@ -21,15 +24,17 @@ const CENTRE_BUTTON =
 
 /**
  * The status in the middle of the table (#18). Voting: how many have voted out of how
- * many can vote, and for the PO the reveal button (#19, also the key R). Lobby: a minimal
- * start button for the PO, which sends `startRound` without a subject, and a calm line for
- * everyone else. Revealed: the result (#20, `CentreResult`, from the results chunk; the
- * result as a sentence until it has loaded), and for the PO "Next round" under it. #21 replaces
- * `StartRound` with "Next round" and its subject field.
+ * many can vote, and for the PO the reveal button (#19, also the key R). Lobby: "Start
+ * voting" for the PO and a calm line for everyone else. Revealed: the result (#20,
+ * `CentreResult`, from the results chunk; the result as a sentence until it has loaded),
+ * and for the PO "Next round" under it. Both buttons start the round with the subject in
+ * the PO's field above the table (#21, `next-round.tsx`); a voting round offers none, so
+ * the PO never abandons one by a click.
  */
 export function RoundCentre({
   room,
   onFailure,
+  next,
   reveal = { live: false, settle: 0 },
 }: RoundCentreProps) {
   const t = useT();
@@ -52,7 +57,7 @@ export function RoundCentre({
   }
   if (round === null) {
     return owner ? (
-      <StartRound again={false} onFailure={onFailure} />
+      <StartRound again={false} next={next} />
     ) : (
       <p data-centre-status="lobby" className="m-0">
         {t("round.waiting")}
@@ -61,11 +66,10 @@ export function RoundCentre({
   }
   const result = <CentreResult room={room} compact={owner} motion={reveal} />;
   if (!owner) return result;
-  // The seam #21 replaces: "Next round" under the result.
   return (
     <div className="flex flex-col items-center gap-1.5 in-data-[variant=phone]:gap-0.5">
       {result}
-      <StartRound again onFailure={onFailure} />
+      <StartRound again next={next} />
     </div>
   );
 }
@@ -74,7 +78,7 @@ export function RoundCentre({
  * Once the screen changed under the focus, it goes to `selector`, after a frame for React
  * to draw it, unless the person already moved it somewhere.
  */
-function focusSoon(...selectors: string[]) {
+export function focusSoon(...selectors: string[]) {
   requestAnimationFrame(() => {
     const active = document.activeElement;
     if (active !== null && active !== document.body) return;
@@ -87,14 +91,6 @@ function focusSoon(...selectors: string[]) {
     }
   });
 }
-
-/**
- * The button is gone once the round starts, and the focus with it: it goes to the hand's
- * tab stop, or to the centre's status for a PO without a hand. The snapshot is already in
- * the store when the ack resolves; the frame waits for React to draw it.
- */
-const focusAfterStart = () =>
-  focusSoon("[data-hand] [tabindex='0']", "[data-centre-status='voting']");
 
 /** After the reveal the PO's next step is the next round: the focus goes to its button. */
 const focusAfterReveal = () => focusSoon("[data-start-round]");
@@ -208,36 +204,15 @@ function RevealButton({ onFailure }: { onFailure: (code: string | null) => void 
   );
 }
 
-function StartRound({
-  again,
-  onFailure,
-}: {
-  again: boolean;
-  onFailure: (code: string | null) => void;
-}) {
+/** "Start voting" or "Next round": sends the PO's draft subject (`useNextRound`). */
+function StartRound({ again, next }: { again: boolean; next: NextRound }) {
   const t = useT();
-  const [busy, setBusy] = useState(false);
-
-  async function start() {
-    // Focusable while busy (aria-disabled), so a second press lands here.
-    if (busy) return;
-    setBusy(true);
-    onFailure(null);
-    try {
-      const ack = await sendCommand({ type: "startRound", payload: { subject: { kind: "none" } } });
-      if (ack.ok) focusAfterStart();
-      else onFailure(ack.code);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <Button
       data-start-round
       variant="outline"
-      aria-disabled={busy || undefined}
-      onClick={start}
+      aria-disabled={next.busy || undefined}
+      onClick={() => void next.start()}
       className={CENTRE_BUTTON}
     >
       {again ? t("round.next") : t("round.start")}

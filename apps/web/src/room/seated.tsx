@@ -10,9 +10,11 @@ import { type Box, CardFlight, type Flight, type InAir } from "./card-flight.tsx
 import { failureMessage } from "./failure.ts";
 import { confirmedOf, shownCard, withShownVote } from "./hand-state.ts";
 import { LiveAnnouncer } from "./live-announcer.tsx";
+import { NextSubject, useNextRound } from "./next-round.tsx";
 import { prefetchResults, ResultsPanel } from "./results-chunk.tsx";
 import { RevealedCards } from "./revealed-cards.tsx";
 import { RoundCentre } from "./round-centre.tsx";
+import { RoundSubject } from "./round-subject.tsx";
 import { handView, tableData } from "./table-data.ts";
 import { useVote } from "./use-vote.ts";
 import { YouControls } from "./you-controls.tsx";
@@ -59,6 +61,10 @@ const boxOf = (rect: DOMRect): Box => ({
  * from a chunk prefetched while a round is on; they rise once the cards are settled when
  * this page saw the round voting just before (`liveReveal`). After a reload everything
  * shows at rest.
+ *
+ * The next round (#21): the round and its subject show above the table for everyone
+ * (`RoundSubject`); the PO's subject field sits above that (`NextSubject`), and the
+ * centre's button starts the round with it.
  */
 export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedProps) {
   const t = useT();
@@ -69,6 +75,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
   const hand = handView(shown, me);
   /** A refused start or reveal; a new round or phase clears it. */
   const [centreFailure, setCentreFailure] = useState<string | null>(null);
+  const next = useNextRound(setCentreFailure);
   const roundKey = keyOf(room.round);
   const [seen, setSeen] = useState({ key: roundKey, liveReveal: false });
   if (seen.key !== roundKey) {
@@ -134,13 +141,21 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
 
   return (
     <div className="flex flex-col gap-6">
+      {me.isOwner ? (
+        <NextSubject
+          next={next}
+          nextNumber={(room.round?.number ?? 0) + 1}
+          canStart={room.round?.phase !== "voting"}
+        />
+      ) : null}
       <section aria-label={t("room.tableHeading")} data-room-table>
+        {room.round !== null ? <RoundSubject round={room.round} /> : null}
         <TableStage
           people={people}
           observers={observers}
           hiddenSlot={flight?.kind === "play" ? me.id : null}
         >
-          <RoundCentre room={shown} onFailure={setCentreFailure} reveal={reveal} />
+          <RoundCentre room={shown} onFailure={setCentreFailure} next={next} reveal={reveal} />
         </TableStage>
         <RevealedCards room={room} />
         {room.round?.phase === "revealed" ? <ResultsPanel room={room} motion={reveal} /> : null}

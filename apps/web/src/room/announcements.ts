@@ -1,6 +1,7 @@
-import type { CauseView, RoomView } from "@pp/protocol";
+import type { CauseView, RoomView, RoundView } from "@pp/protocol";
 import type { TFunction } from "../i18n/i18n.ts";
 import { type RevealSummary, revealSummary, summarySentence } from "./results-view.ts";
+import { subjectName } from "./subject.ts";
 
 // What the table's live region says (#17): joins, leaves, away and back, votes, a new
 // round (#18) and the reveal (#19), read from a snapshot's causes. Never a person's card:
@@ -18,6 +19,8 @@ export interface LiveEvent {
   name: string;
   /** The reveal's result, when the snapshot shows the round revealed (#20). */
   summary?: RevealSummary;
+  /** A new round: its number and subject, said with it (#21: "Voting started: ABC-123."). */
+  round?: Pick<RoundView, "number" | "subject">;
 }
 
 /** Said in this order, whatever order the events came in: the last vote, then the reveal. */
@@ -72,7 +75,12 @@ export function liveEvents(
     let kind: LiveKind;
     switch (cause.type) {
       case "roundStarted":
-        events.push({ kind: cause.type, who: "", name: "" });
+        events.push({
+          kind: cause.type,
+          who: "",
+          name: "",
+          round: next.round ?? { number: cause.number, subject: { kind: "none" } },
+        });
         continue;
       case "revealed":
         events.push(revealedEvent(next));
@@ -128,12 +136,15 @@ function revealedSince(previous: RoomView | null, next: RoomView): boolean {
  * Adds `events` to a batch waiting to be said: a repeat is dropped, and an event that
  * undoes one in the batch (a person away and back again) removes both. A new round makes
  * a reveal still waiting in the batch moot (a timer's reveal resolved by the next round's
- * start): the revealed cards are already gone.
+ * start): the revealed cards are already gone. Of two new rounds in one batch, the later
+ * one is said, with its own subject.
  */
 export function mergeEvents(pending: readonly LiveEvent[], events: readonly LiveEvent[]) {
   let merged = [...pending];
   for (const event of events) {
-    if (event.kind === "roundStarted") merged = merged.filter((e) => e.kind !== "revealed");
+    if (event.kind === "roundStarted") {
+      merged = merged.filter((e) => e.kind !== "revealed" && e.kind !== "roundStarted");
+    }
     const undone = UNDOES[event.kind];
     const opposite = merged.findIndex((e) => e.who === event.who && e.kind === undone);
     if (opposite >= 0) {
@@ -153,7 +164,9 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
   const count = events.length;
   switch (kind) {
     case "roundStarted":
-      return t("live.roundStarted");
+      return t("live.roundStarted", {
+        subject: first?.round ? subjectName(t, first.round) : "",
+      });
     case "joined":
       return one ? t("live.joined", { name }) : t("live.joinedMany", { count });
     case "left":
