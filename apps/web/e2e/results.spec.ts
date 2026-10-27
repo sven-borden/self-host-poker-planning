@@ -420,6 +420,11 @@ test("a results chunk that cannot load still shows an anonymous round, and the n
     await expect(played.locator("li .sr-only")).toHaveText(["3", "5", "5", "8"]);
     await page.waitForTimeout(1_200);
     await shoot(page, "results-chunk-failed-anonymous");
+    // A final recorded while the chunk is gone still shows, after the result (#32).
+    expect(await po.cmd("setFinal", { card: "5" })).toMatchObject({ ok: true });
+    await expect(page.locator("[data-centre-fallback]")).toHaveText(
+      `${sentence} Final estimate: 5.`,
+    );
 
     // The chunk is back: the next reveal loads it, without a reload.
     gone = false;

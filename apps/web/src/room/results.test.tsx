@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatNumber } from "../i18n/format.ts";
 import { changeLanguage, fixedT, loadLanguage } from "../i18n/i18n.ts";
 import { CentreResult, ResultsPanel } from "./results.tsx";
+import { CentreFallback } from "./results-chunk.tsx";
 import {
   CONSENSUS_POP_MS,
   CONSENSUS_PULSE_MS,
@@ -436,6 +437,15 @@ describe("the final estimate (#32)", () => {
     expect(container.querySelector("[data-centre-status]")?.textContent).toContain(
       "Suggested 5. Agreement",
     );
+  });
+
+  it("says the final in the centre's fallback too, when the results cannot load", () => {
+    const room = revealed("fib", ["3", "5", "5", "8"], { viewer: "p1" });
+    const { container, rerender } = render(<CentreFallback room={room} />);
+    const fallback = () => container.querySelector("[data-centre-fallback]")?.textContent;
+    expect(fallback()).toBe("Suggested 5. Agreement 50%.");
+    rerender(<CentreFallback room={withFinal(room, "8")} />);
+    expect(fallback()).toBe("Suggested 5. Agreement 50%. Final estimate: 8.");
   });
 
   it("pops in a final recorded on screen, not one already there", () => {
