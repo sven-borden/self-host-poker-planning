@@ -1,5 +1,6 @@
 # Poker Planning with its Postgres. Quick start (README, "Self-hosting"):
-#   cp .env.example .env   then set POSTGRES_PASSWORD, BETTER_AUTH_SECRET and BASE_URL
+#   write .env with POSTGRES_PASSWORD, BETTER_AUTH_SECRET and BASE_URL (the README has the
+#   commands; .env.example is the template for local development, not for this)
 #   docker compose up -d --build
 # Compose reads .env only to fill in the ${...} below; the app sees just the variables
 # listed under `environment`. Upgrade: git pull, then docker compose up -d --build.
@@ -31,6 +32,14 @@ services:
       ROOM_TTL_DAYS: ${ROOM_TTL_DAYS:-90}
     # The server drains and exits within 10 s of SIGTERM.
     stop_grace_period: 15s
+    # The server writes nothing to disk and needs no privilege.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
   db:
     image: postgres:17
