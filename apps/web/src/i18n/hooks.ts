@@ -1,5 +1,5 @@
 import { useMemo, useSyncExternalStore } from "react";
-import { formatDate, formatNumber, formatRelativeTime, formatTime } from "./format.ts";
+import { formatDate, formatList, formatNumber, formatRelativeTime, formatTime } from "./format.ts";
 import { chooseLanguage, currentLanguage, fixedT, subscribe, type TFunction } from "./i18n.ts";
 import { type Language, localeFor } from "./language.ts";
 
@@ -25,6 +25,7 @@ export interface Formatters {
   date: (date: Date | number, options?: Intl.DateTimeFormatOptions) => string;
   time: (date: Date | number, options?: Intl.DateTimeFormatOptions) => string;
   relativeTime: (date: Date | number, now?: Date | number) => string;
+  list: (items: readonly string[]) => string;
 }
 
 /** `formatNumber` and friends, in the current language and the reader's region. */
@@ -37,6 +38,7 @@ export function useFormat(): Formatters {
       date: (date, options) => formatDate(date, locale, options),
       time: (date, options) => formatTime(date, locale, options),
       relativeTime: (date, now) => formatRelativeTime(date, locale, now),
+      list: (items) => formatList(items, locale),
     };
   }, [language]);
 }

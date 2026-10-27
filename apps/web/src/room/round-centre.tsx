@@ -1,8 +1,9 @@
 import type { RoomView } from "@pp/protocol";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { commandSender, sendCommand } from "../realtime/room-connection.ts";
+import { CentreResult, type RevealMotion } from "./results-chunk.ts";
 import { voteCount } from "./table-data.ts";
 
 interface RoundCentreProps {
@@ -10,6 +11,8 @@ interface RoundCentreProps {
   room: RoomView;
   /** A refused start or reveal, as an error code, or null when a new attempt begins. */
   onFailure: (code: string | null) => void;
+  /** How the results arrive after a reveal (#20): live, and when the cards are settled. */
+  reveal?: RevealMotion;
 }
 
 /** The PO's buttons in the centre, drawn as a card face (warm face, card ink, 44 px tall). */
@@ -18,12 +21,17 @@ const CENTRE_BUTTON =
 
 /**
  * The status in the middle of the table (#18). Voting: how many have voted out of how
- * many can vote, and for the PO the reveal button (#19, also the key R). Lobby or
- * revealed: a minimal start button for the PO, which sends `startRound` without a
- * subject, and a calm line for everyone else. #21 replaces `StartRound` with "Next round"
- * and its subject field; #20 puts the results here after a reveal.
+ * many can vote, and for the PO the reveal button (#19, also the key R). Lobby: a minimal
+ * start button for the PO, which sends `startRound` without a subject, and a calm line for
+ * everyone else. Revealed: the result (#20, `CentreResult`, from the results chunk; "Cards
+ * revealed" until it has loaded), and for the PO "Next round" under it. #21 replaces
+ * `StartRound` with "Next round" and its subject field.
  */
-export function RoundCentre({ room, onFailure }: RoundCentreProps) {
+export function RoundCentre({
+  room,
+  onFailure,
+  reveal = { live: false, settle: 0 },
+}: RoundCentreProps) {
   const t = useT();
   const round = room.round;
   const owner = room.you !== null && room.you === room.ownerId;
@@ -42,13 +50,33 @@ export function RoundCentre({ room, onFailure }: RoundCentreProps) {
       </div>
     );
   }
-  if (owner) {
-    return <StartRound again={round !== null} onFailure={onFailure} />;
+  if (round === null) {
+    return owner ? (
+      <StartRound again={false} onFailure={onFailure} />
+    ) : (
+      <p data-centre-status="lobby" className="m-0">
+        {t("round.waiting")}
+      </p>
+    );
   }
+  const result = (
+    <Suspense
+      fallback={
+        <p data-centre-status="revealed" className="m-0">
+          {t("round.revealed")}
+        </p>
+      }
+    >
+      <CentreResult room={room} compact={owner} motion={reveal} />
+    </Suspense>
+  );
+  if (!owner) return result;
+  // The seam #21 replaces: "Next round" under the result.
   return (
-    <p data-centre-status={round === null ? "lobby" : "revealed"} className="m-0">
-      {round === null ? t("round.waiting") : t("round.revealed")}
-    </p>
+    <div className="flex flex-col items-center gap-1.5 in-data-[variant=phone]:gap-0.5">
+      {result}
+      <StartRound again onFailure={onFailure} />
+    </div>
   );
 }
 

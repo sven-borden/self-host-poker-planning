@@ -33,6 +33,8 @@ function story(viewer = "me") {
 
 const t = fixedT("en");
 const said = (events: LiveEvent[]) => describeEvents(t, events);
+/** The result of a round where only Ana voted, 13. */
+const ana13 = { kind: "suggested", card: "13", agreement: 1, mostVoted: false } as const;
 
 describe("liveEvents", () => {
   it("names joins, leaves, away and back, and first votes; never the viewer's own", () => {
@@ -56,7 +58,7 @@ describe("liveEvents", () => {
     const away = run(":server", { type: "presence", who: "ben", connected: false });
     // Everyone present has voted once Ben is away: the round reveals itself.
     expect(said(liveEvents(away.room, away.causes, changed.room))).toBe(
-      "Ben is away. Cards revealed.",
+      "Ben is away. Cards revealed. Suggested 8, agreement 50%.",
     );
     const back = run(":server", { type: "presence", who: "ben", connected: true });
     expect(said(liveEvents(back.room, back.causes, away.room))).toBe("Ben is back.");
@@ -89,9 +91,10 @@ describe("liveEvents", () => {
     const before = run("ana", { type: "castVote", card: "13" });
     const revealed = run("me", { type: "castVote", card: "21" });
     const text = said(liveEvents(revealed.room, revealed.causes, before.room));
-    // The last vote revealed the round: the reveal is said, its cards are not.
-    expect(text).toBe("Me voted. Cards revealed.");
-    expect(text).not.toMatch(/13|21/);
+    // The last vote revealed the round: the reveal and its result are said (#20), which
+    // belong to nobody; whose card is what is never said.
+    expect(text).toBe("Me voted. Cards revealed. Suggested 13, agreement 50%.");
+    expect(text).not.toMatch(/21/);
     const final = run("me", { type: "setFinal", card: "13" });
     expect(liveEvents(final.room, final.causes, revealed.room)).toEqual([]);
   });
@@ -104,12 +107,38 @@ describe("liveEvents", () => {
     const voted = run("ana", { type: "castVote", card: "13" });
     const forced = run("me", { type: "reveal" });
     const events = liveEvents(forced.room, forced.causes, voted.room);
-    expect(events).toEqual([{ kind: "revealed", who: "", name: "" }]);
-    expect(said(mergeEvents(events, events))).toBe("Cards revealed.");
+    expect(events).toEqual([{ kind: "revealed", who: "", name: "", summary: ana13 }]);
+    expect(said(mergeEvents(events, events))).toBe("Cards revealed. Suggested 13, agreement 100%.");
     // A new round in the same batch makes the reveal moot.
     const next = run("me", { type: "startRound", subject: { kind: "none" } });
     const both = mergeEvents(events, liveEvents(next.room, next.causes, forced.room));
     expect(said(both)).toBe("Voting started.");
+  });
+
+  it("says the result with the reveal: a consensus, the most voted size, or nothing to count (#20)", () => {
+    const round = (settings: Partial<RoomState["settings"]>, cards: string[]) => {
+      const { run } = story("me");
+      run("me", { type: "join", name: "Me", role: "voter" });
+      cards.forEach((_, i) => {
+        run(`p${i}`, { type: "join", name: `P${i}`, role: "voter" });
+      });
+      if (Object.keys(settings).length > 0) run("me", { type: "updateSettings", patch: settings });
+      run("me", { type: "startRound", subject: { kind: "none" } });
+      let last = run("me", { type: "castVote", card: cards[0] ?? "?" });
+      const before = last;
+      cards.slice(1).forEach((card, i) => {
+        last = run(`p${i}`, { type: "castVote", card });
+      });
+      const forced = run("me", { type: "reveal" });
+      return said(
+        liveEvents(forced.room, forced.causes, before.room).filter((e) => e.kind === "revealed"),
+      );
+    };
+    expect(round({}, ["8", "8", "8"])).toBe("Cards revealed. Consensus on 8.");
+    expect(round({}, ["?", "☕"])).toBe("Cards revealed. Nothing to count.");
+    expect(round({ deck: { kind: "preset", id: "tshirt" } }, ["M", "L", "M", "S"])).toBe(
+      "Cards revealed. Most voted M, agreement 50%.",
+    );
   });
 
   it("says a reveal it missed while away from the server, once, from the phase it shows", () => {
@@ -121,11 +150,11 @@ describe("liveEvents", () => {
     const forced = run("me", { type: "reveal" });
     // The snapshot a reconnect brings: no causes, the round now revealed.
     expect(liveEvents(forced.room, [], voting.room)).toEqual([
-      { kind: "revealed", who: "", name: "" },
+      { kind: "revealed", who: "", name: "", summary: ana13 },
     ]);
     // With the cause too, still once.
     expect(liveEvents(forced.room, forced.causes, voting.room)).toEqual([
-      { kind: "revealed", who: "", name: "" },
+      { kind: "revealed", who: "", name: "", summary: ana13 },
     ]);
     // Already revealed before, a first look, or a later round: nothing to say.
     expect(liveEvents(forced.room, [], forced.room)).toEqual([]);
@@ -241,7 +270,7 @@ describe("LiveAnnouncer", () => {
       useRoomStore.getState().receive({ ...revealed, causes: [] });
       vi.advanceTimersByTime(LIVE_QUIET_MS);
     });
-    expect(region()?.textContent).toBe("Cards revealed.");
+    expect(region()?.textContent).toBe("Cards revealed. Suggested 13, agreement 100%.");
   });
 
   it("says the same words again as a new announcement", () => {

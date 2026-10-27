@@ -4,7 +4,7 @@ import { cn } from "../lib/utils.ts";
 import { Avatar } from "./avatar.tsx";
 import { SlotCard, type SlotFace } from "./cards.tsx";
 import { layoutTable, type TableVariant, variantFor } from "./layout.ts";
-import { FLIP_STAGGER_MS } from "./reveal-motion.ts";
+import { FLIP_STAGGER_MS, revealSettleMs } from "./reveal-motion.ts";
 import { flagWords, type PersonFlags, Seat, type SeatStatus, type TablePerson } from "./seat.tsx";
 import { useRoomWidth } from "./use-room-width.ts";
 import "./table.css";
@@ -71,6 +71,31 @@ export function TableStage({
   const observersId = useId();
   // The nth face-up card in seat order turns n × 90 ms after the first (#19).
   let turned = 0;
+  const slots = seated.map((person, i) => {
+    const point = layout.slots[i];
+    if (!point) {
+      return null;
+    }
+    const { face, value } = slotFace(person.status);
+    const turnDelay = face === "up" ? turned++ * FLIP_STAGGER_MS : 0;
+    return (
+      <div
+        key={person.id}
+        data-slot-card
+        data-you={person.you || undefined}
+        aria-hidden="true"
+        className={cn("absolute", person.id === hiddenSlot && "invisible")}
+        style={{
+          left: `calc(${point.x}% - ${layout.slot.width / 2}px)`,
+          top: `calc(${point.y}% - ${layout.slot.height / 2}px)`,
+        }}
+      >
+        <SlotCard face={face} value={value} size={layout.slot} turnDelay={turnDelay} />
+      </div>
+    );
+  });
+  // The lowest and highest seats are marked once the last card has turned (#20).
+  const settle = revealSettleMs(turned, false);
 
   return (
     <div ref={roomRef} className={cn("w-full", className)}>
@@ -95,29 +120,7 @@ export function TableStage({
             bottom: `${layout.table.y}%`,
           }}
         />
-        {seated.map((person, i) => {
-          const point = layout.slots[i];
-          if (!point) {
-            return null;
-          }
-          const { face, value } = slotFace(person.status);
-          const turnDelay = face === "up" ? turned++ * FLIP_STAGGER_MS : 0;
-          return (
-            <div
-              key={person.id}
-              data-slot-card
-              data-you={person.you || undefined}
-              aria-hidden="true"
-              className={cn("absolute", person.id === hiddenSlot && "invisible")}
-              style={{
-                left: `calc(${point.x}% - ${layout.slot.width / 2}px)`,
-                top: `calc(${point.y}% - ${layout.slot.height / 2}px)`,
-              }}
-            >
-              <SlotCard face={face} value={value} size={layout.slot} turnDelay={turnDelay} />
-            </div>
-          );
-        })}
+        {slots}
         <div
           data-centre
           className="absolute grid place-items-center text-center text-[12.5px] leading-snug text-balance text-table-ink in-data-[variant=phone]:text-[11px]"
@@ -134,7 +137,13 @@ export function TableStage({
           {seated.map((person, i) => {
             const place = layout.seats[i];
             return place ? (
-              <Seat key={person.id} person={person} place={place} geometry={layout.seat} />
+              <Seat
+                key={person.id}
+                person={person}
+                place={place}
+                geometry={layout.seat}
+                settle={settle}
+              />
             ) : null;
           })}
         </ul>

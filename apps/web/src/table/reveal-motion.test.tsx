@@ -2,21 +2,22 @@ import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SlotCard } from "./cards.tsx";
 import {
-  DEAL_MS,
-  DEAL_STAGGER_MS,
-  dealIn,
   FADE_AWAY_MS,
   FLIP_MS,
+  FLIP_STAGGER_MS,
   fadeAway,
+  POP_MS,
+  popIn,
   REDUCED_FADE_MS,
+  revealSettleMs,
   turnUp,
 } from "./reveal-motion.ts";
 import { TableStage } from "./table-stage.tsx";
 
 // The reveal's motion (#19; docs/03-design-brief.md, "Motion spec"): a 650 ms turn,
 // 90 ms apart in seat order from the viewer; after an anonymous reveal the seats' cards
-// shrink to 0.6 and fade in 350 ms while the row deals in 70 ms apart; under reduced
-// motion a 120 ms cross-fade and no travel.
+// shrink to 0.6 and fade in 350 ms; once the cards are settled the results start (#20);
+// under reduced motion a 120 ms cross-fade and no travel.
 
 const transforms = (keyframes: Keyframe[]) => keyframes.map((k) => k.transform);
 
@@ -59,11 +60,19 @@ describe("the anonymous reveal", () => {
     });
     expect(fadeAway(true).keyframes).toEqual([{ opacity: 1 }, { opacity: 0 }]);
   });
+});
 
-  it("deals the row 70 ms apart once the seats' cards have gone, or fades it in at once", () => {
-    expect(dealIn(0, false).timing).toMatchObject({ duration: DEAL_MS, delay: FADE_AWAY_MS });
-    expect(dealIn(3, false).timing.delay).toBe(FADE_AWAY_MS + 3 * DEAL_STAGGER_MS);
-    expect(dealIn(3, true)).toEqual({
+describe("once the cards are settled (#20)", () => {
+  it("is when the last flip ends, or when the seats' cards have gone", () => {
+    expect(revealSettleMs(0, false)).toBe(0);
+    expect(revealSettleMs(1, false)).toBe(FLIP_MS);
+    expect(revealSettleMs(8, false)).toBe(FLIP_MS + 7 * FLIP_STAGGER_MS);
+    expect(revealSettleMs(8, true)).toBe(FADE_AWAY_MS);
+  });
+
+  it("pops a seat's badge in then, or fades it in at once", () => {
+    expect(popIn(1280, false).timing).toMatchObject({ duration: POP_MS, delay: 1280 });
+    expect(popIn(1280, true)).toEqual({
       keyframes: [{ opacity: 0 }, { opacity: 1 }],
       timing: { duration: REDUCED_FADE_MS, fill: "backwards" },
     });

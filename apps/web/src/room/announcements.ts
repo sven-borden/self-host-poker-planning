@@ -1,11 +1,12 @@
 import type { CauseView, RoomView } from "@pp/protocol";
 import type { TFunction } from "../i18n/i18n.ts";
+import { type RevealSummary, revealSummary, summarySentence } from "./results-view.ts";
 
 // What the table's live region says (#17): joins, leaves, away and back, votes, a new
-// round (#18) and the reveal (#19), read from a snapshot's causes. Never a card: a vote
-// cause carries who, never what, and the reveal is said without its cards (#20 says the
-// results). Pure, so the batching rules are tested without timers; `live-announcer.tsx`
-// runs them.
+// round (#18) and the reveal (#19), read from a snapshot's causes. Never a person's card:
+// a vote cause carries who, never what, and the reveal says the round's result (#20:
+// "Cards revealed. Consensus on 8."), which belongs to nobody. Pure, so the batching rules
+// are tested without timers; `live-announcer.tsx` runs them.
 
 export type LiveKind = "roundStarted" | "joined" | "left" | "away" | "back" | "voted" | "revealed";
 
@@ -15,6 +16,8 @@ export interface LiveEvent {
   who: string;
   /** The name as the room showed it when the event happened. */
   name: string;
+  /** The reveal's result, when the snapshot shows the round revealed (#20). */
+  summary?: RevealSummary;
 }
 
 /** Said in this order, whatever order the events came in: the last vote, then the reveal. */
@@ -69,8 +72,10 @@ export function liveEvents(
     let kind: LiveKind;
     switch (cause.type) {
       case "roundStarted":
-      case "revealed":
         events.push({ kind: cause.type, who: "", name: "" });
+        continue;
+      case "revealed":
+        events.push(revealedEvent(next));
         continue;
       case "joined":
       case "left":
@@ -94,9 +99,17 @@ export function liveEvents(
     if (name !== null) events.push({ kind, who, name });
   }
   if (!events.some((e) => e.kind === "revealed") && revealedSince(previous, next)) {
-    events.push({ kind: "revealed", who: "", name: "" });
+    events.push(revealedEvent(next));
   }
   return events;
+}
+
+/** The reveal, with the result `next` shows (none when a new round already replaced it). */
+function revealedEvent(next: RoomView): LiveEvent {
+  const round = next.round;
+  return round?.phase === "revealed"
+    ? { kind: "revealed", who: "", name: "", summary: revealSummary(round) }
+    : { kind: "revealed", who: "", name: "" };
 }
 
 /** Whether `next` shows revealed the same round that `previous` showed voting. */
@@ -152,7 +165,9 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
     case "voted":
       return one ? t("live.voted", { name }) : t("live.votedMany", { count });
     case "revealed":
-      return t("live.revealed");
+      return first?.summary
+        ? `${t("live.revealed")} ${summarySentence(t, first.summary)}`
+        : t("live.revealed");
   }
 }
 

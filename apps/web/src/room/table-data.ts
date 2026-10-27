@@ -3,6 +3,7 @@ import type { ParticipantView, RoomView } from "@pp/protocol";
 import { type AvatarLook, avatarLooks } from "../table/avatar.tsx";
 import type { PersonFlags, SeatStatus, TablePerson } from "../table/seat.tsx";
 import type { Observer } from "../table/table-stage.tsx";
+import { extremeOf } from "./results-view.ts";
 
 // From the server's snapshot to the table's props (#16, #17). Pure: the room page renders
 // what these return and decides nothing. Before reveal the snapshot says only who voted
@@ -24,7 +25,8 @@ export interface TableData {
  * public, so their seat says "no vote" as in a named reveal. A PO who does not vote
  * (`poVotes` off) is never thinking and never missing a vote: their seat stays present.
  * The table turns a `voted` card face up when it becomes `revealed` (#19), and lets it go
- * from the seat when it becomes `dealt`.
+ * from the seat when it becomes `dealt`. A named reveal whose cards differ marks the seats
+ * with the lowest and the highest card (`extreme`, #20); an anonymous one never does.
  */
 export function seatStatus(participant: ParticipantView, room: RoomView): SeatStatus {
   const round = room.round;
@@ -37,7 +39,11 @@ export function seatStatus(participant: ParticipantView, room: RoomView): SeatSt
   }
   if (round.anonymous) return voted ? { kind: "voted", dealt: true } : missing;
   const vote = round.votes.find((v) => v.who === participant.id);
-  return vote ? { kind: "revealed", card: vote.card } : missing;
+  if (!vote) return missing;
+  const extreme = extremeOf(round, vote.card);
+  return extreme
+    ? { kind: "revealed", card: vote.card, extreme }
+    : { kind: "revealed", card: vote.card };
 }
 
 /** Away, product owner, the viewer, and the look the table gave them. */
