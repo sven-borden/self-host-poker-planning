@@ -381,34 +381,66 @@ language, and an unknown code gets a generic one.
   install, `pnpm build`, then `pnpm --filter @pp/server deploy --prod` keeps only the
   server's runtime dependencies (their `.d.ts`, sourcemaps and docs dropped). The runtime
   is `debian:bookworm-slim` plus the `node` binary of that same `node:24-slim`, both
-  pinned by digest: `node:24-slim` itself is 235 MB unpacked (npm, corepack, headers), so
-  the image would miss the 250 MB budget; this one is about 220 MB (Debian 85, Node 127,
-  app 23). `/app` holds `dist/main.mjs`, `drizzle/`, `public/` (the web app) and
+  pinned by digest. Plain `node:24-slim` with this pruned app would measure 247 MB, under
+  the 250 MB budget with 3 MB to spare; the binary-only runtime is kept for the headroom,
+  for fewer packages to patch (fewer CVEs) and because it has no npm, corepack or yarn.
+  It is about 220 MB (`du`: Debian 77, Node 127, app 16). The digests do not move by
+  themselves, so Debian security fixes need the update steps in the Dockerfile header
+  (README, "Base image updates"); Dependabot or Renovate is Sven's call. pnpm is installed
+  by `corepack install` at the version of `packageManager` in `package.json`, the only
+  place with it. `/app` holds `dist/main.mjs`, `drizzle/`, `public/` (the web app) and
   `node_modules/`, owned by root; the process runs as uid 10001 with `NODE_ENV=production`,
   `STATIC_DIR=/app/public` and `MIGRATIONS_DIR=/app/drizzle`. Node is PID 1 and handles
   `SIGTERM` itself (section 11). `HEALTHCHECK`: a Node `fetch` of `/api/health` every 30 s
   (timeout 3 s, start period 120 s for the database wait, the migration lock and the
   migrations, probing every 2 s meanwhile). Build arguments `GIT_COMMIT` (falling back to
   `SOURCE_COMMIT`, which Coolify passes) and `APP_VERSION` become the env of the same name
-  and the OCI labels `revision` and `version`.
+  and the OCI labels `revision` and `version`. They are the only `ARG`s, declared after
+  the last `RUN`, and none may carry a secret: an `ARG` in scope of a `RUN` is readable in
+  `docker history`. `DATABASE_URL` and `BETTER_AUTH_SECRET` reach the container at runtime
+  only.
 - `compose.yaml`: `app` (built from `.`, image `poker-planning:local`) and `db`
   (`postgres:17`, volume `pgdata`, `pg_isready` health check, not published on the host);
   `app` starts once `db` is healthy, both `restart: unless-stopped`, port 3000.
   `DATABASE_URL` is built from `db`; `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET` and
-  `BASE_URL` are required, and `TRUST_PROXY` defaults to false there. For self-hosters
-  (README, "Self-hosting"); Coolify builds the Dockerfile instead.
-- CI job `docker` builds the image with the GitHub Actions cache and runs
+  `BASE_URL` are required, and `TRUST_PROXY` defaults to false there. `app` runs with a
+  read-only root file system (and a `tmpfs` on `/tmp`), no capabilities and
+  `no-new-privileges`. For self-hosters (README, "Self-hosting", which writes `.env`
+  itself; `.env.example` leaves `BETTER_AUTH_SECRET` empty and `TRUST_PROXY` unset, so
+  compose's `:?` guards cannot be bypassed by a placeholder); Coolify builds the
+  Dockerfile instead.
+- CI job `docker` builds the image (no layer cache: caches of one pull request never reach
+  another, and exporting one cost half the job) and runs
   `scripts/docker-check.sh`: size under 250 MB, compose up until healthy, a smoke test
   (`/api/health` with `db: ok` and the PR's commit, the web app, Socket.IO over a
   WebSocket with the right `Origin`, a foreign `Origin` refused), a room row that survives
-  a restart without migrations running twice, an extra migration applied once on restart,
+  a restart and a `down`/`up` (volume kept) without migrations running twice, an extra
+  migration applied once on restart,
   and exit code 0 on `SIGTERM` while serving and while waiting for the database.
-- Coolify (Sven's instance): application from the Dockerfile (build pack `dockerfile`,
-  port 3000, health path `/api/health`), Postgres resource with daily backups, domain
-  `poker.borden.ch`, auto-deploy from `main`. TLS ends at a Synology reverse proxy in front
-  of Coolify's Traefik; both must pass WebSocket upgrades. With two proxies the right-most
-  `X-Forwarded-For` entry is the Synology, not the client: the rate limits of section 8
-  need a hop count or a trusted-proxy list before they rely on `clientIp`.
+- Coolify (Sven's instance, #12): application from the Dockerfile (build pack
+  `Dockerfile`, port 3000), Postgres resource with daily backups, domain `poker.borden.ch`
+  (`BASE_URL=https://poker.borden.ch`), auto-deploy from `main`. Settings #12 relies on:
+  - Health: use the image's own `HEALTHCHECK` and leave Coolify's HTTP health check off.
+    Its check runs curl or wget inside the container, and the image has neither.
+  - Commit: Coolify leaves `SOURCE_COMMIT` out of builds by default. Turn on "Advanced >
+    Build > Source commit availability: Available during build". A `SOURCE_COMMIT` that
+    exists only at runtime makes `/api/health` report `commit: unknown`.
+  - Build arguments: Coolify variables default to "Available during build", and by
+    default Coolify injects an `ARG` for each into the Dockerfile; an `ARG` in scope of a
+    `RUN` ends up in `docker history` (seen as `RUN |1 BETTER_AUTH_SECRET=...`). So set
+    "Build arguments" to "Managed manually in Dockerfile", and uncheck "Available at
+    Buildtime" for `DATABASE_URL` and `BETTER_AUTH_SECRET`: secrets are runtime-only.
+  - Proxies: TLS ends at a Synology reverse proxy in front of Coolify's Traefik; both
+    must pass WebSocket upgrades (`Upgrade` and `Connection` headers).
+  - Client address: with two proxies, the right-most `X-Forwarded-For` entry is the
+    Synology, not the client, and a hop count alone cannot fix that: Traefik deletes
+    `X-Forwarded-For` and `X-Real-Ip` from peers it does not trust, so the app sees only
+    the Synology. The fix is `forwardedHeaders.trustedIPs=<Synology address>` on Coolify's
+    Traefik entry points (this changes Coolify's proxy configuration: it needs Sven's go
+    in #12). Then the client is second from the right, so a hop count `TRUST_PROXY=2`
+    (today `TRUST_PROXY` is true or false, and `clientIp` reads the right-most entry only:
+    the hop count is a server change to make with the rate limits of section 8). Until
+    then every client of Sven's instance shares one rate-limit bucket (the Synology's).
 - Azure: same image. Service still open (Container Apps by default; see
   `docs/04-open-questions.md` and #38).
 

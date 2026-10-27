@@ -12,6 +12,10 @@
 **/.env
 **/.env.*
 !.env.example
+**/.npmrc
+**/.envrc
+**/*.pem
+**/*.key
 
 # Version control, CI, editors and local tooling
 .git
