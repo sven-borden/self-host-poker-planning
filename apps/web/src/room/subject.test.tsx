@@ -181,14 +181,16 @@ describe("RoundSubject", () => {
   const subjectLine = () => document.querySelector("[data-round-subject]");
 
   it("shows Round N alone without a subject", () => {
-    render(<RoundSubject round={{ number: 3, subject: { kind: "none" } }} />);
+    render(<RoundSubject round={{ number: 3, anonymous: false, subject: { kind: "none" } }} />);
     expect(subjectLine()?.textContent).toBe("Round 3");
     expect(screen.queryByRole("link")).toBeNull();
   });
 
   it("shows a title inside <bdi>, as text", () => {
     const text = "<b>Login</b> \u{5E9}\u{5DC}\u{5D5}\u{5DD}";
-    render(<RoundSubject round={{ number: 2, subject: { kind: "title", text } }} />);
+    render(
+      <RoundSubject round={{ number: 2, anonymous: false, subject: { kind: "title", text } }} />,
+    );
     const title = document.querySelector("bdi[data-subject-title]");
     expect(title?.textContent).toBe(text);
     expect(title?.querySelector("b")).toBeNull();
@@ -199,7 +201,11 @@ describe("RoundSubject", () => {
 
   it("renders a link with its key's chip, in a new tab, with rel noopener noreferrer (AC 1)", () => {
     const url = "https://acme.atlassian.net/browse/PAY-482";
-    render(<RoundSubject round={{ number: 4, subject: { kind: "link", url, key: "PAY-482" } }} />);
+    render(
+      <RoundSubject
+        round={{ number: 4, anonymous: false, subject: { kind: "link", url, key: "PAY-482" } }}
+      />,
+    );
     const link = screen.getByRole("link", { name: "PAY-482 (opens in a new tab)" });
     expect(link.getAttribute("href")).toBe(url);
     expect(link.getAttribute("target")).toBe("_blank");
@@ -208,14 +214,18 @@ describe("RoundSubject", () => {
     cleanup();
     const ado = "https://dev.azure.com/acme/Pay/_workitems/edit/12345";
     render(
-      <RoundSubject round={{ number: 4, subject: { kind: "link", url: ado, key: "12345" } }} />,
+      <RoundSubject
+        round={{ number: 4, anonymous: false, subject: { kind: "link", url: ado, key: "12345" } }}
+      />,
     );
     expect(screen.getByRole("link", { name: "#12345 (opens in a new tab)" })).toBeTruthy();
   });
 
   it("shows a link without a key shortened", () => {
     const url = "https://www.example.com/specs/42?tab=2";
-    render(<RoundSubject round={{ number: 5, subject: { kind: "link", url } }} />);
+    render(
+      <RoundSubject round={{ number: 5, anonymous: false, subject: { kind: "link", url } }} />,
+    );
     const link = screen.getByRole("link", { name: "example.com/specs/42 (opens in a new tab)" });
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
   });
@@ -226,10 +236,31 @@ describe("RoundSubject", () => {
       "data:text/html,<script>alert(1)</script>",
       "http://user:pass@example.com/browse/PAY-1",
     ]) {
-      render(<RoundSubject round={{ number: 6, subject: { kind: "link", url, key: "PAY-1" } }} />);
+      render(
+        <RoundSubject
+          round={{ number: 6, anonymous: false, subject: { kind: "link", url, key: "PAY-1" } }}
+        />,
+      );
       expect(screen.queryByRole("link"), url).toBeNull();
       expect(document.querySelector("[href]"), url).toBeNull();
       cleanup();
     }
+  });
+  it("marks an anonymous round after its number, with its hint (#25)", () => {
+    const subject = { kind: "title", text: "Login" } as const;
+    render(<RoundSubject round={{ number: 4, anonymous: true, subject }} />);
+    const line = subjectLine();
+    const chip = line?.querySelector("[data-round-anonymous]");
+    expect(line?.firstElementChild?.textContent).toBe("Round 4");
+    expect(line?.children[1]).toBe(chip);
+    expect(chip?.querySelector("[title]")?.getAttribute("title")).toBe(
+      "Cards are shown without names.",
+    );
+    expect(chip?.querySelector(".sr-only")?.textContent).toBe(
+      "Anonymous round: cards are shown without names.",
+    );
+    cleanup();
+    render(<RoundSubject round={{ number: 4, anonymous: false, subject }} />);
+    expect(subjectLine()?.querySelector("[data-round-anonymous]")).toBeNull();
   });
 });

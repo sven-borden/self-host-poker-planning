@@ -1,6 +1,6 @@
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { App } from "./app.tsx";
 import { changeLanguage } from "./i18n/i18n.ts";
 import type { Language } from "./i18n/language.ts";
@@ -46,6 +46,12 @@ afterEach(async () => {
   await act(() => changeLanguage("en"));
 });
 
+// The room route is a lazy chunk; load it once up front, so no test's wait pays for its
+// first transform (a slow machine took longer than findByRole's second).
+beforeAll(async () => {
+  await import("./routes/r/$code.tsx");
+}, 30_000);
+
 describe("app shell", () => {
   it("renders the home page with the room creation card, Fibonacci picked", async () => {
     await renderAt("/");
@@ -74,7 +80,12 @@ describe("app shell", () => {
     });
     fireEvent.click(screen.getByRole("radio", { name: /^T-shirt sizes/ }));
     fireEvent.click(screen.getByRole("button", { name: "Create the room" }));
-    const heading = await screen.findByRole("heading", { level: 1, name: "Sprint 42" });
+    // The room page renders after the route and its header fetch: slow under a covered, parallel run.
+    const heading = await screen.findByRole(
+      "heading",
+      { level: 1, name: "Sprint 42" },
+      { timeout: 5000 },
+    );
     expect(router.state.location.pathname).toBe("/r/Abc1234567");
     expect(heading.querySelector("bdi")?.textContent).toBe("Sprint 42");
     expect(document.querySelector("[data-room-code]")?.textContent).toBe("Abc1234567");
