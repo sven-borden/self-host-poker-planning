@@ -3,8 +3,8 @@
  * once their last socket left, a reconnect inside the grace changes nothing, coming back
  * clears it, going away settles the round, the first socket after a restart starts the
  * timers the restart lost, a room's timers go with its last socket, and no log line names
- * a person or the room code. The grace is short here (`presenceGraceMs`); the e2e test of
- * AC 1 runs the real 15 s.
+ * a person or the room code. The graces are short here (`presenceGraceMs` and
+ * `presenceRestartGraceMs`); the e2e test of AC 1 runs the real 15 s.
  */
 import { apply, type Command, createRoom, type RoomState } from "@pp/domain";
 import type { Snapshot } from "@pp/protocol";
@@ -25,6 +25,8 @@ import {
 
 const ORIGIN = VALID_ENV.BASE_URL;
 const GRACE_MS = 400;
+/** After a restart: longer than the normal grace (60 s against 15 s in production). */
+const RESTART_GRACE_MS = 1200;
 const logs = collectLogs("debug");
 // Names no log line could contain by chance.
 const NAMES = { ada: "Adelheidqz", bob: "Bobrikowsk", cy: "Cyrillavex" } as const;
@@ -42,7 +44,10 @@ const codes: string[] = [];
 beforeAll(async () => {
   t = await createTestDatabase();
   const config = testConfig({ DATABASE_URL: t.url });
-  setup = await setupServer(config, logs.logger, undefined, { presenceGraceMs: GRACE_MS });
+  setup = await setupServer(config, logs.logger, undefined, {
+    presenceGraceMs: GRACE_MS,
+    presenceRestartGraceMs: RESTART_GRACE_MS,
+  });
   server = createServer(config, { ...setup.deps, logger: logs.logger });
   const { port } = await server.listen();
   base = `http://localhost:${port}`;
@@ -202,15 +207,19 @@ describe("the grace period", () => {
 });
 
 describe("after a restart", () => {
-  it("the room's first socket starts the grace of everyone shown connected without a socket here", async () => {
+  it("the room's first socket starts the restart grace of everyone shown connected without a socket here", async () => {
     // As a restart leaves it: everyone stored connected, no socket, no timer.
     const code = await insert(room({ lobby: true }));
     const a = client(ada);
+    const enteredAt = Date.now();
     await a.enter(code);
-    // Cy comes back inside the grace; Bob never does.
-    await sleep(GRACE_MS / 4);
+    const before = (await stored(code)).version;
+    // Cy comes back after the normal grace, inside the restart grace; Bob never does.
+    await sleep(GRACE_MS + 200);
+    expect((await stored(code)).version).toBe(before);
     await client(cy).enter(code);
     const away = await a.waitFor(isAway(bob.id), 3000);
+    expect(Date.now() - enteredAt).toBeGreaterThanOrEqual(RESTART_GRACE_MS);
     expect(away.snapshot.causes).toStrictEqual([{ type: "away", who: bob.id }]);
     await sleep(GRACE_MS);
     const latest = a.latest() as Snapshot;

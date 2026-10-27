@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createGraceTimers, PRESENCE_GRACE_MS } from "./presence.ts";
+import { createGraceTimers, PRESENCE_GRACE_MS, PRESENCE_RESTART_GRACE_MS } from "./presence.ts";
 
 describe("presence grace timers", () => {
   beforeEach(() => vi.useFakeTimers());
@@ -33,6 +33,20 @@ describe("presence grace timers", () => {
     expect(graces.cancel("r9", "ben")).toBe(false);
     vi.advanceTimersByTime(200);
     expect(fired).toEqual(["r1/ana"]);
+  });
+
+  it("runs a grace of its own length when given one: 60 s after a restart", () => {
+    const fired: string[] = [];
+    const graces = createGraceTimers((room, who) => fired.push(`${room}/${who}`));
+    graces.start("r1", "ana", PRESENCE_RESTART_GRACE_MS);
+    graces.start("r1", "ben");
+    vi.advanceTimersByTime(PRESENCE_GRACE_MS);
+    expect(fired).toEqual(["r1/ben"]);
+    vi.advanceTimersByTime(PRESENCE_RESTART_GRACE_MS - PRESENCE_GRACE_MS - 1);
+    expect(fired).toEqual(["r1/ben"]);
+    vi.advanceTimersByTime(1);
+    expect(fired).toEqual(["r1/ben", "r1/ana"]);
+    expect(PRESENCE_RESTART_GRACE_MS).toBe(60_000);
   });
 
   it("drops a room's timers, or all of them, without firing", () => {

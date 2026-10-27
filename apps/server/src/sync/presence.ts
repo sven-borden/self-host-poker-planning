@@ -12,9 +12,19 @@
 /** How long a person may be gone before they show as away. */
 export const PRESENCE_GRACE_MS = 15_000;
 
+/**
+ * The grace of people the room shows as connected when its first socket reaches this
+ * instance, as after a restart: every client reconnects at once and some take longer than
+ * a reload, so they get more time before a round can reveal without them.
+ */
+export const PRESENCE_RESTART_GRACE_MS = 60_000;
+
 export interface GraceTimers {
-  /** Starts the person's grace in the room; one already running keeps its deadline. */
-  start(room: string, who: string): void;
+  /**
+   * Starts the person's grace in the room, `ms` long (the timers' grace by default); one
+   * already running keeps its deadline.
+   */
+  start(room: string, who: string, ms?: number): void;
   /** Cancels the person's grace in the room, if any. Returns whether one was running. */
   cancel(room: string, who: string): boolean;
   /** Cancels every grace of a room: its last socket left this instance. */
@@ -48,7 +58,7 @@ export function createGraceTimers(
   }
 
   return {
-    start(room, who) {
+    start(room, who, ms = graceMs) {
       let people = rooms.get(room);
       if (people?.has(who)) return;
       if (!people) {
@@ -58,7 +68,7 @@ export function createGraceTimers(
       const timer = setTimeout(() => {
         cancel(room, who);
         fire(room, who);
-      }, graceMs);
+      }, ms);
       // The HTTP server keeps the process alive; a pending grace alone must not.
       timer.unref();
       people.set(who, timer);

@@ -16,6 +16,8 @@ import { createRoomSync } from "./sync/room-sync.ts";
 export interface SetupTuning {
   /** The presence grace (`PRESENCE_GRACE_MS`, 15 s, by default). */
   presenceGraceMs?: number;
+  /** The grace after a restart (`PRESENCE_RESTART_GRACE_MS`, 60 s, by default). */
+  presenceRestartGraceMs?: number;
 }
 
 export async function setupServer(
@@ -43,6 +45,9 @@ export async function setupServer(
     logger,
     sessionAlive: sessionChecker(db),
     ...(tuning.presenceGraceMs !== undefined && { presenceGraceMs: tuning.presenceGraceMs }),
+    ...(tuning.presenceRestartGraceMs !== undefined && {
+      presenceRestartGraceMs: tuning.presenceRestartGraceMs,
+    }),
   });
   return {
     database,
