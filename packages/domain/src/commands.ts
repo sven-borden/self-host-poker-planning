@@ -9,8 +9,10 @@ import type { Role, RoomState, Round, SettingsPatch, Subject, UserId } from "./r
  *
  * `castVote` and `retractVote` carry `round`, the number of the round the press was
  * made for: a command still in flight when the PO starts the next round is refused
- * (`round_changed`) instead of landing in it. The wire protocol always sends it; the
- * domain checks it whenever it is given.
+ * (`round_changed`) instead of landing in it. They carry `restart` too, the round's
+ * `restarts` when the press was made: a deck change restarts the round under the same
+ * number (#26), and a vote for the old deck must not land in the new one. The wire
+ * protocol always sends both; the domain checks each whenever it is given.
  */
 export type Command =
   | { type: "join"; name: string; role: Role }
@@ -19,8 +21,8 @@ export type Command =
   | { type: "setRole"; role: Role }
   | { type: "kick"; who: UserId }
   | { type: "startRound"; subject: Subject }
-  | { type: "castVote"; card: Card; round?: number }
-  | { type: "retractVote"; round?: number }
+  | { type: "castVote"; card: Card; round?: number; restart?: number }
+  | { type: "retractVote"; round?: number; restart?: number }
   | { type: "reveal" }
   | { type: "setFinal"; card: Card }
   | { type: "revote" }

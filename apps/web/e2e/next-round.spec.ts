@@ -222,7 +222,9 @@ test("an anonymous round leaves only its cards in history (AC 2)", async ({
     await expect(page.getByRole("link", { name: "#12345 (opens in a new tab)" })).toBeVisible();
     for (const [i, guest] of guests.entries()) {
       const card = ["13", "8"][i];
-      expect(await guest.cmd("castVote", { card, round: 1 })).toMatchObject({ ok: true });
+      expect(await guest.cmd("castVote", { card, round: 1, restart: 0 })).toMatchObject({
+        ok: true,
+      });
     }
     await handCard(page, "8").click();
     await page.getByRole("button", { name: "Next round" }).click();

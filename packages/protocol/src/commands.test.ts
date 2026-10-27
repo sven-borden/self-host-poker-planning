@@ -165,6 +165,13 @@ describe("wire commands", () => {
     ["a round 0", { id: "1", type: "retractVote", payload: { round: 0 } }],
     ["a fractional round", { id: "1", type: "castVote", payload: { card: "5", round: 1.5 } }],
     ["a round as text", { id: "1", type: "retractVote", payload: { round: "1" } }],
+    ["a vote without its restart", { id: "1", type: "castVote", payload: { card: "5", round: 1 } }],
+    ["a retract without its restart", { id: "1", type: "retractVote", payload: { round: 1 } }],
+    [
+      "a negative restart",
+      { id: "1", type: "castVote", payload: { card: "5", round: 1, restart: -1 } },
+    ],
+    ["a fractional restart", { id: "1", type: "retractVote", payload: { round: 1, restart: 0.5 } }],
     [
       "a name past the wire cap",
       {

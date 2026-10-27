@@ -91,6 +91,9 @@ export const settingsPatchSchema = z.strictObject({
 /** A round's number, as the snapshot gave it (rounds count from 1). */
 const roundNumberSchema = z.number().int().min(1);
 
+/** How many times the round had restarted when the press was made (#26), 0 for none. */
+const restartSchema = z.number().int().min(0);
+
 /** A command without fields may omit `payload`. */
 const empty = z.strictObject({}).default({});
 
@@ -106,10 +109,15 @@ const payloads = {
   setRole: z.strictObject({ role: roleSchema }),
   kick: z.strictObject({ who: userIdSchema }),
   startRound: z.strictObject({ subject: wireSubjectSchema }),
-  // The number of the round the press was made for: one still in flight when the next
-  // round starts is refused (`round_changed`) instead of landing in it.
-  castVote: z.strictObject({ card: cardSchema, round: roundNumberSchema }),
-  retractVote: z.strictObject({ round: roundNumberSchema }),
+  // The round the press was made for, its number and restarts: one still in flight when
+  // the next round starts, or when a deck change restarts this one, is refused
+  // (`round_changed`) instead of landing in it.
+  castVote: z.strictObject({
+    card: cardSchema,
+    round: roundNumberSchema,
+    restart: restartSchema,
+  }),
+  retractVote: z.strictObject({ round: roundNumberSchema, restart: restartSchema }),
   reveal: empty,
   setFinal: z.strictObject({ card: cardSchema }),
   revote: empty,

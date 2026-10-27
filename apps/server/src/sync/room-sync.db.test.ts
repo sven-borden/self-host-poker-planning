@@ -168,7 +168,7 @@ describe("a burst past the message limit (AC 3)", () => {
     await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
     const burst = Promise.all(
       Array.from({ length: 200 }, (_, i) =>
-        b.cmd("castVote", { card: i % 2 ? "5" : "3", round: 1 }),
+        b.cmd("castVote", { card: i % 2 ? "5" : "3", round: 1, restart: 0 }),
       ),
     );
     const started = performance.now();
@@ -193,7 +193,7 @@ describe("a burst past the message limit (AC 3)", () => {
     expect(b.latest()?.room.round?.yourVote).toBe(stored?.state.round?.votes[bob.id]?.card);
     // And the socket goes on working once the bucket refills.
     await sleep(300);
-    expect((await b.cmd("retractVote", { round: 1 })).ok).toBe(true);
+    expect((await b.cmd("retractVote", { round: 1, restart: 0 })).ok).toBe(true);
     // Bob's bucket is shared by all his sockets, later tests' too: let it fill up again.
     await sleep(2000);
   });
@@ -206,8 +206,8 @@ describe("secrecy on the real frames", () => {
     const b = client(bob);
     const c = client(cy);
     await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
-    expect((await a.cmd("castVote", { card: "13", round: 1 })).ok).toBe(true);
-    expect((await b.cmd("castVote", { card: "5", round: 1 })).ok).toBe(true);
+    expect((await a.cmd("castVote", { card: "13", round: 1, restart: 0 })).ok).toBe(true);
+    expect((await b.cmd("castVote", { card: "5", round: 1, restart: 0 })).ok).toBe(true);
     // Everyone voted: the room reveals by itself; wait for the last voting snapshot first.
     await c.waitFor((s) => s.room.round?.phase === "revealed");
     await b.waitFor((s) => s.room.round?.phase === "revealed");
@@ -238,8 +238,8 @@ describe("secrecy on the real frames", () => {
       const c = client(cy);
       await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
       // The second vote completes the round: "everyone voted" reveals it.
-      expect((await a.cmd("castVote", { card: cards[0], round: 1 })).ok).toBe(true);
-      expect((await b.cmd("castVote", { card: cards[1], round: 1 })).ok).toBe(true);
+      expect((await a.cmd("castVote", { card: cards[0], round: 1, restart: 0 })).ok).toBe(true);
+      expect((await b.cmd("castVote", { card: cards[1], round: 1, restart: 0 })).ok).toBe(true);
       await c.waitFor((s) => s.room.round?.phase === "revealed");
       return { code, frames: [...c.frames] };
     }
@@ -303,8 +303,8 @@ describe("the reveal (#19)", () => {
     const watchers = [client(cy, instances[0]), client(cy, instances[1])];
     await Promise.all([a.enter(code), b.enter(code), ...watchers.map((w) => w.enter(code))]);
     const acks = await Promise.all([
-      a.cmd("castVote", { card: "3", round: 1 }),
-      b.cmd("castVote", { card: "8", round: 1 }),
+      a.cmd("castVote", { card: "3", round: 1, restart: 0 }),
+      b.cmd("castVote", { card: "8", round: 1, restart: 0 }),
     ]);
     expect(acks.map((ack) => ack.ok)).toEqual([true, true]);
     // Only the instance that stored the reveal broadcasts it.
@@ -435,8 +435,8 @@ describe("the next round (#21)", () => {
     const b = client(bob);
     const c = client(cy);
     await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
-    expect((await a.cmd("castVote", { card: "5", round: 1 })).ok).toBe(true);
-    expect((await b.cmd("castVote", { card: "8", round: 1 })).ok).toBe(true);
+    expect((await a.cmd("castVote", { card: "5", round: 1, restart: 0 })).ok).toBe(true);
+    expect((await b.cmd("castVote", { card: "8", round: 1, restart: 0 })).ok).toBe(true);
     await c.waitFor((s) => s.room.round?.phase === "revealed");
     // Before the next round, nothing is history yet.
     expect(await historyOf(code)).toEqual([]);
@@ -501,8 +501,8 @@ describe("commands", () => {
     const b = client(bob);
     await b.enter(code);
     const [x, y] = await Promise.all([
-      b.cmd("castVote", { card: "8", round: 1 }, "twice"),
-      b.cmd("castVote", { card: "8", round: 1 }, "twice"),
+      b.cmd("castVote", { card: "8", round: 1, restart: 0 }, "twice"),
+      b.cmd("castVote", { card: "8", round: 1, restart: 0 }, "twice"),
     ]);
     expect(x).toEqual({ ok: true, version: 2 });
     expect(y).toEqual(x);
@@ -539,7 +539,11 @@ describe("one session flooding a room from many sockets", () => {
       for (let i = 0; i < times; i++) {
         const sent = performance.now();
         acks.push(
-          await honest.cmd("castVote", { card: i % 2 ? "3" : "5", round: 1 }, `${label}-${i}`),
+          await honest.cmd(
+            "castVote",
+            { card: i % 2 ? "3" : "5", round: 1, restart: 0 },
+            `${label}-${i}`,
+          ),
         );
         ms.push(performance.now() - sent);
         await sleep(50);
@@ -602,7 +606,9 @@ describe("one session flooding a room from many sockets", () => {
     expect(accepted).toBeLessThan(20 + 10 * 3);
     // Bob's first vote is still remembered: sent again, it is answered, not applied again.
     const before = (await main().database.store.loadRoom(code))?.version;
-    expect(await honest.cmd("castVote", { card: "5", round: 1 }, "quiet-0")).toEqual(quiet.acks[0]);
+    expect(await honest.cmd("castVote", { card: "5", round: 1, restart: 0 }, "quiet-0")).toEqual(
+      quiet.acks[0],
+    );
     expect((await main().database.store.loadRoom(code))?.version).toBe(before);
   });
 });

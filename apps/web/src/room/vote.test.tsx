@@ -162,7 +162,7 @@ describe("the hand", () => {
     fireEvent.click(card("5"));
     await waitFor(() => expect(handLive()).toBe("Your vote: 5."));
     expect(pressed()).toEqual(["5"]);
-    expect(sent).toEqual([{ type: "castVote", payload: { card: "5", round: 1 } }]);
+    expect(sent).toEqual([{ type: "castVote", payload: { card: "5", round: 1, restart: 0 } }]);
     expect(mySlot()?.getAttribute("data-face")).toBe("down");
     expect(centre()).toBe("1/3 voted so far");
 
@@ -173,7 +173,7 @@ describe("the hand", () => {
     fireEvent.click(card("8"));
     await waitFor(() => expect(handLive()).toBe("Vote taken back."));
     expect(pressed()).toEqual([]);
-    expect(sent.at(-1)).toEqual({ type: "retractVote", payload: { round: 1 } });
+    expect(sent.at(-1)).toEqual({ type: "retractVote", payload: { round: 1, restart: 0 } });
     expect(mySlot()?.getAttribute("data-face")).toBe("empty");
     expect(server.round?.votes).toEqual({});
   });
@@ -252,7 +252,7 @@ describe("the hand", () => {
     run("po", { type: "startRound", subject: { kind: "none" } });
     await act(async () => open());
     await waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0]).toEqual({ type: "castVote", payload: { card: "8", round: 1 } });
+    expect(sent[0]).toEqual({ type: "castVote", payload: { card: "8", round: 1, restart: 0 } });
     expect(server.round?.number).toBe(2);
     expect(server.round?.votes).toEqual({});
     expect(pressed()).toEqual([]);

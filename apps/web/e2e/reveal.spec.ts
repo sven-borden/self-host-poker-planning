@@ -69,7 +69,7 @@ async function fillTable(base: string, code: string): Promise<Guest[]> {
 async function guestsVote(guests: Guest[], skip = 0) {
   for (const [i, guest] of guests.slice(0, guests.length - skip).entries()) {
     const card = GUESTS[i]?.[1] ?? "";
-    expect(await guest.cmd("castVote", { card, round: 1 })).toMatchObject({ ok: true });
+    expect(await guest.cmd("castVote", { card, round: 1, restart: 0 })).toMatchObject({ ok: true });
   }
 }
 
@@ -213,7 +213,9 @@ test("the last vote reveals a named round; its card turns in its place, back fir
     await expect(ben.page.locator("[data-face='empty']")).toHaveCount(1);
     await recordAnimations(ben.page);
     await freezeAnimations(ben.page);
-    expect(await guests[5]?.cmd("castVote", { card: "2", round: 1 })).toMatchObject({ ok: true });
+    expect(await guests[5]?.cmd("castVote", { card: "2", round: 1, restart: 0 })).toMatchObject({
+      ok: true,
+    });
 
     await expect(status(ben.page)).toHaveAttribute("data-centre-status", "revealed");
     await expect(ben.page.locator("[data-face='up']")).toHaveCount(8);
@@ -293,7 +295,9 @@ test("a voter who left after a named reveal and came back as an observer keeps t
     expect(await cy.cmd("join", { name, role: "voter" })).toMatchObject({ ok: true });
     await expect(seats(page).locator("[data-seat]")).toHaveCount(2);
     await page.getByRole("button", { name: "Start voting" }).click();
-    expect(await cy.cmd("castVote", { card: "13", round: 1 })).toMatchObject({ ok: true });
+    expect(await cy.cmd("castVote", { card: "13", round: 1, restart: 0 })).toMatchObject({
+      ok: true,
+    });
     await expect(status(page)).toHaveText("1/2 voted so far");
     await revealButton(page).click();
     await expect(page.getByRole("button", { name: "Next round" })).toBeVisible();

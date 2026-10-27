@@ -65,6 +65,8 @@ const roundFields = {
   number: z.number().int(),
   subject: subjectSchema,
   startedAt: z.number(),
+  /** How many times a deck change restarted the round (#26); absent for none. */
+  restarts: z.number().int().optional(),
   deadlineAt: z.number().optional(),
   deck: deckSpecSchema,
   specials: z.array(specialCardSchema),
