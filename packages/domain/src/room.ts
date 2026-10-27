@@ -107,6 +107,12 @@ export type RoomState = {
   participants: Record<UserId, Participant>;
   /** `null` = lobby, before the first round. */
   round: Round | null;
+  /**
+   * The room has a password (#31). Only the flag lives here: the argon2id hash has its own
+   * column (`room.password_hash`), so it can never reach a snapshot. Absent: no password,
+   * as in every room stored before #31.
+   */
+  hasPassword?: true;
 };
 
 /** A room holds at most this many people, observers included unless the room says otherwise. */

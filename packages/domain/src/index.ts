@@ -10,6 +10,7 @@ export type {
   Command,
   CommandType,
   ErrorCode,
+  PasswordChange,
   ServerCommandType,
 } from "./commands.ts";
 export { type CustomDeckErrorCode, validateCustomDeck } from "./custom-deck.ts";
