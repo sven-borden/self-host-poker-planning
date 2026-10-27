@@ -129,7 +129,7 @@ async function another(
 }
 
 /** Applies a custom deck in the open panel: picks "Custom deck", types, uses it. */
-async function useCustomDeck(page: Page, cards: string) {
+async function applyCustomDeck(page: Page, cards: string) {
   await deckGroup(page).getByRole("radio", { name: "Custom deck" }).check();
   await customField(page).fill(cards);
   await settings(page).getByRole("button", { name: "Use these cards" }).click();
@@ -355,7 +355,7 @@ test("a custom deck with decimals gives an average and median in French and Germ
       readers.push({ context, page: reader });
     }
     await page.getByRole("button", { name: "Room settings" }).click();
-    await useCustomDeck(page, "0.5, 1, 1.5, 2.5");
+    await applyCustomDeck(page, "0.5, 1, 1.5, 2.5");
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Start voting" }).click();
     await vote(guests, ["0.5", "2.5"]);
@@ -399,7 +399,7 @@ test("an emoji deck shows the most voted card, the agreement and the spread, no 
   const guests = await guestsJoin(baseURL ?? "", code, ["Cy", "Dan", "Eve"]);
   try {
     await page.getByRole("button", { name: "Room settings" }).click();
-    await useCustomDeck(page, "🐜, 🐈, 🐘");
+    await applyCustomDeck(page, "🐜, 🐈, 🐘");
     await expect(settings(page).locator("[data-deck-preview] [data-mini-card]")).toHaveText([
       "🐜",
       "🐈",
@@ -512,7 +512,7 @@ test("a 20-card deck with the three specials stays playable and legible at 360 a
     await ben.page.goto(page.url());
     await join(ben.page, "Ben");
     await page.getByRole("button", { name: "Room settings" }).click();
-    await useCustomDeck(page, TWENTY.join(", "));
+    await applyCustomDeck(page, TWENTY.join(", "));
     await settings(page).getByRole("switch", { name: "Too big to estimate" }).click();
     await expect(
       settings(page).getByRole("switch", { name: "Too big to estimate" }),
