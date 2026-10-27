@@ -184,10 +184,9 @@ function Panel({ model, motion }: { model: ResultsModel; motion: RevealMotion })
             value:
               model.mostVoted.length === 0
                 ? null
-                : {
-                    shown: model.mostVoted.join(" · "),
-                    spoken: format.list(model.mostVoted),
-                  },
+                : model.mostVoted.length === 1
+                  ? { shown: model.mostVoted.join("") }
+                  : { shown: model.mostVoted.join(" · "), spoken: format.list(model.mostVoted) },
           },
         ]),
     {

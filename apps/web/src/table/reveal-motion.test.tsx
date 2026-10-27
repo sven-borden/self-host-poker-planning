@@ -189,4 +189,39 @@ describe("SlotCard and the table at a reveal", () => {
       { value: "4", delay: 180 },
     ]);
   });
+  it("marks the lowest and highest seats once the last card has turned (#20)", () => {
+    const people = (revealed: boolean) =>
+      (["me", "ana", "ben"] as const).map((id, i) => ({
+        id,
+        name: id,
+        status: !revealed
+          ? ({ kind: "voted" } as const)
+          : ({
+              kind: "revealed",
+              card: String(i + 1),
+              extreme: i === 0 ? "low" : i === 2 ? "high" : undefined,
+            } as const),
+      }));
+    // A reload shows the marks at rest.
+    const { unmount } = render(<TableStage people={people(true)} variant="desktop" />);
+    expect(document.querySelectorAll("[data-badge='lowest'], [data-badge='highest']")).toHaveLength(
+      2,
+    );
+    expect(animate).not.toHaveBeenCalled();
+    unmount();
+    const { rerender } = render(<TableStage people={people(false)} variant="desktop" />);
+    rerender(<TableStage people={people(true)} variant="desktop" />);
+    const popped = animate.mock.contexts
+      .map((element, i) => ({ element: element as HTMLElement, i }))
+      .filter(({ element }) => element.dataset.badge !== undefined)
+      .map(({ element, i }) => ({
+        badge: element.dataset.badge,
+        delay: (animate.mock.calls[i]?.[1] as KeyframeAnimationOptions | undefined)?.delay,
+      }));
+    // Three cards turn: the last starts at 180 ms and ends 650 ms later.
+    expect(popped).toEqual([
+      { badge: "lowest", delay: FLIP_MS + 2 * FLIP_STAGGER_MS },
+      { badge: "highest", delay: FLIP_MS + 2 * FLIP_STAGGER_MS },
+    ]);
+  });
 });
