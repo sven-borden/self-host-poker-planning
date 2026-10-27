@@ -1,4 +1,4 @@
-import { isNumericDeck } from "@pp/domain";
+import { baseCards, isNumericDeck } from "@pp/domain";
 import type { RoomView } from "@pp/protocol";
 import { formatList } from "../i18n/format.ts";
 import { languageOf, type TFunction } from "../i18n/i18n.ts";
@@ -123,6 +123,38 @@ export function summarySentence(t: TFunction, summary: RevealSummary): string {
     case "none":
       return t("results.nothing");
   }
+}
+
+/** What the PO's final estimate picker offers after a reveal (#32). */
+export interface FinalChoice {
+  /** Every card the final may be: the round's deck without the specials, in deck order. */
+  cards: readonly string[];
+  /**
+   * The card picked before the PO touches anything: the recorded final, else the
+   * suggestion (a consensus or a suggested card). Null on a tie or with nothing to count:
+   * the PO picks, nothing is guessed.
+   */
+  preselected: string | null;
+  /** The suggested card, marked in the picker. */
+  suggested: string | null;
+  /** The tied cards of a deck without numbers, marked in the picker. */
+  tied: readonly string[];
+}
+
+/** The picker's cards and marks, from the round's deck and its result (`revealSummary`). */
+export function finalChoice(round: RevealedRound): FinalChoice {
+  const cards = baseCards(round.deck);
+  const summary = revealSummary(round);
+  const suggestion =
+    summary.kind === "consensus" || summary.kind === "suggested" ? summary.card : null;
+  // A suggestion is a deck card; the check keeps a stray value out of the picker.
+  const suggested = suggestion !== null && cards.includes(suggestion) ? suggestion : null;
+  return {
+    cards,
+    preselected: round.final ?? suggested,
+    suggested,
+    tied: summary.kind === "tie" ? summary.cards : [],
+  };
 }
 
 /** The results panel's content, or null before a reveal. */

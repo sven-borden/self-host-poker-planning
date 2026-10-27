@@ -1,16 +1,17 @@
 import { MAX_PARTICIPANTS } from "@pp/domain";
 import type { CauseView, RoomSettingsView, RoomView, RoundView } from "@pp/protocol";
 import type { TFunction } from "../i18n/i18n.ts";
+import { cardLabel } from "../table/cards.tsx";
 import { type RevealSummary, revealSummary, summarySentence } from "./results-view.ts";
 import { deckName, SETTING_KEYS, type SettingKey, sameSetting } from "./settings-words.ts";
 import { subjectName } from "./subject.ts";
 
 // What the table's live region says (#17): joins, leaves, away and back, votes, a new
-// round (#18), the reveal (#19) and the PO's settings changes (#25), read from a
-// snapshot's causes. Never a person's card:
-// a vote cause carries who, never what, and the reveal says the round's result (#20:
-// "Cards revealed. Consensus on 8."), which belongs to nobody. Pure, so the batching rules
-// are tested without timers; `live-announcer.tsx` runs them.
+// round (#18) or a re-vote (#32), the reveal (#19), the PO's final estimate (#32) and the
+// PO's settings changes (#25), read from a snapshot's causes. Never a person's card: a
+// vote cause carries who, never what, the reveal says the round's result (#20: "Cards
+// revealed. Consensus on 8."), and the final is the PO's decision; both belong to nobody.
+// Pure, so the batching rules are tested without timers; `live-announcer.tsx` runs them.
 
 export type LiveKind =
   | "settings"
@@ -20,7 +21,8 @@ export type LiveKind =
   | "away"
   | "back"
   | "voted"
-  | "revealed";
+  | "revealed"
+  | "final";
 
 export interface LiveEvent {
   kind: LiveKind;
@@ -35,6 +37,10 @@ export interface LiveEvent {
    * and whether it is anonymous (#25: "Voting started: Round 4, anonymous.").
    */
   round?: Pick<RoundView, "number" | "subject" | "anonymous">;
+  /** A new round that is a re-vote (#32): "a new vote on the same subject". */
+  revote?: boolean;
+  /** The final estimate the PO recorded, and whether it replaced an earlier one (#32). */
+  final?: { card: string; changed: boolean };
   /**
    * A setting the PO changed (#25), with the room's settings before and after, and the
    * number of the next round, from which a change of anonymity applies. A deck or specials
@@ -66,6 +72,7 @@ const ORDER: readonly Exclude<LiveKind, "settings">[] = [
   "back",
   "voted",
   "revealed",
+  "final",
 ];
 
 /** Events that undo each other inside one batch: nothing is said for either. */
@@ -120,6 +127,15 @@ export function liveEvents(
             subject: { kind: "none" },
             anonymous: !next.settings.revealNames,
           },
+          ...(cause.revote ? { revote: true } : {}),
+        });
+        continue;
+      case "finalSet":
+        events.push({
+          kind: "final",
+          who: "",
+          name: "",
+          final: { card: cause.card, changed: hadFinal(previous, next) },
         });
         continue;
       case "revealed":
@@ -203,6 +219,12 @@ function revealedEvent(next: RoomView): LiveEvent {
     : { kind: "revealed", who: "", name: "" };
 }
 
+/** Whether `previous` showed a final for the round `next` shows: a new final is a change. */
+function hadFinal(previous: RoomView | null, next: RoomView): boolean {
+  const was = previous?.round;
+  return was?.phase === "revealed" && was.final !== undefined && was.number === next.round?.number;
+}
+
 /** Whether `next` shows revealed the same round that `previous` showed voting. */
 function revealedSince(previous: RoomView | null, next: RoomView): boolean {
   const was = previous?.round;
@@ -219,8 +241,9 @@ function revealedSince(previous: RoomView | null, next: RoomView): boolean {
  * Adds `events` to a batch waiting to be said: a repeat is dropped, and an event that
  * undoes one in the batch (a person away and back again) removes both. A new round makes
  * a reveal still waiting in the batch moot (a timer's reveal resolved by the next round's
- * start): the revealed cards are already gone. Of two new rounds in one batch, the later
- * one is said, with its own subject.
+ * start): the revealed cards are already gone, and so is a final waiting with them. Of
+ * two new rounds in one batch, the later one is said, with its own subject. Of two finals,
+ * the later card is said, as recorded when the first one was recorded (#32).
  */
 export function mergeEvents(pending: readonly LiveEvent[], events: readonly LiveEvent[]) {
   let merged = [...pending];
@@ -235,7 +258,15 @@ export function mergeEvents(pending: readonly LiveEvent[], events: readonly Live
       continue;
     }
     if (event.kind === "roundStarted") {
-      merged = merged.filter((e) => e.kind !== "revealed" && e.kind !== "roundStarted");
+      merged = merged.filter(
+        (e) => e.kind !== "revealed" && e.kind !== "roundStarted" && e.kind !== "final",
+      );
+    }
+    const earlier = merged.find((e) => e.kind === "final");
+    if (event.kind === "final" && earlier?.final && event.final) {
+      const final = { card: event.final.card, changed: earlier.final.changed };
+      merged = merged.map((e) => (e === earlier ? { ...e, final } : e));
+      continue;
     }
     const undone = UNDOES[event.kind];
     const opposite = merged.findIndex((e) => e.who === event.who && e.kind === undone);
@@ -258,6 +289,7 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
     case "settings":
       return events.flatMap((e) => (e.setting ? [settingSentence(t, e.setting)] : [])).join(" ");
     case "roundStarted":
+      if (first?.revote) return t(first.round?.anonymous ? "live.revoteAnonymous" : "live.revote");
       return t(first?.round?.anonymous ? "live.roundStartedAnonymous" : "live.roundStarted", {
         subject: first?.round ? subjectName(t, first.round) : "",
       });
@@ -275,6 +307,10 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
       return first?.summary
         ? `${t("live.revealed")} ${summarySentence(t, first.summary)}`
         : t("live.revealed");
+    case "final": {
+      const card = cardLabel(t, first?.final?.card ?? "");
+      return t(first?.final?.changed ? "live.finalChanged" : "live.finalRecorded", { card });
+    }
   }
 }
 

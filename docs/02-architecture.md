@@ -165,7 +165,7 @@ client that sends one gets `bad_payload`; the server's timers send it (section 9
 | `retractVote {round, restart}` | self | `round_changed` as for `castVote`; Voting only (`not_voting`); no-op without a vote |
 | `reveal` | PO, or anyone if `whoCanReveal = "anyone"` | Voting only (`not_voting`, `not_allowed`); zero votes allowed; stops the timer |
 | `setFinal {card}` | PO | Revealed only (`not_revealed`); a non-special card of the round (`bad_card`) |
-| `revote` | PO | Revealed only; a new round with the same subject |
+| `revote` | PO | Revealed only; a new round with the same subject; its `roundStarted` cause carries `revote: true` (#32) |
 | `startTimer {seconds}` | PO | Voting only; integer 5–3600 (`bad_seconds`); restarts a running timer; no change when the deadline stays the same |
 | `stopTimer` | PO | no-op without a timer |
 | `extendTimer {seconds}` | PO | running timer only (`no_timer`); 5–3600 |
@@ -382,7 +382,16 @@ the error `conflict` → emit snapshots. The queue avoids needless conflicts on 
 instance; the version check keeps several instances correct.
 
 **History**: when the step's `ended` is a revealed round, its row is written in the same
-transaction as the commit, so a lost commit writes nothing. Writing the same round again
+transaction as the commit, so a lost commit writes nothing. So is the revealed round on
+the table once the PO recorded its final estimate (#32, `historyRound` in
+`db/history.ts`): every step that changes that round (the final set or changed, a vote
+changed after the reveal, a departed voter's name kept) writes its row, so the decision
+is stored when it is made, even if nobody starts another round. `finished_at` is the
+end of the round (the next round or a re-vote writes the row again); while the round is
+still on the table it is the time of the row's last write, which a vote changed or a
+voter leaving after the final also moves, so it is not the decision's time. The round
+still on the table may already have a history row: the history panel (#33) must not show
+it twice, beside the live round. Writing the same round again
 (`room_id`, `number`) updates its row, so a retry or a later rewrite (for example by an
 idle job) never duplicates it. `votes` is `{ kind: "named", votes: [{ who, name, card,
 changedAfterReveal? }] }`, people still in the room by joining order, then those who

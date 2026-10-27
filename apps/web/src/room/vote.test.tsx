@@ -610,9 +610,9 @@ describe("the reveal (#19)", () => {
     await waitFor(() => expect(server.round?.phase).toBe("revealed"));
     expect(sent).toEqual([{ type: "reveal" }]);
     expect(revealButton()).toBeNull();
-    // The button left with the focus: it goes on to the next round's button.
+    // The button left with the focus: it goes on to recording the suggestion (#32).
     await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Next round" })),
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Record 8" })),
     );
     expect(card("8").getAttribute("aria-disabled")).toBe("true");
     expect(

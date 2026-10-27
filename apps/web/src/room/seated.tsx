@@ -9,6 +9,7 @@ import { revealSettleMs } from "../table/reveal-motion.ts";
 import { TableStage } from "../table/table-stage.tsx";
 import { type Box, CardFlight, type Flight, type InAir } from "./card-flight.tsx";
 import { failureMessage } from "./failure.ts";
+import { Decision } from "./final-estimate.tsx";
 import { inSight, useHandDock } from "./hand-dock.ts";
 import { confirmedOf, shownCard, withShownVote } from "./hand-state.ts";
 import { LiveAnnouncer } from "./live-announcer.tsx";
@@ -67,6 +68,10 @@ const boxOf = (rect: DOMRect): Box => ({
  * The next round (#21): the round and its subject show above the table for everyone
  * (`RoundSubject`); the PO's subject field sits above that (`NextSubject`), and the
  * centre's button starts the round with it.
+ *
+ * The final estimate (#32): after a reveal the PO's decision sits right under the table
+ * (`Decision`: the picker, "Record 8", "Next round", "Vote again"), and the centre shows
+ * the recorded final to everyone.
  */
 export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedProps) {
   const t = useT();
@@ -174,14 +179,23 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           <RoundCentre room={shown} onFailure={setCentreFailure} next={next} reveal={reveal} />
         </TableStage>
         <RevealedCards room={room} />
-        {room.round?.phase === "revealed" ? <ResultsPanel room={room} motion={reveal} /> : null}
-        <LiveAnnouncer />
+        {me.isOwner && room.round?.phase === "revealed" ? (
+          <Decision
+            key={`${room.round.number}:${room.round.startedAt}`}
+            round={room.round}
+            next={next}
+            onFailure={setCentreFailure}
+          />
+        ) : null}
+        {/* Under the table and the PO's decision, above the results: where the PO acted. */}
         {centreFailure !== null ? (
           <p role="alert" className="mt-3 flex items-start justify-center gap-2 text-sm">
             <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
             {failureMessage(t, centreFailure)}
           </p>
         ) : null}
+        {room.round?.phase === "revealed" ? <ResultsPanel room={room} motion={reveal} /> : null}
+        <LiveAnnouncer />
       </section>
       {hand.kind === "cards" ? (
         <div

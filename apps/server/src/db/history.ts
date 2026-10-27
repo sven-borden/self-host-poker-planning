@@ -4,21 +4,49 @@
  * round keeps the cards alone, in display order, with no user id, no name and no order
  * that follows the people.
  */
-import { computeResults, type Participant, type Round, type UserId } from "@pp/domain";
+import {
+  computeResults,
+  type Participant,
+  type RoomState,
+  type Round,
+  type UserId,
+} from "@pp/domain";
 import type { HistoryVotes, NamedHistoryVote, roundHistory } from "./schema.ts";
 
 /**
- * A round an `apply` ended (`ApplyResult.ended`). `participants` gives the voters' names:
- * the room before and after the command, so a name is found when it is anywhere.
+ * A round to write to history (`historyRound`): one an `apply` ended, or a revealed round
+ * whose final estimate the PO recorded. `participants` gives the voters' names: the room
+ * before and after the command, so a name is found when it is anywhere.
  */
 export interface EndedRound {
   round: Round;
   participants: Readonly<Record<UserId, Pick<Participant, "name" | "joinedAt">>>;
-  /** When the round ended, epoch milliseconds. */
+  /**
+   * When the row was written, epoch milliseconds: the decision while the round is still on
+   * the table, then the round's end, which writes the row again.
+   */
   finishedAt: number;
 }
 
 export type HistoryRow = typeof roundHistory.$inferInsert;
+
+/**
+ * The round a command leaves to write to history, if any: the round it ended (a next
+ * round, a re-vote), or else the revealed round on the table once the PO recorded its
+ * final estimate (#32) and the command changed it (the final set or changed, a vote
+ * changed after the reveal, a departed voter's name kept). So a decision is stored when
+ * it is made, even if nobody starts another round; the round's end writes the row again.
+ */
+export function historyRound(
+  before: RoomState,
+  after: RoomState,
+  ended?: Round,
+): Round | undefined {
+  if (ended) return ended;
+  const round = after.round;
+  if (round?.phase !== "revealed" || round.final === undefined) return undefined;
+  return round === before.round ? undefined : round;
+}
 
 /** Only a revealed round is history; an abandoned or restarted voting round is not. */
 export function isHistory(ended: EndedRound | undefined): ended is EndedRound {

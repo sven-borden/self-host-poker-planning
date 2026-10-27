@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatNumber } from "../i18n/format.ts";
 import { changeLanguage, fixedT, loadLanguage } from "../i18n/i18n.ts";
 import { CentreResult, ResultsPanel } from "./results.tsx";
+import { CentreFallback } from "./results-chunk.tsx";
 import {
   CONSENSUS_POP_MS,
   CONSENSUS_PULSE_MS,
@@ -25,6 +26,7 @@ import {
   showAt,
 } from "./results-motion.ts";
 import {
+  finalChoice,
   type RevealedRound,
   resultsModel,
   revealSummary,
@@ -151,9 +153,7 @@ describe("the results panel shows computeResults for every built-in deck (AC 1, 
   it.each(PRESET_DECK_IDS)("%s, in the centre", (deck) => {
     const cards = PLAYS[deck];
     const expected = computeResults(cards, { kind: "preset", id: deck });
-    const { container } = render(
-      <CentreResult room={revealed(deck, cards)} compact={false} motion={AT_REST} />,
-    );
+    const { container } = render(<CentreResult room={revealed(deck, cards)} motion={AT_REST} />);
     const sentence = container.querySelector(".sr-only")?.textContent;
     const word = deck === "tshirt" ? "Most voted" : "Suggested";
     expect(sentence).toBe(
@@ -166,7 +166,7 @@ describe("the results panel shows computeResults for every built-in deck (AC 1, 
 describe("the results' edge cases", () => {
   it("says a consensus with a pill, and the spread as one card", () => {
     const room = revealed("fib", ["8", "8", "8"]);
-    const { container } = render(<CentreResult room={room} compact motion={AT_REST} />);
+    const { container } = render(<CentreResult room={room} motion={AT_REST} />);
     expect(
       container.querySelector("[data-centre-result]")?.getAttribute("data-centre-result"),
     ).toBe("consensus");
@@ -190,7 +190,7 @@ describe("the results' edge cases", () => {
     expect(region.querySelector("[data-distribution]")).toBeNull();
     expect(spoken("Not counted")).toEqual(["unsure: 2 votes", "needs a break: 1 vote"]);
     cleanup();
-    const { container } = render(<CentreResult room={room} compact={false} motion={AT_REST} />);
+    const { container } = render(<CentreResult room={room} motion={AT_REST} />);
     expect(container.textContent).toBe("Nothing to count.");
   });
 
@@ -216,7 +216,7 @@ describe("the results' edge cases", () => {
     // 3, 3 and 13: the average 6.3 is nearest 5, which nobody played; 67% is how much the
     // team agrees (two of three on 3), not support for 5.
     const room = revealed("fib", ["3", "3", "13"]);
-    const { container } = render(<CentreResult room={room} compact={false} motion={AT_REST} />);
+    const { container } = render(<CentreResult room={room} motion={AT_REST} />);
     expect(
       container.querySelector("[data-centre-result]")?.getAttribute("data-centre-result"),
     ).toBe("suggested");
@@ -227,7 +227,7 @@ describe("the results' edge cases", () => {
 
   it("names a tie for most voted in the centre, as the panel does", () => {
     const room = revealed("tshirt", ["M", "L", "M", "L"]);
-    const { container } = render(<CentreResult room={room} compact motion={AT_REST} />);
+    const { container } = render(<CentreResult room={room} motion={AT_REST} />);
     expect(
       container.querySelector("[data-centre-result]")?.getAttribute("data-centre-result"),
     ).toBe("tie");
@@ -382,5 +382,84 @@ describe("namesakes in the results (#22)", () => {
     const { region } = panel(room);
     const highest = region.querySelector("[data-extreme='high']");
     expect(highest?.textContent).toContain("Ana (2)");
+  });
+});
+
+describe("the final estimate (#32)", () => {
+  /** `room` with the PO's recorded final. */
+  const withFinal = (room: RoomView, final: string): RoomView => ({
+    ...room,
+    round: { ...(room.round as RevealedRound), final },
+  });
+  const choiceOf = (room: RoomView) => finalChoice(room.round as RevealedRound);
+
+  it("offers the deck without its specials, the suggestion preselected and marked", () => {
+    expect(choiceOf(revealed("fib", ["3", "5", "5", "8", "?"]))).toEqual({
+      cards: ["0", "1", "2", "3", "5", "8", "13", "21"],
+      preselected: "5",
+      suggested: "5",
+      tied: [],
+    });
+    // A consensus is a suggestion too.
+    expect(choiceOf(revealed("fib", ["8", "8", "8"])).preselected).toBe("8");
+  });
+
+  it("preselects nothing on a tie or with nothing to count, and marks the tied cards", () => {
+    expect(choiceOf(revealed("tshirt", ["M", "L", "M", "L"]))).toMatchObject({
+      preselected: null,
+      suggested: null,
+      tied: ["M", "L"],
+    });
+    expect(choiceOf(revealed("fib", ["?", "☕"]))).toMatchObject({
+      preselected: null,
+      suggested: null,
+      tied: [],
+    });
+  });
+
+  it("keeps the recorded final picked over the suggestion", () => {
+    const room = withFinal(revealed("fib", ["3", "5", "5", "8"]), "8");
+    expect(choiceOf(room)).toMatchObject({ preselected: "8", suggested: "5" });
+    expect(choiceOf(withFinal(revealed("tshirt", ["M", "L"]), "L")).preselected).toBe("L");
+  });
+
+  it("shows the final in everyone's centre, set apart from the suggestion", () => {
+    const room = revealed("fib", ["3", "5", "5", "8"], { viewer: "p1" });
+    const { container, rerender } = render(<CentreResult room={room} motion={AT_REST} />);
+    expect(container.querySelector("[data-centre-final]")).toBeNull();
+    rerender(<CentreResult room={withFinal(room, "8")} motion={AT_REST} />);
+    const final = container.querySelector("[data-centre-final]");
+    expect(final?.getAttribute("data-centre-final")).toBe("8");
+    expect(final?.querySelector(".sr-only")?.textContent).toBe("Final estimate: 8.");
+    expect(final?.querySelector("[data-final-caption]")?.textContent).toBe("Final estimate");
+    // The suggestion stays, now beside its caption.
+    expect(container.querySelector("[data-centre-result] [data-mini-card]")?.textContent).toBe("5");
+    expect(container.querySelector("[data-centre-status]")?.textContent).toContain(
+      "Suggested 5. Agreement",
+    );
+  });
+
+  it("says the final in the centre's fallback too, when the results cannot load", () => {
+    const room = revealed("fib", ["3", "5", "5", "8"], { viewer: "p1" });
+    const { container, rerender } = render(<CentreFallback room={room} />);
+    const fallback = () => container.querySelector("[data-centre-fallback]")?.textContent;
+    expect(fallback()).toBe("Suggested 5. Agreement 50%.");
+    rerender(<CentreFallback room={withFinal(room, "8")} />);
+    expect(fallback()).toBe("Suggested 5. Agreement 50%. Final estimate: 8.");
+  });
+
+  it("pops in a final recorded on screen, not one already there", () => {
+    const animate = vi.fn(() => ({ cancel: vi.fn() }));
+    Element.prototype.animate = animate as unknown as Element["animate"];
+    const room = revealed("fib", PLAYS.fib);
+    const { rerender } = render(<CentreResult room={withFinal(room, "8")} motion={AT_REST} />);
+    expect(animate).not.toHaveBeenCalled();
+    rerender(<CentreResult room={withFinal(room, "13")} motion={AT_REST} />);
+    expect(animate).toHaveBeenCalledTimes(1);
+    cleanup();
+    animate.mockClear();
+    const live = render(<CentreResult room={room} motion={AT_REST} />);
+    live.rerender(<CentreResult room={withFinal(room, "5")} motion={AT_REST} />);
+    expect(animate).toHaveBeenCalledTimes(1);
   });
 });

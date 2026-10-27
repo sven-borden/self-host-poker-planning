@@ -117,10 +117,28 @@ server sends and never decides the outcome of a round.
   "5/8 voted so far" while Voting (`voteCount`: voters, less a PO who does not vote, less
   people away who have not voted), in the lobby "Start voting" for the PO
   (`StartRound`, `[data-start-round]`) and "Waiting for the PO" for the others, and
-  after a reveal the result (#20, below) with, for the PO, "Next round" under it. A
-  voting round offers the PO no start: the domain would abandon it (PO default, #21). A
-  refused start or reveal shows under the table, and clears when the round or its phase
-  changes. Copy: `round.*` and `hand.*`.
+  after a reveal the result (#20, below) and the recorded final estimate, the same for
+  everyone. A voting round offers the PO no start: the domain would abandon it (PO
+  default, #21). A refused start, reveal, final or re-vote shows under the table, above
+  the results, and clears when the round or its phase changes. Copy: `round.*` and
+  `hand.*`.
+  The final estimate (#32): `final-estimate.tsx` (`Decision`, `[data-decision]`, in the
+  `seated` chunk) is the PO's bar under the table after a reveal: a native radio group
+  (`[data-final-picker]`, "Final estimate"; `finalChoice` in `results-view.ts` gives
+  the cards, the preselected suggestion and the tied cards), "Record 8"
+  (`[data-record-final]`, `setFinal`), "Next round" (`[data-start-round]`, the same
+  `useNextRound.start`) and "Vote again" (`[data-revote]`, `revote`), the three in
+  `[data-decision-actions]`. The reveal moves the PO's focus to "Record 8"
+  (`focusAfterReveal` in `round-centre.tsx`; `focusSoon` never scrolls), and the bar
+  ignores Enter and Space for `PLACED_FOCUS_GUARD_MS` after such a placed focus. While
+  its place is out of view the bar docks at the bottom of the screen (`useDecisionDock`
+  in `decision-dock.ts`, `[data-decision-dock]`, `--decision-dock` for the scroll
+  padding): the whole bar on a desktop, the action row alone on a phone, where the bar
+  is `display: contents`; only when the result in the centre stays in sight above it.
+  The centre's final is `CentreFinal` in `results.tsx` (`[data-centre-final]`), and the
+  fallback's sentence says it too; the live region's `final` events and the re-vote's
+  sentences are in `announcements.ts`. Copy: `final.*`, `round.revote`, `live.final*`,
+  `live.revote*`.
   The next round (#21): `next-round.tsx` holds `useNextRound` (in `Seated`) and the PO's
   field, `NextSubject` (`[data-next-subject]`, "Subject of the next round", above the
   table in every phase, so the table never jumps and the PO can prepare the next ticket

@@ -133,6 +133,8 @@ export const causeSchema = z.discriminatedUnion("type", [
     type: z.literal("roundStarted"),
     number: z.number().int(),
     restarted: z.literal(true).optional(),
+    /** A re-vote (#32): the same subject again. Optional, so an older client ignores it. */
+    revote: z.literal(true).optional(),
   }),
   z.object({ type: z.literal("voteCast"), who: userIdSchema.optional() }),
   z.object({ type: z.literal("voteRetracted"), who: userIdSchema.optional() }),

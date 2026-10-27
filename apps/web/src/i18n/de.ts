@@ -248,6 +248,7 @@ export const de: Catalog = {
   round: {
     start: "Runde starten",
     next: "Nächste Runde",
+    revote: "Neu abstimmen",
     waiting: "Warten auf den PO",
     revealed: "Karten aufgedeckt",
     reveal: "Karten aufdecken",
@@ -299,6 +300,17 @@ export const de: Catalog = {
     offTable: "Nicht am Tisch",
     someone: "Jemand, der gegangen ist",
   },
+  final: {
+    label: "Endgültige Schätzung",
+    short: "Final",
+    record: "{{card}} festhalten",
+    recordNothing: "Festhalten",
+    recorded: "Festgehalten",
+    pick: "Wählen Sie die endgültige Schätzung und halten Sie sie fest.",
+    suggested: "{{card}}, vorgeschlagen",
+    tied: "{{card}}, gleichauf",
+    centre: "Endgültige Schätzung: {{card}}.",
+  },
   hand: {
     hintVoting:
       "Wählen Sie eine Karte, um abzustimmen. Wählen Sie sie erneut, um Ihre Stimme zurückzunehmen.",
@@ -329,6 +341,11 @@ export const de: Catalog = {
     roundStarted: "Die Abstimmung hat begonnen: {{subject}}.",
     roundStartedAnonymous: "Die Abstimmung hat begonnen: {{subject}}, anonym.",
     revealed: "Die Karten sind aufgedeckt.",
+    finalRecorded: "Der Product Owner hat {{card}} als endgültige Schätzung festgehalten.",
+    finalChanged: "Der Product Owner hat die endgültige Schätzung auf {{card}} geändert.",
+    revote: "Der Product Owner hat eine neue Abstimmung zum selben Thema gestartet.",
+    revoteAnonymous:
+      "Der Product Owner hat eine neue, anonyme Abstimmung zum selben Thema gestartet.",
     anonymousOn: "Ab Runde {{round, number}} wird anonym abgestimmt.",
     anonymousOff: "Ab Runde {{round, number}} wird wieder mit Namen abgestimmt.",
     autoRevealOn: "Die Karten werden jetzt aufgedeckt, sobald alle abgestimmt haben.",

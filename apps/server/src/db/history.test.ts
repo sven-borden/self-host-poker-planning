@@ -1,7 +1,7 @@
 import { computeResults } from "@pp/domain";
 import { describe, expect, it } from "vitest";
 import { nextRound, play, revealedRoom, T0, votingRoom } from "./fixtures.ts";
-import { type EndedRound, historyRow, isHistory } from "./history.ts";
+import { type EndedRound, historyRound, historyRow, isHistory } from "./history.ts";
 
 function ended(state = revealedRoom(), finishedAt = T0 + 20): EndedRound {
   const { ended: round } = nextRound(state, finishedAt);
@@ -97,6 +97,40 @@ describe("historyRow", () => {
     const base = ended();
     const { revealedAt: _, ...round } = base.round;
     expect(historyRow("r", { ...base, round }).revealedAt).toEqual(new Date(T0 + 4));
+  });
+});
+
+describe("historyRound", () => {
+  it("is the ended round when a command ended one", () => {
+    const before = revealedRoom();
+    const { state, ended: round } = nextRound(before);
+    expect(historyRound(before, state, round)).toBe(round);
+  });
+
+  it("is the revealed round once its final is set or changed, before any next round (#32)", () => {
+    const before = revealedRoom();
+    const decided = play(before, "u1", { type: "setFinal", card: "8" }, T0 + 12);
+    expect(historyRound(before, decided)).toBe(decided.round);
+    const changed = play(decided, "u1", { type: "setFinal", card: "5" }, T0 + 13);
+    expect(historyRound(decided, changed)?.final).toBe("5");
+    // A vote changed after the decision rewrites the row too.
+    let open = play(revealedRoom(), "u1", {
+      type: "updateSettings",
+      patch: { allowChangeAfterReveal: true },
+    });
+    open = play(open, "u1", { type: "setFinal", card: "8" }, T0 + 12);
+    const revised = play(open, "u2", { type: "castVote", card: "8" }, T0 + 14);
+    expect(historyRound(open, revised)).toBe(revised.round);
+  });
+
+  it("is nothing for a revealed round without a final, a round left as it was, or a voting round", () => {
+    const revealed = revealedRoom();
+    expect(historyRound(votingRoom(), revealed)).toBeUndefined();
+    const decided = play(revealed, "u1", { type: "setFinal", card: "8" }, T0 + 12);
+    // Someone joins: the round on the table is the same object, nothing to write again.
+    const joined = play(decided, "u4", { type: "join", name: "Dee", role: "voter" }, T0 + 15);
+    expect(historyRound(decided, joined)).toBeUndefined();
+    expect(historyRound(votingRoom(), votingRoom())).toBeUndefined();
   });
 });
 

@@ -22,8 +22,8 @@ import {
 // the panel shows equal the domain's `computeResults` for the same votes (AC 1), a T-shirt
 // round shows no average (AC 2), the panel, the centre and the live region read as text
 // (AC 3), the lowest and highest voters are marked in a named round only, the columns
-// rise once the last card has turned, and the PO's phone centre fits around "Next round"
-// in English, French and German. Needs DATABASE_URL; skipped without it locally, failing
+// rise once the last card has turned, and the PO's phone centre fits between the cards
+// in English, French and German ("Next round" sits under the table since #32). Needs DATABASE_URL; skipped without it locally, failing
 // without it in CI.
 
 test.skip(
@@ -242,7 +242,7 @@ test("a consensus, then a T-shirt round with no average and a tie for most voted
   }
 });
 
-/** The PO's centre (the result over "Next round") and the slot cards, on screen. */
+/** The PO's centre (the result; "Next round" is under the table since #32) and the slot cards. */
 async function centreClearance(page: Page) {
   return page.evaluate(() => {
     const box = (element: Element) => element.getBoundingClientRect();
@@ -284,7 +284,7 @@ const columnRows = (page: Page) =>
       ).size,
   );
 
-test("the PO's phone centre holds the result and Next round, clear of every card at 4, 8, 10 and 16 seats, in every language", async ({
+test("the PO's phone centre holds the result, clear of every card at 4, 8, 10 and 16 seats, in every language", async ({
   page,
   context,
   baseURL,
@@ -420,6 +420,11 @@ test("a results chunk that cannot load still shows an anonymous round, and the n
     await expect(played.locator("li .sr-only")).toHaveText(["3", "5", "5", "8"]);
     await page.waitForTimeout(1_200);
     await shoot(page, "results-chunk-failed-anonymous");
+    // A final recorded while the chunk is gone still shows, after the result (#32).
+    expect(await po.cmd("setFinal", { card: "5" })).toMatchObject({ ok: true });
+    await expect(page.locator("[data-centre-fallback]")).toHaveText(
+      `${sentence} Final estimate: 5.`,
+    );
 
     // The chunk is back: the next reveal loads it, without a reload.
     gone = false;

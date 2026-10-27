@@ -191,6 +191,15 @@
     }
   }
 
+  /*
+   * While the PO's decision is docked at the bottom of the screen after a reveal (#32), a
+   * control that takes the focus stops above it (WCAG 2.4.11): the scroll padding is the
+   * docked part's height (`--decision-dock`, set by useDecisionDock).
+   */
+  :root:has([data-decision-dock]) {
+    scroll-padding-bottom: var(--decision-dock, 8rem);
+  }
+
   /* Reduced motion: no travel, only short cross-fades (design brief, motion spec). */
   /* biome-ignore-start lint/complexity/noImportantStyles: reduced motion must beat every component's own durations. */
   @media (prefers-reduced-motion: reduce) {

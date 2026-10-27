@@ -60,7 +60,7 @@ function useResultsMotion(root: { current: HTMLElement | null }, motion: RevealM
   }, [root]);
 }
 
-/** On a phone, the PO's centre also holds "Next round": the card shrinks to a chip. */
+/** On a phone, a centre that also holds the final estimate (#32) shrinks its cards to chips. */
 const CHIP =
   "in-data-[variant=phone]:h-[18px] in-data-[variant=phone]:w-auto in-data-[variant=phone]:min-w-[15px] in-data-[variant=phone]:rounded-[3px] in-data-[variant=phone]:px-[3px] in-data-[variant=phone]:text-[11px]";
 
@@ -70,8 +70,6 @@ const CENTRE_CAPTION =
 
 interface CentreResultProps {
   room: RoomView;
-  /** The PO's centre, which also holds "Next round": side by side, wrapping on phones. */
-  compact: boolean;
   motion: RevealMotion;
 }
 
@@ -82,11 +80,77 @@ interface CentreResultProps {
  * without numbers, the card and a "Consensus" pill when everyone agrees, or "Nothing to
  * count." when no card counts. A sentence says it to screen readers; the cards, the
  * caption and the pill are drawn for the eye.
+ *
+ * Once the PO recorded the final estimate (#32), everyone's centre shows it under the
+ * result, set apart from the suggestion: its card with the brass ring of a pick, labelled
+ * "Final estimate". The result then turns compact (card beside its caption) so the two fit
+ * the centre; on phones both cards shrink to chips, the stack at most 76 px wide.
  */
-export function CentreResult({ room, compact, motion }: CentreResultProps) {
+export function CentreResult({ room, motion }: CentreResultProps) {
   const round = room.round;
+  const final = round?.phase === "revealed" ? (round.final ?? null) : null;
+  // The final this centre found when it appeared: one recorded since is news, and pops in.
+  const found = useRef(final);
   if (round?.phase !== "revealed") return null;
-  return <Centre summary={revealSummary(round)} compact={compact} motion={motion} />;
+  return (
+    <div
+      data-centre-status="revealed"
+      className="flex flex-col items-center gap-1.5 in-data-[variant=phone]:gap-1"
+    >
+      <Centre summary={revealSummary(round)} compact={final !== null} motion={motion} />
+      {final !== null ? (
+        <CentreFinal key={final} card={final} live={final !== found.current} />
+      ) : null}
+    </div>
+  );
+}
+
+const FINAL_CAPTION =
+  "min-w-0 text-[12px]/tight font-semibold in-data-[variant=phone]:text-[10px]/tight in-data-[variant=phone]:break-words";
+
+/**
+ * The recorded final estimate in the centre: the card with a brass ring beside "Final
+ * estimate", said as "Final estimate: 8." A final recorded or changed while on screen pops
+ * in (each card mounts anew, by its key); one already there at a reload shows at rest.
+ */
+function CentreFinal({ card, live }: { card: string; live: boolean }) {
+  const t = useT();
+  const root = useRef<HTMLParagraphElement>(null);
+  useLayoutEffect(() => {
+    if (!live) return;
+    const animation = play(
+      root.current?.querySelector("[data-mini-card]") ?? null,
+      consensusPop(0, prefersReducedMotion()),
+    );
+    return () => cancelAll([animation]);
+  }, [live]);
+  return (
+    <p
+      ref={root}
+      data-centre-final={card}
+      className="m-0 flex max-w-full items-center gap-1.5 in-data-[variant=phone]:max-w-[76px] in-data-[variant=phone]:gap-1"
+    >
+      <span className="sr-only">{t("final.centre", { card: cardLabel(t, card) })}</span>
+      <MiniCard
+        value={card}
+        className={cn("shadow-md outline-2 outline-offset-1 outline-brass", CHIP)}
+      />
+      {/* On a phone the short word: "Endgültige Schätzung" would reach the side cards. */}
+      <span
+        aria-hidden="true"
+        data-final-caption
+        className={cn(FINAL_CAPTION, "in-data-[variant=phone]:hidden")}
+      >
+        {t("final.label")}
+      </span>
+      <span
+        aria-hidden="true"
+        className={cn(FINAL_CAPTION, "hidden in-data-[variant=phone]:inline")}
+      >
+        {t("final.short")}
+      </span>
+    </p>
+  );
 }
 
 function Centre({
@@ -95,6 +159,7 @@ function Centre({
   motion,
 }: {
   summary: RevealSummary;
+  /** Beside the final estimate: card and caption side by side, chips on phones. */
   compact: boolean;
   motion: RevealMotion;
 }) {
@@ -107,13 +172,12 @@ function Centre({
   return (
     <p
       ref={root}
-      data-centre-status="revealed"
       data-centre-result={summary.kind}
       className={cn(
         "m-0 flex items-center justify-center",
-        // The PO's phone centre stays narrower than the space between the side cards and
-        // as short as it can: the agreement beside the chip, on two lines ("Agreement" over
-        // "25%"); the pill, or "Tie", under the chip or chips.
+        // Beside the final, the phone centre stays narrower than the space between the side
+        // cards and as short as it can: the agreement beside the chip, on two lines
+        // ("Agreement" over "25%"); the pill, or "Tie", under the chip or chips.
         compact
           ? cn(
               "flex-row gap-x-1.5 gap-y-0.5 whitespace-nowrap in-data-[variant=phone]:gap-x-1 in-data-[variant=phone]:whitespace-normal",

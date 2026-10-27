@@ -86,9 +86,12 @@ function causeView(cause: Cause, hideVoter: boolean): CauseView | null {
     case "roleChanged":
       return { type: cause.type, who: cause.who, role: cause.role };
     case "roundStarted":
-      return cause.restarted
-        ? { type: cause.type, number: cause.number, restarted: true }
-        : { type: cause.type, number: cause.number };
+      return {
+        type: cause.type,
+        number: cause.number,
+        ...(cause.restarted ? { restarted: true as const } : {}),
+        ...(cause.revote ? { revote: true as const } : {}),
+      };
     case "voteCast":
     case "voteRetracted":
       return hideVoter || cause.who === undefined

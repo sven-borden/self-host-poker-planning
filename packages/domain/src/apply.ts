@@ -135,7 +135,7 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       return setFinal(state, command.card);
     case "revote":
       if (state.round?.phase !== "revealed") return refuse("not_revealed");
-      return startRound(state, state.round.subject, now);
+      return startRound(state, state.round.subject, now, true);
     case "startTimer": {
       const round = state.round;
       if (round?.phase !== "voting") return refuse("not_voting");
@@ -260,9 +260,10 @@ function presence(state: RoomState, who: UserId, connected: boolean, now: number
 
 /**
  * A new round: the next number, the current deck, specials and anonymity, no votes. The
- * round it replaces (as the deadline left it) is reported as `ended`.
+ * round it replaces (as the deadline left it) is reported as `ended`. A re-vote (#32)
+ * says so in its cause, so the room hears "a new vote on the same subject".
  */
-function startRound(state: RoomState, subject: Subject, now: number): Step {
+function startRound(state: RoomState, subject: Subject, now: number, revote = false): Step {
   const { settings } = state;
   const number = (state.round?.number ?? 0) + 1;
   const round: Round = {
@@ -276,7 +277,10 @@ function startRound(state: RoomState, subject: Subject, now: number): Step {
     startedAt: now,
   };
   if (settings.timer.seconds !== null) round.deadlineAt = now + settings.timer.seconds * 1000;
-  const step = done(withRound(state, round), { type: "roundStarted", number });
+  const step = done(
+    withRound(state, round),
+    revote ? { type: "roundStarted", number, revote: true } : { type: "roundStarted", number },
+  );
   if (state.round) step.ended = state.round;
   return step;
 }
