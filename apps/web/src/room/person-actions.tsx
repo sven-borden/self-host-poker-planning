@@ -61,13 +61,13 @@ export function PersonActions({ person, room, me, close }: PersonActionsProps) {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const group = useRef<HTMLDivElement>(null);
-  const buttons = {
-    owner: useRef<HTMLButtonElement>(null),
-    remove: useRef<HTMLButtonElement>(null),
-  };
+  const ownerButton = useRef<HTMLButtonElement>(null);
+  const removeButton = useRef<HTMLButtonElement>(null);
   /** The action whose question was cancelled: its button takes the focus back. */
   const back = useRef<Action | null>(null);
 
+  // Only when the question comes or goes: a snapshot that re-renders the popover (someone
+  // voted) must not pull the focus off "Hand over" back to the question.
   useLayoutEffect(() => {
     if (asking !== null) {
       group.current?.focus();
@@ -75,8 +75,8 @@ export function PersonActions({ person, room, me, close }: PersonActionsProps) {
     }
     const action = back.current;
     back.current = null;
-    if (action !== null) buttons[action].current?.focus();
-  });
+    if (action !== null) (action === "owner" ? ownerButton : removeButton).current?.focus();
+  }, [asking]);
 
   if (!me.isOwner && !busy && failure === null) return null;
   const name = shownName(t, person);
@@ -136,7 +136,7 @@ export function PersonActions({ person, room, me, close }: PersonActionsProps) {
         <div className="flex flex-col gap-1">
           {person.away ? null : (
             <Button
-              ref={buttons.owner}
+              ref={ownerButton}
               variant="ghost"
               size="sm"
               className={`${compact} justify-start`}
@@ -147,7 +147,7 @@ export function PersonActions({ person, room, me, close }: PersonActionsProps) {
             </Button>
           )}
           <Button
-            ref={buttons.remove}
+            ref={removeButton}
             variant="ghost"
             size="sm"
             className={`${compact} justify-start`}

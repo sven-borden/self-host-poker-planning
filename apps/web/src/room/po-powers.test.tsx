@@ -136,6 +136,18 @@ describe("the PO's actions in a popover", () => {
     );
   });
 
+  it("keeps the focus where it is when a snapshot comes in while asking", async () => {
+    await renderView();
+    const before = stateWith(ME, [meVoter, ana, ben]);
+    await showSeated(before);
+    const popover = openPerson("Ana");
+    fireEvent.click(within(popover).getByRole("button", { name: "Make product owner" }));
+    const handOver = within(popover).getByRole("button", { name: "Hand over" });
+    handOver.focus();
+    show({ ...before, settings: { ...before.settings, revealNames: false } });
+    expect(document.activeElement).toBe(handOver);
+  });
+
   it("hand over: sends transferOwner and closes the popover once the server agreed", async () => {
     await renderView();
     const before = stateWith(ME, [meVoter, ana, ben]);
