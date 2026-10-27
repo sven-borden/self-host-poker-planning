@@ -22,7 +22,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Config } from "../config.ts";
 import { createTestDatabase, testClient as dbClient, type TestDatabase } from "../db/test-db.ts";
 import { createServer, type PokerServer } from "../server.ts";
-import { setupServer } from "../setup.ts";
+import { type SetupTuning, setupServer } from "../setup.ts";
 import { collectLogs, testConfig, VALID_ENV } from "../test-support.ts";
 import {
   type Guest,
@@ -47,8 +47,8 @@ let ada: Guest;
 let bob: Guest;
 let cy: Guest;
 
-async function startInstance(): Promise<Instance> {
-  const setup = await setupServer(config, logs.logger);
+async function startInstance(tuning: SetupTuning = {}): Promise<Instance> {
+  const setup = await setupServer(config, logs.logger, undefined, tuning);
   const server = createServer(config, { ...setup.deps, logger: logs.logger });
   const { port } = await server.listen();
   const instance = { ...setup, server, base: `http://localhost:${port}` };
@@ -537,7 +537,14 @@ describe("the deck (#26)", () => {
       insert(withDeadline(timed, Date.now() + 700)),
       insert(up),
     ]);
-    const [a1, c1, a2, c2, a3, c3] = [ada, cy, ada, cy, ada, cy].map((guest) => client(guest));
+    const [a1, c1, a2, c2, a3, c3] = [
+      client(ada),
+      client(cy),
+      client(ada),
+      client(cy),
+      client(ada),
+      client(cy),
+    ];
     await Promise.all([
       a1.enter(codes[0]),
       c1.enter(codes[0]),
@@ -805,5 +812,41 @@ describe("the deadline timeout", () => {
     );
     expect(reveals).toEqual([{ type: "revealed", by: "timer" }]);
     expect((await main().database.store.loadRoom(code))?.version).toBe(2);
+  });
+
+  it("reveals once on the clients' timeUp pings when no timeout runs, and a ping with nothing to do stores and sends nothing", async () => {
+    // An instance without its own timeout: only the pings resolve the deadline.
+    const quiet = await startInstance({ deadlineTimeouts: false });
+    let state = votingRoom();
+    state = step(state, bob.id, { type: "castVote", card: "5" });
+    const code = await insert(withDeadline(state, Date.now() + 1_500));
+    const pages = [client(ada, quiet), client(bob, quiet), client(cy, quiet), client(ada, quiet)];
+    await Promise.all(pages.map((page) => page.enter(code)));
+    const stored = async () => (await main().database.store.loadRoom(code))?.version;
+    const frames = () => pages.reduce((n, page) => n + page.received.length, 0);
+    // Before the deadline a ping finds nothing to do.
+    const quietFrames = frames();
+    expect(await pages[0]?.cmd("timeUp")).toEqual({ ok: true, version: 1 });
+    await sleep(1_600);
+    expect(await stored()).toBe(1);
+    expect(frames()).toBe(quietFrames);
+    // Past it, four pages ping at once: one reveal, one write.
+    const acks = await Promise.all(pages.map((page) => page.cmd("timeUp")));
+    expect(acks.every((ack) => ack.ok)).toBe(true);
+    await Promise.all(
+      pages.map((page) => page.waitFor((s) => s.room.round?.phase === "revealed", 3000)),
+    );
+    await sleep(200);
+    const reveals = pages.flatMap((page) =>
+      page.received.flatMap(({ snapshot }) => snapshot.causes),
+    );
+    expect(reveals).toEqual(Array(4).fill({ type: "revealed", by: "timer" }));
+    expect(await stored()).toBe(2);
+    // A late ping finds the round revealed: nothing stored, nothing sent.
+    const after = frames();
+    expect(await pages[1]?.cmd("timeUp")).toEqual({ ok: true, version: 2 });
+    await sleep(100);
+    expect(await stored()).toBe(2);
+    expect(frames()).toBe(after);
   });
 });

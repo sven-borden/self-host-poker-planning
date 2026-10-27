@@ -78,6 +78,11 @@ export interface RoomSyncOptions {
    * socket reaches this instance (after a restart). `PRESENCE_RESTART_GRACE_MS` (60 s).
    */
   presenceRestartGraceMs?: number;
+  /**
+   * For tests only: false arms no deadline timeout, so only a command or a client's
+   * `timeUp` ping resolves a deadline (architecture section 9). True by default.
+   */
+  deadlineTimeouts?: boolean;
 }
 
 export interface RoomSync extends RealtimeHandlers {
@@ -132,7 +137,9 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   const sessionChecked = new WeakMap<RealtimeSocket, number>();
   const pendingChecks = new WeakMap<RealtimeSocket, Promise<boolean>>();
   const deadlines = createDeadlineTimers(
-    (id) => void runAsServer(id, () => TIME_UP, "deadline", "timeUp"),
+    options.deadlineTimeouts === false
+      ? () => {}
+      : (id) => void runAsServer(id, () => TIME_UP, "deadline", "timeUp"),
     {
       now,
     },

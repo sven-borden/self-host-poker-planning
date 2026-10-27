@@ -18,6 +18,8 @@ export interface SetupTuning {
   presenceGraceMs?: number;
   /** The grace after a restart (`PRESENCE_RESTART_GRACE_MS`, 60 s, by default). */
   presenceRestartGraceMs?: number;
+  /** False: no deadline timeout, only the clients' `timeUp` pings and commands (#27). */
+  deadlineTimeouts?: boolean;
 }
 
 export async function setupServer(
@@ -48,6 +50,7 @@ export async function setupServer(
     ...(tuning.presenceRestartGraceMs !== undefined && {
       presenceRestartGraceMs: tuning.presenceRestartGraceMs,
     }),
+    ...(tuning.deadlineTimeouts !== undefined && { deadlineTimeouts: tuning.deadlineTimeouts }),
   });
   return {
     database,
