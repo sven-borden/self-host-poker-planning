@@ -195,7 +195,8 @@ Positions are percentages of the stage, so one formula serves every width:
   product owner started a new vote on the same subject." (or "a new anonymous vote" when the
   room is anonymous, as a next round says "anonymous"). The focus goes to the hand, as after
   "Next round".
-- Observers sit off the table (a small row under it) so voters keep the seats.
+- Observers sit off the table (a small row under it) so voters keep the seats. Each name
+  there opens the same popover as a seat (#30).
 - The others follow the viewer clockwise in join order, starting with whoever joined
   after the viewer, so the order around the table is the same for everyone (#16).
 - Joining (#16): the room page shows a "Take a seat" card (name, prefilled with the last
@@ -433,6 +434,63 @@ As built (#25):
   round 4 with “T-shirt sizes”. Vote again." during Voting, without "Vote again." for an
   observer, and no "Voting started" for the restart. Every voter's hand empties into the
   new deck; a vote sent before the restart is refused and rolls back silently.
+
+## The PO's powers
+
+As built (#30, ADR-010):
+
+- **Where.** Everything the PO does to someone else sits in that person's popover, the
+  one every seat already opens (#17): on a seat, and since #30 on an observer in the row
+  under the table, whose name is now a button too (its 24 px look kept, a 44 px hit area
+  around it). Under the name and the state, after a hairline, the PO reads "Make product
+  owner" (crown) and "Remove from the room" (a person with a cross), ghost buttons with
+  their icon, 36 px tall on a desktop and 44 px on a phone. Nobody else gets buttons
+  there; the PO's own seat has none. For someone away "Make product owner" stays where
+  it is, `aria-disabled` and at half opacity, with "Ben is away." under it (its
+  description): the server hands the role only to someone here, and a button that
+  vanished as Ben went away would drop the PO's focus on the page. Desktop and phones
+  alike: the popover is the same, opened by tap, click or Enter.
+- **Asking first.** Each action asks inline, in the popover, in a `--surface-2` box with
+  a `--warn` border (the restart question's look, #26), which takes the focus as a group
+  named by the question: "Hand the product owner role to Ben? You stay a voter." (a PO
+  who votes; "You become a voter." when the PO does not vote in this room, "You stay an
+  observer." when the PO observes), and when the PO does not vote in this
+  room and Ben votes, a second line in `--ink-2`: "The product owner does not vote in this
+  room, so Ben stops voting." "Remove Ben from the room? They can join again with the
+  link." Then "Hand over" (primary) or "Remove" (destructive) and "Cancel"; "Cancel"
+  gives the focus back to the action. A refusal shows under the box with the octagon
+  icon. If Ben goes away while asked, "Hand over" turns `aria-disabled` with "Ben is
+  away." under the question, and the focus stays where it is; it comes back if Ben does.
+- **After a hand-over** the popover closes and the focus is back on the seat. The crown,
+  "Room settings" (now "Room rules" for the old PO), the subject field, the centre's
+  buttons and the decision bar all move with the snapshot that names the new PO. "The
+  PO votes too" follows the role: with it off the new PO's hand goes ("As the product
+  owner, you do not vote in this room.") and leaves the count, and the old PO's hand
+  comes back.
+- **Claiming.** Once the PO has been away for two minutes, or at once when the PO is not
+  in the room, everyone else sees a banner above the table: a crown in a brass disc,
+  "Ana, the product owner, is away." (or "The product owner left the room."), and
+  "Claim the product owner role" (primary; the whole width on a phone). The server says
+  when (`ownerClaimableAt`); the page shows the button from then, by its estimate of the
+  server's clock (#27), 20 ms or half a round trip later, whichever is longer, since the
+  estimate may run a little ahead and an early claim costs a "Not yet".
+  The first claim wins; the others see the banner go and hear "Ben claimed the product
+  owner role.". A claim refused because the PO is still here says "Not yet: the product
+  owner is back, or has been away for less than 2 minutes." for 8 s, without the button
+  (8 s even when the PO is back). After a claim in the lobby or while voting the new PO's
+  subject field takes the focus; after a reveal the decision bar does, as after a reveal.
+- **Removed.** Within a second the removed person's page leaves the table for the join
+  form, under a notice in `--surface-2` with the same icon: "The product owner removed
+  you from this room." (an alert), the focus on the name. No ban: they may join again
+  with the same link, and the notice goes once they do. Their vote follows the leave
+  rules (dropped while voting, kept with their name after a named reveal). The PO's
+  focus goes to the seat that took their place, and so does it when anyone leaves while
+  the PO has their popover open. Accepted for now: someone removed while their socket is
+  down (a phone asleep) is not told; when the page connects again it shows the join form
+  with no notice.
+- **The live region**, once each, to everyone, the people named too: "Ana handed the
+  product owner role to Ben.", "Ben claimed the product owner role.", "The product owner
+  removed Cleo from the room." ("… removed 2 people …" in one batch).
 
 ## The timer
 

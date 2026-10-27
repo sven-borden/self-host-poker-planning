@@ -1,13 +1,17 @@
-import { type ReactNode, useId } from "react";
+import { type ReactNode, useId, useState } from "react";
+import { Popover, PopoverTrigger } from "../components/ui/popover.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
 import { Avatar } from "./avatar.tsx";
 import { SlotCard, type SlotFace } from "./cards.tsx";
 import { layoutTable, type TableVariant, variantFor } from "./layout.ts";
+import { useFocusAfterRemoval } from "./person-focus.ts";
 import { FLIP_STAGGER_MS, revealSettleMs } from "./reveal-motion.ts";
 import {
   flagWords,
+  type PersonActions,
   type PersonFlags,
+  PersonPopover,
   Seat,
   type SeatStatus,
   shownName,
@@ -38,6 +42,8 @@ interface TableStageProps {
    * slot shows once it has landed.
    */
   hiddenSlot?: string | null;
+  /** The PO's actions in each person's popover (#30); the room decides who gets them. */
+  actions?: PersonActions | undefined;
   className?: string;
 }
 
@@ -66,6 +72,7 @@ export function TableStage({
   variant,
   children,
   hiddenSlot = null,
+  actions,
   className,
 }: TableStageProps) {
   const t = useT();
@@ -151,6 +158,7 @@ export function TableStage({
                 place={place}
                 geometry={layout.seat}
                 settle={settle}
+                actions={actions}
               />
             ) : null;
           })}
@@ -169,7 +177,7 @@ export function TableStage({
             className="m-0 flex list-none flex-wrap justify-center gap-x-4 gap-y-2 p-0"
           >
             {observers.map((observer) => (
-              <ObserverItem key={observer.id} observer={observer} />
+              <ObserverItem key={observer.id} observer={observer} actions={actions} />
             ))}
           </ul>
         </div>
@@ -182,9 +190,20 @@ export function TableStage({
  * One observer in the row under the table. The row has room for words, so what sets the
  * person apart is written out after the name ("Away", "Product owner"), and the avatar
  * turns grey when they are away; the viewer's name is in spruce with a ring on the avatar.
+ * Like a seat, each observer is a button that opens the whole name in a popover (a long
+ * name is cut off here), where the PO also finds their actions (#30). The button keeps
+ * the row's 24 px look; its hit area reaches 44 px above and below.
  */
-function ObserverItem({ observer }: { observer: Observer }) {
+function ObserverItem({
+  observer,
+  actions,
+}: {
+  observer: Observer;
+  actions?: PersonActions | undefined;
+}) {
   const t = useT();
+  const [open, setOpen] = useState(false);
+  useFocusAfterRemoval(observer.id, open);
   const words = flagWords(t, observer);
   const tags = [
     observer.owner ? t("table.ownerTag") : null,
@@ -196,8 +215,40 @@ function ObserverItem({ observer }: { observer: Observer }) {
       data-away={observer.away || undefined}
       data-you={observer.you || undefined}
       data-owner={observer.owner || undefined}
-      className="flex items-center gap-1.5"
     >
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            data-person-trigger={observer.id}
+            className="relative flex cursor-pointer items-center gap-1.5 rounded-md p-0 after:absolute after:inset-x-0 after:-inset-y-2.5"
+          >
+            <ObserverParts observer={observer} words={words} tags={tags} />
+          </button>
+        </PopoverTrigger>
+        <PersonPopover
+          person={observer}
+          state={tags.join(" · ")}
+          side="bottom"
+          actions={open ? actions?.({ ...observer, role: "observer" }, () => setOpen(false)) : null}
+        />
+      </Popover>
+    </li>
+  );
+}
+
+function ObserverParts({
+  observer,
+  words,
+  tags,
+}: {
+  observer: Observer;
+  words: string[];
+  tags: string[];
+}) {
+  const t = useT();
+  return (
+    <>
       <Avatar
         id={observer.id}
         name={observer.name}
@@ -221,6 +272,6 @@ function ObserverItem({ observer }: { observer: Observer }) {
           {tags.join(" · ")}
         </span>
       ) : null}
-    </li>
+    </>
   );
 }

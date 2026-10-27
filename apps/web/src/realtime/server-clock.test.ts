@@ -6,6 +6,7 @@ import {
   noteRoundTrip,
   onClockOffset,
   resetServerClock,
+  roundTripMs,
   SAMPLES,
   sampleServerClock,
   serverTime,
@@ -28,6 +29,10 @@ describe("the server clock (#27)", () => {
     sampleServerClock(105_000 - 100, 100_000);
     expect(clockOffset()).toBe(5_000);
     expect(serverTime(100_000)).toBe(105_000);
+    // The claim banner (#30) waits half of it past the opening.
+    expect(roundTripMs()).toBe(200);
+    resetServerClock();
+    expect(roundTripMs()).toBe(0);
   });
 
   it("follows the median of recent samples, so one late packet does not move it", () => {

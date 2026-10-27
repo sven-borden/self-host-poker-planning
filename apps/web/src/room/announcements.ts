@@ -8,8 +8,10 @@ import { subjectName } from "./subject.ts";
 import { durationWords } from "./timer-view.ts";
 
 // What the table's live region says (#17): joins, leaves, away and back, votes, a new
-// round (#18) or a re-vote (#32), the reveal (#19, naming a voter who revealed, #28), the PO's final estimate (#32), the
-// PO's settings changes (#25) and the timer (#27), read from a snapshot's causes. Never a person's card: a
+// round (#18) or a re-vote (#32), the reveal (#19, naming a voter who revealed, #28), the
+// PO's final estimate (#32), the PO's settings changes (#25), the timer (#27), and the PO
+// role handed over or claimed and people removed (#30), read from a snapshot's causes.
+// Never a person's card: a
 // vote cause carries who, never what, the reveal says the round's result (#20: "Cards
 // revealed. Consensus on 8."), and the final is the PO's decision; both belong to nobody.
 // Pure, so the batching rules are tested without timers; `live-announcer.tsx` runs them.
@@ -19,6 +21,8 @@ export type LiveKind =
   | "roundStarted"
   | "joined"
   | "left"
+  | "removed"
+  | "owner"
   | "away"
   | "back"
   | "voted"
@@ -50,6 +54,8 @@ export interface LiveEvent {
   revote?: boolean;
   /** The final estimate the PO recorded, and whether it replaced an earlier one (#32). */
   final?: { card: string; changed: boolean };
+  /** The PO role changed hands (#30): how, and who held it before a hand-over. */
+  owner?: { by: "transfer" | "claim"; from: string | null };
   /**
    * A setting the PO changed (#25), with the room's settings before and after, and the
    * number of the next round, from which a change of anonymity applies. A deck or specials
@@ -80,8 +86,10 @@ const ORDER: readonly Exclude<LiveKind, "settings">[] = [
   "timer",
   "joined",
   "left",
+  "removed",
   "away",
   "back",
+  "owner",
   "voted",
   "timeUp",
   "revealed",
@@ -113,7 +121,8 @@ function nameOf(id: string, ...rooms: (RoomView | null)[]): string | null {
  * said to everyone, the PO who caused them too: the hand and the centre change under
  * their focus. A snapshot with no causes (the one a reconnect brings) still says the
  * reveal when it shows the round revealed that `previous` showed voting: the cards turn
- * over on screen, so the reveal is news, once.
+ * over on screen, so the reveal is news, once. A change of PO is said to everyone, the
+ * people it names too (#30): it moves the room's controls under their eyes.
  *
  * The timer (#27) is said to everyone, the PO too, as the reveal is: "Timer started: 1
  * minute." (also with a new round that starts one), "30 seconds added.", "Timer
@@ -189,8 +198,16 @@ export function liveEvents(
         kind = cause.type;
         break;
       case "kicked":
-        kind = "left";
+        kind = "removed";
         break;
+      case "ownerChanged": {
+        const name = nameOf(cause.to, next, previous);
+        const from = previous === null ? null : nameOf(previous.ownerId, next, previous);
+        if (name !== null) {
+          events.push({ kind: "owner", who: cause.to, name, owner: { by: cause.by, from } });
+        }
+        continue;
+      }
       case "voteCast":
         if (cause.who === undefined || before.has(cause.who)) continue;
         kind = "voted";
@@ -409,6 +426,18 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
       return one ? t("live.joined", { name }) : t("live.joinedMany", { count });
     case "left":
       return one ? t("live.left", { name }) : t("live.leftMany", { count });
+    case "removed":
+      return one ? t("live.removed", { name }) : t("live.removedMany", { count });
+    case "owner":
+      return events
+        .map((e) =>
+          e.owner?.by === "transfer" && e.owner.from !== null
+            ? t("live.ownerHandedOver", { from: e.owner.from, to: e.name })
+            : e.owner?.by === "transfer"
+              ? t("live.ownerNow", { name: e.name })
+              : t("live.ownerClaimed", { name: e.name }),
+        )
+        .join(" ");
     case "away":
       return one ? t("live.away", { name }) : t("live.awayMany", { count });
     case "back":

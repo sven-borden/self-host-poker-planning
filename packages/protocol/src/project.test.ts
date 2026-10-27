@@ -1,7 +1,16 @@
-import { apply, type Cause, type Command, createRoom, type RoomState } from "@pp/domain";
+import {
+  apply,
+  type Cause,
+  type Command,
+  createRoom,
+  OWNER_CLAIM_AFTER_MS,
+  type RoomState,
+} from "@pp/domain";
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { projectCauses, toSnapshot } from "./project.ts";
-import type { Snapshot } from "./schemas.ts";
+import { type Snapshot, snapshotSchema } from "./schemas.ts";
+import { meta, OWNER, PEOPLE, play, scenarioArb, VIEWERS } from "./test-support.ts";
 import { PROTOCOL_VERSION } from "./version.ts";
 
 const T = 1_700_000_000_000;
@@ -349,5 +358,66 @@ describe("projectCauses", () => {
       { type: "away", who: "c" },
       { type: "back", who: "c" },
     ]);
+  });
+});
+
+describe("ownerClaimableAt (#30)", () => {
+  const away = (since: number): RoomState => {
+    const { state } = run([join("po"), join("a")]);
+    const po = state.participants.po;
+    if (!po) throw new Error("no PO");
+    return { ...state, participants: { ...state.participants, po: { ...po, awaySince: since } } };
+  };
+
+  it("is absent while the PO is here", () => {
+    const { state } = run([join("po"), join("a")]);
+    expect("ownerClaimableAt" in toSnapshot(state, "a", META).room).toBe(false);
+  });
+
+  it("is two minutes after the PO went away, the same for everyone", () => {
+    const state = away(T + 5);
+    for (const viewer of ["a", "po", "stranger"]) {
+      expect(toSnapshot(state, viewer, META).room.ownerClaimableAt).toBe(
+        T + 5 + OWNER_CLAIM_AFTER_MS,
+      );
+    }
+  });
+
+  it("is 0 when the PO is not in the room: the role can be claimed at once", () => {
+    const { state } = run([join("po"), join("a"), ["po", { type: "leave" }]]);
+    expect(toSnapshot(state, "a", META).room.ownerClaimableAt).toBe(0);
+  });
+});
+
+describe("the PO in every snapshot (#30)", () => {
+  it("at most one participant is the PO, the owner when present; a claim succeeds from ownerClaimableAt on, never before", () => {
+    fc.assert(
+      fc.property(scenarioArb, (steps) => {
+        for (const frame of play(steps)) {
+          const { state } = frame;
+          const ownerHere = Object.hasOwn(state.participants, state.ownerId);
+          for (const viewer of VIEWERS) {
+            const { room } = snapshotSchema.parse(toSnapshot(state, viewer, meta(frame)));
+            const owners = room.participants.filter((p) => p.isOwner).map((p) => p.id);
+            expect(owners).toEqual(ownerHere ? [state.ownerId] : []);
+            expect(room.ownerId).toBe(state.ownerId);
+          }
+          const at = toSnapshot(state, OWNER, meta(frame)).room.ownerClaimableAt;
+          const claimant = PEOPLE.find(
+            (id) => id !== state.ownerId && Object.hasOwn(state.participants, id),
+          );
+          if (claimant === undefined) continue;
+          const claim = (now: number) =>
+            apply(state, { type: "claimOwner" }, { actor: claimant, now }).ok;
+          if (at === undefined) {
+            expect(claim(frame.now + 10 * OWNER_CLAIM_AFTER_MS)).toBe(false);
+          } else {
+            expect(claim(Math.max(at, frame.now))).toBe(true);
+            if (at > frame.now) expect(claim(at - 1)).toBe(false);
+          }
+        }
+      }),
+      { numRuns: 150 },
+    );
   });
 });

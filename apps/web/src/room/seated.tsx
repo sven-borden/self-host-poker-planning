@@ -6,14 +6,17 @@ import { cn } from "../lib/utils.ts";
 import { cardLabel } from "../table/cards.tsx";
 import { Hand } from "../table/hand.tsx";
 import { revealSettleMs } from "../table/reveal-motion.ts";
+import { type PersonActions as ActionsSlot, shownName } from "../table/seat.tsx";
 import { TableStage } from "../table/table-stage.tsx";
 import { type Box, CardFlight, type Flight, type InAir } from "./card-flight.tsx";
+import { ClaimBanner } from "./claim-banner.tsx";
 import { failureMessage } from "./failure.ts";
 import { Decision } from "./final-estimate.tsx";
 import { inSight, useHandDock } from "./hand-dock.ts";
 import { confirmedOf, shownCard, withShownVote } from "./hand-state.ts";
 import { LiveAnnouncer } from "./live-announcer.tsx";
 import { NextSubject, useNextRound } from "./next-round.tsx";
+import { PersonActions } from "./person-actions.tsx";
 import { prefetchResults, ResultsPanel } from "./results-chunk.tsx";
 import { RevealedCards } from "./revealed-cards.tsx";
 import { centreFailureMessage, RoundCentre } from "./round-centre.tsx";
@@ -72,6 +75,11 @@ const boxOf = (rect: DOMRect): Box => ({
  * The final estimate (#32): after a reveal the PO's decision sits right under the table
  * (`Decision`: the picker, "Record 8", "Next round", "Vote again"), and the centre shows
  * the recorded final to everyone.
+ *
+ * The PO's powers (#30): each person's popover, on a seat or in the observers' row, holds
+ * the PO's "Make product owner" and "Remove from the room" (`PersonActions`); a banner
+ * above the table offers everyone else the role once the PO has been away for two
+ * minutes or has left (`ClaimBanner`).
  */
 export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedProps) {
   const t = useT();
@@ -159,9 +167,14 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           ? t(me.isOwner ? "hand.hintLobbyOwner" : "hand.hintLobby")
           : t("hand.hintRevealed");
   const news = vote.news;
+  const owner = [...people, ...observers].find((person) => person.owner);
+  // Every popover asks; `PersonActions` shows itself to the PO only.
+  const actions: ActionsSlot = (person, close) =>
+    person.you ? null : <PersonActions person={person} room={room} me={me} close={close} />;
 
   return (
     <div className="flex flex-col gap-6 phone:gap-3">
+      <ClaimBanner room={room} me={me} ownerName={owner ? shownName(t, owner) : null} />
       {me.isOwner ? (
         <NextSubject
           next={next}
@@ -175,6 +188,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           people={people}
           observers={observers}
           hiddenSlot={flight?.kind === "play" ? me.id : null}
+          actions={actions}
         >
           <RoundCentre room={shown} onFailure={setCentreFailure} next={next} reveal={reveal} />
         </TableStage>

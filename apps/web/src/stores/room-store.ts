@@ -20,7 +20,7 @@ export type RoomStatus = "idle" | "connecting" | "live" | "reconnecting" | "erro
 
 /**
  * Why the room is in `error`: an ack code (`room_not_found`, `protocol_mismatch`,
- * `unauthenticated`, …), or `kicked` and `offline` from the connection itself.
+ * `unauthenticated`, …), or `offline` from the connection itself.
  */
 export type RoomError = string;
 
@@ -38,6 +38,11 @@ export interface RoomStoreState {
    * open) can say the same announcements once.
    */
   said: { id: number; text: string };
+  /**
+   * The PO removed the viewer from the room (#30): the page is back on the join form, with
+   * a notice, until they join again. Not an error: the room stays open and live.
+   */
+  removed: boolean;
   /** Starts following `code`; a different code drops the snapshot held. */
   open: (code: string) => void;
   /**
@@ -51,6 +56,7 @@ export interface RoomStoreState {
   setConnection: (connection: ConnectionStatus) => void;
   /** Records an announcement of the table's live region. */
   announce: (text: string) => void;
+  setRemoved: (removed: boolean) => void;
   reset: () => void;
 }
 
@@ -61,6 +67,7 @@ const initialState = {
   snapshot: null,
   connection: "idle" as ConnectionStatus,
   said: { id: 0, text: "" },
+  removed: false,
 };
 
 export const useRoomStore = create<RoomStoreState>()((set, get) => ({
@@ -70,6 +77,7 @@ export const useRoomStore = create<RoomStoreState>()((set, get) => ({
       code,
       status: "connecting",
       error: null,
+      removed: false,
       snapshot: state.code === code ? state.snapshot : null,
     })),
   receive: (snapshot) => {
@@ -83,5 +91,6 @@ export const useRoomStore = create<RoomStoreState>()((set, get) => ({
   fail: (error) => set({ status: "error", error }),
   setConnection: (connection) => set({ connection }),
   announce: (text) => set((state) => ({ said: { id: state.said.id + 1, text } })),
+  setRemoved: (removed) => set({ removed }),
   reset: () => set(initialState),
 }));
