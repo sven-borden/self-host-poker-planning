@@ -1,3 +1,4 @@
+import { deckCards } from "@pp/domain";
 import type { ParticipantView, RoomView } from "@pp/protocol";
 import { type AvatarLook, avatarLooks } from "../table/avatar.tsx";
 import type { PersonFlags, SeatStatus, TablePerson } from "../table/seat.tsx";
@@ -88,4 +89,48 @@ export function tableData(room: RoomView): TableData {
       .map((p) => toObserver(p, room, looks)),
     looks,
   };
+}
+
+/** The people who may vote in this room: voters, less the PO when the PO does not vote. */
+function canVote(participant: ParticipantView, room: RoomView): boolean {
+  return participant.role === "voter" && (participant.id !== room.ownerId || room.settings.poVotes);
+}
+
+/**
+ * The centre's "5/8 voted so far": who voted out of who can vote. Someone away counts
+ * only when their vote is in (the domain's automatic reveal waits for present voters only).
+ */
+export function voteCount(room: RoomView): { count: number; total: number } {
+  const voted = new Set(room.round?.voted ?? []);
+  const counted = room.participants.filter((p) => canVote(p, room) && (!p.away || voted.has(p.id)));
+  return { count: counted.filter((p) => voted.has(p.id)).length, total: counted.length };
+}
+
+/**
+ * The viewer's hand, where the domain would accept or refuse their vote:
+ * - `none`: an observer has no hand;
+ * - `owner`: the PO in a room where the PO does not vote (`poVotes` off) has none either,
+ *   and the page says why;
+ * - `cards`: the round's deck and enabled specials (the room's own in the lobby), playable
+ *   only while Voting. In the lobby and after the reveal the cards stay on screen,
+ *   disabled, with the reason (`lobby`, `revealed`). Changing a vote after the reveal
+ *   (`allowChangeAfterReveal`) comes with #29.
+ */
+export type HandView =
+  | { kind: "none" }
+  | { kind: "owner" }
+  | { kind: "cards"; cards: string[]; playable: boolean; reason: "voting" | "lobby" | "revealed" };
+
+export function handView(room: RoomView, me: ParticipantView): HandView {
+  if (me.role !== "voter") return { kind: "none" };
+  if (!canVote(me, room)) return { kind: "owner" };
+  const round = room.round;
+  if (round === null) {
+    const cards = deckCards(room.settings.deck, room.settings.specials);
+    return { kind: "cards", cards, playable: false, reason: "lobby" };
+  }
+  const cards = deckCards(round.deck, round.specials);
+  return round.phase === "voting"
+    ? { kind: "cards", cards, playable: true, reason: "voting" }
+    : { kind: "cards", cards, playable: false, reason: "revealed" };
 }

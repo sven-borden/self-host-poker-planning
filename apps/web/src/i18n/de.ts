@@ -131,6 +131,22 @@ export const de: Catalog = {
     ownerTag: "Product Owner",
     awayTag: "Abwesend",
   },
+  round: {
+    start: "Runde starten",
+    next: "Nächste Runde",
+    waiting: "Warten auf den PO",
+    revealed: "Karten aufgedeckt",
+  },
+  hand: {
+    hintVoting:
+      "Wählen Sie eine Karte, um abzustimmen. Wählen Sie sie erneut, um Ihre Stimme zurückzunehmen.",
+    hintLobby: "Ihre Karten werden spielbar, sobald der Product Owner die Runde startet.",
+    hintRevealed:
+      "Die Karten sind aufgedeckt. In dieser Runde lassen sich die Stimmen nicht mehr ändern.",
+    youVoted: "Sie haben {{card}} gewählt.",
+    retracted: "Stimme zurückgenommen.",
+    ownerDoesNotVote: "Als Product Owner stimmen Sie in diesem Raum nicht ab.",
+  },
   live: {
     joined: "{{name}} ist dem Raum beigetreten.",
     joinedMany_one: "{{count, number}} Person ist dem Raum beigetreten.",

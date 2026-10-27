@@ -80,7 +80,7 @@ export function CardValue({ value, room }: { value: string; room: number }) {
 
 // No text size here: tailwind-merge treats a later `text-[20px]` as a conflict with
 // `leading-none` and drops it, so each card sets its size and line height together.
-const FACE =
+export const CARD_FACE =
   "border border-card-edge bg-card-face text-card-ink font-display font-extrabold [font-stretch:110%]";
 
 type HandCardProps = Omit<ComponentProps<"button">, "children"> & {
@@ -95,7 +95,8 @@ type HandCardProps = Omit<ComponentProps<"button">, "children"> & {
  * A card in the hand: 50 × 72 (44 × 64 on phones), numeral centred, corner indices
  * top-left and bottom-right (rotated). A toggle button; the parent decides what a press
  * means. Hover lifts 6 px, selected lifts 12 px; both are whole pixels. The selected ring
- * is a border on `::after`, not a box-shadow, so it survives forced colours.
+ * is a border on `::after`, not a box-shadow, so it survives forced colours. `disabled`
+ * and `aria-disabled` look the same; the hand uses `aria-disabled`, which keeps the focus.
  */
 export function HandCard({ value, selected = false, label, className, ...props }: HandCardProps) {
   return (
@@ -104,11 +105,11 @@ export function HandCard({ value, selected = false, label, className, ...props }
       aria-pressed={selected}
       aria-label={label}
       className={cn(
-        FACE,
+        CARD_FACE,
         "relative grid h-[72px] w-[50px] shrink-0 cursor-pointer place-items-center rounded-[7px] p-0 text-[20px]/none shadow-sm phone:h-16 phone:w-11 phone:text-[18px]/none",
-        "transition-[translate,box-shadow] duration-200 ease-standard hover:not-disabled:-translate-y-1.5 hover:not-disabled:shadow-md",
+        "transition-[translate,box-shadow,opacity] duration-200 ease-standard hover:not-disabled:not-aria-disabled:-translate-y-1.5 hover:not-disabled:not-aria-disabled:shadow-md",
         "aria-pressed:-translate-y-3 aria-pressed:shadow-md aria-pressed:after:pointer-events-none aria-pressed:after:absolute aria-pressed:after:-inset-[3px] aria-pressed:after:rounded-[9px] aria-pressed:after:border-2 aria-pressed:after:border-brass",
-        "disabled:cursor-default disabled:opacity-40",
+        "disabled:cursor-default disabled:opacity-40 aria-disabled:cursor-default aria-disabled:opacity-40",
         className,
       )}
       {...props}
@@ -171,7 +172,7 @@ export function SlotCard({ face, value, size, className }: SlotCardProps) {
     <div
       aria-hidden="true"
       data-face="up"
-      className={cn(FACE, "grid place-items-center leading-none shadow-md", className)}
+      className={cn(CARD_FACE, "grid place-items-center leading-none shadow-md", className)}
       style={{ ...box, fontSize }}
     >
       {/* The inner width less 2 px a side. */}
@@ -187,7 +188,7 @@ export function MiniCard({ value, className }: { value: string; className?: stri
       aria-hidden="true"
       data-mini-card
       className={cn(
-        FACE,
+        CARD_FACE,
         "grid h-[39px] w-7 shrink-0 place-items-center rounded-[4px] text-[13px] leading-none",
         className,
       )}

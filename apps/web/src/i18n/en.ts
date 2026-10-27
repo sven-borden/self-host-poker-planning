@@ -181,6 +181,20 @@ export const en = {
     ownerTag: "Product owner",
     awayTag: "Away",
   },
+  round: {
+    start: "Start voting",
+    next: "Next round",
+    waiting: "Waiting for the PO",
+    revealed: "Cards revealed",
+  },
+  hand: {
+    hintVoting: "Pick a card to vote. Pick it again to take your vote back.",
+    hintLobby: "Your cards open when the product owner starts the round.",
+    hintRevealed: "The cards are revealed. Votes can no longer change in this round.",
+    youVoted: "You voted {{card}}.",
+    retracted: "Vote taken back.",
+    ownerDoesNotVote: "As the product owner, you do not vote in this room.",
+  },
   live: {
     joined: "{{name}} joined.",
     joinedMany_one: "{{count, number}} person joined.",

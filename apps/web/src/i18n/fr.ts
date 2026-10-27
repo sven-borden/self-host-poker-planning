@@ -132,6 +132,20 @@ export const fr: Catalog<"many"> = {
     ownerTag: "Product owner",
     awayTag: "Hors ligne",
   },
+  round: {
+    start: "Lancer le vote",
+    next: "Tour suivant",
+    waiting: "En attente du PO",
+    revealed: "Cartes révélées",
+  },
+  hand: {
+    hintVoting: "Choisissez une carte pour voter. Choisissez-la à nouveau pour retirer votre vote.",
+    hintLobby: "Vos cartes s’ouvrent quand le product owner lance le tour.",
+    hintRevealed: "Les cartes sont révélées. Les votes ne peuvent plus changer dans ce tour.",
+    youVoted: "Vous avez voté {{card}}.",
+    retracted: "Vote retiré.",
+    ownerDoesNotVote: "En tant que product owner, vous ne votez pas dans cette salle.",
+  },
   live: {
     joined: "{{name}} a rejoint la salle.",
     joinedMany_one: "{{count, number}} personne a rejoint la salle.",
