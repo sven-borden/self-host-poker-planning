@@ -4,7 +4,14 @@
 import type { Card, CustomDeckErrorCode } from "./decks.ts";
 import type { Role, RoomState, Round, SettingsPatch, Subject, UserId } from "./room.ts";
 
-/** Every change to a room. A flat union discriminated by `type`. */
+/**
+ * Every change to a room. A flat union discriminated by `type`.
+ *
+ * `castVote` and `retractVote` carry `round`, the number of the round the press was
+ * made for: a command still in flight when the PO starts the next round is refused
+ * (`round_changed`) instead of landing in it. The wire protocol always sends it; the
+ * domain checks it whenever it is given.
+ */
 export type Command =
   | { type: "join"; name: string; role: Role }
   | { type: "leave" }
@@ -12,8 +19,8 @@ export type Command =
   | { type: "setRole"; role: Role }
   | { type: "kick"; who: UserId }
   | { type: "startRound"; subject: Subject }
-  | { type: "castVote"; card: Card }
-  | { type: "retractVote" }
+  | { type: "castVote"; card: Card; round?: number }
+  | { type: "retractVote"; round?: number }
   | { type: "reveal" }
   | { type: "setFinal"; card: Card }
   | { type: "revote" }
@@ -83,6 +90,7 @@ export type ErrorCode =
   | "not_voter"
   | "bad_card"
   | "round_revealed"
+  | "round_changed"
   | "not_voting"
   | "not_allowed"
   | "not_revealed"

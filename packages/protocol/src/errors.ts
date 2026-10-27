@@ -51,6 +51,7 @@ export const ACK_ERROR_CODES = [
   "not_voter",
   "bad_card",
   "round_revealed",
+  "round_changed",
   "not_voting",
   "not_allowed",
   "not_revealed",

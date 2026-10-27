@@ -7,7 +7,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeLanguage } from "../i18n/i18n.ts";
 import { IdentityError } from "../identity/identity.ts";
 import { useIdentityStore } from "../stores/identity-store.ts";
@@ -76,6 +76,11 @@ const others: Array<[string, string, Participant["role"]]> = [
   ["ub", "Ben", "observer"],
 ];
 const joined = stateWith([...others, [ME, "Cleo", "voter"]]);
+
+// The table is a lazy chunk; load it once up front, so no test's wait pays for its transform.
+beforeAll(async () => {
+  await import("./seated.tsx");
+}, 30_000);
 
 beforeEach(() => {
   // The router restores the scroll position, which jsdom does not implement.

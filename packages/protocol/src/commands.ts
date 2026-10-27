@@ -88,6 +88,9 @@ export const settingsPatchSchema = z.strictObject({
   observersCount: z.boolean().optional(),
 });
 
+/** A round's number, as the snapshot gave it (rounds count from 1). */
+const roundNumberSchema = z.number().int().min(1);
+
 /** A command without fields may omit `payload`. */
 const empty = z.strictObject({}).default({});
 
@@ -103,8 +106,10 @@ const payloads = {
   setRole: z.strictObject({ role: roleSchema }),
   kick: z.strictObject({ who: userIdSchema }),
   startRound: z.strictObject({ subject: wireSubjectSchema }),
-  castVote: z.strictObject({ card: cardSchema }),
-  retractVote: empty,
+  // The number of the round the press was made for: one still in flight when the next
+  // round starts is refused (`round_changed`) instead of landing in it.
+  castVote: z.strictObject({ card: cardSchema, round: roundNumberSchema }),
+  retractVote: z.strictObject({ round: roundNumberSchema }),
   reveal: empty,
   setFinal: z.strictObject({ card: cardSchema }),
   revote: empty,

@@ -60,8 +60,8 @@ server sends and never decides the outcome of a round.
     `room_full` for a voter is an inline message instead (the observer row is still open).
   - `you` is set: `seated.tsx`, a lazy chunk prefetched when `RoomView` mounts: the table
     (`TableStage` with `tableData(room)`), the live region (`LiveAnnouncer`) and
-    `YouControls` (`you-controls.tsx`: rename, voter/observer switch, leave). The table's
-    centre (`TableStage` children) is still empty: #18's status goes there.
+    `YouControls` (`you-controls.tsx`: rename, voter/observer switch, leave), with the
+    hand and the table's centre between them (#18, below).
   `save-name.ts` (`saveName`) saves the name for the next room before a join or rename:
   skipped when it is already the saved one (`/api/me/name` allows 10 a minute), and a
   failed save never stops the command, which carries the name typed. The copy lives
@@ -87,6 +87,39 @@ server sends and never decides the outcome of a round.
   (`useRoomStore.subscribe`, not renders) and speaks after 600 ms of quiet or 1.5 s at
   most, in `[data-table-live]`, a new element per announcement. Copy: `table.*` and
   `live.*`.
+  Voting (#18): `hand-state.ts` is the hand's pure state machine. The snapshot's
+  `yourVote` is the confirmed card; a press records a wish (a card, or null to take the
+  vote back: pressing the card shown retracts), shown at once. One command is on the wire
+  at a time; when its ack resolves, the store already holds its snapshot, so `nextStep`
+  compares the latest wish with the confirmed card and sends again only if they differ
+  (fast presses collapse; a wish the last command already carried is dropped rather than
+  sent twice). A refusal, a `busy` that gave up or `offline` drops every wish: the hand
+  rolls back and shows `failureMessage`. A wish belongs to its round (`roundKey`: number
+  and start), so a new round or the reveal drops it; each command carries the round's
+  number, and a `round_changed` refusal (the PO started the next round while it was on
+  the wire) rolls back without a message. `use-vote.ts` runs the machine with the
+  `commandSender()` taken at each press and words the viewer's own news ("Your vote: 5.",
+  "Vote taken back.") for `[data-hand-live]`, a region nobody else gets: it compares the
+  last accepted pick with `yourVote` in any phase, so the vote that ends the round is
+  said too.
+  `withShownVote(room, card)` folds the unconfirmed pick into the room the viewer sees,
+  so their seat (face-down slot, voted badge), the centre's count and the hand agree at
+  once. `handView(room, me)` (table-data.ts): no hand for observers, a line instead for a
+  PO who does not vote (`poVotes`), else the round's `deckCards` (the room's own in the
+  lobby), playable only while Voting; in the lobby and after the reveal the cards stay,
+  `aria-disabled`, with the reason under them (#29 brings changes after the reveal).
+  `table/hand.tsx` (`Hand`) is presentational: a toolbar with one tab stop (roving
+  tabindex; arrows wrap, Home and End), `HandCard` toggle buttons (`aria-pressed`), a CSS
+  deal-in on mount. `card-flight.tsx` flies a ghost card from the hand to the viewer's
+  slot (`[data-slot-card][data-you]`, hidden through `TableStage`'s `hiddenSlot` until it
+  lands) and back on a retract, with the Web Animations API (see "Motion" below);
+  `flightKeyframes` is pure. `round-centre.tsx` (`RoundCentre`) fills the table's centre:
+  "5/8 voted so far" while Voting (`voteCount`: voters, less a PO who does not vote, less
+  people away who have not voted; #19 adds the reveal button here), and in the lobby or
+  after a reveal a minimal `StartRound` button for the PO (`startRound` without a
+  subject, "Start voting" or "Next round"; #21 replaces it) and a calm line for the
+  others ("Waiting for the PO", "Cards revealed"; #20 puts the results there). A refused
+  start shows under the table. Copy: `round.*` and `hand.*`.
   `failure.ts` turns refusal codes into copy. Focus: after joining it moves to the "You"
   heading, after leaving or when a seat frees up to the name field (a free seat is also
   announced in a polite live region, `[data-room-notice]`); each request is cleared once
@@ -136,7 +169,16 @@ server sends and never decides the outcome of a round.
   `--warn-ink`); control borders use `--line-strong` (via shadcn's `border-input`), not
   `--line`.
 - Motion: page entrances are CSS (`RiseIn`, tw-animate-css), so content never waits for
-  JavaScript. An animated component wraps its `m.div` elements in `<MotionFeatures>`
+  JavaScript. Measured in #18: importing Motion's `m` (or `motion.tsx`) from a lazy chunk
+  makes Vite 8's rolldown split shared modules (tailwind-merge, the English catalog,
+  React's runtime) out of the entry chunk and costs the room route 12.8 kB gzipped. A
+  keyframed one-off such as the card's flight uses `Element.animate` instead (no
+  dependency, interruptible with `cancel`, `matchMedia` for reduced motion). Two splits
+  keep Motion within budget, measured by #18's review: one lazy boundary for every
+  Motion component (room route 167.6 kB), or a dynamic `import("motion/mini")` inside the
+  effect (3.2 kB lazy). #19's flip and #20's columns may use either, or `Element.animate`;
+  check the budget before reaching for `m` in a lazy chunk (ADR-008). An animated
+  component wraps its `m.div` elements in `<MotionFeatures>`
   (`<MotionFeatures layout>` when it needs layout animations): the features chunk
   (`domAnimation`, or `domMax` for layout) is fetched when the first one mounts, never at
   page load. Biome refuses `import { motion } from "motion/react"`. Every animation has a

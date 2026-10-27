@@ -23,6 +23,7 @@ const errors = {
   not_voter: "Observers do not vote. Switch to voter to play a card.",
   bad_card: "That card is not in this room’s deck. Pick another card.",
   round_revealed: "The cards are already revealed, so votes can no longer change.",
+  round_changed: "A new round started before your vote arrived. Pick your card again.",
   not_voting: "This round is not open for votes.",
   not_allowed: "This room’s settings do not let you do that.",
   not_revealed: "Reveal the cards first.",
@@ -151,6 +152,7 @@ export const en = {
   you: {
     title: "You",
     roleVoter: "At the table, voting",
+    roleNotVoting: "At the table, not voting",
     roleObserver: "Watching, not voting",
     rename: "Change your name",
     save: "Save",
@@ -181,6 +183,21 @@ export const en = {
     ownerTag: "Product owner",
     awayTag: "Away",
   },
+  round: {
+    start: "Start voting",
+    next: "Next round",
+    waiting: "Waiting for the PO",
+    revealed: "Cards revealed",
+  },
+  hand: {
+    hintVoting: "Pick a card to vote. Pick it again to take your vote back.",
+    hintLobby: "Your cards open when the product owner starts the round.",
+    hintLobbyOwner: "Start voting to play your cards.",
+    hintRevealed: "The cards are revealed. Votes can no longer change in this round.",
+    youVoted: "Your vote: {{card}}.",
+    retracted: "Vote taken back.",
+    ownerDoesNotVote: "As the product owner, you do not vote in this room.",
+  },
   live: {
     joined: "{{name}} joined.",
     joinedMany_one: "{{count, number}} person joined.",
@@ -197,6 +214,7 @@ export const en = {
     voted: "{{name}} voted.",
     votedMany_one: "{{count, number}} person voted.",
     votedMany_other: "{{count, number}} people voted.",
+    roundStarted: "Voting started.",
   },
   cards: {
     yourCards: "Your cards",

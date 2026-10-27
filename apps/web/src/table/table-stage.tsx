@@ -25,6 +25,11 @@ interface TableStageProps {
   variant?: TableVariant;
   /** The status in the middle of the table: count, timer or result. */
   children?: ReactNode;
+  /**
+   * A person whose slot card is hidden for a moment: a card is flying to it (#18), and the
+   * slot shows once it has landed.
+   */
+  hiddenSlot?: string | null;
   className?: string;
 }
 
@@ -51,6 +56,7 @@ export function TableStage({
   observers = [],
   variant,
   children,
+  hiddenSlot = null,
   className,
 }: TableStageProps) {
   const t = useT();
@@ -95,8 +101,9 @@ export function TableStage({
             <div
               key={person.id}
               data-slot-card
+              data-you={person.you || undefined}
               aria-hidden="true"
-              className="absolute"
+              className={cn("absolute", person.id === hiddenSlot && "invisible")}
               style={{
                 left: `calc(${point.x}% - ${layout.slot.width / 2}px)`,
                 top: `calc(${point.y}% - ${layout.slot.height / 2}px)`,

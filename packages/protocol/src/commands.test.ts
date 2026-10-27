@@ -108,7 +108,10 @@ describe("wire commands", () => {
     ["an id with a lone surrogate", { id: "\ud800", type: "reveal" }],
     ["an unknown field on the command", { id: "1", type: "reveal", extra: true }],
     ["an unknown field in an empty payload", { id: "1", type: "reveal", payload: { x: 1 } }],
-    ["an unknown field in a payload", { id: "1", type: "castVote", payload: { card: "5", x: 1 } }],
+    [
+      "an unknown field in a payload",
+      { id: "1", type: "castVote", payload: { card: "5", round: 1, x: 1 } },
+    ],
     [
       "a misspelt settings key next to a valid one",
       {
@@ -152,11 +155,16 @@ describe("wire commands", () => {
     ["a payload that is not an object", { id: "1", type: "reveal", payload: 5 }],
     ["a payload that is an array", { id: "1", type: "castVote", payload: ["5"] }],
     ["a missing field", { id: "1", type: "castVote", payload: {} }],
-    ["a numeric card", { id: "1", type: "castVote", payload: { card: 5 } }],
+    ["a numeric card", { id: "1", type: "castVote", payload: { card: 5, round: 1 } }],
     [
       "a card past the wire cap",
-      { id: "1", type: "castVote", payload: { card: "1".repeat(WIRE_LIMITS.card + 1) } },
+      { id: "1", type: "castVote", payload: { card: "1".repeat(WIRE_LIMITS.card + 1), round: 1 } },
     ],
+    ["a vote without its round", { id: "1", type: "castVote", payload: { card: "5" } }],
+    ["a retract without its round", { id: "1", type: "retractVote" }],
+    ["a round 0", { id: "1", type: "retractVote", payload: { round: 0 } }],
+    ["a fractional round", { id: "1", type: "castVote", payload: { card: "5", round: 1.5 } }],
+    ["a round as text", { id: "1", type: "retractVote", payload: { round: "1" } }],
     [
       "a name past the wire cap",
       {

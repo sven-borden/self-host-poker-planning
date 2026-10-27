@@ -23,6 +23,8 @@ interface YouControlsProps {
   onFocused?: () => void;
   /** Called just before `leave` is sent, and with false when it was refused. */
   onLeaving: (leaving: boolean) => void;
+  /** False for a PO at the table in a room where the PO does not vote (`poVotes` off). */
+  votes?: boolean;
 }
 
 /**
@@ -31,7 +33,14 @@ interface YouControlsProps {
  * prefills it; switching role sends `setRole`; leaving sends `leave`, after which the
  * snapshot no longer holds `you` and the page shows the join form again.
  */
-export function YouControls({ me, look, focusOnMount, onFocused, onLeaving }: YouControlsProps) {
+export function YouControls({
+  me,
+  look,
+  focusOnMount,
+  onFocused,
+  onLeaving,
+  votes = true,
+}: YouControlsProps) {
   const t = useT();
   const ids = { heading: useId(), name: useId(), hint: useId(), error: useId() };
   const heading = useRef<HTMLHeadingElement>(null);
@@ -198,7 +207,11 @@ export function YouControls({ me, look, focusOnMount, onFocused, onLeaving }: Yo
                 <bdi>{me.name}</bdi>
               </span>
               <span data-you-role={me.role} className="text-sm text-ink-2">
-                {me.role === "voter" ? t("you.roleVoter") : t("you.roleObserver")}
+                {me.role === "observer"
+                  ? t("you.roleObserver")
+                  : votes
+                    ? t("you.roleVoter")
+                    : t("you.roleNotVoting")}
               </span>
             </div>
           </div>

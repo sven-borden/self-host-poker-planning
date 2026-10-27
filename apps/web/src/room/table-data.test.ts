@@ -2,7 +2,7 @@ import { apply, type Command, createRoom, type Participant, type RoomState } fro
 import { toSnapshot } from "@pp/protocol";
 import { describe, expect, it } from "vitest";
 import { isRoomFull } from "./room-full.ts";
-import { tableData } from "./table-data.ts";
+import { handView, tableData, voteCount } from "./table-data.ts";
 
 function roomWith(
   people: Array<[string, Participant["role"]]>,
@@ -145,5 +145,107 @@ describe("isRoomFull", () => {
     expect(isRoomFull(view(roomWith(people(16, 0), loose), "x"))).toBe(false);
     expect(isRoomFull(view(roomWith(people(16, 15), loose), "x"))).toBe(false);
     expect(isRoomFull(view(roomWith(people(16, 16), loose), "x"))).toBe(true);
+  });
+});
+
+describe("the round's centre and the hand (#18)", () => {
+  const step = (s: RoomState, actor: string, command: Command): RoomState => {
+    const result = apply(s, command, { actor, now: 100 });
+    if (!result.ok) throw new Error(result.error);
+    return result.state;
+  };
+  const base = roomWith([
+    ["u0", "voter"],
+    ["u1", "voter"],
+    ["u2", "voter"],
+    ["u3", "observer"],
+  ]);
+  const voting = step(base, "u0", { type: "startRound", subject: { kind: "none" } });
+  const me = (state: RoomState, id: string) => {
+    const room = view(state, id);
+    const person = room.participants.find((p) => p.id === id);
+    if (!person) throw new Error("not in the room");
+    return { room, person };
+  };
+
+  it("counts who voted out of who can vote", () => {
+    const voted = step(voting, "u1", { type: "castVote", card: "5" });
+    expect(voteCount(view(voted, "u3"))).toEqual({ count: 1, total: 3 });
+    // The PO stops voting: one voter fewer.
+    const noPo = { ...voted, settings: { ...voted.settings, poVotes: false } };
+    expect(voteCount(view(noPo, "u3"))).toEqual({ count: 1, total: 2 });
+    // Someone away counts only once their vote is in.
+    const away = (s: RoomState, id: string): RoomState => ({
+      ...s,
+      participants: {
+        ...s.participants,
+        [id]: { ...(s.participants[id] as Participant), connected: false, awaySince: 50 },
+      },
+    });
+    expect(voteCount(view(away(voted, "u2"), "u3"))).toEqual({ count: 1, total: 2 });
+    expect(voteCount(view(away(voted, "u1"), "u3"))).toEqual({ count: 1, total: 3 });
+    expect(voteCount(view(base, "u3"))).toEqual({ count: 0, total: 3 });
+  });
+
+  it("gives an observer no hand, and the PO none when the PO does not vote", () => {
+    const watcher = me(voting, "u3");
+    expect(handView(watcher.room, watcher.person)).toEqual({ kind: "none" });
+    const noPo = { ...voting, settings: { ...voting.settings, poVotes: false } };
+    const owner = me(noPo, "u0");
+    expect(handView(owner.room, owner.person)).toEqual({ kind: "owner" });
+    const voter = me(noPo, "u1");
+    expect(handView(voter.room, voter.person)).toMatchObject({ kind: "cards", playable: true });
+  });
+
+  it("never shows a PO who does not vote as thinking or without a vote", () => {
+    const noPo = (s: RoomState): RoomState => ({
+      ...s,
+      settings: { ...s.settings, poVotes: false },
+    });
+    const status = (s: RoomState) =>
+      tableData(view(s, "u1")).people.find((p) => p.id === "u0")?.status;
+    expect(status(noPo(voting))).toEqual({ kind: "present" });
+    expect(status(voting)).toEqual({ kind: "thinking" });
+    const revealed = step(voting, "u0", { type: "reveal" });
+    expect(status(noPo(revealed))).toEqual({ kind: "present" });
+    expect(status(revealed)).toEqual({ kind: "revealed", card: null });
+    const anonymous = step(
+      step(base, "u0", { type: "updateSettings", patch: { revealNames: false } }),
+      "u0",
+      { type: "startRound", subject: { kind: "none" } },
+    );
+    const hidden = step(anonymous, "u0", { type: "reveal" });
+    expect(status(noPo(hidden))).toEqual({ kind: "present" });
+    expect(status(hidden)).toEqual({ kind: "revealed", card: null });
+  });
+
+  it("deals the round's deck and specials, playable only while Voting", () => {
+    const voter = me(voting, "u1");
+    expect(handView(voter.room, voter.person)).toEqual({
+      kind: "cards",
+      cards: ["0", "1", "2", "3", "5", "8", "13", "21", "?", "☕"],
+      playable: true,
+      reason: "voting",
+    });
+    const tshirt = {
+      ...base,
+      settings: {
+        ...base.settings,
+        deck: { kind: "preset" as const, id: "tshirt" as const },
+        specials: [],
+      },
+    };
+    const inLobby = me(tshirt, "u1");
+    expect(handView(inLobby.room, inLobby.person)).toEqual({
+      kind: "cards",
+      cards: ["XS", "S", "M", "L", "XL", "XXL"],
+      playable: false,
+      reason: "lobby",
+    });
+    const revealed = me(step(voting, "u0", { type: "reveal" }), "u1");
+    expect(handView(revealed.room, revealed.person)).toMatchObject({
+      playable: false,
+      reason: "revealed",
+    });
   });
 });

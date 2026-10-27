@@ -121,3 +121,48 @@ export async function shoot(page: Page, name: string) {
   }
   await page.emulateMedia({ colorScheme: "light" });
 }
+
+/** What these tests read of a snapshot; the schemas stay out of the e2e build. */
+export interface Snapshot {
+  version: number;
+  room: { round: unknown };
+  causes: { type: string }[];
+}
+
+/** Every message frame the page receives, over the websocket or long-polling. */
+export function recordFrames(page: Page): string[] {
+  const frames: string[] = [];
+  page.on("websocket", (socket) =>
+    socket.on("framereceived", ({ payload }) => frames.push(String(payload))),
+  );
+  page.on("response", async (response) => {
+    if (!new URL(response.url()).pathname.startsWith("/socket.io/")) return;
+    if (response.request().method() !== "GET") return;
+    frames.push(await response.text().catch(() => ""));
+  });
+  return frames;
+}
+
+/** The snapshots in raw Socket.IO frames: `snapshot` events and `enter` acks. */
+export function snapshotsIn(frames: readonly string[]): Snapshot[] {
+  const found: Snapshot[] = [];
+  const visit = (value: unknown) => {
+    if (typeof value !== "object" || value === null) return;
+    if ("room" in value && "version" in value) found.push(value as Snapshot);
+    else if ("snapshot" in value) visit((value as { snapshot: unknown }).snapshot);
+  };
+  for (const raw of frames) {
+    // Long-polling packs several packets into one body, separated by U+001E.
+    for (const frame of raw.split("\u{1e}")) {
+      const start = frame.search(/[[{]/);
+      if (start < 0) continue;
+      try {
+        const parsed: unknown = JSON.parse(frame.slice(start));
+        for (const item of Array.isArray(parsed) ? parsed : [parsed]) visit(item);
+      } catch {
+        // Not a JSON packet (a handshake or a ping).
+      }
+    }
+  }
+  return found;
+}

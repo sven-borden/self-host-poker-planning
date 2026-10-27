@@ -139,7 +139,7 @@ test("a refresh and a second tab keep the seat and the vote", async ({
   try {
     expect(await ana.enter(code)).toMatchObject({ ok: true });
     expect(await ana.cmd("startRound", { subject: { kind: "none" } })).toMatchObject({ ok: true });
-    expect(await ana.cmd("castVote", { card: "5" })).toMatchObject({ ok: true });
+    expect(await ana.cmd("castVote", { card: "5", round: 1 })).toMatchObject({ ok: true });
   } finally {
     ana.close();
   }

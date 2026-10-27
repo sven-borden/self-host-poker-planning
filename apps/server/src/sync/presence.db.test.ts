@@ -169,7 +169,7 @@ describe("the grace period", () => {
     const b = client(bob);
     const c = client(cy);
     await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
-    expect((await a.cmd("castVote", { card: "13" })).ok).toBe(true);
+    expect((await a.cmd("castVote", { card: "13", round: 1 })).ok).toBe(true);
     b.close();
     const revealed = await c.waitFor((s) => s.room.round?.phase === "revealed", 3000);
     expect(revealed.snapshot.causes).toStrictEqual([
@@ -254,7 +254,7 @@ describe("secrecy and logs", () => {
     const b = client(bob);
     const c = client(cy);
     await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
-    expect((await b.cmd("castVote", { card: "13" })).ok).toBe(true);
+    expect((await b.cmd("castVote", { card: "13", round: 1 })).ok).toBe(true);
     // Cy, the observer, leaves for a while and comes back: away, then back.
     c.close();
     await a.waitFor(isAway(cy.id), 3000);

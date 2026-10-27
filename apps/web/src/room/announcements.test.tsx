@@ -63,6 +63,21 @@ describe("liveEvents", () => {
     expect(said(liveEvents(kicked.room, kicked.causes, left.room))).toBe("Ana left.");
   });
 
+  it("says a new round started, to everyone, before the rest of its batch", () => {
+    const { run } = story("ana");
+    run("me", { type: "join", name: "Me", role: "voter" });
+    const lobby = run("ana", { type: "join", name: "Ana", role: "voter" });
+    const started = run("me", { type: "startRound", subject: { kind: "none" } });
+    const events = liveEvents(started.room, started.causes, lobby.room);
+    expect(events).toEqual([{ kind: "roundStarted", who: "", name: "" }]);
+    const joined = { kind: "joined" as const, who: "ben", name: "Ben" };
+    expect(said(mergeEvents([joined], [...events, ...events]))).toBe("Voting started. Ben joined.");
+    const mine = story("me");
+    mine.run("me", { type: "join", name: "Me", role: "voter" });
+    const own = mine.run("me", { type: "startRound", subject: { kind: "none" } });
+    expect(said(liveEvents(own.room, own.causes, null))).toBe("Voting started.");
+  });
+
   it("never says a card, and stays quiet on causes it does not announce", () => {
     const { run } = story("ana");
     run("me", { type: "join", name: "Me", role: "voter" });
