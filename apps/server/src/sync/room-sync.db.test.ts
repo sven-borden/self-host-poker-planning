@@ -288,7 +288,7 @@ describe("the reveal (#19)", () => {
     await a.enter(code);
     expect(await a.cmd("reveal")).toEqual({ ok: true, version: 2 });
     const seen = await c.waitFor((s) => s.room.round?.phase === "revealed");
-    expect(seen.snapshot.causes).toEqual([{ type: "revealed", by: "manual" }]);
+    expect(seen.snapshot.causes).toEqual([{ type: "revealed", by: "manual", who: ada.id }]);
   });
 
   /**

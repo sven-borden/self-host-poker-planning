@@ -128,12 +128,14 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
     case "retractVote":
       return retractVote(state, actor, command);
     case "reveal": {
-      if (actor !== state.ownerId && state.settings.whoCanReveal !== "anyone") {
-        return refuse("not_allowed");
-      }
+      if (!mayReveal(state, actor)) return refuse("not_allowed");
       const round = state.round;
       if (round?.phase !== "voting") return refuse("not_voting");
-      return done(withRound(state, reveal(round, now)), { type: "revealed", by: "manual" });
+      return done(withRound(state, reveal(round, now)), {
+        type: "revealed",
+        by: "manual",
+        who: actor,
+      });
     }
     case "setFinal":
       return setFinal(state, command.card);
@@ -464,6 +466,14 @@ function isVoter(state: RoomState, id: UserId): boolean {
   return (
     participant(state, id)?.role === "voter" && (id !== state.ownerId || state.settings.poVotes)
   );
+}
+
+/**
+ * Who may reveal by hand (#28, ADR-011): the PO always, whether or not they vote; under
+ * `whoCanReveal: "anyone"`, every voter too (`isVoter`). An observer never.
+ */
+function mayReveal(state: RoomState, id: UserId): boolean {
+  return id === state.ownerId || (state.settings.whoCanReveal === "anyone" && isVoter(state, id));
 }
 
 /** Whether a person with this role takes one of the 16 seats. */

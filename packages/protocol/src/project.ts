@@ -98,7 +98,10 @@ function causeView(cause: Cause, hideVoter: boolean): CauseView | null {
         ? { type: cause.type }
         : { type: cause.type, who: cause.who };
     case "revealed":
-      return { type: cause.type, by: cause.by };
+      // Who revealed (#28) ties nobody to a card, so it stays in an anonymous round too.
+      return cause.who === undefined
+        ? { type: cause.type, by: cause.by }
+        : { type: cause.type, by: cause.by, who: cause.who };
     case "timerStarted":
     case "timerStopped":
     case "timerExtended":

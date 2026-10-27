@@ -235,7 +235,7 @@ test("the room's timer starts every round, and the server reveals at the deadlin
     }
     expect(reveals(frames, fromPo)).toEqual([
       { type: "revealed", by: "timer" },
-      { type: "revealed", by: "manual" },
+      { type: "revealed", by: "manual", who: expect.any(String) },
     ]);
   } finally {
     await ben.context.close();

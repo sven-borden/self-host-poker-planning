@@ -142,7 +142,12 @@ export const causeSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("voteCast"), who: userIdSchema.optional() }),
   z.object({ type: z.literal("voteRetracted"), who: userIdSchema.optional() }),
-  z.object({ type: z.literal("revealed"), by: z.enum(["manual", "everyoneVoted", "timer"]) }),
+  z.object({
+    type: z.literal("revealed"),
+    by: z.enum(["manual", "everyoneVoted", "timer"]),
+    /** Who revealed by hand (#28). Optional, so an older client ignores it. */
+    who: userIdSchema.optional(),
+  }),
   z.object({ type: z.literal("timerStarted") }),
   z.object({ type: z.literal("timerStopped") }),
   z.object({ type: z.literal("timerExtended") }),
