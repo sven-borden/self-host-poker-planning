@@ -1,9 +1,12 @@
 import { expect, type Page, test } from "@playwright/test";
-import pg from "pg";
 import { computeResults } from "../../../packages/domain/src/results.ts";
 import {
   createRoom,
+  dbQuery,
   type Guest,
+  hand,
+  handCard,
+  historyOf,
   join,
   newGuest,
   newPerson,
@@ -11,6 +14,8 @@ import {
   sameUser,
   seats,
   shoot,
+  subjectField,
+  subjectLine,
 } from "./support.ts";
 
 // The next round with a subject (#21) in real browsers, against the real server and
@@ -34,41 +39,9 @@ test.beforeEach(async ({ page }) => {
   await page.setExtraHTTPHeaders(ownAddress());
 });
 
-const hand = (page: Page) => page.getByRole("toolbar", { name: "Your cards" });
-const handCard = (page: Page, label: string) =>
-  hand(page).getByRole("button", { name: label, exact: true });
 const pressedCards = (page: Page) => hand(page).locator("[aria-pressed='true']");
 const tableLive = (page: Page) => page.locator("[data-table-live]");
-const subjectLine = (page: Page) => page.locator("[data-round-subject]");
-const subjectField = (page: Page) =>
-  page.getByRole("textbox", { name: "Subject of the next round" });
 const centreStatus = (page: Page) => page.locator("[data-centre-status='voting']");
-
-interface HistoryRow {
-  number: number;
-  subject: unknown;
-  votes: unknown;
-  stats: unknown;
-  text: string;
-}
-
-/** The room's `round_history` rows, read straight from Postgres (the history UI is #33). */
-async function historyOf(code: string): Promise<HistoryRow[]> {
-  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
-  client.on("error", () => {});
-  await client.connect();
-  try {
-    const { rows } = await client.query<HistoryRow>(
-      `select h.number, h.subject, h.votes, h.stats, row_to_json(h)::text as text
-      from round_history h join room r on r.id = h.room_id where r.code = $1
-      order by h.number`,
-      [code],
-    );
-    return rows;
-  } finally {
-    await client.end();
-  }
-}
 
 test("three people, a titled round then a Jira round: votes clear, the number rises, history is written (AC 1, AC 2)", async ({
   page,
@@ -269,23 +242,15 @@ test("an anonymous round leaves only its cards in history (AC 2)", async ({
 
 /** The round's number and how many votes it holds, as the server stored them in Postgres. */
 async function roomOf(code: string): Promise<{ round: number; votes: number }> {
-  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
-  client.on("error", () => {});
-  await client.connect();
-  try {
-    const { rows } = await client.query<{ round: number; votes: number }>(
-      `select (live->'round'->>'number')::int as round,
-      (select count(*) from jsonb_object_keys(coalesce(live->'round'->'votes', '{}'::jsonb)))::int
-        as votes
-      from room where code = $1`,
-      [code],
-    );
-    const [row] = rows;
-    if (!row) throw new Error("no such room");
-    return row;
-  } finally {
-    await client.end();
-  }
+  const [row] = await dbQuery<{ round: number; votes: number }>(
+    `select (live->'round'->>'number')::int as round,
+    (select count(*) from jsonb_object_keys(coalesce(live->'round'->'votes', '{}'::jsonb)))::int
+      as votes
+    from room where code = $1`,
+    [code],
+  );
+  if (!row) throw new Error("no such room");
+  return row;
 }
 
 test("a double Enter in the subject field starts one round and casts no vote, in the lobby and after a reveal", async ({

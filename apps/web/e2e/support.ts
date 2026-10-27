@@ -7,12 +7,14 @@ import {
   type Page,
   test,
 } from "@playwright/test";
+import pg from "pg";
 import { io, type Socket } from "socket.io-client";
 import { PROTOCOL_VERSION } from "../../../packages/protocol/src/version.ts";
 
 // Shared by the specs that run against the real server and Postgres (join.spec.ts,
-// presence.spec.ts, mobile.spec.ts): guests driven over the protocol from Node, a client
-// address per person, the room page's common steps, and phones (#22).
+// presence.spec.ts, mobile.spec.ts, four-person.spec.ts, …): guests driven over the
+// protocol from Node, a client address per person, the room page's common steps, phones
+// (#22), the frames a page receives, and Postgres read straight (the history UI is #33).
 
 export const SHOTS = fileURLToPath(new URL("../tmp/screenshots/", import.meta.url));
 export const ROOM_PATH = /\/r\/([1-9A-HJ-NP-Za-km-z]{10})$/;
@@ -150,6 +152,27 @@ export function recordFrames(page: Page): string[] {
   return frames;
 }
 
+/**
+ * Every JSON packet in raw Socket.IO frames, as parsed: an event is an array
+ * (`["snapshot", {…}]`), an ack the array of its arguments (`[{ ok: true, … }]`).
+ */
+export function packetsIn(frames: readonly string[]): unknown[] {
+  const found: unknown[] = [];
+  for (const raw of frames) {
+    // Long-polling packs several packets into one body, separated by U+001E.
+    for (const frame of raw.split("\u{1e}")) {
+      const start = frame.search(/[[{]/);
+      if (start < 0) continue;
+      try {
+        found.push(JSON.parse(frame.slice(start)));
+      } catch {
+        // Not a JSON packet (a handshake or a ping).
+      }
+    }
+  }
+  return found;
+}
+
 /** The snapshots in raw Socket.IO frames: `snapshot` events and `enter` acks. */
 export function snapshotsIn(frames: readonly string[]): Snapshot[] {
   const found: Snapshot[] = [];
@@ -158,18 +181,8 @@ export function snapshotsIn(frames: readonly string[]): Snapshot[] {
     if ("room" in value && "version" in value) found.push(value as Snapshot);
     else if ("snapshot" in value) visit((value as { snapshot: unknown }).snapshot);
   };
-  for (const raw of frames) {
-    // Long-polling packs several packets into one body, separated by U+001E.
-    for (const frame of raw.split("\u{1e}")) {
-      const start = frame.search(/[[{]/);
-      if (start < 0) continue;
-      try {
-        const parsed: unknown = JSON.parse(frame.slice(start));
-        for (const item of Array.isArray(parsed) ? parsed : [parsed]) visit(item);
-      } catch {
-        // Not a JSON packet (a handshake or a ping).
-      }
-    }
+  for (const parsed of packetsIn(frames)) {
+    for (const item of Array.isArray(parsed) ? parsed : [parsed]) visit(item);
   }
   return found;
 }
@@ -295,3 +308,39 @@ export async function guestsJoin(base: string, code: string, names: readonly str
   }
   return guests;
 }
+
+/** One query against the e2e database, read straight from Postgres. */
+export async function dbQuery<Row>(sql: string, params: unknown[]): Promise<Row[]> {
+  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  client.on("error", () => {});
+  await client.connect();
+  try {
+    return (await client.query(sql, params)).rows as Row[];
+  } finally {
+    await client.end();
+  }
+}
+
+export interface HistoryRow {
+  number: number;
+  subject: unknown;
+  deck: unknown;
+  votes: unknown;
+  stats: unknown;
+  /** The whole row as JSON, to look for a name that must not be there. */
+  text: string;
+}
+
+/** The room's `round_history` rows, in round order (the history UI is #33). */
+export const historyOf = (code: string) =>
+  dbQuery<HistoryRow>(
+    `select h.number, h.subject, h.deck, h.votes, h.stats, row_to_json(h)::text as text
+    from round_history h join room r on r.id = h.room_id where r.code = $1
+    order by h.number`,
+    [code],
+  );
+
+/** The round line over the table, and the PO's field for the next round's subject (#21). */
+export const subjectLine = (page: Page) => page.locator("[data-round-subject]");
+export const subjectField = (page: Page) =>
+  page.getByRole("textbox", { name: "Subject of the next round" });
