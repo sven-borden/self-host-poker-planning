@@ -8,6 +8,7 @@ import {
   createApp,
   DB_CHECK_TIMEOUT_MS,
   listStaticFiles,
+  loggedPath,
 } from "./app.ts";
 import { collectLogs, SECRET, testConfig } from "./test-support.ts";
 
@@ -96,6 +97,18 @@ describe("request ids and logs", () => {
       status: 404,
     });
     expect(logs.raw.join("")).not.toContain(SECRET);
+  });
+
+  it("logs a room path without its code", async () => {
+    const { app: a, logs } = app();
+    await a.request("/api/rooms/Secret1234");
+    expect(logs.lines[0]).toMatchObject({ path: "/api/rooms/:code", status: 404 });
+    expect(logs.raw.join("")).not.toContain("Secret1234");
+    expect(loggedPath("/r/Secret1234")).toBe("/r/:code");
+    expect(loggedPath("/r/Secret1234/extra")).toBe("/r/:code/extra");
+    expect(loggedPath("/api/rooms")).toBe("/api/rooms");
+    expect(loggedPath("/rooms/abc")).toBe("/rooms/abc");
+    expect(loggedPath("/api/health")).toBe("/api/health");
   });
 
   it("answers an unhandled error with a JSON 500 and logs it", async () => {

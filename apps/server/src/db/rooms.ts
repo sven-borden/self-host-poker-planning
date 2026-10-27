@@ -29,6 +29,12 @@ export interface NewRoom {
   passwordHash?: string | null;
 }
 
+/** What anyone holding a room's code may read without entering it: never its state. */
+export interface RoomHeader {
+  code: string;
+  name: string | null;
+}
+
 /** The version a new room starts at. */
 export const FIRST_VERSION = 1;
 
@@ -36,6 +42,8 @@ export interface RoomStore {
   /** Creates a room at `FIRST_VERSION`. Resolves `null` when the code is taken: draw another. */
   insertRoom(room: NewRoom): Promise<StoredRoom | null>;
   loadRoom(code: string): Promise<StoredRoom | null>;
+  /** The room's code and name, without loading `live`. */
+  loadRoomHeader(code: string): Promise<RoomHeader | null>;
   /**
    * Writes `next` when the room is still at `expectedVersion`, bumps the version and
    * `last_active_at`, and copies `next.ownerId` to `owner_user_id`. Resolves false when
@@ -75,6 +83,15 @@ export function createRoomStore(db: Db): RoomStore {
       guard("load room", async () => {
         const rows = await db
           .select({ id: room.id, code: room.code, version: room.version, state: room.live })
+          .from(room)
+          .where(eq(room.code, code));
+        return rows[0] ?? null;
+      }),
+
+    loadRoomHeader: (code) =>
+      guard("load room header", async () => {
+        const rows = await db
+          .select({ code: room.code, name: room.name })
           .from(room)
           .where(eq(room.code, code));
         return rows[0] ?? null;

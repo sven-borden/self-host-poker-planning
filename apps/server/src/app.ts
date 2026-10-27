@@ -72,11 +72,11 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
     await next();
     c.header("x-request-id", requestId);
     c.header("X-Content-Type-Options", "nosniff");
-    // Path only: the query string may carry anything, and bodies, cookies and auth
-    // headers are never logged.
+    // Path only, without a room code: the query string may carry anything, a room code
+    // is a room's address, and bodies, cookies and auth headers are never logged.
     const line = {
       method: c.req.method,
-      path: c.req.path,
+      path: loggedPath(c.req.path),
       status: c.res.status,
       ms: Math.round(performance.now() - started),
     };
@@ -135,6 +135,14 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
     mountWebApp(app, deps.staticDir);
   }
   return app;
+}
+
+/** Room codes in a path (`/r/:code`, `/api/rooms/:code`) stay out of the logs. */
+const ROOM_PATH = /^(\/r|\/api\/rooms)\/[^/]+/;
+
+/** A request path as it is logged: a room code becomes `:code`. */
+export function loggedPath(path: string): string {
+  return path.replace(ROOM_PATH, "$1/:code");
 }
 
 /** Runs the database check; a rejection or no answer within `ms` counts as `"error"`. */

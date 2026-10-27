@@ -24,6 +24,10 @@ function memoryStore(rooms: StoredRoom[] = []) {
       const r = byCode.get(code);
       return r ? { ...r } : null;
     },
+    loadRoomHeader: async (code) => {
+      const r = byCode.get(code);
+      return r ? { code: r.code, name: null } : null;
+    },
     commitRoom: async (id, expected, next, ended) => {
       commits.push({ id, expected, ...(ended && { ended }) });
       hooks.beforeCommit();
