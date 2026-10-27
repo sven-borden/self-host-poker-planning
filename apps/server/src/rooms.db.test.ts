@@ -13,7 +13,13 @@ import type { Database } from "./database.ts";
 import { createTestDatabase, type TestDatabase, testClient } from "./db/test-db.ts";
 import { memoryRateLimit } from "./rate-limit.ts";
 import { type RandomBytes, ROOM_CODE_ALPHABET, ROOM_CODE_PATTERN } from "./room-code.ts";
-import { CODE_ATTEMPTS, insertNewRoom, ROOM_CREATE_LIMIT, registerRoomApi } from "./rooms.ts";
+import {
+  CODE_ATTEMPTS,
+  insertNewRoom,
+  ROOM_CREATE_LIMIT,
+  ROOM_HEADER_LIMIT,
+  registerRoomApi,
+} from "./rooms.ts";
 import { createServer, type PokerServer } from "./server.ts";
 import { setupServer } from "./setup.ts";
 import { collectLogs, testConfig, VALID_ENV } from "./test-support.ts";
@@ -301,6 +307,25 @@ describe("code collisions", () => {
 });
 
 describe("GET /api/rooms/:code", () => {
+  it("limits reads per client address before the query, and only that address", async () => {
+    const me = await signIn("198.51.100.8");
+    const { json } = await create(me.cookie, { name: "Limited" }, "198.51.100.8");
+    const code = (json as { code: string }).code;
+    const reader = "203.0.113.77";
+    for (let i = 0; i < ROOM_HEADER_LIMIT.max; i++) {
+      expect((await call(`/api/rooms/${code}`, { ip: reader })).status).toBe(200);
+    }
+    const throttled = await call(`/api/rooms/${code}`, { ip: reader });
+    expect(throttled).toMatchObject({ status: 429, json: { code: "rate_limited" } });
+    expect(throttled.response.headers.get("cache-control")).toBe("no-store");
+    const retryAfter = Number(throttled.response.headers.get("retry-after"));
+    expect(retryAfter).toBeGreaterThan(0);
+    expect(retryAfter).toBeLessThanOrEqual(ROOM_HEADER_LIMIT.window);
+    // Malformed and unknown codes count too; another address is not affected.
+    expect((await call("/api/rooms/abc", { ip: reader })).status).toBe(429);
+    expect((await call(`/api/rooms/${code}`, { ip: "203.0.113.78" })).status).toBe(200);
+  });
+
   it("gives a room's code and name, and nothing else", async () => {
     const me = await signIn("198.51.100.6");
     secrets.push("Refinement");

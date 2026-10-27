@@ -26,6 +26,13 @@ import { generateRoomCode, isRoomCode, type RandomBytes } from "./room-code.ts";
  */
 export const ROOM_CREATE_LIMIT = { window: 600, max: 20 } as const;
 
+/**
+ * Header reads (`GET /api/rooms/:code`) per client address: 120 a minute. A page load is
+ * one read, so a team behind one office address passes; a script guessing codes pays one
+ * database query for each and is cut off at two a second.
+ */
+export const ROOM_HEADER_LIMIT = { window: 60, max: 120 } as const;
+
 /** Codes drawn for one room before giving up (`internal`): a clash is about 1 in 2^58. */
 export const CODE_ATTEMPTS = 5;
 
@@ -71,7 +78,8 @@ export interface RoomApiDeps {
 }
 
 /**
- * Mounts `POST /api/rooms` and `GET /api/rooms/:code`. Every answer is `no-store`; an
+ * Mounts `POST /api/rooms` and `GET /api/rooms/:code`, each limited per client address.
+ * Every answer is `no-store`; an
  * error is `{ code }` with an `AckErrorCode`, never a sentence. Neither the room code nor
  * the name reaches a log line.
  */
@@ -105,6 +113,10 @@ export function registerRoomApi(
 
   app.get("/api/rooms/:code", async (c) => {
     c.header("Cache-Control", "no-store");
+    // Counted before the query, so a flood of guesses costs the database nothing.
+    const ip = requestIp(c, config) ?? "unknown";
+    const allowed = await limiter.consume(`rooms|header|${ip}`, ROOM_HEADER_LIMIT);
+    if (!allowed.allowed) return rateLimited(c, allowed.retryAfter);
     const code = c.req.param("code");
     // A malformed code cannot name a room: no query.
     const header = isRoomCode(code) ? await rooms.loadRoomHeader(code) : null;
