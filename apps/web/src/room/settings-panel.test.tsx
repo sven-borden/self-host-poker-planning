@@ -125,19 +125,23 @@ describe("the settings panel", () => {
     const dialog = await openPanel("Room settings");
     const checked = (name: string) =>
       within(dialog).getByRole("switch", { name }).getAttribute("aria-checked") === "true";
-    expect(within(dialog).getAllByRole("switch")).toHaveLength(5);
+    expect(within(dialog).getAllByRole("switch")).toHaveLength(8);
+    expect(checked("Not sure")).toBe(true);
+    expect(checked("Need a break")).toBe(true);
+    expect(checked("Too big to estimate")).toBe(false);
     expect(checked("Reveal when everyone has voted")).toBe(DEFAULT_SETTINGS.revealWhenAllVoted);
     expect(checked("Anonymous voting")).toBe(!DEFAULT_SETTINGS.revealNames);
     expect(checked("The product owner votes too")).toBe(DEFAULT_SETTINGS.poVotes);
     expect(checked("Observers take one of the 16 places")).toBe(DEFAULT_SETTINGS.observersCount);
+    // The deck is a radio group (#26), the timer too (#27); the others are read until their issue adds a control.
+    const deck = within(dialog).getByRole("radiogroup", { name: "Deck" });
+    expect(within(deck).getByRole("radio", { name: "Fibonacci" })).toHaveProperty("checked", true);
     // The timer (#27): no timer, and the cards turn over when one ends.
     expect(checked("Reveal when the timer ends")).toBe(DEFAULT_SETTINGS.timer.revealAtEnd);
     expect(within(row(dialog, "timer")).getByRole("radio", { name: "Off" })).toHaveProperty(
       "checked",
       true,
     );
-    // The others are read until their issue adds a control.
-    expect(shownValue(dialog, "deck")).toBe("Fibonacci");
     expect(shownValue(dialog, "whoCanReveal")).toBe("The product owner");
     expect(shownValue(dialog, "allowChangeAfterReveal")).toBe("Not allowed");
     const anonymous = within(dialog).getByRole("switch", { name: "Anonymous voting" });
@@ -307,9 +311,9 @@ describe("the settings panel", () => {
     button.focus();
     const dialog = await openPanel("Room settings");
     expect(button.getAttribute("aria-expanded")).toBe("true");
-    // The PO lands on the first control: the timer's length (#27).
+    // The PO lands on the first control: the deck in use (#26).
     await waitFor(() =>
-      expect(document.activeElement).toBe(within(dialog).getByRole("radio", { name: "Off" })),
+      expect(document.activeElement).toBe(within(dialog).getByRole("radio", { name: "Fibonacci" })),
     );
     fireEvent.keyDown(document.activeElement ?? dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -321,9 +325,10 @@ describe("the settings panel", () => {
     render(<RoomSettingsButton />);
     show(newRoom(), PO);
     const dialog = await openPanel("Room settings");
-    expect(within(dialog).getAllByRole("switch")).toHaveLength(5);
+    expect(within(dialog).getAllByRole("switch")).toHaveLength(8);
     show({ ...state, ownerId: ANA }, PO);
     expect(within(dialog).queryAllByRole("switch")).toEqual([]);
+    expect(within(dialog).queryAllByRole("radio")).toEqual([]);
     expect(within(dialog).getByRole("heading", { name: "Room rules" })).toBeTruthy();
   });
 

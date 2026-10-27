@@ -12,10 +12,10 @@ export type {
   ErrorCode,
   ServerCommandType,
 } from "./commands.ts";
+export { type CustomDeckErrorCode, validateCustomDeck } from "./custom-deck.ts";
 export {
   baseCards,
   type Card,
-  type CustomDeckErrorCode,
   cardLength,
   cardValue,
   type DeckSpec,
@@ -30,7 +30,6 @@ export {
   SPECIAL_CARDS,
   type SpecialCard,
   UNITS_PER_CHARACTER,
-  validateCustomDeck,
 } from "./decks.ts";
 export { generateRange, type RangeErrorCode } from "./range.ts";
 export { computeResults, type Results } from "./results.ts";

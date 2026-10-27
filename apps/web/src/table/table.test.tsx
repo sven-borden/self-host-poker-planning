@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { changeLanguage, fixedT, loadLanguage } from "../i18n/i18n.ts";
 import { Avatar, avatarColour, avatarLooks, initials } from "./avatar.tsx";
 import {
@@ -241,6 +241,15 @@ describe("cards", () => {
     expect(labelEms("100")).toBeCloseTo(2.16);
     expect(labelEms("XXL")).toBe(3);
     expect(labelEms("WWWW")).toBe(4);
+    // Lowercase letters but m and w take 0.8 em (#26).
+    expect(labelEms("Huge")).toBeCloseTo(3.4);
+    expect(labelEms("mmmm")).toBe(4);
+    expect(labelEms("a")).toBe(0.8);
+    // Only ASCII lowercase counts as narrow; ½, ¼ and ¾ are 1 em, not a digit's 0.72 (#26).
+    expect(labelEms("œœœœ")).toBe(4);
+    expect(labelEms("щщщщ")).toBe(4);
+    expect(labelEms("½½½½")).toBe(4);
+    expect(labelEms("1½")).toBeCloseTo(1.72);
     // A skin-toned thumb is one grapheme of two code points.
     expect(labelEms("👍🏽👍")).toBeCloseTo(2.6);
     expect(labelScale("13", 1.88)).toBe(1);
@@ -254,22 +263,55 @@ describe("cards", () => {
     const value = document.querySelector<HTMLElement>("[data-card-value]");
     expect(value?.className).toContain("whitespace-nowrap");
     // At 42 % it would be 5 px on a phone's chip: it narrows to 70 % width and grows.
-    expect(value?.style.fontSize).toBe("0.579em");
+    // Never under 7 px, whatever the parent's size.
+    expect(value?.style.fontSize).toBe("max(7px, 0.579em)");
     expect(value?.style.fontStretch).toBe("70%");
   });
 
   it("narrows a long label rather than shrinking it below 80 % (#22)", () => {
-    expect(labelFit("13", 1.4545)).toEqual({ scale: 1, narrow: false });
-    expect(labelFit("100", 1.88)).toEqual({ scale: 0.87, narrow: false });
+    expect(labelFit("13", 1.4545)).toMatchObject({ scale: 1, narrow: false });
+    expect(labelFit("100", 1.88)).toMatchObject({ scale: 0.87, narrow: false });
     // An emoji's font has no width axis.
     expect(labelFit("👍🏽👍", 1.4).narrow).toBe(false);
     // The dense phone slot: 16 px of room in an 11 px font.
     const dense = 16 / 11;
-    expect(labelFit("XXL", dense)).toEqual({ scale: 0.664, narrow: true });
+    expect(labelFit("XXL", dense)).toMatchObject({ scale: 0.664, narrow: true });
     expect(labelFit("100", dense).scale * 11).toBeGreaterThan(10);
     expect(labelFit("XL", dense).scale * 11).toBeGreaterThan(10);
     for (const value of ["XS", "XL", "XXL", "100", "½"]) {
       expect(labelFit(value, dense).scale * 11, value).toBeGreaterThanOrEqual(7);
+    }
+  });
+
+  it("clips a label that does not fit its card as drawn, centred, with the whole label in its title", () => {
+    // jsdom has no layout: the drawn label is as wide as its text in 5 px a character,
+    // the card 18 px inside its border.
+    const offset = vi
+      .spyOn(HTMLElement.prototype, "offsetWidth", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.hasAttribute("data-card-value") ? (this.textContent?.length ?? 0) * 5 : 0;
+      });
+    const client = vi
+      .spyOn(HTMLElement.prototype, "clientWidth", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.hasAttribute("data-face") ? 18 : 0;
+      });
+    try {
+      const { container } = render(
+        <>
+          <SlotCard face="up" value="WWWW" size={{ width: 20, height: 28 }} />
+          <SlotCard face="up" value="XL" size={{ width: 20, height: 28 }} />
+        </>,
+      );
+      const [wide, fits] = [...container.querySelectorAll("[data-face='up']")];
+      expect(wide?.querySelector("[data-clipped]")?.textContent).toBe("WWWW");
+      const clip = wide?.querySelector<HTMLElement>("[data-label-clip]");
+      expect(clip?.className).toContain("overflow-hidden");
+      expect(clip?.title).toBe("WWWW");
+      expect(fits?.querySelector("[data-clipped]")).toBeNull();
+    } finally {
+      offset.mockRestore();
+      client.mockRestore();
     }
   });
 

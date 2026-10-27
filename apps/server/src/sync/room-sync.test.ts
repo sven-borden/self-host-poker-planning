@@ -176,7 +176,7 @@ describe("cmd", () => {
       ok: false,
       code: "not_owner",
     });
-    expect(await bob.cmd("castVote", { card: 5, round: 1 })).toEqual({
+    expect(await bob.cmd("castVote", { card: 5, round: 1, restart: 0 })).toEqual({
       ok: false,
       code: "bad_payload",
     });
@@ -187,14 +187,19 @@ describe("cmd", () => {
     const bob = client("ub");
     await bob.enter(CODE);
     const [first, second] = await Promise.all([
-      bob.cmd("castVote", { card: "5", round: 1 }, "same-id"),
-      bob.cmd("castVote", { card: "5", round: 1 }, "same-id"),
+      bob.cmd("castVote", { card: "5", round: 1, restart: 0 }, "same-id"),
+      bob.cmd("castVote", { card: "5", round: 1, restart: 0 }, "same-id"),
     ]);
     expect(first).toEqual({ ok: true, version: 2 });
     expect(second).toEqual(first);
     // A retract in between, then the vote's id again: still the first answer, no new vote.
-    expect(await bob.cmd("retractVote", { round: 1 })).toEqual({ ok: true, version: 3 });
-    expect(await bob.cmd("castVote", { card: "5", round: 1 }, "same-id")).toEqual(first);
+    expect(await bob.cmd("retractVote", { round: 1, restart: 0 })).toEqual({
+      ok: true,
+      version: 3,
+    });
+    expect(await bob.cmd("castVote", { card: "5", round: 1, restart: 0 }, "same-id")).toEqual(
+      first,
+    );
     expect(store.commits).toBe(2);
     expect(store.rooms.get(CODE)?.state.round?.votes).toEqual({});
   });
@@ -204,12 +209,12 @@ describe("cmd", () => {
     const bob = client("ub");
     await bob.enter(CODE);
     store.fate = () => "lose";
-    expect(await bob.cmd("castVote", { card: "8", round: 1 }, "retry-me")).toEqual({
+    expect(await bob.cmd("castVote", { card: "8", round: 1, restart: 0 }, "retry-me")).toEqual({
       ok: false,
       code: "busy",
     });
     store.fate = () => "store";
-    expect(await bob.cmd("castVote", { card: "8", round: 1 }, "retry-me")).toEqual({
+    expect(await bob.cmd("castVote", { card: "8", round: 1, restart: 0 }, "retry-me")).toEqual({
       ok: true,
       version: 2,
     });
@@ -222,7 +227,7 @@ describe("cmd", () => {
     await ada.enter(CODE);
     await bob.enter(CODE);
     store.fate = () => "store-then-fail";
-    expect(await bob.cmd("castVote", { card: "13", round: 1 })).toEqual({
+    expect(await bob.cmd("castVote", { card: "13", round: 1, restart: 0 })).toEqual({
       ok: false,
       code: "internal",
     });
@@ -243,7 +248,7 @@ describe("cmd", () => {
     await ada.enter(CODE);
     await bob.enter(CODE);
     store.fate = () => "fail";
-    expect(await bob.cmd("castVote", { card: "3", round: 1 })).toEqual({
+    expect(await bob.cmd("castVote", { card: "3", round: 1, restart: 0 })).toEqual({
       ok: false,
       code: "internal",
     });
@@ -267,13 +272,13 @@ describe("cmd", () => {
     const bob = client("ub");
     await bob.enter(CODE);
     const acks = await Promise.all(
-      Array.from({ length: 40 }, () => bob.cmd("castVote", { card: "5", round: 1 })),
+      Array.from({ length: 40 }, () => bob.cmd("castVote", { card: "5", round: 1, restart: 0 })),
     );
     const limited = acks.filter((a) => !a.ok && a.code === "rate_limited").length;
     expect(limited).toBeGreaterThanOrEqual(15);
     expect(acks.filter((a) => a.ok).length).toBe(40 - limited);
     await new Promise((resolve) => setTimeout(resolve, 300));
-    expect((await bob.cmd("retractVote", { round: 1 })).ok).toBe(true);
+    expect((await bob.cmd("retractVote", { round: 1, restart: 0 })).ok).toBe(true);
     expect(bob.socket.connected).toBe(true);
   });
 });
@@ -389,11 +394,11 @@ describe("a session that ends while the socket stays open", () => {
     expect(checks).toBe(1);
     alive = false;
     // Within the minute the enter's check still holds.
-    expect((await bob.cmd("castVote", { card: "5", round: 1 })).ok).toBe(true);
+    expect((await bob.cmd("castVote", { card: "5", round: 1, restart: 0 })).ok).toBe(true);
     expect(checks).toBe(1);
     clock += SESSION_RECHECK_MS + 1;
     const closed = new Promise<string>((resolve) => bob.socket.on("disconnect", resolve));
-    expect(await bob.cmd("retractVote", { round: 1 })).toEqual({
+    expect(await bob.cmd("retractVote", { round: 1, restart: 0 })).toEqual({
       ok: false,
       code: "unauthenticated",
     });
@@ -415,13 +420,16 @@ describe("room codes in the logs", () => {
     expect((await ada.enter(CODE)).ok).toBe(true);
     // Every attempt loses: "command not run" (busy).
     store.fate = () => "lose";
-    expect(await ada.cmd("castVote", { card: "5", round: 1 })).toEqual({ ok: false, code: "busy" });
+    expect(await ada.cmd("castVote", { card: "5", round: 1, restart: 0 })).toEqual({
+      ok: false,
+      code: "busy",
+    });
     // The commit fails, and so does the reload after it.
     store.fate = () => {
       failLoads = true;
       return "fail";
     };
-    expect(await ada.cmd("castVote", { card: "5", round: 1 })).toEqual({
+    expect(await ada.cmd("castVote", { card: "5", round: 1, restart: 0 })).toEqual({
       ok: false,
       code: "internal",
     });

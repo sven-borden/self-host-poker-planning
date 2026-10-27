@@ -51,11 +51,13 @@ export const fr: Catalog<"many"> = {
   },
   decks: {
     fib: "Fibonacci",
-    mfib: "Fibonacci modifiée",
+    mfib: "Fibonacci modifié",
     tshirt: "Tailles de t-shirt",
     pow2: "Puissances de 2",
     seq: "De 1 à 10",
     custom: "Jeu personnalisé",
+    named: "«\u{202f}{{deck}}\u{202f}»",
+    customInSentence: "un jeu personnalisé",
   },
   room: {
     title: "Salle {{code}}",
@@ -173,6 +175,68 @@ export const fr: Catalog<"many"> = {
     observersCountRefused:
       "Plus de {{max, number}} personnes sont là en comptant les observateurs. Ils pourront de nouveau compter quand il y en aura {{max, number}} ou moins.",
   },
+  deckField: {
+    inUse: "Utilisé",
+    use: "Utiliser {{deck}}",
+    customLabel: "Cartes, séparées par des virgules",
+    customHint:
+      "Jusqu’à {{max, number}} cartes de {{length, number}} caractères au plus, emoji compris. La virgule sépare les cartes\u{202f}: écrivez un nombre décimal avec un point, comme 0.5.",
+    customCount_one: "{{count, number}} carte",
+    customCount_many: "{{count, number}} cartes",
+    customCount_other: "{{count, number}} cartes",
+    useCustom: "Utiliser ces cartes",
+    fromNextRound: "De nouvelles cartes s’appliquent à partir du tour {{round, number}}.",
+    restartsRound:
+      "De nouvelles cartes relancent le tour {{round, number}}\u{202f}: ses votes sont effacés, son sujet reste.",
+    deckQuestion_one:
+      "Changer de jeu relance le tour {{round, number}}. Le vote déjà exprimé est effacé\u{202f}; le sujet reste.",
+    deckQuestion_many:
+      "Changer de jeu relance le tour {{round, number}}. Les {{count, number}} votes déjà exprimés sont effacés\u{202f}; le sujet reste.",
+    deckQuestion_other:
+      "Changer de jeu relance le tour {{round, number}}. Les {{count, number}} votes déjà exprimés sont effacés\u{202f}; le sujet reste.",
+    specialsQuestion_one:
+      "Changer les cartes spéciales relance le tour {{round, number}}. Le vote déjà exprimé est effacé\u{202f}; le sujet reste.",
+    specialsQuestion_many:
+      "Changer les cartes spéciales relance le tour {{round, number}}. Les {{count, number}} votes déjà exprimés sont effacés\u{202f}; le sujet reste.",
+    specialsQuestion_other:
+      "Changer les cartes spéciales relance le tour {{round, number}}. Les {{count, number}} votes déjà exprimés sont effacés\u{202f}; le sujet reste.",
+    restartWith: "Relancer avec {{deck}}",
+    restartSpecials: "Relancer avec les nouvelles cartes spéciales",
+    cancel: "Annuler",
+    deck_empty: "Saisissez au moins une carte.",
+    deck_too_many_cards:
+      "Cela fait {{count, number}} cartes\u{202f}; un jeu en compte {{max, number}} au plus.",
+    card_empty: "La carte {{position, number}} est vide. Retirez la virgule en trop.",
+    card_invalid:
+      "La carte {{position, number}} contient des caractères impossibles à afficher. Saisissez-la de nouveau.",
+    card_too_long:
+      "«\u{202f}{{card}}\u{202f}» est trop long\u{202f}: une carte compte {{max, number}} caractères au plus.",
+    card_duplicate: "«\u{202f}{{card}}\u{202f}» figure deux fois dans le jeu. Gardez-en une.",
+    card_same_value:
+      "«\u{202f}{{card}}\u{202f}» a la même valeur que «\u{202f}{{other}}\u{202f}». Gardez l’une des deux.",
+    card_special:
+      "«\u{202f}{{card}}\u{202f}» est une carte spéciale. Activez-la sous «\u{202f}Cartes spéciales\u{202f}» au lieu de la saisir.",
+    rangeOpen: "Générer une suite",
+    rangeStart: "Début",
+    rangeEnd: "Fin",
+    rangeStep: "Pas",
+    rangeHint:
+      "Des nombres, avec une virgule ou un point pour les décimales. Les cartes remplissent le champ ci-dessus, où vous pouvez encore les modifier.",
+    rangeFill: "Remplir les cartes",
+    rangeFilled_one: "{{count, number}} carte ajoutée. Vérifiez-la, puis utilisez-la.",
+    rangeFilled_many: "{{count, number}} cartes ajoutées. Vérifiez-les, puis utilisez-les.",
+    rangeFilled_other: "{{count, number}} cartes ajoutées. Vérifiez-les, puis utilisez-les.",
+    range_not_finite: "Saisissez un nombre pour le début, la fin et le pas, comme 0,5 ou 0.5.",
+    range_step_not_positive: "Le pas doit être supérieur à 0.",
+    range_end_before_start: "La fin ne doit pas être inférieure au début.",
+    range_too_many_cards:
+      "Cette suite donne plus de {{max, number}} cartes. Prenez un pas plus grand ou une suite plus courte.",
+    range_label_too_long:
+      "Certaines valeurs demanderaient plus de {{max, number}} caractères, comme 0,125 ou 10000. Utilisez moins de décimales ou des nombres plus petits.",
+    specialUnsure: "Pas sûr",
+    specialCoffee: "Besoin d’une pause",
+    specialInfinite: "Trop gros pour être estimé",
+  },
   table: {
     seats: "Personnes à la table",
     observers: "Observateurs",
@@ -243,6 +307,10 @@ export const fr: Catalog<"many"> = {
     consensusOn: "Consensus sur {{card}}.",
     agreementShort: "Accord {{agreement, number(style: percent; maximumFractionDigits: 0)}}",
     tie: "Égalité",
+    moreCards: "+{{count, number}}",
+    cardsTie_one: "{{count, number}} carte à égalité",
+    cardsTie_many: "{{count, number}} cartes à égalité",
+    cardsTie_other: "{{count, number}} cartes à égalité",
     suggestedAgreement:
       "Carte suggérée : {{card}}. Accord : {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
     mostVotedAgreement:
@@ -337,8 +405,14 @@ export const fr: Catalog<"many"> = {
     poVotesOff: "Le product owner ne vote plus.",
     observersCountOn: "Les observateurs occupent désormais l’une des {{max, number}} places.",
     observersCountOff: "Les observateurs ne comptent plus parmi les {{max, number}} places.",
-    deckChanged: "Le product owner a changé de jeu de cartes\u{202f}: {{deck}}.",
-    specialsChanged: "Le product owner a modifié les cartes spéciales.",
+    deckChanged: "Le product owner passe à {{deck}} à partir du tour suivant.",
+    specialsChanged: "Le product owner change les cartes spéciales à partir du tour suivant.",
+    deckRestarted: "Le product owner a relancé le tour {{round, number}} avec {{deck}}.",
+    specialsRestarted:
+      "Le product owner a relancé le tour {{round, number}} avec de nouvelles cartes spéciales.",
+    voteAgain: "Votez de nouveau.",
+    deckNow: "Le product owner est passé à {{deck}}.",
+    specialsNow: "Le product owner a modifié les cartes spéciales.",
     timerChanged: "Le product owner a modifié le minuteur.",
     timerStarted: "Minuteur lancé : {{duration}}.",
     timerExtended: "{{duration}} de plus.",

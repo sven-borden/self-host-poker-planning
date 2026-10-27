@@ -79,6 +79,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   table and sticks to the bottom of the screen while out of view. Everyone sees the
   final in the centre; the history row is written when it is set. "Vote again" keeps
   the subject and clears the votes. The room route loads 171.2 kB.
+- Decks from #26, in the settings panel: presets, a custom deck (up to 20 cards of 4
+  characters, emoji allowed, errors explained), a range generator and the special
+  cards. A change during voting asks first, then restarts the round, timer included.
+  Labels never draw under 7 px; one that cannot fit is clipped with its full text in a
+  title. The room route loads 172.2 kB.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -89,18 +94,24 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#26 (PP-026)** decks: presets, a custom deck, a range generator and the specials,
-  in the settings panel. PR #89 is in review. It bumps `PROTOCOL_VERSION` to 5: votes
-  carry the round's restart count.
 - **#27 (PP-027)** the timer: a per-round setting, the PO's start, stop and +30 s, and
-  a ring around the centre. Building in `../pp-wt-27`.
+  a ring around the centre. PR #90 is in review; it must merge `main` (#26's restart
+  also resets `timerStartedAt` and `timeUpAt`).
+- **#30 (PP-030)** PO powers: hand over, claim when the PO is gone or away for 120 s,
+  remove someone. Building in `../pp-wt-30`.
 
 ## Next
 
 - W2 order, by dependencies:
-  - #28 (reveal modes) and #30 (PO powers) are unblocked; they start as slots free
-    up, two issues in flight at most. #29 (change after reveal) needs #28; #31
-    (password) needs #30.
+  - #28 (reveal modes) after #27 merges, since both change the table's centre. #29
+    (change after reveal) needs #28; #31 (password) needs #30.
+  - #28 is mostly done already: anonymous rounds (#19, #25) and reveal when everyone
+    voted (#25). It adds who can reveal ("anyone": a voter's "Reveal cards" and `R`,
+    never an observer). PO decision: switching anonymity never re-projects the round
+    on the table; it applies from the next round, as #25 does, since names already
+    seen cannot be hidden and an anonymous round must never gain them.
+- Chores to fold into a later issue: a lazy catalog for the settings panel (about
+  2 kB off both pages); the burst test's one `room_not_found` (see the build log).
   - Each later setting drops its control into #25's panel (see the web README).
 - Notes to carry into the briefs:
   - #29: change after reveal never applies to anonymous rounds. The panel's `locked`

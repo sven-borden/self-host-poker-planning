@@ -329,6 +329,25 @@ server sends and never decides the outcome of a round.
   panel does the pending state, the rollback, the messages and the focus; the unit test
   "the plug-in contract" plugs in a radio group and a locked switch through the
   `groups` prop without touching the panel.
+  **Worked example: the deck field (#26).** `room/deck-field.tsx` holds two `Control`s,
+  plugged into `GROUPS` with `layout: "block"` and no change to the panel's internals:
+  `DeckControl` (a radio group named by the field's label through `labelId`, `id` on the
+  group) and `SpecialsControl` (a fieldset of three switches). Both read `room` to know
+  when a change applies (`roundOfChange`) and whether to ask first (`restartToAsk`:
+  Voting with a vote cast), and call `change({ deck })` or `change({ specials })` with the
+  key they own; `pending` leaves them `aria-disabled`. A preset is chosen, then applied
+  with a button, so arrow keys never send. The restart question is the control's own
+  state (`RestartQuestion`, focused when it shows), not the panel's. The editor's rules
+  live in `room/deck-editor.ts`, pure: `splitCards`, `checkCustomDeck` (the domain's
+  `validateCustomDeck`, then the shortest refused prefix finds the card at fault),
+  `deckProblemMessage`, `parseDecimal` ("," or "."), `rangeCards` (`generateRange`) and
+  `rangeProblemMessage`. The validator sits in `@pp/domain`'s `custom-deck.ts`, not
+  `decks.ts`, so it ships in the panel's lazy chunk only. Copy: `deckField.*`,
+  `live.deckChanged`, `live.deckRestarted`, `live.specialsRestarted`, `live.voteAgain`,
+  `live.deckNow`. The live region (`settingEvents`) tells a restart from a change by the
+  round's `restarts` (an optional view field, protocol 4), and skips the restart's `roundStarted`. Votes carry
+  the round's `restart` with its number (`hand-state.ts`), so one in flight across a
+  restart is refused with `round_changed` and rolls back without a word.
   The live region (`announcements.ts`, `settingEvents`) compares the settings of each
   snapshot with the last one, so a reconnect still says a change, and says each changed
   setting in plain words where it happened in its batch ("Voting started: Round 1.
@@ -476,7 +495,12 @@ server sends and never decides the outcome of a round.
   `results-view.ts`), the votes not at the table and the "You" panel. The dense phone
   slot's label uses an 11 px font and 1 px a side (`SlotCard`), and `labelFit`
   (`table/cards.tsx`) narrows any label that would shrink below 80 % to Archivo's 70 %
-  width (`data-narrow`). Budgets after #22: the room route 168.5 kB (was 168.1), the
+  width (`data-narrow`). Since #26 it fits by the label's measured width
+  (`table/label-width.ts`: a hidden span in the faces' classes, cached per label and
+  width axis, re-rendered on `document.fonts` `loadingdone`; the `labelEms` estimate
+  stands in under jsdom and before the font loads), the size is `max(7px, …em)`, and
+  after layout a label wider than its card's content box, as drawn in whatever font,
+  sits in a centred clip with a `title` (`data-label-clip`, `data-clipped`). Budgets after #22: the room route 168.5 kB (was 168.1), the
   landing page 152.1 kB (152.0), `seated` 13.0 kB (11.8), `table-stage` 8.3 kB (8.2),
   the stylesheet 13.4 kB (12.4). After #25: the room route 171.0 kB, the landing page
   153.6 kB, the lazy `settings-panel` chunk 7.8 kB (6.5 before the review's fixes) and `seated`
@@ -510,7 +534,17 @@ server sends and never decides the outcome of a round.
   icon button below 900 px and the sheet under reduced motion; its shots are
   `settings-owner-*`, `settings-rules-*` (360 and 1440 px, light, dark and forced
   colours, taken once the sheet has slid in), `round-anonymous-*` and
-  `phone-settings-*`.
+  `phone-settings-*`. `e2e/decks.spec.ts` (#26) plays the deck field by keyboard on a
+  desktop and a 360 px phone, the restart question cancelled and confirmed with a voter
+  and an observer listening (and a vote for the round before its restart refused),
+  decimal statistics read by a French and a German observer, an emoji deck's results,
+  a 20-card deck with the three specials (no label under 7 px, the hand scrolling,
+  the statistics inside their panel), and 16 people playing the widest custom labels at
+  360 px (none under 7 px, none spilling but a clipped dense slot, a 16-way tie as four
+  cards and "+12"); shots `deck-widest-16-360`, `deck-presets-*`, `deck-custom-error-*`,
+  `deck-range-*`, `deck-restart-question-*`, `deck-20-hand-*`, `deck-20-hand-phone-*`,
+  `deck-20-results-*`, `deck-decimals-fr-*`, `deck-emoji-results-*`. `E2E_WEB_PORT` and
+  `E2E_API_PORT` move the preview and the server, for two worktrees at once.
 - The four-person round (#23), `e2e/four-person.spec.ts`: the proof of W1 on every pull
   request. Four browser contexts, the PO, Ben on a Pixel 7, Cleo and the observer Dee,
   play four rounds: a Jira round with a changed card that the PO reveals, a titled round

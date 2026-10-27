@@ -138,12 +138,10 @@ test("the PO changes settings by keyboard; another person reads them and hears e
     await expect(value(rules, key)).toHaveText(text);
   }
 
-  // The PO opens the settings with Enter; the focus lands on the first control: the
-  // timer's length (#27), set to Off.
+  // The PO opens the settings with Enter; the focus lands on the first control, the deck
+  // in use (#26).
   const { button, dialog } = await openByKeyboard(page, "Room settings");
-  const timerOff = dialog.locator("[data-setting='timer']").getByRole("radio", { name: "Off" });
-  await expect(timerOff).toBeFocused();
-  await expect(timerOff).toBeChecked();
+  await expect(dialog.getByRole("radio", { name: "Fibonacci", exact: true })).toBeFocused();
   const anonymous = dialog.getByRole("switch", { name: "Anonymous voting" });
   await tabTo(page, anonymous);
   await page.keyboard.press("Space");
@@ -358,7 +356,7 @@ test("the panel opens at its top and no focused control hides under its title", 
             bottom: box.bottom,
             headBottom: head.getBoundingClientRect().bottom,
             sheetBottom: sheet.getBoundingClientRect().bottom,
-            name: focused.getAttribute("id") ?? focused.textContent,
+            name: `${focused.tagName} ${focused.getAttribute("aria-label") ?? focused.textContent}`,
           };
         });
         expect(place, `${size.width} x ${size.height}, ${key} ${i}`).not.toBeNull();
@@ -367,7 +365,10 @@ test("the panel opens at its top and no focused control hides under its title", 
             place.top,
             `${place.name} at ${size.width} x ${size.height}`,
           ).toBeGreaterThanOrEqual(place.headBottom - 1);
-          expect(place.bottom).toBeLessThanOrEqual(place.sheetBottom + 1);
+          expect(
+            place.bottom,
+            `${place.name} at ${size.width} x ${size.height}`,
+          ).toBeLessThanOrEqual(place.sheetBottom + 1);
         }
         await page.keyboard.press(key);
         await page.waitForTimeout(50);

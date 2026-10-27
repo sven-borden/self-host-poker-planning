@@ -70,7 +70,7 @@ async function vote(guests: readonly Guest[], cards: readonly string[], round = 
   for (const [i, guest] of guests.entries()) {
     const card = cards[i];
     if (card === undefined) continue;
-    expect(await guest.cmd("castVote", { card, round })).toMatchObject({ ok: true });
+    expect(await guest.cmd("castVote", { card, round, restart: 0 })).toMatchObject({ ok: true });
   }
 }
 

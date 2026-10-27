@@ -67,15 +67,27 @@ describe("roundKey and confirmedOf", () => {
     // A restart (new deck) keeps the number, not the start.
     const restarted = run(voting, "po", { type: "updateSettings", patch: { specials: [] } }, 30);
     expect(roundKey(view(restarted))).toBe("1:30");
+    // A press after the restart carries it, so the server tells the two starts apart.
+    const after = confirmedOf(view(restarted));
+    expect(after).toMatchObject({ number: 1, restart: 1 });
+    expect(nextStep(press(SETTLED, "5", after), after).command).toEqual({
+      type: "castVote",
+      payload: { card: "5", round: 1, restart: 1 },
+    });
   });
 
   it("reads the viewer's card in the voting round only", () => {
-    const none = { card: null, round: null, number: null };
+    const none = { card: null, round: null, number: null, restart: null };
     expect(confirmedOf(undefined)).toEqual(none);
     expect(confirmedOf(view(lobby))).toEqual(none);
-    expect(confirmedOf(view(voting))).toEqual({ card: null, round: "1:10", number: 1 });
+    expect(confirmedOf(view(voting))).toEqual({
+      card: null,
+      round: "1:10",
+      number: 1,
+      restart: 0,
+    });
     const voted = run(voting, ME, { type: "castVote", card: "5" });
-    expect(confirmedOf(view(voted))).toEqual({ card: "5", round: "1:10", number: 1 });
+    expect(confirmedOf(view(voted))).toEqual({ card: "5", round: "1:10", number: 1, restart: 0 });
     // Ana's vote does not reveal (the PO has not voted): the viewer's card stays theirs.
     const revealed = run(voted, "po", { type: "reveal" });
     expect(confirmedOf(view(revealed))).toEqual(none);
@@ -89,7 +101,10 @@ describe("the hand's state machine", () => {
     const pressed = press(SETTLED, "5", confirmed);
     expect(shownCard(pressed, confirmed)).toBe("5");
     const step = nextStep(pressed, confirmed);
-    expect(step.command).toEqual({ type: "castVote", payload: { card: "5", round: 1 } });
+    expect(step.command).toEqual({
+      type: "castVote",
+      payload: { card: "5", round: 1, restart: 0 },
+    });
     expect(step.state.sending).toBe(true);
     // Nothing else goes out while it is on the wire.
     expect(nextStep(step.state, confirmed).command).toBeNull();
@@ -123,7 +138,7 @@ describe("the hand's state machine", () => {
     expect(shownCard(pressed, voted)).toBeNull();
     expect(nextStep(pressed, voted).command).toEqual({
       type: "retractVote",
-      payload: { round: 1 },
+      payload: { round: 1, restart: 0 },
     });
   });
 
@@ -131,7 +146,7 @@ describe("the hand's state machine", () => {
     const voted = confirmedOf(view(run(voting, ME, { type: "castVote", card: "5" })));
     expect(nextStep(press(SETTLED, "8", voted), voted).command).toEqual({
       type: "castVote",
-      payload: { card: "8", round: 1 },
+      payload: { card: "8", round: 1, restart: 0 },
     });
   });
 
@@ -193,7 +208,7 @@ describe("the hand's state machine", () => {
   });
 
   it("ignores presses outside Voting", () => {
-    const outside: Confirmed = { card: null, round: null, number: null };
+    const outside: Confirmed = { card: null, round: null, number: null, restart: null };
     expect(press(SETTLED, "5", outside)).toBe(SETTLED);
   });
 });

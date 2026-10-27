@@ -144,6 +144,7 @@ describe("catalogs", () => {
       "table.owner",
       "table.ownerTag",
       "results.consensus",
+      "results.moreCards",
       // The timer (#27): units and a clock read the same in French.
       "timer.minutes_one",
       "timer.minutes_other",
@@ -160,7 +161,9 @@ describe("catalogs", () => {
       "dev.hand",
       "decks.fib",
       "results.median",
+      "deckField.rangeStart",
       "final.short",
+      "results.moreCards",
       // The timer (#27): a unit and a clock read the same in German.
       "timer.minutesSeconds",
       "timer.shortSeconds",

@@ -207,9 +207,27 @@ describe("the results' edge cases", () => {
 
   it("names every card of a tie for most voted", () => {
     const { stat } = panel(revealed("tshirt", ["M", "L", "M", "L"]));
-    expect(stat("mostVoted")?.querySelector("[aria-hidden]")?.textContent).toBe("M · L");
+    const shown = stat("mostVoted")?.querySelector("[aria-hidden]");
+    // The dot stays with its card (a no-break space); each card is whole on one line.
+    expect(shown?.textContent?.replaceAll("\u{a0}", " ")).toBe("M · L");
+    expect(
+      [...(shown?.querySelectorAll(".whitespace-nowrap") ?? [])].map((part) => part.textContent),
+    ).toEqual(["M\u{a0}·", "L"]);
     expect(stat("mostVoted")?.querySelector(".sr-only")?.textContent).toBe("M and L");
     expect(stat("agreement")?.textContent).toBe("50%");
+  });
+
+  it("says how many cards tie above four, and the centre shows four and the rest as +N", () => {
+    const room = revealed("tshirt", ["XS", "S", "M", "L", "XL", "XXL"]);
+    const { stat } = panel(room);
+    expect(stat("mostVoted")?.textContent).toBe("6 cards tie");
+    cleanup();
+    const { container } = render(<CentreResult room={room} motion={AT_REST} />);
+    expect(container.querySelectorAll("[data-mini-card]")).toHaveLength(4);
+    expect(container.querySelector("[data-tie-more]")?.textContent).toBe("+2");
+    expect(container.querySelector(".sr-only")?.textContent).toBe(
+      "Tie between XS, S, M, L, XL, and XXL. Agreement 17%.",
+    );
   });
 
   it("labels the centre's figure as the team's agreement, even for a card nobody played", () => {

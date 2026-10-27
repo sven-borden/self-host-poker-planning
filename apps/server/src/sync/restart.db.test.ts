@@ -131,7 +131,10 @@ it("restores the round, hidden vote included, after a hard kill and a restart", 
   const b = roomClient(bob, code);
   await a.waitFor((s) => s.version === 1);
   await b.waitFor((s) => s.version === 1);
-  expect(await a.cmd("castVote", { card: "8", round: 1 })).toEqual({ ok: true, version: 2 });
+  expect(await a.cmd("castVote", { card: "8", round: 1, restart: 0 })).toEqual({
+    ok: true,
+    version: 2,
+  });
   await b.waitFor((s) => s.room.round?.voted.includes(ada.id) === true);
 
   const fromA = a.received.length;
@@ -152,7 +155,7 @@ it("restores the round, hidden vote included, after a hard kill and a restart", 
   expect(other.snapshot.room.round?.yourVote).toBeUndefined();
 
   // The vote survived: Bob's vote completes the round, and the reveal shows Ada's 8.
-  expect((await b.cmd("castVote", { card: "3", round: 1 })).ok).toBe(true);
+  expect((await b.cmd("castVote", { card: "3", round: 1, restart: 0 })).ok).toBe(true);
   const revealed = await b.waitFor((s) => s.room.round?.phase === "revealed", 3000, fromB);
   const round = revealed.snapshot.room.round;
   expect(round?.phase === "revealed" && !round.anonymous && round.votes).toEqual([

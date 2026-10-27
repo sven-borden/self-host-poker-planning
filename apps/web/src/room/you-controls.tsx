@@ -1,7 +1,15 @@
 import { cleanName, MAX_NAME_LENGTH, MAX_PARTICIPANTS, type Role } from "@pp/domain";
 import type { ParticipantView } from "@pp/protocol";
 import { OctagonXIcon } from "lucide-react";
-import { type FormEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { useT } from "../i18n/hooks.ts";
@@ -68,6 +76,16 @@ export function YouControls({
     }
   }, [editing]);
 
+  // Leaving the editor gives the focus back to the rename button once React has mounted
+  // it again. A layout effect, not a frame: after an awaited rename the render that
+  // brings the button back may come after the next frame.
+  const refocusRename = useRef(false);
+  useLayoutEffect(() => {
+    if (editing || !refocusRename.current) return;
+    refocusRename.current = false;
+    renameButton.current?.focus();
+  }, [editing]);
+
   function refuse(code: string) {
     const nameRefused = code === "bad_name";
     // Only a switch to voter meets `room_full` here: the seats are taken, not the room.
@@ -104,10 +122,9 @@ export function YouControls({
   }
 
   function stopEditing() {
+    refocusRename.current = true;
     setEditing(false);
     setFailure(null);
-    // The rename button comes back in the next render; give it the focus then.
-    requestAnimationFrame(() => renameButton.current?.focus());
   }
 
   async function rename(event: FormEvent<HTMLFormElement>) {

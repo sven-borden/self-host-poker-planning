@@ -78,6 +78,12 @@ export type Round = {
   anonymous: boolean;
   votes: Record<UserId, Vote>;
   startedAt: number;
+  /**
+   * How many times a deck or specials change restarted this round (#26); absent before the
+   * first restart. A restart keeps the number, so votes carry this too: one still in
+   * flight from before the restart is refused (`round_changed`).
+   */
+  restarts?: number;
   revealedAt?: number;
   /** Set while a timer runs (Voting only). */
   deadlineAt?: number;
