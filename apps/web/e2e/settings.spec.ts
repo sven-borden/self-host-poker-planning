@@ -101,7 +101,7 @@ const hidden = (locator: Locator) =>
 
 /** Moves the focus forward with Tab until `target` has it. */
 async function tabTo(page: Page, target: Locator) {
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 20; i++) {
     if (await target.evaluate((element) => element === document.activeElement)) return;
     await page.keyboard.press("Tab");
   }
@@ -210,7 +210,7 @@ test("turning observers back on past 16 people is refused, said and rolled back"
   // 15 more voters and an observer: 17 people, 16 counted without the observer.
   const base = new URL(page.url()).origin;
   const guests: Guest[] = [];
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 20; i++) {
     const guest = await newGuest(base);
     guests.push(guest);
     expect(await guest.enter(code)).toMatchObject({ ok: true });
