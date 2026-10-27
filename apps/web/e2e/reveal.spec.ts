@@ -268,7 +268,9 @@ test("a named vote without a seat shows under the table: an observer now, or bac
     // Ben switches to observer after the reveal: his card leaves the table, not the round.
     await ben.page.getByRole("button", { name: "Switch to observer" }).click();
     const row = page.getByRole("list", { name: "Not at the table" });
-    await expect(row.getByRole("listitem")).toHaveText(["8BenBen, card 8"]);
+    // His 8 is the round's highest card: the row wears the seats' arrow and says so (#20).
+    await expect(row.getByRole("listitem")).toHaveText(["8BenBen, card 8, highest card"]);
+    await expect(row.locator("[data-badge='highest']")).toHaveCount(1);
     await expect(page.locator("[data-face='up']")).toHaveCount(1);
     await shoot(page, "reveal-off-table-observer");
   } finally {
