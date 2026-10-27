@@ -47,7 +47,8 @@ const REASONS = {
   APP_VERSION: "must be 1 to 64 letters, digits, dots, plus signs, dashes or underscores",
   STATIC_DIR: "must be a folder path",
   MIGRATIONS_DIR: "must be a folder path",
-  BETTER_AUTH_SECRET: "must be at least 32 characters, such as the output of openssl rand -base64 32",
+  BETTER_AUTH_SECRET:
+    "must be at least 32 characters, such as the output of openssl rand -base64 32",
 } as const;
 type Variable = keyof typeof REASONS;
 const VARIABLES = Object.keys(REASONS) as Variable[];

@@ -277,7 +277,13 @@ describe("setupDatabase", () => {
     const exits: number[] = [];
     let signal: (s: "SIGTERM") => void = () => {};
     const server = await run(
-      { DATABASE_URL: t.url, BASE_URL: "http://localhost:3000", BETTER_AUTH_SECRET: VALID_ENV.BETTER_AUTH_SECRET, PORT: "0", LOG_LEVEL: "info" },
+      {
+        DATABASE_URL: t.url,
+        BASE_URL: "http://localhost:3000",
+        BETTER_AUTH_SECRET: VALID_ENV.BETTER_AUTH_SECRET,
+        PORT: "0",
+        LOG_LEVEL: "info",
+      },
       {
         exit: (code) => exits.push(code),
         onSignal: (handler) => {

@@ -140,7 +140,12 @@ describe("migrations", () => {
     let signal: (s: Signal) => void = () => {};
     try {
       const starting = run(
-        { DATABASE_URL: first.url, BASE_URL: "http://localhost:3000", BETTER_AUTH_SECRET: VALID_ENV.BETTER_AUTH_SECRET, PORT: "0" },
+        {
+          DATABASE_URL: first.url,
+          BASE_URL: "http://localhost:3000",
+          BETTER_AUTH_SECRET: VALID_ENV.BETTER_AUTH_SECRET,
+          PORT: "0",
+        },
         {
           exit: (code) => exits.push(code),
           onSignal: (handler) => {
