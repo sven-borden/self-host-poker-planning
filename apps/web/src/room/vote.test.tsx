@@ -16,6 +16,7 @@ import {
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../stores/room-store.ts";
+import { PLACED_FOCUS_GUARD_MS } from "../table/hand.tsx";
 import { RoomView } from "./room-view.tsx";
 import { isRevealKey } from "./round-centre.tsx";
 
@@ -296,6 +297,31 @@ describe("the hand", () => {
     expect(fireEvent.keyDown(card("5"), { key: "Enter" })).toBe(true);
   });
 
+  it("ignores Enter and Space just after the page, not the person, focused the hand", async () => {
+    vi.useFakeTimers({ toFake: ["performance"] });
+    try {
+      await renderRoom(voting());
+      // The focus came from nowhere (the start button left with it): a key on its way is dropped.
+      fireEvent.focus(card("0"), { relatedTarget: null });
+      expect(fireEvent.keyDown(card("0"), { key: "Enter" })).toBe(false);
+      expect(fireEvent.keyDown(card("0"), { key: " " })).toBe(false);
+      expect(fireEvent.keyUp(card("0"), { key: " " })).toBe(false);
+      // Arrows still move.
+      expect(fireEvent.keyDown(card("0"), { key: "ArrowRight" })).toBe(false);
+      expect(document.activeElement).toBe(card("1"));
+      vi.advanceTimersByTime(PLACED_FOCUS_GUARD_MS);
+      expect(fireEvent.keyDown(card("1"), { key: "Enter" })).toBe(true);
+      expect(fireEvent.keyDown(card("1"), { key: " " })).toBe(true);
+      expect(fireEvent.keyUp(card("1"), { key: " " })).toBe(true);
+      // The person moved the focus from another element: no wait.
+      fireEvent.focus(card("2"), { relatedTarget: card("1") });
+      expect(fireEvent.keyDown(card("2"), { key: "Enter" })).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(sent).toEqual([]);
+  });
+
   it("moves the focus to the nearest card when a deck change removes the focused one", async () => {
     await renderRoom(voting());
     card("needs a break").focus();
@@ -401,7 +427,7 @@ describe("the table's centre", () => {
     await renderRoom(owner);
     expect(screen.getByText("As the product owner, you do not vote in this room.")).toBeTruthy();
     expect(screen.queryByRole("toolbar")).toBeNull();
-    mocks.sendCommand.mockImplementation(async () => ({ ok: false, code: "not_owner" }));
+    mocks.commandSender.mockImplementation(() => async () => ({ ok: false, code: "not_owner" }));
     fireEvent.click(screen.getByRole("button", { name: "Start voting" }));
     await screen.findByText("Only the product owner can do that.");
   });
@@ -413,6 +439,120 @@ describe("the table's centre", () => {
     // Nobody voted: nothing to count (#20).
     await waitFor(() => expect(centre()).toBe("Nothing to count."));
     expect(screen.queryByRole("button", { name: "Next round" })).toBeNull();
+  });
+});
+
+describe("the next round with a subject (#21)", () => {
+  const field = () => screen.getByRole("textbox", { name: "Subject of the next round" });
+  const subjectLine = () => document.querySelector("[data-round-subject]")?.textContent ?? "";
+  const type = (value: string) => fireEvent.change(field(), { target: { value } });
+  const submit = () => fireEvent.submit(field().closest("form") as HTMLFormElement);
+
+  it("starts the first round with a title, then the next one with a Jira link, from the field", async () => {
+    await renderRoom({ ...stateWith(table), ownerId: ME });
+    expect(screen.getByText(/Leave it empty for Round 1/)).toBeTruthy();
+    // No round yet: nothing above the table.
+    expect(document.querySelector("[data-round-subject]")).toBeNull();
+    type("  Split invoices   by currency ");
+    fireEvent.click(screen.getByRole("button", { name: "Start voting" }));
+    await waitFor(() => expect(centre()).toBe("0/3 voted so far"));
+    expect(sent).toEqual([
+      {
+        type: "startRound",
+        payload: { subject: { kind: "title", text: "Split invoices by currency" } },
+      },
+    ]);
+    expect(subjectLine()).toBe("Round 1Split invoices by currency");
+    expect(document.querySelector("bdi[data-subject-title]")).toBeTruthy();
+    // The draft is cleared, and the field stays while the round votes.
+    expect((field() as HTMLInputElement).value).toBe("");
+    expect(screen.getByText("Round 2 will start with this subject after the reveal.")).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(card("0")));
+    // Enter while Voting starts nothing: the PO prepares the next ticket.
+    const url = "https://acme.atlassian.net/browse/PAY-482";
+    type(url);
+    submit();
+    await act(async () => {});
+    expect(sent).toHaveLength(1);
+    fireEvent.click(card("5"));
+    run("ana", { type: "castVote", card: "8", round: 1 });
+    run("po", { type: "castVote", card: "8", round: 1 });
+    await waitFor(() => expect(server.round?.phase).toBe("revealed"));
+    // After the reveal, Enter in the field starts the round, and the focus stays in the field.
+    field().focus();
+    submit();
+    await waitFor(() => expect(server.round?.number).toBe(2));
+    // A second Enter, while Voting, does nothing: no vote, no new round.
+    submit();
+    await act(async () => {});
+    expect(sent.filter((command) => command.type === "startRound")).toHaveLength(2);
+    expect(sent.at(-1)).toEqual({
+      type: "startRound",
+      payload: { subject: { kind: "link", url } },
+    });
+    // The server read the key: the chip shows it, the votes are cleared.
+    const link = await screen.findByRole("link", { name: "PAY-482 (opens in a new tab)" });
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(server.round?.votes).toEqual({});
+    expect(pressed()).toEqual([]);
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(document.activeElement).toBe(field());
+  });
+
+  it("refuses a title over 200 characters and a bad link in the browser, without sending (AC 1, AC 3)", async () => {
+    await renderRoom({ ...stateWith(table), ownerId: ME });
+    const badLink = "Only http and https links work, without a user name or password.";
+    const cases: Array<[string, string]> = [
+      ["x".repeat(201), "A title can have at most 200 characters."],
+      ["javascript:alert(1)", badLink],
+      ["data:text/html,x", badLink],
+      ["http://user:pass@example.com/", badLink],
+    ];
+    for (const [draft, message] of cases) {
+      type(draft);
+      expect(field().getAttribute("aria-invalid")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Start voting" }));
+      expect((await screen.findByRole("alert")).textContent).toBe(message);
+      expect(field().getAttribute("aria-invalid")).toBe("true");
+      expect(document.activeElement).toBe(field());
+      // Nothing was cut: the draft is still all there.
+      expect((field() as HTMLInputElement).value).toBe(draft);
+    }
+    expect(sent).toEqual([]);
+    // Typing clears the refusal; 200 characters start the round.
+    type("x".repeat(200));
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Start voting" }));
+    await waitFor(() =>
+      expect(server.round?.subject).toEqual({ kind: "title", text: "x".repeat(200) }),
+    );
+  });
+
+  it("shows the server's bad_subject under the field", async () => {
+    await renderRoom({ ...stateWith(table), ownerId: ME });
+    mocks.commandSender.mockImplementation(() => async () => ({ ok: false, code: "bad_subject" }));
+    type("Checkout");
+    fireEvent.click(screen.getByRole("button", { name: "Start voting" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "The round’s subject is not valid. Check the title or the link and try again.",
+    );
+    expect(document.activeElement).toBe(field());
+  });
+
+  it("shows everyone else the subject, and no field", async () => {
+    const started = apply(
+      stateWith(table),
+      {
+        type: "startRound",
+        subject: { kind: "link", url: "https://dev.azure.com/acme/Pay/_workitems/edit/12345" },
+      },
+      { actor: "po", now: 50 },
+    );
+    if (!started.ok) throw new Error(started.error);
+    await renderRoom(started.state);
+    expect(screen.queryByRole("textbox", { name: "Subject of the next round" })).toBeNull();
+    expect(screen.getByRole("link", { name: "#12345 (opens in a new tab)" })).toBeTruthy();
+    expect(subjectLine()).toMatch(/^Round 1#12345/);
   });
 });
 

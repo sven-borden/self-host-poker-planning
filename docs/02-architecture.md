@@ -159,7 +159,7 @@ client that sends one gets `bad_payload`; the server's timers send it (section 9
 | `rename {name}` | self | as `join` |
 | `setRole {role}` | self | voter → observer drops the vote while Voting; observer → voter checks capacity when observers do not count |
 | `kick {who}` | PO | `cannot_kick_self`, `unknown_participant`; the vote as for `leave` |
-| `startRound {subject}` | PO | any phase; from Voting it abandons the round; number + 1; captures deck, specials, anonymity; starts `timer.seconds` (`bad_subject`) |
+| `startRound {subject}` | PO | any phase; from Voting it abandons the round (the web offers it only in the lobby and after a reveal, #21); number + 1; captures deck, specials, anonymity; starts `timer.seconds` (`bad_subject`). A link's `key` is read here (`cleanSubject` → `linkKey`, in `apply-subject.ts`, so by the server; a client's own is dropped): a Jira key (`[A-Z][A-Z0-9_]{1,31}-[1-9][0-9]{0,9}`, read in any case, stored in capitals) from a path ending in `/browse/KEY` or Jira Cloud's `/projects/{project}/issues/KEY`, or a query's `selectedIssue=KEY`, on any host; an Azure DevOps work item id from a path ending in `/_workitems/edit/{id}` after one to three segments, on any host (Azure DevOps Server is self-hosted), or a query's `workitem={id}` on `dev.azure.com` and `*.visualstudio.com`, stored as the digits |
 | `castVote {card, round}` | voter | `no_round`; `round_changed` when `round` (the number of the round the press was made for) is not the current round's, so a vote in flight when the next round starts never lands in it; `not_voter` (observers; the PO when `poVotes` is off), `bad_card` (not in the round's cards); in Revealed only in a named round with `allowChangeAfterReveal` (a change or a first vote, marked `changedAfterReveal`); an anonymous round locks its votes at reveal, whatever the setting, decided by the round's own `anonymous` flag (`round_revealed`), because the people who could still change shrink as voters leave and a change would then point at someone; the `voteCast` cause always carries `who` |
 | `retractVote {round}` | self | `round_changed` as for `castVote`; Voting only (`not_voting`); no-op without a vote |
 | `reveal` | PO, or anyone if `whoCanReveal = "anyone"` | Voting only (`not_voting`, `not_allowed`); zero votes allowed; stops the timer |
@@ -184,7 +184,8 @@ zod schemas; the web checks the server's messages by shape (`isSnapshot`, `isEnt
 `round_changed` ack code, #18; 3 the `away` and `back` causes, #17; 2 the `busy` ack
 code, #15; 1 was the first deploy). Adding an optional field to an outbound view is not
 breaking (the web checks shapes, the schemas are lenient), so #19's departed `name`
-kept version 4.
+kept version 4, and so did #21: the snapshot's link `key` was already in the schema,
+and `startRound {subject}` did not change.
 
 | Event | Direction | Payload | Ack |
 |---|---|---|---|
@@ -524,8 +525,10 @@ password, no social provider before W5.
   with #39), at most 50,000 at once: expired ones are swept every 30 s, and when full the
   oldest tenth goes.
 - Headers: strict CSP (no inline scripts), HSTS, `X-Content-Type-Options`,
-  `Referrer-Policy`. Subject links are rendered with `rel="noopener noreferrer"` and
-  only `http(s)` schemes.
+  `Referrer-Policy`. Subject links are rendered with `rel="noopener noreferrer"`,
+  `target="_blank"` and only `http(s)` schemes: the web makes an `<a>` only of a link
+  the domain's `cleanSubject` accepts (no other scheme, no credentials), so even an odd
+  stored subject never becomes a `javascript:` link (#21).
 - Retention: rooms, their history and orphan guests are deleted after
   `ROOM_TTL_DAYS` (default 90) without activity. A guest's session expires after the
   same number of days without a visit.

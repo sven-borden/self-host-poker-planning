@@ -35,7 +35,10 @@ const NEXT: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -
  * that removes the focused card moves the focus to the nearest one.
  *
  * A double click counts once, and a held Enter does not repeat: either would otherwise
- * vote and take the vote back, or send a command per key repeat.
+ * vote and take the vote back, or send a command per key repeat. When the page puts the
+ * focus here itself (after "Start voting" or "Next round" left with it, `relatedTarget`
+ * null), Enter and Space do nothing for `PLACED_FOCUS_GUARD_MS`: the second press of a
+ * double Enter on the button would otherwise vote for the first card.
  *
  * On a phone the hand scrolls sideways. The selected card is kept in view (after a
  * reload, a vote of 21 would sit out of sight while the seat says the viewer voted), and
@@ -46,6 +49,10 @@ const NEXT: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -
  */
 /** The edge fades' width; a card under one is scrolled clear of it. */
 const FADE_PX = 32;
+/** How long Enter and Space do nothing after the page, not the person, focused the hand. */
+export const PLACED_FOCUS_GUARD_MS = 300;
+
+const isPress = (key: string) => key === "Enter" || key === " ";
 
 export function Hand({
   cards,
@@ -61,6 +68,10 @@ export function Hand({
   const [edges, setEdges] = useState({ start: false, end: false });
   /** The card that last had the focus, while the focus is (or was, until removed) in the hand. */
   const lastFocus = useRef<{ value: string; index: number } | null>(null);
+  /** Until when Enter and Space are ignored (`performance.now()`), after a placed focus. */
+  const guardUntil = useRef(0);
+  /** A Space whose keydown was ignored: its keyup must not press the card either. */
+  const swallowSpace = useRef(false);
   const selectedAt = selected === null ? -1 : cards.indexOf(selected);
   const focusedCard = focused !== null && focused < cards.length ? focused : null;
   const tabStop = focusedCard ?? Math.max(selectedAt, 0);
@@ -122,10 +133,19 @@ export function Hand({
     });
   }
 
+  function onFocus(event: FocusEvent<HTMLDivElement>) {
+    // No element lost the focus to the hand: the page moved it here (`focusSoon` after a
+    // start), or the person came from nowhere. Either way a key still on its way is not
+    // meant for a card.
+    if (event.relatedTarget === null)
+      guardUntil.current = performance.now() + PLACED_FOCUS_GUARD_MS;
+  }
+
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     // A held Enter repeats its keydown, and each would press the card again.
-    if (event.repeat && (event.key === "Enter" || event.key === " ")) {
+    if (isPress(event.key) && (event.repeat || performance.now() < guardUntil.current)) {
       event.preventDefault();
+      if (!event.repeat && event.key === " ") swallowSpace.current = true;
       return;
     }
     const all = buttons();
@@ -155,6 +175,14 @@ export function Hand({
         aria-orientation="horizontal"
         data-hand
         onKeyDown={onKeyDown}
+        onKeyUp={(event) => {
+          // A button presses on Space's keyup: one whose keydown was ignored does not.
+          if (event.key === " " && swallowSpace.current) {
+            swallowSpace.current = false;
+            event.preventDefault();
+          }
+        }}
+        onFocus={onFocus}
         onBlur={onBlur}
         onScroll={measure}
         className="flex min-w-0 gap-2 overflow-x-auto px-3 pt-5 pb-4 sm:justify-center-safe"

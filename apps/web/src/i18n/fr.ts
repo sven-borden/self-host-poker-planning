@@ -144,6 +144,15 @@ export const fr: Catalog<"many"> = {
     revealed: "Cartes révélées",
     reveal: "Révéler les cartes",
     revealKey: "Touche R, quand le focus est sur la table ou sur vos cartes",
+    number: "Tour {{round, number}}",
+    subjectLabel: "Sujet du prochain tour",
+    subjectHint:
+      "Laissez vide pour le tour {{round, number}}, saisissez un titre ou collez le lien du ticket.",
+    subjectHintVoting: "Le tour {{round, number}} commencera avec ce sujet après la révélation.",
+    opensInNewTab: "(s’ouvre dans un nouvel onglet)",
+    titleTooLong: "Un titre ne peut pas dépasser {{max, number}} caractères.",
+    linkTooLong: "Un lien ne peut pas dépasser {{max, number}} caractères.",
+    badLink: "Seuls les liens http et https fonctionnent, sans nom d’utilisateur ni mot de passe.",
   },
   results: {
     title: "Résultats",
@@ -210,7 +219,7 @@ export const fr: Catalog<"many"> = {
     votedMany_one: "{{count, number}} personne a voté.",
     votedMany_many: "{{count, number}} personnes ont voté.",
     votedMany_other: "{{count, number}} personnes ont voté.",
-    roundStarted: "Le vote a commencé.",
+    roundStarted: "Le vote a commencé : {{subject}}.",
     revealed: "Les cartes sont révélées.",
   },
   cards: {

@@ -194,6 +194,15 @@ export const en = {
     revealed: "Cards revealed",
     reveal: "Reveal cards",
     revealKey: "Key R, while the focus is on the table or your cards",
+    number: "Round {{round, number}}",
+    subjectLabel: "Subject of the next round",
+    subjectHint:
+      "Leave it empty for Round {{round, number}}, type a title, or paste a link to the ticket.",
+    subjectHintVoting: "Round {{round, number}} will start with this subject after the reveal.",
+    opensInNewTab: "(opens in a new tab)",
+    titleTooLong: "A title can have at most {{max, number}} characters.",
+    linkTooLong: "A link can have at most {{max, number}} characters.",
+    badLink: "Only http and https links work, without a user name or password.",
   },
   results: {
     title: "Results",
@@ -254,7 +263,7 @@ export const en = {
     voted: "{{name}} voted.",
     votedMany_one: "{{count, number}} person voted.",
     votedMany_other: "{{count, number}} people voted.",
-    roundStarted: "Voting started.",
+    roundStarted: "Voting started: {{subject}}.",
     revealed: "Cards revealed.",
   },
   cards: {

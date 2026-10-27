@@ -15,14 +15,11 @@ import {
   validateCustomDeck,
 } from "./decks.ts";
 import {
-  MAX_LINK_LENGTH,
   MAX_NAME_LENGTH,
   MAX_ROOM_NAME_LENGTH,
   MAX_TIMER_SECONDS,
-  MAX_TITLE_LENGTH,
   MIN_TIMER_SECONDS,
   type RoomSettings,
-  type Subject,
   WHO_CAN_REVEAL,
 } from "./room.ts";
 
@@ -75,9 +72,9 @@ const TOO_MANY_MARKS = /(?:(?!\u{FE0F})\p{M}(?:\u{200C}|\u{200D}|\u{FE0F})*){4}/
  * text with more than 3 combining marks on one character (Vietnamese, Thai and Hindi
  * need up to 2 or 3; "Zalgo" text needs dozens). A
  * lone surrogate refuses the text: Postgres jsonb would refuse it at write time.
- * Covers names, round titles and (W1) room names.
+ * Covers names, round titles (`apply-subject.ts`) and (W1) room names.
  */
-function cleanText(raw: unknown, max: number): string | null {
+export function cleanText(raw: unknown, max: number): string | null {
   if (typeof raw !== "string" || !raw.isWellFormed()) return null;
   const spaced = raw.replace(WHITESPACE_RUN, " ");
   const text = spaced.trim().normalize("NFC");
@@ -100,30 +97,6 @@ export function cleanName(raw: unknown): string | null {
  */
 export function cleanRoomName(raw: unknown): string | null {
   return cleanText(raw, MAX_ROOM_NAME_LENGTH);
-}
-
-/**
- * An `http(s)` URL with a non-empty host and no user info (`https://a.com@b.com` would
- * hide the real host), without whitespace, control or format characters. Checked by
- * pattern: the domain has no `URL`.
- */
-const LINK = /^https?:\/\/[^\s\p{Cc}\p{Cf}/?#@\\]+(?:[/?#][^\s\p{Cc}\p{Cf}]*)?$/iu;
-
-/** A round subject, cleaned, or `null` (`bad_subject`). A client-sent link `key` is dropped. */
-export function cleanSubject(raw: unknown): Subject | null {
-  if (!isRecord(raw)) return null;
-  if (raw.kind === "none") return { kind: "none" };
-  if (raw.kind === "title") {
-    const text = cleanText(raw.text, MAX_TITLE_LENGTH);
-    return text === null ? null : { kind: "title", text };
-  }
-  if (raw.kind === "link" && typeof raw.url === "string") {
-    const url = raw.url.trim();
-    return url.length <= MAX_LINK_LENGTH && url.isWellFormed() && LINK.test(url)
-      ? { kind: "link", url }
-      : null;
-  }
-  return null;
 }
 
 /** A timer length: an integer from 5 to 3600 seconds. */

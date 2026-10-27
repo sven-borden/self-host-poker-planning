@@ -5,7 +5,8 @@
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { cleanName, cleanRoomName, cleanSubject } from "./apply-input.ts";
+import { cleanName, cleanRoomName } from "./apply-input.ts";
+import { cleanSubject } from "./apply-subject.ts";
 import { MAX_ROOM_NAME_LENGTH } from "./room.ts";
 
 /** Default-ignorable and bidi control characters that must never pass inside a name. */

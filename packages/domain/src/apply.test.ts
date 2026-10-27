@@ -672,7 +672,8 @@ describe("rounds", () => {
     expect(result.causes).toEqual([{ type: "roundStarted", number: 1 }]);
     expect(ok(result).round).toEqual({
       number: 1,
-      subject: { kind: "link", url: "https://example.com/browse/ABC-1" },
+      // The key the client sent is dropped, and the server reads the link's own.
+      subject: { kind: "link", url: "https://example.com/browse/ABC-1", key: "ABC-1" },
       phase: "voting",
       deck: { kind: "custom", cards: ["S", "M", "L"] },
       specials: ["∞"],

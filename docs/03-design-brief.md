@@ -124,6 +124,21 @@ Positions are percentages of the stage, so one formula serves every width:
   cards differ mark the lowest and highest voters with an arrow (down, up) in a spruce
   disc at the avatar's bottom right, the voted check's corner, free after a reveal; the
   seat's label adds "lowest card" or "highest card". Anonymous rounds never do.
+- The round's subject (#21). Above the table everyone reads the round: "Round 3" alone,
+  or "Round 3" in ink-2 before the title (semibold, at most two lines, then an ellipsis;
+  the whole title on hover) or the link. A link is a small surface-2 pill that opens in
+  a new tab: the key's chip ("PAY-482" in mono spruce, "#12345" for Azure DevOps) when the server found one, else the shortened
+  URL (no scheme or `www.`, at most 40 characters, the full URL in its title), then an
+  external-link icon; 44 px tall on phones. The PO's controls sit above that line: a
+  "Subject of the next round" field (max 576 px wide, the whole width on phones) with
+  "Leave it empty for Round 4, type a title, or paste a link to the ticket." under it;
+  while Voting the hint reads "Round 4 will start with this subject after the reveal."
+  The field stays in every phase (PO decision, 2026-10-27): the table never jumps at a
+  reveal, and the PO can paste the next ticket while the team votes. Only the centre's
+  "Start voting" and "Next round" start a round, or Enter in the field when the centre
+  offers one; while Voting the PO cannot abandon the round from the page. A refused
+  subject shows under the field (`bad` icon, the reason: too long, a link that is not
+  http or https or carries a user name) and nothing is cut.
 - Observers sit off the table (a small row under it) so voters keep the seats.
 - The others follow the viewer clockwise in join order, starting with whoever joined
   after the viewer, so the order around the table is the same for everyone (#16).
@@ -243,8 +258,9 @@ interruptible and disabled under `prefers-reduced-motion` (120 ms cross-fades in
   5.", "Your vote: needs a break.", "Vote taken back."), in the hand's own polite region,
   also when it was the last vote and the reveal follows at once. A double click counts
   once; a held Enter does not repeat. After "Start voting" the focus moves to the hand
-  (or the centre's status for a PO who does not vote), and the table's region says
-  "Voting started." On a phone the selected card stays in view, and a fade on an edge
+  (or the centre's status for a PO who does not vote), also when Enter in the subject
+  field started it, and the table's region says "Voting started: PAY-482." (the key, the
+  title, or "Round 3" for no subject or a link without a key; #21). On a phone the selected card stays in view, and a fade on an edge
   says more cards lie that way.
 - Live region announces "Ana voted", "Cards revealed: average 5", never a hidden value.
   The table's region (#17) says joins, leaves, away and back, others' first votes and a

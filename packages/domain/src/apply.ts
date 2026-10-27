@@ -13,12 +13,12 @@ import {
   canonicalDeck,
   canonicalSettings,
   cleanName,
-  cleanSubject,
   isRecord,
   isTimerSeconds,
   patchSettings,
   sameJson,
 } from "./apply-input.ts";
+import { cleanSubject } from "./apply-subject.ts";
 import type {
   ApplyContext,
   ApplyResult,

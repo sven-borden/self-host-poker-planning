@@ -74,13 +74,40 @@ describe("liveEvents", () => {
     const lobby = run("ana", { type: "join", name: "Ana", role: "voter" });
     const started = run("me", { type: "startRound", subject: { kind: "none" } });
     const events = liveEvents(started.room, started.causes, lobby.room);
-    expect(events).toEqual([{ kind: "roundStarted", who: "", name: "" }]);
+    expect(events).toEqual([
+      { kind: "roundStarted", who: "", name: "", round: started.room.round },
+    ]);
     const joined = { kind: "joined" as const, who: "ben", name: "Ben" };
-    expect(said(mergeEvents([joined], [...events, ...events]))).toBe("Voting started. Ben joined.");
+    expect(said(mergeEvents([joined], [...events, ...events]))).toBe(
+      "Voting started: Round 1. Ben joined.",
+    );
     const mine = story("me");
     mine.run("me", { type: "join", name: "Me", role: "voter" });
     const own = mine.run("me", { type: "startRound", subject: { kind: "none" } });
-    expect(said(liveEvents(own.room, own.causes, null))).toBe("Voting started.");
+    expect(said(liveEvents(own.room, own.causes, null))).toBe("Voting started: Round 1.");
+  });
+
+  it("says the new round's subject: its key, its title, or its number (#21)", () => {
+    const { run } = story("ana");
+    run("me", { type: "join", name: "Me", role: "voter" });
+    run("ana", { type: "join", name: "Ana", role: "voter" });
+    const subjects: Array<[unknown, string]> = [
+      [{ kind: "link", url: "https://acme.atlassian.net/browse/PAY-482" }, "PAY-482"],
+      [{ kind: "link", url: "https://dev.azure.com/acme/Pay/_workitems/edit/12345" }, "#12345"],
+      [{ kind: "title", text: "Checkout, split invoices" }, "Checkout, split invoices"],
+      // A link without a key would read badly aloud: the round's number instead.
+      [{ kind: "link", url: "https://example.com/specs/42" }, "Round 4"],
+      [{ kind: "none" }, "Round 5"],
+    ];
+    let batch: LiveEvent[] = [];
+    for (const [subject, name] of subjects) {
+      const started = run("me", { type: "startRound", subject } as Command);
+      const events = liveEvents(started.room, started.causes, null);
+      expect(said(events)).toBe(`Voting started: ${name}.`);
+      batch = mergeEvents(batch, events);
+    }
+    // Several new rounds in one batch: the last one is said.
+    expect(said(batch)).toBe("Voting started: Round 5.");
   });
 
   it("never says a card, and stays quiet on causes it does not announce", () => {
@@ -112,7 +139,7 @@ describe("liveEvents", () => {
     // A new round in the same batch makes the reveal moot.
     const next = run("me", { type: "startRound", subject: { kind: "none" } });
     const both = mergeEvents(events, liveEvents(next.room, next.causes, forced.room));
-    expect(said(both)).toBe("Voting started.");
+    expect(said(both)).toBe("Voting started: Round 2.");
   });
 
   it("says the result with the reveal: a consensus, the most voted size, or nothing to count (#20)", () => {
