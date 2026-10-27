@@ -332,8 +332,10 @@ server sends and never decides the outcome of a round.
   agree because the room page stays in the shell's column (`PHONE_MAX_ROOM` = 608 px of a
   640 px viewport, the safe-area insets being 0 in portrait), so the table's CSS was not
   moved to container queries (#22); a page that hosts the table in another container
-  must. `thumb:` (640 px wide or less and at least 520 px tall: an upright phone) docks
-  the hand; `squat:` (480 px tall or less: a phone on its side) compacts the room page.
+  must. `thumb:` (640 px wide or less and at least 520 px tall: an upright phone) styles
+  the docked hand; `squat:` (480 px tall or less: a phone on its side) compacts the room
+  page and the PO's subject field. `squat` is registered after `phone`, so its rules win
+  on a small phone on its side.
 - Phones (#22, design brief "Phones"): `index.html` sets `viewport-fit=cover`, and the
   shell's header and `<main>` keep their gutters inside the safe areas (`GUTTERS` in
   `routes/__root.tsx`). The room header is a two-row grid on phones (`routes/r/$code.tsx`,
@@ -343,17 +345,27 @@ server sends and never decides the outcome of a round.
   `<RoomStatus presence={false} />`, the errors only). `NextSubject` floats its label
   inside the field and shows its hint as an overlay while focused (an in-flow hint that
   collapsed on blur moved "Start voting" from under the tap). `Seated` marks the hand
-  `[data-hand-dock]` while it is playable (Voting), which `thumb:` makes a sticky sheet on
-  the bottom edge; `styles.css` adds `scroll-padding-bottom` to the root meanwhile. The
-  hand snaps (`snap-x snap-mandatory`, cards `snap-center`) and centres the vote when it
-  lies under a fade. `room/haptics.ts` (`voteTick`) vibrates 12 ms when `use-vote.ts`
+  `[data-hand-dock]` while it is playable (Voting) and `useHandDock`
+  (`room/hand-dock.ts`) finds the screen tall enough: at the top of the page the table
+  and the viewer's seat and slot (`[data-stage]`, `[data-you]`) must end above the dock,
+  measured again on every resize of the page or the panel. `thumb:` makes it a sticky
+  sheet on the bottom edge, its hint `sr-only`; the panel's bottom padding is the same
+  docked or not, so the measure does not depend on the state. While docked the root's
+  `--hand-dock` holds its height, which `styles.css` uses as `scroll-padding-bottom`. A
+  vote's flight starts only when the slot is in sight (`inSight`). The hand snaps
+  (`snap-x snap-mandatory`, cards `snap-center`) and centres the vote, and the card the
+  arrow keys focus (`focus({ preventScroll: true })`), when it lies under a fade. `room/haptics.ts` (`voteTick`) vibrates 12 ms when `use-vote.ts`
   hears a confirmed vote: only where `navigator.vibrate` exists, never under reduced
-  motion, errors swallowed. `table-data.ts`'s `namesakes` numbers each later person whose
-  name is already taken in the room (`PersonFlags.namesake`), and `nameWithFlags` says
-  "Ana (2)" (`table.nameNumbered`). The dense phone slot's label uses an 11 px font and
-  1 px a side (`SlotCard`). Budgets after #22: the room route 168.5 kB (was 168.1), the
-  landing page 152.1 kB (152.0), `seated` 12.3 kB (11.8), `table-stage` 8.2 kB (8.2),
-  the stylesheet 13.3 kB (12.4).
+  motion, errors swallowed. `room/namesakes.ts` numbers each later person whose name is
+  already taken in the room, in the current join order (`PersonFlags.namesake`), and
+  `shownName` (`table/seat.tsx`, `table.nameNumbered`) says "Ana (2)" everywhere a name
+  shows: seats, popovers, the observers' row, the results' extremes (`PersonName` in
+  `results-view.ts`), the votes not at the table and the "You" panel. The dense phone
+  slot's label uses an 11 px font and 1 px a side (`SlotCard`), and `labelFit`
+  (`table/cards.tsx`) narrows any label that would shrink below 80 % to Archivo's 70 %
+  width (`data-narrow`). Budgets after #22: the room route 168.5 kB (was 168.1), the
+  landing page 152.1 kB (152.0), `seated` 13.0 kB (11.8), `table-stage` 8.3 kB (8.2),
+  the stylesheet 13.4 kB (12.4).
 - End-to-end: `pnpm --filter @pp/web test:e2e` runs Playwright (`e2e/`) against
   `vite preview`. With `DATABASE_URL` set (a Postgres the server may migrate, such as
   the one in the server README), it also starts the real server on 3000, where
@@ -364,7 +376,10 @@ server sends and never decides the outcome of a round.
   Pixel 7 descriptors in the configured Chromium or Edge (`phone()`, which removes
   `navigator.vibrate` on the iPhone, as Safari has none, and records it elsewhere), touch
   through `tap()`; its shots are `phone-*` at 360 × 780 and 390 × 844, light and dark.
-  `phone()`, `guestsJoin`, `hand` and `handCard` are exported for #23. Not part of `pnpm gate`. `e2e/next-round.spec.ts`
+  `phone()` (iPhone 13, iPhone SE, Pixel 7 or a bare viewport), `guestsJoin`, `hand` and
+  `handCard` live in `e2e/support.ts` for #23: Playwright refuses a test file that
+  imports another test file. The dock's matrix (sizes, languages, a two-line title,
+  150 % text) checks with `dockAtTop` and `expectClearOfDock`. Not part of `pnpm gate`. `e2e/next-round.spec.ts`
   reads `round_history` and the room's stored round straight from Postgres through `pg`,
   a dev dependency pinned to the server's version; #33's history API should replace that
   direct read.

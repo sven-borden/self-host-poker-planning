@@ -194,11 +194,12 @@ As built (#22), for 640 px and below (the `phone:` variant) unless stated:
 - **Header.** Two rows: the room's name (20 px) beside the copy-link button, drawn as a
   44 px icon whose name stays "Copy the link"; then the code chip, the connection and the
   people count on one line. The code's label is for screen readers only, and a live room
-  shows a `--good` dot with "Connected" for screen readers; connecting and reconnecting
-  are written out. On every width the connection and the count now sit in the header
+  shows a `--good` dot (`CanvasText` in forced colours) with "Connected" for screen
+  readers; connecting and reconnecting are written out. On every width the connection and the count now sit in the header
   beside the code (`RoomPresence`), not on a line of their own above the table.
-- **The PO's subject field.** The label sits small (11 px, `--ink-2`) inside the field's
-  top edge. The hint shows only while the field has the focus, as a small surface over
+- **The PO's subject field.** On a phone and on a short screen (the `squat` variant), the
+  label sits small (0.6875 rem, 11 px at the default text size, `--ink-2`) inside the
+  field's top edge. The hint shows only while the field has the focus, as a small surface over
   the subject line, not in the flow: a tap on "Start voting" blurs the field, and a hint
   that collapsed then would move the button from under the finger. After a refusal the
   hint and the reason show in the flow, as on desktop. The field now costs 44 px instead
@@ -207,33 +208,53 @@ As built (#22), for 640 px and below (the `phone:` variant) unless stated:
   with a card in the middle, never half under an edge fade. Cards stay 44 × 64 px, whole
   touch targets. When the vote lies under a fade or beyond (a reload), the hand scrolls it
   to the middle, itself a snap point. Arrow keys, Home and End, the roving tab stop and
-  the 300 ms guard after a placed focus are #18's and #21's.
+  the 300 ms guard after a placed focus are #18's and #21's; a card the arrow keys focus
+  is centred the same way when it lies under a fade, and the page does not move.
 - **The docked hand (PO default).** While the team votes, on an upright phone (640 px
-  wide or less and at least 520 px tall), the hand's panel is sticky on the bottom edge:
-  a sheet with rounded top corners and the panel shadow, its padding above the home
-  indicator (`env(safe-area-inset-bottom)`). It stays within thumb reach whatever part of
-  the table is in view. Sticky, not fixed, so it can only cover what lies above it in the
-  page (the table, scrolled up), never the "You" panel under it; the page keeps
-  `scroll-padding-bottom: 10rem` while it is docked, so a seat or "Reveal cards" that
-  takes the focus stops above it. It docks only while Voting: the results come with the
-  reveal and sit above the hand, so after a reveal the hand returns to the page under
-  them. At 390 × 844 with 8 people the PO (field included) and a guest see the subject,
-  the whole table and the hand at the top of the page without scrolling.
+  wide or less and at least 520 px tall), the hand's panel can be sticky on the bottom
+  edge: a sheet with rounded top corners and the panel shadow, its padding above the home
+  indicator (`env(safe-area-inset-bottom)`), within thumb reach whatever part of the table
+  is in view. It docks only when the screen is tall enough: at the top of the page the
+  table, the PO's "Reveal cards" in its centre and the viewer's seat and slot must end
+  above the docked hand. Otherwise the hand stays in the page under the table, as on a
+  phone on its side, and the person scrolls to it. Docked, the hand's hint is for screen
+  readers only, so the dock is one card high (about 97 px) in every language. Sticky, not
+  fixed, so it keeps its place at the end of the flow and can only cover what lies above
+  it (the table, scrolled up), never the "You" panel under it; the page's
+  `scroll-padding-bottom` is the dock's height while it is docked, so a seat or "Reveal
+  cards" that takes the focus stops above it. A vote's card flies to the seat only when
+  the slot is on screen and above the dock; otherwise the card just lifts. It docks only
+  while Voting: the results come with the reveal and sit above the hand, so after a
+  reveal the hand returns to the page under them. At 390 × 844 with 8 people the PO
+  (field included) and a guest see the subject, the whole table and the docked hand at
+  the top of the page without scrolling, in English, French and German and with a
+  two-line title; at 150 % text, at 390 × 664 (an iPhone 13 in Safari) and on an iPhone
+  SE the hand stays in the page (`e2e/mobile.spec.ts`).
 - **Results** stack under the table, then the hand, then the "You" panel.
 - **Seats.** Initials only above 10 people, in 44 px targets (#13). Initials and colours
   are unique at the table (#17); two people with the same name share initials in two
-  colours, and the second one's label says "Ana Lima (2)", so every seat has a name of
-  its own for screen readers. With 16 seats at 360 px no avatar, badge or target touches
+  colours, and the second one is "Ana Lima (2)" wherever a name shows: the seat's name
+  and its popover, the observers' row, the results' lowest and highest, the votes not at
+  the table and the "You" panel, so every seat has a name of its own, seen and heard.
+  The numbers follow the people in the room now, in join order: when the first Ana
+  leaves, the second one's "(2)" goes. Someone who left keeps the plain name the server
+  kept for their vote. With 16 seats at 360 px no avatar, badge or target touches
   another (`e2e/mobile.spec.ts`).
 - **Slot cards at 16 people.** The dense phone slot stays 20 × 28 px: 21 × 29 px already
   touches its neighbours at 328 px (`layout.test.ts`). Its label gets an 11 px font and
-  1 px a side instead: "13" shows at 11 px, "100" at about 7 px, "XXL" at about 5 px. The
+  1 px a side instead. Any card label that would shrink below 80 % of its size uses
+  Archivo's width axis at 70 % instead of 110 % and grows back: "13", "XL" and "XS" show
+  at 11 px, "100" at 10 px, "XXL" at 7 px, and "XXL" in the PO's tie chip at 8.5 px. The
   slot is a glance; the seat's popover says the card in words and the results' columns
   repeat every card at 24 px.
 - **A phone on its side** (844 × 390) is wider than 640 px, so it gets the desktop table
   and header in a compact form (the `squat` variant, 480 px tall or less: a smaller name,
-  tighter gaps). The hand never docks there, where it would cover a third of the screen.
-  The table, the hand and the controls do not overlap; the page scrolls between them.
+  tighter gaps, and the PO's subject field in its phone form, the label inside and the
+  hint shown only while it has the focus). `squat` comes after `phone` in the stylesheet,
+  so a small phone on its side (568 × 320) gets the squat rules. The hand never docks
+  there, where it would cover a third of the screen. The table, the hand and the
+  controls do not overlap; the page scrolls between them: the table keeps the desktop's
+  540 px stage, and a table drawn for short screens is for later (PO decision, #22).
 - **Haptics.** A 12 ms `navigator.vibrate` tick once the server confirmed the viewer's
   vote, where the browser has it (Android). Safari on iOS has none, so nothing happens
   and nothing fails; never under reduced motion; never the only feedback (the card lifts,
