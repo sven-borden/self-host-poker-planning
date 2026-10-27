@@ -8,6 +8,29 @@ const PORT = 4173;
 const ci = Boolean(process.env.CI);
 const preview = `pnpm exec vite preview --port ${PORT} --strictPort`;
 
+// With DATABASE_URL (a Postgres the server may migrate), the real server runs on 3000,
+// where `vite preview` forwards `/api` and `/socket.io`, as `pnpm dev` does: the identity
+// tests (e2e/identity.spec.ts) need it and skip without it. The secret is a fake.
+const databaseUrl = process.env.DATABASE_URL;
+const apiServer = databaseUrl
+  ? [
+      {
+        command: "pnpm --filter @pp/server exec tsx src/main.ts",
+        url: "http://localhost:3000/api/health",
+        reuseExistingServer: false,
+        timeout: 60_000,
+        env: {
+          DATABASE_URL: databaseUrl,
+          PORT: "3000",
+          BASE_URL: `http://localhost:${PORT}`,
+          BETTER_AUTH_SECRET: "e2e-fake-secret-not-used-anywhere-else-0123456789",
+          TRUST_PROXY: "false",
+          LOG_LEVEL: "warn",
+        },
+      },
+    ]
+  : [];
+
 export default defineConfig({
   testDir: "./e2e",
   outputDir: "./test-results",
@@ -25,10 +48,13 @@ export default defineConfig({
     browserName: "chromium",
     ...(ci ? {} : { channel: "msedge" }),
   },
-  webServer: {
-    command: ci ? preview : `pnpm exec vite build && ${preview}`,
-    url: `http://localhost:${PORT}/dev/table`,
-    reuseExistingServer: false,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command: ci ? preview : `pnpm exec vite build && ${preview}`,
+      url: `http://localhost:${PORT}/dev/table`,
+      reuseExistingServer: false,
+      timeout: 120_000,
+    },
+    ...apiServer,
+  ],
 });
