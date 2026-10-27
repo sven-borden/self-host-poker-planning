@@ -15,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popove
 import { useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
 import { type CommandInput, commandSender } from "../realtime/room-connection.ts";
-import { clockOffset, onClockOffset } from "../realtime/server-clock.ts";
+import { localNow, serverTime, useClockOffset } from "../realtime/server-clock.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { AFTER_REVEAL, focusSoon } from "./focus.ts";
 import {
@@ -33,7 +33,9 @@ import {
 // The vote timer in the table's centre (#27, docs/03-design-brief.md, "The timer"). The
 // server owns the deadline (`round.deadlineAt`, in its own clock); this page counts down
 // to it with the clock offset `server-clock.ts` keeps, and at 0:00 it waits: the server's
-// own timeout reveals, or says time is up. Nothing here decides an outcome.
+// own timeout reveals, or says time is up. A page that still shows the round voting a
+// moment later sends `timeUp`, the client ping of architecture section 9, which only asks
+// the server's `apply` to look at the deadline. Nothing here decides an outcome.
 
 /** The PO's menu (start, restart, custom length): a chunk of its own, loaded on first use. */
 const TimerMenu = lazy(() => import("./timer-menu.tsx"));
@@ -59,7 +61,7 @@ export interface Countdown {
   remaining: number;
   /** The timer's whole length in milliseconds, for the ring (0 while none runs). */
   total: number;
-  /** The deadline in this page's own clock (`Date.now()` epoch), for the ring's drain. */
+  /** The deadline in this page's own clock (`localNow()`), for the ring's drain. */
   endsAt: number | null;
 }
 
@@ -70,7 +72,7 @@ export interface Countdown {
 export function useCountdown(round: RoundView | null): Countdown {
   const state = timerState(round);
   const deadlineAt = state.kind === "running" ? state.deadlineAt : null;
-  const offset = useSyncExternalStore(onClockOffset, clockOffset, () => 0);
+  const offset = useClockOffset();
   const [, tick] = useState(0);
   /** The time left when this page first saw a deadline without a start (an older server). */
   const seen = useRef<{ deadlineAt: number; total: number } | null>(null);
@@ -80,7 +82,7 @@ export function useCountdown(round: RoundView | null): Countdown {
     if (deadlineAt === null) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const schedule = () => {
-      const left = remainingMs(deadlineAt, Date.now() + clockOffset());
+      const left = remainingMs(deadlineAt, serverTime());
       if (left <= 0) return;
       // Just past the next whole second, so the text has changed when it is drawn.
       timer = setTimeout(
@@ -97,7 +99,7 @@ export function useCountdown(round: RoundView | null): Countdown {
 
   if (state.kind !== "running") return { state, remaining: 0, total: 0, endsAt: null };
   const endsAt = state.deadlineAt - offset;
-  const remaining = Math.max(0, endsAt - Date.now());
+  const remaining = Math.max(0, endsAt - localNow());
   let total: number;
   if (state.startedAt !== null) {
     total = state.deadlineAt - state.startedAt;
@@ -131,8 +133,58 @@ export function useLastSecondsWarning(countdown: Countdown) {
   }, [deadline, seconds, t]);
 }
 
+/** A page pings `timeUp` this long after its estimate of the deadline, plus up to `PING_JITTER_MS`. */
+export const PING_AFTER_MS = 1_000;
+export const PING_JITTER_MS = 1_000;
+
+/**
+ * The client ping (architecture section 9): once per deadline, a second (plus a random
+ * share of another, so a room's pages do not all arrive at once) after this page's
+ * estimate of the deadline, if the round it shows still votes with that deadline, the page
+ * sends `timeUp`. The server's own timeout normally got there first and nothing is sent;
+ * when it did not (an instance restarted and nobody entered since), the server's `apply`
+ * reveals or says time is up, once, whoever pings. A ping that finds nothing to do stores
+ * and sends nothing. The page decides nothing: it only asks.
+ */
+export function useTimeUpPing(countdown: Countdown) {
+  const deadlineAt = countdown.state.kind === "running" ? countdown.state.deadlineAt : null;
+  const offset = useClockOffset();
+  const pinged = useRef<number | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new offset moves the estimate.
+  useEffect(() => {
+    if (deadlineAt === null || pinged.current === deadlineAt) return;
+    const wait =
+      Math.max(0, deadlineAt - serverTime()) + PING_AFTER_MS + Math.random() * PING_JITTER_MS;
+    const timer = setTimeout(() => {
+      const round = useRoomStore.getState().snapshot?.room.round;
+      if (round?.phase !== "voting" || round.deadlineAt !== deadlineAt) return;
+      pinged.current = deadlineAt;
+      void commandSender()({ type: "timeUp" });
+    }, wait);
+    return () => clearTimeout(timer);
+  }, [deadlineAt, offset]);
+}
+
 /** The ring's stroke, in pixels, by variant. */
 const STROKE = 2.5;
+
+/** The ring steps at most this often: 20 times a second. */
+export const RING_MIN_STEP_MS = 50;
+
+/**
+ * How many steps the ring drains a timer of `total` milliseconds in: one per device pixel
+ * of its length, so each step moves the end of the arc by about a pixel and the drain
+ * reads as linear, but never more than 20 a second. A 30 s timer steps about 5 times a
+ * second, a 60 min one every 20 s or so: each step is one style change, nothing between.
+ */
+export function ringSteps(size: { width: number; height: number }, total: number, ratio = 1) {
+  const r = (size.height - STROKE) / 2;
+  const length = 2 * Math.max(0, size.width - size.height) + 2 * Math.PI * r;
+  return Math.max(1, Math.min(Math.ceil(length * ratio), Math.ceil(total / RING_MIN_STEP_MS)));
+}
+
+/** The share of the ring drawn with `left` of it to go: the step it is in, rounded up. */
+const steppedLeft = (left: number, steps: number) => Math.ceil(left * steps - 1e-9) / steps;
 
 /**
  * A stadium (the table's own shape) around the chip, as an SVG path from the top centre,
@@ -180,9 +232,10 @@ function useBoxSize<E extends HTMLElement>() {
 
 /**
  * The ring: a faint track and the time left in brass, `--warn` in the last 10 s, full and
- * `--warn` once time is up. It drains linearly (the Web Animations API, from the share
- * left now to empty at the deadline); under reduced motion it does not move between
- * seconds: it steps once a second with the text.
+ * `--warn` once time is up. It drains linearly to the deadline in `ringSteps` steps, each
+ * set on the path when its time comes (a timeout, not an animation: an animation of the
+ * dash offset restyles the page every frame, `steps()` easing or not, as measured in
+ * Chromium). Under reduced motion it moves only with the text, once a second.
  */
 function TimerRing({
   countdown,
@@ -198,19 +251,27 @@ function TimerRing({
   const left = up ? 1 : ringLeft(countdown.remaining, countdown.total);
   const { endsAt, total } = countdown;
   const path = stadiumPath(size.width, size.height);
+  const steps = ringSteps(size, total, window.devicePixelRatio || 1);
+  // A render draws the step it is in too, so the text's tick never moves the ring off it.
+  const drawn = reduced || up ? left : steppedLeft(left, steps);
 
   useLayoutEffect(() => {
     const element = progress.current;
-    if (reduced || endsAt === null || !element || typeof element.animate !== "function") return;
-    const now = Date.now();
-    const from = 100 * (1 - ringLeft(Math.max(0, endsAt - now), total));
-    const animation = element.animate([{ strokeDashoffset: from }, { strokeDashoffset: 100 }], {
-      duration: Math.max(0, endsAt - now),
-      easing: "linear",
-      fill: "forwards",
-    });
-    return () => animation.cancel();
-  }, [reduced, endsAt, total]);
+    if (reduced || endsAt === null || !element) return;
+    const stepMs = total / steps;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const draw = () => {
+      const remaining = Math.max(0, endsAt - localNow());
+      const share = steppedLeft(ringLeft(remaining, total), steps);
+      element.setAttribute("stroke-dashoffset", String(100 * (1 - share)));
+      if (remaining <= 0) return;
+      // The next step starts when the time left falls under this step's lower edge.
+      const next = remaining - (Math.round(share * steps) - 1) * stepMs;
+      timer = setTimeout(draw, Math.max(RING_MIN_STEP_MS, next + 1));
+    };
+    draw();
+    return () => clearTimeout(timer);
+  }, [reduced, endsAt, total, steps]);
 
   return (
     <svg
@@ -229,7 +290,7 @@ function TimerRing({
         strokeLinecap="round"
         pathLength={100}
         strokeDasharray="100 100"
-        strokeDashoffset={100 * (1 - left)}
+        strokeDashoffset={100 * (1 - drawn)}
         data-ring-left={left.toFixed(3)}
         className={cn(
           "pp-timer-progress",
@@ -342,6 +403,14 @@ export function TimerChip({ countdown }: { countdown: Countdown }) {
 const SIDE_BUTTON =
   "relative inline-flex h-8 items-center gap-1 rounded-md border border-card-edge bg-card-face px-2 text-[12px] leading-none font-semibold whitespace-nowrap text-card-ink shadow-sm outline-none after:absolute after:-inset-y-1.5 after:inset-x-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass aria-disabled:opacity-60 in-data-[variant=phone]:hidden";
 
+/**
+ * Refusals that only say the reveal won a race with the PO's press: the round no longer
+ * votes, or (for "+30 s" at 0:00) its timer just ended. The screen already shows why.
+ */
+const RACED: readonly string[] = ["not_voting"];
+const RACED_EXTEND: readonly string[] = ["not_voting", "no_timer"];
+const racedFor = (command: CommandInput) => (command.type === "extendTimer" ? RACED_EXTEND : RACED);
+
 /** Sends the PO's timer commands one at a time; a refusal shows under the table. */
 function useTimerCommands(onFailure: (code: string | null) => void) {
   const pending = useRef(false);
@@ -354,7 +423,7 @@ function useTimerCommands(onFailure: (code: string | null) => void) {
       onFailure(null);
       try {
         const ack = await commandSender()(command);
-        if (!ack.ok && ack.code !== "not_voting") onFailure(ack.code);
+        if (!ack.ok && !racedFor(command).includes(ack.code)) onFailure(ack.code);
         return ack.ok;
       } finally {
         pending.current = false;
@@ -378,6 +447,26 @@ function useFocusHandOff<E extends HTMLElement>() {
       // Decided a frame later, once the page shows what replaced the button: the chip while
       // the round votes, else the PO's decision after the reveal.
       if (element !== null && document.activeElement === element) {
+        focusSoon("[data-timer-button]", ...AFTER_REVEAL);
+      }
+    };
+  }, []);
+  return ref;
+}
+
+/**
+ * The menu leaves with the voting round (a reveal while the PO types a length): if it
+ * holds the focus then, the focus goes where a reveal sends it, the PO's decision (or the
+ * chip, if the round still votes), never to the page. Closing the menu otherwise gives
+ * the focus back to the chip (Radix).
+ */
+function useMenuHandOff() {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const menu = ref;
+    return () => {
+      // A layout cleanup runs before React removes the menu: the focus is still in it.
+      if (menu.current?.contains(document.activeElement)) {
         focusSoon("[data-timer-button]", ...AFTER_REVEAL);
       }
     };
@@ -417,7 +506,8 @@ function AddButton({ onAdd, busy }: { onAdd: () => void; busy: boolean }) {
       onClick={onAdd}
       className={SIDE_BUTTON}
     >
-      {t("timer.add")}
+      <span aria-hidden="true">{t("timer.add")}</span>
+      <span className="sr-only">{t("timer.addSpoken")}</span>
     </button>
   );
 }
@@ -446,16 +536,20 @@ export function TimerControls({
   const pulse = usePulse<HTMLButtonElement>(state === "warn" && !reduced);
   const [box, size] = useBoxSize<HTMLButtonElement>();
   const handOff = useFocusHandOff<HTMLButtonElement>();
+  const menu = useMenuHandOff();
   const time = clockText(countdown.remaining);
 
   const stop = () => void send({ type: "stopTimer" });
   const add = () => void send({ type: "extendTimer", payload: { seconds: EXTEND_SECONDS } });
+  // The chip's name says its state only: the focus comes back to it after every choice,
+  // and a screen reader speaks a focused control's name again when it changes, so a name
+  // with the time in it would tick. The time is in the `timer` beside it, never live.
   const name =
     state === "idle"
       ? t("timer.button")
       : state === "up"
         ? t("timer.buttonUp")
-        : t("timer.buttonRunning", { time });
+        : t("timer.buttonRunning");
 
   return (
     <div data-timer-controls className="flex items-center gap-1.5">
@@ -506,6 +600,7 @@ export function TimerControls({
           </button>
         </PopoverTrigger>
         <PopoverContent
+          ref={menu}
           side="bottom"
           aria-label={t("timer.menu")}
           data-timer-menu
@@ -526,6 +621,11 @@ export function TimerControls({
           ) : null}
         </PopoverContent>
       </Popover>
+      {state === "running" || state === "warn" || state === "zero" ? (
+        <span role="timer" data-timer-spoken className="sr-only">
+          {t("timer.left", { time })}
+        </span>
+      ) : null}
       {running ? <AddButton onAdd={add} busy={busy} /> : null}
     </div>
   );

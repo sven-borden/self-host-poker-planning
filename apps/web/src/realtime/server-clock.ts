@@ -1,8 +1,20 @@
+import { useSyncExternalStore } from "react";
+
 // The server's clock, as this page estimates it (#27, architecture section 9). A timer is
 // a deadline in the server's epoch milliseconds (`round.deadlineAt`); this page's own clock
 // may be off by seconds, so the countdown reads the server's time instead:
 //
-//   server now ≈ Date.now() + offset
+//   server now ≈ localNow() + offset
+//
+// `localNow()` is this page's monotonic clock in epoch milliseconds
+// (`performance.timeOrigin + performance.now()`), the clock the ring's animation runs on,
+// not `Date.now()`: a wall-clock step (an NTP correction, a person setting the time) moves
+// nothing here. Some browsers pause the monotonic clock while the computer sleeps; it then
+// lags the server by the time asleep, and every sample after it is that much higher. A
+// sample more than `JUMP_MS` above the median starts the window over from that sample
+// instead of waiting for it to become the median. A sample far below it is a snapshot
+// that arrived late (a busy or frozen tab, a slow hop): it only ever lowers a sample, and
+// the median outvotes it, which is what the window is for.
 //
 // Every snapshot carries `serverNow`, the server's clock when it built it. It left the
 // server about half a round trip before it arrived, so each snapshot gives one sample:
@@ -16,6 +28,13 @@
 
 /** How many recent samples the median is taken over. */
 export const SAMPLES = 9;
+/** A sample this far above the median means this page's clock paused: start over from it. */
+export const JUMP_MS = 1_000;
+
+/** This page's clock in epoch milliseconds: monotonic, so a wall-clock step moves nothing. */
+export function localNow(): number {
+  return performance.timeOrigin + performance.now();
+}
 
 let samples: number[] = [];
 let roundTrip = 0;
@@ -27,27 +46,37 @@ export function noteRoundTrip(ms: number) {
 }
 
 /** One sample: a snapshot built at `serverNow` (server clock) arrived at `arrivedAt` (local). */
-export function sampleServerClock(serverNow: number, arrivedAt: number = Date.now()) {
+export function sampleServerClock(serverNow: number, arrivedAt: number = localNow()) {
   if (!Number.isFinite(serverNow)) return;
   const before = clockOffset();
-  samples = [...samples, serverNow + roundTrip / 2 - arrivedAt].slice(-SAMPLES);
+  const sample = serverNow + roundTrip / 2 - arrivedAt;
+  samples =
+    samples.length > 0 && sample - median(samples) > JUMP_MS
+      ? [sample]
+      : [...samples, sample].slice(-SAMPLES);
   if (clockOffset() !== before) for (const listener of listeners) listener();
+}
+
+function median(values: readonly number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = sorted.length >> 1;
+  return sorted.length % 2 === 1
+    ? (sorted[middle] as number)
+    : ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
 }
 
 /** The median of the recent samples, in milliseconds; 0 before the first one. */
 export function clockOffset(): number {
-  if (samples.length === 0) return 0;
-  const sorted = [...samples].sort((a, b) => a - b);
-  const middle = sorted.length >> 1;
-  const value =
-    sorted.length % 2 === 1
-      ? (sorted[middle] as number)
-      : ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
-  return Math.round(value);
+  return samples.length === 0 ? 0 : Math.round(median(samples));
 }
 
-/** The server's time now, as this page estimates it. */
-export function serverTime(local: number = Date.now()): number {
+/**
+ * The server's time now (epoch milliseconds), as this page estimates it; or the server's
+ * time at `local`, a reading of `localNow()`. Anything that compares a server timestamp
+ * (a deadline, a claim's opening) with now reads this, never `Date.now()`, and re-reads
+ * it when `onClockOffset` (or `useClockOffset`) says the estimate moved.
+ */
+export function serverTime(local: number = localNow()): number {
   return local + clockOffset();
 }
 
@@ -55,6 +84,11 @@ export function serverTime(local: number = Date.now()): number {
 export function onClockOffset(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/** The clock offset, in a component that draws again whenever the estimate moves. */
+export function useClockOffset(): number {
+  return useSyncExternalStore(onClockOffset, clockOffset, () => 0);
 }
 
 /** Forgets every sample (tests). */

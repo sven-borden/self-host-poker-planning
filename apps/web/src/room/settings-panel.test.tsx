@@ -8,6 +8,7 @@ import { LiveAnnouncer } from "./live-announcer.tsx";
 import { RoomSettingsButton } from "./settings-button.tsx";
 import { type ControlProps, GROUPS, type SettingGroup, SettingsPanel } from "./settings-panel.tsx";
 import { SETTING_KEYS } from "./settings-words.ts";
+import { ARROW_SETTLE_MS } from "./timer-setting.tsx";
 
 const mocks = vi.hoisted(() => ({ sendCommand: vi.fn(), commandSender: vi.fn() }));
 vi.mock("../realtime/room-connection.ts", () => ({
@@ -234,6 +235,46 @@ describe("the settings panel", () => {
       type: "updateSettings",
       payload: { patch: { timer: { revealAtEnd: false } } },
     });
+  });
+
+  it("sends a length the arrow keys stop on once they rest, a click at once, and says a wrong length each time (#27)", async () => {
+    mocks.sendCommand.mockResolvedValue({ ok: true, version: 2 });
+    render(<RoomSettingsButton />);
+    show(newRoom(), PO);
+    const dialog = await openPanel("Room settings");
+    const timer = row(dialog, "timer");
+    const radio = (name: string) => within(timer).getByRole("radio", { name });
+    const sent = () => mocks.sendCommand.mock.calls.length;
+    const before = sent();
+    // Arrow keys from Off: 30 s, then 60 s. Each shows at once; nothing is sent yet.
+    fireEvent.keyDown(radio("Off"), { key: "ArrowRight" });
+    fireEvent.click(radio("30\u{a0}s"));
+    expect(radio("30\u{a0}s")).toHaveProperty("checked", true);
+    fireEvent.keyDown(radio("30\u{a0}s"), { key: "ArrowRight" });
+    fireEvent.click(radio("60\u{a0}s"));
+    expect(radio("60\u{a0}s")).toHaveProperty("checked", true);
+    expect(sent()).toBe(before);
+    // Once they rest, the one they stopped on goes, alone.
+    await act(() => new Promise((resolve) => setTimeout(resolve, ARROW_SETTLE_MS + 50)));
+    expect(sent()).toBe(before + 1);
+    expect(mocks.sendCommand).toHaveBeenLastCalledWith({
+      type: "updateSettings",
+      payload: { patch: { timer: { seconds: 60 } } },
+    });
+    // Space or a click sends at once.
+    fireEvent.keyDown(radio("2\u{a0}min"), { key: " " });
+    await act(async () => fireEvent.click(radio("2\u{a0}min")));
+    expect(sent()).toBe(before + 2);
+
+    // The same wrong length twice is said twice: a new alert each time.
+    fireEvent.click(radio("Custom"));
+    const field = within(timer).getByRole("textbox", { name: "Custom length" });
+    fireEvent.change(field, { target: { value: "0" } });
+    fireEvent.click(within(timer).getByRole("button", { name: "Set" }));
+    const first = within(timer).getByRole("alert");
+    fireEvent.click(within(timer).getByRole("button", { name: "Set" }));
+    expect(within(timer).getByRole("alert")).not.toBe(first);
+    expect(sent()).toBe(before + 2);
   });
 
   it("shows a custom length as a custom choice, and the timer in words to everyone else (#27)", async () => {

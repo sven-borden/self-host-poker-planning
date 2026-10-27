@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clockOffset,
+  JUMP_MS,
+  localNow,
   noteRoundTrip,
   onClockOffset,
   resetServerClock,
@@ -9,7 +11,10 @@ import {
   serverTime,
 } from "./server-clock.ts";
 
-afterEach(() => resetServerClock());
+afterEach(() => {
+  resetServerClock();
+  vi.useRealTimers();
+});
 
 describe("the server clock (#27)", () => {
   it("is this page's clock until a snapshot arrives", () => {
@@ -37,6 +42,33 @@ describe("the server clock (#27)", () => {
     for (let i = 0; i < SAMPLES; i += 1) sampleServerClock(100_000, 100_000);
     for (let i = 0; i < SAMPLES; i += 1) sampleServerClock(103_000, 100_000);
     expect(clockOffset()).toBe(3_000);
+  });
+
+  it("counts on the monotonic clock: a step of the wall clock moves nothing", () => {
+    vi.useFakeTimers({ now: 100_000, toFake: ["Date", "performance"] });
+    // The server's clock runs 5 s ahead of this page's.
+    sampleServerClock(105_000);
+    expect(serverTime()).toBe(105_000);
+    // Someone sets the computer's clock 10 s forward: Date.now() steps, the estimate does not.
+    vi.setSystemTime(Date.now() + 10_000);
+    expect(localNow()).toBe(100_000);
+    expect(serverTime()).toBe(105_000);
+    vi.advanceTimersByTime(1_000);
+    sampleServerClock(106_000);
+    expect(clockOffset()).toBe(5_000);
+  });
+
+  it("starts over from a sample far above the median: this page's clock paused in a sleep", () => {
+    for (let i = 0; i < SAMPLES; i += 1) sampleServerClock(100_000 + i, 100_000 + i);
+    expect(clockOffset()).toBe(0);
+    // The computer slept 30 s and its monotonic clock paused: every sample is 30 s higher.
+    sampleServerClock(130_000, 100_000);
+    expect(clockOffset()).toBe(30_000);
+    // Just over the limit starts over too; at the limit, it is one more sample.
+    sampleServerClock(130_000 + JUMP_MS + 1, 100_000);
+    expect(clockOffset()).toBe(30_000 + JUMP_MS + 1);
+    sampleServerClock(130_000 + 2 * JUMP_MS + 1, 100_000);
+    expect(clockOffset()).toBe(30_000 + (3 * JUMP_MS) / 2 + 1);
   });
 
   it("tells its listeners when the offset moves, not on every sample", () => {

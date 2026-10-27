@@ -27,7 +27,10 @@ export default function TimerMenu({ running, compact, busy, onCommand }: TimerMe
   const t = useT();
   const ids = { heading: useId(), field: useId(), hint: useId(), error: useId() };
   const [typed, setTyped] = useState("");
-  const [bad, setBad] = useState(false);
+  // How many wrong lengths in a row were tried: each try mounts a new alert, so a screen
+  // reader says it again, also for the same length twice. 0: none, or typing since.
+  const [tries, setTries] = useState(0);
+  const bad = tries > 0;
   const start = (seconds: number) => {
     if (!busy) onCommand({ type: "startTimer", payload: { seconds } });
   };
@@ -92,7 +95,7 @@ export default function TimerMenu({ running, compact, busy, onCommand }: TimerMe
           onSubmit={(event) => {
             event.preventDefault();
             const seconds = parseDuration(typed);
-            setBad(seconds === null);
+            setTries(seconds === null ? (n) => n + 1 : 0);
             if (seconds !== null) start(seconds);
           }}
         >
@@ -112,7 +115,7 @@ export default function TimerMenu({ running, compact, busy, onCommand }: TimerMe
               aria-describedby={bad ? `${ids.hint} ${ids.error}` : ids.hint}
               onChange={(event) => {
                 setTyped(event.target.value);
-                setBad(false);
+                setTries(0);
               }}
               className="tabular-nums"
             />
@@ -125,7 +128,7 @@ export default function TimerMenu({ running, compact, busy, onCommand }: TimerMe
           {t("settings.timerCustomHint")}
         </p>
         {bad ? (
-          <p id={ids.error} role="alert" className="m-0 text-xs text-ink">
+          <p key={tries} id={ids.error} role="alert" className="m-0 text-xs text-ink">
             {t("settings.timerCustomBad")}
           </p>
         ) : null}

@@ -9,7 +9,7 @@ import {
 } from "@pp/protocol";
 import { ensureIdentity, retryDelay, UNAUTHENTICATED } from "../identity/identity.ts";
 import { useRoomStore } from "../stores/room-store.ts";
-import { noteRoundTrip, sampleServerClock } from "./server-clock.ts";
+import { localNow, noteRoundTrip, sampleServerClock } from "./server-clock.ts";
 import {
   connectWhenIdentified,
   createSocket,
@@ -128,7 +128,7 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
 
   function enter() {
     if (stopped || !socket.connected) return;
-    const sentAt = Date.now();
+    const sentAt = localNow();
     socket
       .timeout(ACK_TIMEOUT_MS)
       .emitWithAck("enter", { code, protocol: PROTOCOL_VERSION })
@@ -137,7 +137,7 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
           const ack: EnterAck = isEnterAck(raw) ? raw : { ok: false, code: "bad_payload" };
           if (ack.ok) {
             // The one exchange this page times itself: its round trip corrects every sample.
-            const arrivedAt = Date.now();
+            const arrivedAt = localNow();
             noteRoundTrip(arrivedAt - sentAt);
             sampleServerClock(ack.snapshot.serverNow, arrivedAt);
           }

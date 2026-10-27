@@ -7,7 +7,13 @@ import { focusAfterReveal } from "./focus.ts";
 import type { NextRound } from "./next-round.tsx";
 import { CentreResult, type RevealMotion } from "./results-chunk.tsx";
 import { voteCount } from "./table-data.ts";
-import { TimerChip, TimerControls, useCountdown, useLastSecondsWarning } from "./timer.tsx";
+import {
+  TimerChip,
+  TimerControls,
+  useCountdown,
+  useLastSecondsWarning,
+  useTimeUpPing,
+} from "./timer.tsx";
 
 interface RoundCentreProps {
   /** The room as the viewer sees it, their unconfirmed pick included. */
@@ -80,6 +86,7 @@ function VotingCentre({
   const t = useT();
   const countdown = useCountdown(room.round);
   useLastSecondsWarning(countdown);
+  useTimeUpPing(countdown);
   const { count, total } = voteCount(room);
   const status = (
     // On a phone the count keeps the centre box's 68 px, however wide the timer above it.
