@@ -264,7 +264,8 @@ test("a named vote without a seat shows under the table: an observer now, or bac
     await handCard(ben.page, "8").click();
     await expect(status(page)).toHaveText("2/3 voted so far");
     await revealButton(page).click();
-    await expect(page.getByRole("button", { name: "Next round" })).toBeFocused();
+    // The PO's focus goes on to recording the suggestion (#32).
+    await expect(page.getByRole("button", { name: /^Record [0-9]+$/ })).toBeFocused();
 
     // Ben switches to observer after the reveal: his card leaves the table, not the round.
     await ben.page.getByRole("button", { name: "Switch to observer" }).click();
