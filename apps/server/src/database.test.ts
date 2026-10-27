@@ -4,7 +4,9 @@ import { DrizzleQueryError } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import {
   CONNECT_BUDGET_MS,
+  CONNECT_TIMEOUT_MS,
   DEFAULT_MIGRATIONS_DIR,
+  libpqUrl,
   openDatabase,
   retryDelay,
   waitForDatabase,
@@ -77,6 +79,41 @@ describe("waitForDatabase", () => {
     expect(logs.lines).toHaveLength(8);
   });
 
+  it("hands each attempt a timeout that keeps the whole wait, attempts included, within the budget", async () => {
+    const time = fakeTime();
+    const timeouts: number[] = [];
+    const waiting = waitForDatabase(
+      async (timeoutMs) => {
+        timeouts.push(timeoutMs);
+        // A black-holed host: every attempt runs into its timeout.
+        await time.sleep(timeoutMs);
+        throw Object.assign(new Error("timeout expired"), { code: "ETIMEDOUT" });
+      },
+      collectLogs().logger,
+      time,
+    );
+    await expect(waiting).rejects.toMatchObject({ code: "ETIMEDOUT" });
+    expect(time.now()).toBeLessThanOrEqual(CONNECT_BUDGET_MS);
+    expect(Math.max(...timeouts)).toBeLessThanOrEqual(CONNECT_TIMEOUT_MS);
+    expect(timeouts.length).toBeGreaterThan(1);
+  });
+
+  it("stops between attempts when the start is aborted", async () => {
+    const aborter = new AbortController();
+    let calls = 0;
+    const waiting = waitForDatabase(
+      async () => {
+        calls++;
+        aborter.abort();
+        throw refused();
+      },
+      collectLogs().logger,
+      { signal: aborter.signal },
+    );
+    await expect(waiting).rejects.toMatchObject({ name: "AbortError" });
+    expect(calls).toBe(1);
+  });
+
   it("stops at once when Postgres refuses the login", async () => {
     const logs = collectLogs();
     const denied = Object.assign(new Error(`password authentication failed`), { code: "28P01" });
@@ -84,6 +121,20 @@ describe("waitForDatabase", () => {
       waitForDatabase(() => Promise.reject(denied), logs.logger, fakeTime()),
     ).rejects.toMatchObject({ name: "DatabaseError", code: "28P01" });
     expect(logs.lines).toEqual([]);
+  });
+});
+
+describe("libpqUrl", () => {
+  it("gives sslmode its libpq meaning and leaves every other URL as it is", () => {
+    const base = `postgres://pp:${SECRET}@db.internal:5432/pp`;
+    expect(libpqUrl(base)).toBe(base);
+    expect(libpqUrl(`${base}?sslmode=require`)).toBe(`${base}?sslmode=require&uselibpqcompat=true`);
+    expect(libpqUrl(`${base}?application_name=x&sslmode=verify-full`)).toBe(
+      `${base}?application_name=x&sslmode=verify-full&uselibpqcompat=true`,
+    );
+    const chosen = `${base}?sslmode=require&uselibpqcompat=false`;
+    expect(libpqUrl(chosen)).toBe(chosen);
+    expect(libpqUrl("not a url")).toBe("not a url");
   });
 });
 

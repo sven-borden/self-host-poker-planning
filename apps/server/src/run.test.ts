@@ -252,6 +252,74 @@ describe("run with setup", () => {
   });
 });
 
+describe("a signal while starting", () => {
+  /** A setup that waits until aborted, then rejects as a database wait would. */
+  const abortable = (_config: unknown, _logger: unknown, signal: AbortSignal) =>
+    new Promise<never>((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+
+  it("aborts setup, logs one line and exits 0 without listening", async () => {
+    const h = hooks();
+    let entered = false;
+    const starting = run(
+      { ...VALID_ENV, PORT: "0" },
+      {
+        ...h.hooks,
+        setup: (config, logger, signal) => {
+          entered = true;
+          return abortable(config, logger, signal);
+        },
+      },
+    );
+    await expect.poll(() => entered).toBe(true);
+    const before = h.logs.lines.length;
+    h.send("SIGTERM");
+    expect(await starting).toBeUndefined();
+    expect(h.exits).toEqual([0]);
+    expect(h.logs.lines.slice(before)).toEqual([
+      expect.objectContaining({ level: 30, msg: "shutdown: stopped while starting" }),
+    ]);
+  });
+
+  it("disposes what a setup opened when it finished despite the signal, then exits 0", async () => {
+    const h = hooks();
+    const events: string[] = [];
+    let finish: () => void = () => {};
+    const starting = run(
+      { ...VALID_ENV, PORT: "0" },
+      {
+        ...h.hooks,
+        setup: () =>
+          new Promise((resolve) => {
+            finish = () =>
+              resolve({
+                dispose: async () => {
+                  events.push("disposed");
+                },
+              });
+          }),
+      },
+    );
+    // run() calls setup synchronously, so `finish` is set by now.
+    h.send("SIGINT");
+    finish();
+    expect(await starting).toBeUndefined();
+    expect(events).toEqual(["disposed"]);
+    expect(h.exits).toEqual([0]);
+    expect(h.logs.messages()).not.toContain("listening");
+  });
+
+  it("still exits within the shutdown limit when setup ignores the signal", async () => {
+    const h = hooks({ shutdownTimeoutMs: 300 });
+    void run({ ...VALID_ENV, PORT: "0" }, { ...h.hooks, setup: () => new Promise(() => {}) });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    h.send("SIGTERM");
+    expect(await h.exitCode).toBe(1);
+    expect(h.logs.messages()).toContain("shutdown: timed out");
+  });
+});
+
 describe("processHooks", () => {
   it("wires exit, both signals and both crash events to the process", () => {
     const exits: number[] = [];

@@ -1,5 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_MIGRATIONS_DIR, MIGRATION_LOCK_KEY, migrateDatabase } from "../database.ts";
+import {
+  DEFAULT_MIGRATIONS_DIR,
+  MIGRATE_APP_NAME,
+  MIGRATION_LOCK_KEY,
+  migrateDatabase,
+  setupDatabase,
+} from "../database.ts";
+import { run, type Signal } from "../run.ts";
 import { collectLogs } from "../test-support.ts";
 import { createTestDatabase, type TestDatabase, testClient } from "./test-db.ts";
 
@@ -78,6 +85,99 @@ describe("migrations", () => {
     } finally {
       held.release();
       await other.end();
+    }
+  });
+
+  /** Another session holding the migration lock (or a table lock) until `release`. */
+  async function holding(url: string, statements: string[]) {
+    const other = testClient(url);
+    const held = await other.connect();
+    for (const statement of statements) await held.query(statement);
+    return async () => {
+      held.release(true);
+      await other.end();
+    };
+  }
+
+  it("give up after the lock budget, with a waiting line every interval", async () => {
+    const release = await holding(first.url, [`select pg_advisory_lock(${MIGRATION_LOCK_KEY})`]);
+    const logs = collectLogs();
+    try {
+      await expect(
+        migrateDatabase(first.url, DEFAULT_MIGRATIONS_DIR, logs.logger, {
+          lock: { budgetMs: 1200, logEveryMs: 500, pollMs: 100 },
+        }),
+      ).rejects.toMatchObject({ name: "DatabaseError", code: "migration_lock_busy" });
+    } finally {
+      await release();
+    }
+    const waiting = logs.messages().filter((m) => m.includes("another instance's migrations"));
+    expect(waiting.length).toBeGreaterThanOrEqual(2);
+    expect(waiting.length).toBeLessThanOrEqual(4);
+  });
+
+  it("fail on lock_timeout when a migration waits too long for a table lock", async () => {
+    await migrate(first.url);
+    const release = await holding(first.url, [
+      "begin",
+      "lock table drizzle.__drizzle_migrations in access exclusive mode",
+    ]);
+    try {
+      await expect(
+        migrateDatabase(first.url, DEFAULT_MIGRATIONS_DIR, collectLogs().logger, {
+          lock: { lockTimeoutMs: 300 },
+        }),
+      ).rejects.toMatchObject({ name: "DatabaseError", code: "55P03" });
+    } finally {
+      await release();
+    }
+  });
+
+  it("stop on SIGTERM while waiting for the lock: one line, exit 0, the session closed", async () => {
+    const release = await holding(first.url, [`select pg_advisory_lock(${MIGRATION_LOCK_KEY})`]);
+    const logs = collectLogs();
+    const exits: number[] = [];
+    let signal: (s: Signal) => void = () => {};
+    try {
+      const starting = run(
+        { DATABASE_URL: first.url, BASE_URL: "http://localhost:3000", PORT: "0" },
+        {
+          exit: (code) => exits.push(code),
+          onSignal: (handler) => {
+            signal = handler;
+          },
+          onCrash: () => {},
+          destination: logs.destination,
+          setup: setupDatabase,
+        },
+      );
+      await expect
+        .poll(() => logs.messages().some((m) => m.includes("another instance's migrations")))
+        .toBe(true);
+      const before = logs.lines.length;
+      signal("SIGTERM");
+      expect(await starting).toBeUndefined();
+      expect(exits).toEqual([0]);
+      expect(logs.lines.slice(before)).toEqual([
+        expect.objectContaining({ msg: "shutdown: stopped while starting", signal: "SIGTERM" }),
+      ]);
+      const admin = testClient(first.url);
+      try {
+        await expect
+          .poll(async () => {
+            const { rows } = await admin.query(
+              `select count(*)::int as n from pg_stat_activity
+               where datname = current_database() and application_name = $1`,
+              [MIGRATE_APP_NAME],
+            );
+            return rows[0]?.n;
+          })
+          .toBe(0);
+      } finally {
+        await admin.end();
+      }
+    } finally {
+      await release();
     }
   });
 });
