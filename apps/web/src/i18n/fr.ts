@@ -25,6 +25,17 @@ export const fr: Catalog<"many"> = {
     title: "Estimez ensemble, autour d’une même table",
     lede: "Chacun choisit une carte, les cartes se retournent ensemble, puis l’équipe discute des écarts. Aucun compte requis.",
     createRoom: "Créer une salle",
+    howTitle: "Comment ça marche",
+    step1Title: "Créez une salle",
+    step1Body:
+      "Donnez-lui un nom si vous le souhaitez et choisissez un jeu de cartes. Vous en devenez le product owner.",
+    step2Title: "Partagez le lien",
+    step2Body: "Votre équipe l’ouvre et saisit un nom. Sans compte, rien à installer.",
+    step3Title: "Votez",
+    step3Body: "Chacun choisit une carte en privé. La table montre qui a voté, jamais quoi.",
+    step4Title: "Révélez",
+    step4Body:
+      "Les cartes se retournent ensemble. Discutez des écarts, puis passez au tour suivant.",
   },
   createRoom: {
     lede: "Vous en devenez le product owner. Partagez le lien et votre équipe vous rejoint, sans compte.",
@@ -91,6 +102,34 @@ export const fr: Catalog<"many"> = {
   notFound: {
     title: "Page introuvable",
     body: "Cette adresse ne mène nulle part. Vérifiez le lien ou repartez de l’accueil.",
+  },
+  join: {
+    title: "Rejoindre avec un code",
+    label: "Code ou lien de la salle",
+    hint: "Collez le lien envoyé par votre équipe, ou saisissez le code de {{length, number}} caractères. Les espaces ne comptent pas.",
+    submit: "Rejoindre",
+    empty: "Saisissez un code de salle, ou collez le lien de la salle.",
+    malformed:
+      "Ce n’est pas un code de salle. Un code compte {{length, number}} lettres et chiffres, jamais 0, O, I ni l. Vérifiez-le, ou collez le lien complet.",
+  },
+  roomGone: {
+    lede: "Il n’y a pas de salle à cette adresse. Voici ce qui a pu se passer :",
+    typo: "Le lien a été mal saisi ou coupé. Comparez-le avec celui que vous avez reçu.",
+    expired_one:
+      "La salle a été supprimée : sur ce serveur, une salle est effacée après {{count, number}} jour sans activité.",
+    expired_many:
+      "La salle a été supprimée : sur ce serveur, une salle est effacée après {{count, number}} jours sans activité.",
+    expired_other:
+      "La salle a été supprimée : sur ce serveur, une salle est effacée après {{count, number}} jours sans activité.",
+    expiredUnknown:
+      "La salle a été supprimée : sur ce serveur, une salle est effacée après une longue période sans activité.",
+    tryAnother: "Essayer un autre code",
+    createRoom: "Créer une nouvelle salle",
+  },
+  errorPage: {
+    title: "Une erreur s’est produite",
+    body: "Cette page a rencontré un problème et s’est arrêtée. Un rechargement suffit le plus souvent. Si cela se reproduit, repartez de l’accueil.",
+    reload: "Recharger la page",
   },
   identity: {
     reconnecting: "Connexion au serveur…",

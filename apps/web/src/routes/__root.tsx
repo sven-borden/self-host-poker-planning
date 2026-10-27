@@ -1,8 +1,11 @@
 import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect } from "react";
 import { BrandMark } from "../components/shell/brand-mark.tsx";
+import { EmptyTable } from "../components/shell/empty-table.tsx";
+import { ErrorPage } from "../components/shell/error-page.tsx";
 import { LanguageSwitcher } from "../components/shell/language-switcher.tsx";
 import { ThemeToggle } from "../components/shell/theme-toggle.tsx";
+import { usePageTitle } from "../components/shell/use-page-title.ts";
 import { buttonVariants } from "../components/ui/button.tsx";
 import { errorMessage } from "../i18n/errors.ts";
 import { useT } from "../i18n/hooks.ts";
@@ -18,6 +21,7 @@ const Toaster = lazy(() =>
 export const Route = createRootRoute({
   component: RootLayout,
   notFoundComponent: NotFound,
+  errorComponent: RootError,
 });
 
 function RootLayout() {
@@ -87,11 +91,27 @@ function IdentityToasts() {
   return null;
 }
 
+/**
+ * When the shell itself fails there is no layout around the error page: it brings its own
+ * `<main>`. Errors inside a page show within the shell (`defaultErrorComponent`).
+ */
+function RootError() {
+  return (
+    <main id="main" className="mx-auto max-w-5xl px-4 py-12 sm:py-20">
+      <ErrorPage />
+    </main>
+  );
+}
+
 function NotFound() {
   const t = useT();
+  usePageTitle(t("notFound.title"));
   return (
     <section className="max-w-2xl">
-      <h1 className="text-3xl font-[760] [font-stretch:110%]">{t("notFound.title")}</h1>
+      <EmptyTable />
+      <h1 className="mt-6 text-3xl font-[760] [font-stretch:110%] sm:text-4xl">
+        {t("notFound.title")}
+      </h1>
       <p className="mt-4 text-ink-2">{t("notFound.body")}</p>
       <Link to="/" className={buttonVariants({ variant: "outline", className: "mt-8" })}>
         {t("room.backHome")}
