@@ -154,7 +154,7 @@ test("the PO picks a preset, builds a custom deck and generates a range by keybo
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
     await expect(radio("T-shirt sizes")).toBeChecked();
-    const use = settings(page).getByRole("button", { name: "Use T-shirt sizes" });
+    const use = settings(page).getByRole("button", { name: "Use “T-shirt sizes”" });
     await expect(use).toBeVisible();
     await page.waitForTimeout(300);
     await expect(tableLive(ben.page)).not.toContainText("changed the deck");
@@ -164,7 +164,7 @@ test("the PO picks a preset, builds a custom deck and generates a range by keybo
     await expect(radio("T-shirt sizes")).toBeFocused();
     await expect(deckGroup(page).locator("[data-deck='tshirt'] [data-deck-in-use]")).toBeVisible();
     await expect(tableLive(ben.page)).toContainText(
-      "The product owner changed the deck to T-shirt sizes from the next round.",
+      "The product owner changed the deck to “T-shirt sizes” from the next round.",
     );
 
     // A custom deck: the field explains a fault and names the card.
@@ -228,7 +228,7 @@ test("the PO picks a preset, builds a custom deck and generates a range by keybo
     await page.keyboard.press("Enter");
     await expect(useCustom).toBeFocused();
     await expect(tableLive(ben.page)).toContainText(
-      "The product owner changed the deck to Custom deck from the next round.",
+      "The product owner changed the deck to a custom deck from the next round.",
     );
 
     // The special cards: a switch each, by keyboard.
@@ -278,28 +278,28 @@ test("a deck change mid-vote asks first; Cancel keeps the votes, the restart cle
       ),
     ).toBeVisible();
     await deckGroup(page).getByRole("radio", { name: "T-shirt sizes" }).check();
-    await settings(page).getByRole("button", { name: "Use T-shirt sizes" }).click();
+    await settings(page).getByRole("button", { name: "Use “T-shirt sizes”" }).click();
     const question = settings(page).getByRole("group", {
-      name: "Changing the deck restarts round 1. The 1 vote cast so far is cleared; the subject stays.",
+      name: "Changing the deck restarts round 1. The vote cast so far is cleared; the subject stays.",
     });
     await expect(question).toBeFocused();
     await shootField(page, "deck-restart-question", question);
     await question.getByRole("button", { name: "Cancel" }).click();
     await expect(question).toBeHidden();
-    await expect(settings(page).getByRole("button", { name: "Use T-shirt sizes" })).toBeFocused();
+    await expect(settings(page).getByRole("button", { name: "Use “T-shirt sizes”" })).toBeFocused();
     // Nothing changed: Ben's card is still his.
     await page.waitForTimeout(300);
     await expect(handCard(ben.page, "5")).toHaveAttribute("aria-pressed", "true");
     await expect(tableLive(ben.page)).not.toContainText("restarted");
 
-    await settings(page).getByRole("button", { name: "Use T-shirt sizes" }).click();
-    await settings(page).getByRole("button", { name: "Restart with T-shirt sizes" }).click();
+    await settings(page).getByRole("button", { name: "Use “T-shirt sizes”" }).click();
+    await settings(page).getByRole("button", { name: "Restart with “T-shirt sizes”" }).click();
     await expect(deckGroup(page).getByRole("radio", { name: "T-shirt sizes" })).toBeFocused();
     await expect(tableLive(ben.page)).toContainText(
-      "The product owner restarted round 1 with T-shirt sizes. Vote again.",
+      "The product owner restarted round 1 with “T-shirt sizes”. Vote again.",
     );
     await expect(tableLive(oda.page)).toContainText(
-      "The product owner restarted round 1 with T-shirt sizes.",
+      "The product owner restarted round 1 with “T-shirt sizes”.",
     );
     await expect(tableLive(oda.page)).not.toContainText("Vote again");
     for (const viewer of [ben.page, oda.page]) {
@@ -442,7 +442,7 @@ test("on a phone the PO picks a preset and turns a special card on by keyboard",
     await tabTo(page, radio("Fibonacci"), 3);
     await page.keyboard.press("ArrowDown");
     await expect(radio("Modified Fibonacci")).toBeChecked();
-    const use = settings(page).getByRole("button", { name: "Use Modified Fibonacci" });
+    const use = settings(page).getByRole("button", { name: "Use “Modified Fibonacci”" });
     await tabTo(page, use, 2);
     await page.keyboard.press("Enter");
     await expect(radio("Modified Fibonacci")).toBeFocused();

@@ -109,6 +109,9 @@ export const en = {
     pow2: "Powers of 2",
     seq: "1 to 10",
     custom: "Custom deck",
+    // A deck named inside a sentence: a preset in quotes, a custom deck as a phrase.
+    named: "“{{deck}}”",
+    customInSentence: "a custom deck",
   },
   room: {
     title: "Room {{code}}",
@@ -226,11 +229,11 @@ export const en = {
     restartsRound:
       "New cards restart round {{round, number}}: its votes are cleared, its subject stays.",
     deckQuestion_one:
-      "Changing the deck restarts round {{round, number}}. The {{count, number}} vote cast so far is cleared; the subject stays.",
+      "Changing the deck restarts round {{round, number}}. The vote cast so far is cleared; the subject stays.",
     deckQuestion_other:
       "Changing the deck restarts round {{round, number}}. The {{count, number}} votes cast so far are cleared; the subject stays.",
     specialsQuestion_one:
-      "Changing the special cards restarts round {{round, number}}. The {{count, number}} vote cast so far is cleared; the subject stays.",
+      "Changing the special cards restarts round {{round, number}}. The vote cast so far is cleared; the subject stays.",
     specialsQuestion_other:
       "Changing the special cards restarts round {{round, number}}. The {{count, number}} votes cast so far are cleared; the subject stays.",
     restartWith: "Restart with {{deck}}",

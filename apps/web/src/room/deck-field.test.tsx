@@ -109,10 +109,10 @@ describe("the deck field", () => {
 
     fireEvent.click(tshirt);
     expect(mocks.sendCommand).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Use T-shirt sizes" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use “T-shirt sizes”" }));
     expect(sentPatches()).toEqual([{ deck: { kind: "preset", id: "tshirt" } }]);
     // The button goes with the change; the focus stays on the deck chosen.
-    expect(within(dialog).queryByRole("button", { name: "Use T-shirt sizes" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Use “T-shirt sizes”" })).toBeNull();
     expect(document.activeElement).toBe(tshirt);
   });
 
@@ -247,7 +247,7 @@ describe("a deck change during Voting", () => {
       ),
     ).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("radio", { name: "Powers of 2" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Use Powers of 2" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use “Powers of 2”" }));
     expect(sentPatches()).toEqual([{ deck: { kind: "preset", id: "pow2" } }]);
     expect(dialog.querySelector("[data-restart-question]")).toBeNull();
   });
@@ -255,10 +255,10 @@ describe("a deck change during Voting", () => {
   it("asks first once someone voted: Cancel keeps the round, the restart sends the deck", async () => {
     const dialog = await openPanel(voting(true));
     fireEvent.click(within(dialog).getByRole("radio", { name: "T-shirt sizes" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Use T-shirt sizes" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use “T-shirt sizes”" }));
     expect(mocks.sendCommand).not.toHaveBeenCalled();
     const question = within(dialog).getByRole("group", {
-      name: "Changing the deck restarts round 1. The 1 vote cast so far is cleared; the subject stays.",
+      name: "Changing the deck restarts round 1. The vote cast so far is cleared; the subject stays.",
     });
     expect(document.activeElement).toBe(question);
     fireEvent.click(within(question).getByRole("button", { name: "Cancel" }));
@@ -266,12 +266,12 @@ describe("a deck change during Voting", () => {
     expect(mocks.sendCommand).not.toHaveBeenCalled();
     await waitFor(() =>
       expect(document.activeElement).toBe(
-        within(dialog).getByRole("button", { name: "Use T-shirt sizes" }),
+        within(dialog).getByRole("button", { name: "Use “T-shirt sizes”" }),
       ),
     );
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Use T-shirt sizes" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Restart with T-shirt sizes" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use “T-shirt sizes”" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restart with “T-shirt sizes”" }));
     expect(sentPatches()).toEqual([{ deck: { kind: "preset", id: "tshirt" } }]);
     expect(document.activeElement).toBe(
       within(dialog).getByRole("radio", { name: "T-shirt sizes" }),
@@ -306,9 +306,84 @@ describe("a deck change during Voting", () => {
       }),
     ).toBeTruthy();
     fireEvent.click(
-      within(dialog).getByRole("button", { name: "Mit Eigenes Kartendeck neu starten" }),
+      within(dialog).getByRole("button", { name: "Mit einem eigenen Kartendeck neu starten" }),
     );
     expect(sentPatches()).toEqual([{ deck: { kind: "custom", cards: ["1", "2", "Big"] } }]);
+  });
+});
+
+describe("the custom deck's question and problems (#89 review)", () => {
+  const customField = (dialog: HTMLElement) => {
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Custom deck" }));
+    return within(dialog).getByRole("textbox", { name: "Cards, separated by commas" });
+  };
+
+  it("drops the question when the cards it asks about change, and applies the cards in the field", async () => {
+    const dialog = await openPanel(voting(true));
+    const field = customField(dialog);
+    fireEvent.change(field, { target: { value: "1, 2, Big" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use these cards" }));
+    expect(dialog.querySelector("[data-restart-question]")).not.toBeNull();
+    fireEvent.change(field, { target: { value: "1, 2, Huge" } });
+    expect(dialog.querySelector("[data-restart-question]")).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use these cards" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restart with a custom deck" }));
+    expect(sentPatches()).toEqual([{ deck: { kind: "custom", cards: ["1", "2", "Huge"] } }]);
+  });
+
+  it("says a faulty deck aloud once the PO tries to apply it, and stays quiet while typing", async () => {
+    const dialog = await openPanel(newRoom());
+    const field = customField(dialog);
+    fireEvent.change(field, { target: { value: "1, Large" } });
+    const problem = dialog.querySelector("[data-deck-problem]");
+    expect(problem?.getAttribute("role")).toBeNull();
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(within(dialog).getByRole("alert").textContent).toContain("Large");
+    expect(mocks.sendCommand).not.toHaveBeenCalled();
+  });
+
+  it("does nothing, and asks nothing, for the room's own custom deck", async () => {
+    const custom = run(newRoom(), PO, {
+      type: "updateSettings",
+      patch: { deck: { kind: "custom", cards: ["1", "2", "3"] } },
+    });
+    const started = run(custom, PO, { type: "startRound", subject: { kind: "none" } });
+    const dialog = await openPanel(run(started, ANA, { type: "castVote", card: "2" }));
+    const use = within(dialog).getByRole("button", { name: "Use these cards" });
+    expect(use.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(use);
+    expect(dialog.querySelector("[data-restart-question]")).toBeNull();
+    expect(mocks.sendCommand).not.toHaveBeenCalled();
+  });
+
+  it("gives the focus to the apply button when the question goes with the votes", async () => {
+    const state = voting(true);
+    const dialog = await openPanel(state);
+    fireEvent.click(within(dialog).getByRole("radio", { name: "T-shirt sizes" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use “T-shirt sizes”" }));
+    expect(document.activeElement?.closest("[data-restart-question]")).not.toBeNull();
+    show(run(state, ANA, { type: "retractVote" }));
+    expect(dialog.querySelector("[data-restart-question]")).toBeNull();
+    expect(document.activeElement).toBe(
+      within(dialog).getByRole("button", { name: "Use “T-shirt sizes”" }),
+    );
+  });
+
+  it("previews at most a deck's 20 cards, and counts them all", async () => {
+    const dialog = await openPanel(newRoom());
+    const field = customField(dialog);
+    const cards = Array.from({ length: 25 }, (_, i) => String(i + 1));
+    fireEvent.change(field, { target: { value: cards.join(", ") } });
+    expect(dialog.querySelectorAll("[data-deck-preview] > *")).toHaveLength(20);
+    expect(dialog.querySelector("[data-deck-count]")?.textContent).toBe("25 cards");
+  });
+
+  it("passes the panel's description on to the deck's radio group", async () => {
+    const dialog = await openPanel(newRoom());
+    const deck = within(dialog).getByRole("radiogroup", { name: "Deck" });
+    const ids = (deck.getAttribute("aria-describedby") ?? "").split(" ").filter(Boolean);
+    expect(ids.length).toBeGreaterThan(0);
+    for (const id of ids) expect(document.getElementById(id)).not.toBeNull();
   });
 });
 
@@ -331,7 +406,7 @@ describe("the special cards", () => {
     expect(mocks.sendCommand).not.toHaveBeenCalled();
     expect(unsure.getAttribute("aria-checked")).toBe("true");
     const question = within(dialog).getByRole("group", {
-      name: "Changing the special cards restarts round 1. The 1 vote cast so far is cleared; the subject stays.",
+      name: "Changing the special cards restarts round 1. The vote cast so far is cleared; the subject stays.",
     });
     expect(document.activeElement).toBe(question);
     fireEvent.click(within(question).getByRole("button", { name: "Cancel" }));

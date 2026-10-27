@@ -11,7 +11,7 @@ import {
 } from "@pp/domain";
 import type { RoomView } from "@pp/protocol";
 import { ChevronDownIcon, OctagonXIcon, RotateCcwIcon } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { Switch } from "../components/ui/switch.tsx";
@@ -28,7 +28,7 @@ import {
   splitCards,
 } from "./deck-editor.ts";
 import type { ControlProps } from "./settings-panel.tsx";
-import { deckName } from "./settings-words.ts";
+import { deckInSentence } from "./settings-words.ts";
 
 // The deck and the special cards in the PO's settings panel (#26): the first `Control`s
 // plugged into the panel's contract (`ControlProps`, `layout: "block"`). Part of the
@@ -78,16 +78,27 @@ function RestartQuestion({
   confirm,
   onConfirm,
   onCancel,
+  leftWithFocus,
 }: {
   text: string;
   confirm: string;
   onConfirm: () => void;
   onCancel: () => void;
+  /** Set when the question goes while the focus is inside it (Cancel, or the votes went). */
+  leftWithFocus: RefObject<boolean>;
 }) {
   const t = useT();
   const question = useId();
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => box.current?.focus(), []);
+  // A layout cleanup runs before React removes the box, while the focus is still inside.
+  useLayoutEffect(() => {
+    const element = box.current;
+    leftWithFocus.current = false;
+    return () => {
+      leftWithFocus.current = element?.contains(document.activeElement) ?? false;
+    };
+  }, [leftWithFocus]);
   return (
     // biome-ignore lint/a11y/useSemanticElements: a question and its two answers, focused as one block, hold no form field to group
     <div
@@ -138,18 +149,33 @@ function CardPreview({ cards, fault }: { cards: readonly string[]; fault?: strin
  * separated by commas, with a live preview, each problem in plain words, and a range
  * generator that fills it.
  */
-export function DeckControl({ room, settings, change, pending, id, labelId }: ControlProps) {
+export function DeckControl({
+  room,
+  settings,
+  change,
+  pending,
+  id,
+  labelId,
+  describedBy,
+}: ControlProps) {
   const t = useT();
   const current = choiceOf(settings.deck);
   const [choice, setChoice] = useState<Choice>(current);
-  const [text, setText] = useState(() =>
+  const [text, setTextNow] = useState(() =>
     settings.deck.kind === "custom" ? cardsText(settings.deck.cards) : "",
   );
   const [asking, setAsking] = useState<DeckSpec | null>(null);
   const radios = useRef(new Map<Choice, HTMLInputElement>());
   const applyButton = useRef<HTMLButtonElement>(null);
   const field = useRef<HTMLInputElement>(null);
+  const questionLeftWithFocus = useRef(false);
   const name = useId();
+
+  // A question is about one deck: edit the cards and it no longer holds, so it goes.
+  function setText(next: string) {
+    setTextNow(next);
+    setAsking(null);
+  }
 
   // The room's deck moved (confirmed, or rolled back by a refusal): the choice follows it.
   useEffect(() => {
@@ -159,6 +185,11 @@ export function DeckControl({ room, settings, change, pending, id, labelId }: Co
 
   const check = checkCustomDeck(text);
   const typed = splitCards(text);
+  // The cards in the field are the room's deck already: "Use these cards" does nothing.
+  const inUse =
+    check.ok &&
+    settings.deck.kind === "custom" &&
+    check.cards.join("\n") === settings.deck.cards.join("\n");
 
   function apply(deck: DeckSpec) {
     if (pending) return;
@@ -183,6 +214,7 @@ export function DeckControl({ room, settings, change, pending, id, labelId }: Co
       field.current?.focus();
       return;
     }
+    if (inUse) return;
     apply({ kind: "custom", cards: check.cards });
   }
 
@@ -191,6 +223,15 @@ export function DeckControl({ room, settings, change, pending, id, labelId }: Co
   // The question shows while the round it would restart still holds votes.
   const question = asking !== null && ask !== null;
 
+  // The question went with the focus inside it (Cancel, the votes went, the deck moved):
+  // the focus goes to the apply button, or to the chosen deck's radio when the button
+  // went too, never to the dialog.
+  useLayoutEffect(() => {
+    if (question || !questionLeftWithFocus.current) return;
+    questionLeftWithFocus.current = false;
+    (applyButton.current ?? radios.current.get(choice))?.focus();
+  });
+
   return (
     <div data-deck-field>
       <WhenLine room={room} />
@@ -198,6 +239,7 @@ export function DeckControl({ room, settings, change, pending, id, labelId }: Co
         id={id}
         role="radiogroup"
         aria-labelledby={labelId}
+        aria-describedby={describedBy}
         className="grid gap-2"
         data-deck-choices
       >
@@ -229,6 +271,7 @@ export function DeckControl({ room, settings, change, pending, id, labelId }: Co
           onApply={applyCustom}
           applyButton={applyButton}
           pending={pending}
+          inUse={inUse}
         />
       ) : null}
       {chosenPreset !== null && chosenPreset !== current && !question ? (
@@ -240,19 +283,18 @@ export function DeckControl({ room, settings, change, pending, id, labelId }: Co
           data-deck-apply
           onClick={() => apply({ kind: "preset", id: chosenPreset })}
         >
-          {t("deckField.use", { deck: t(`decks.${chosenPreset}`) })}
+          {t("deckField.use", {
+            deck: deckInSentence(t, { kind: "preset", id: chosenPreset }),
+          })}
         </Button>
       ) : null}
       {question ? (
         <RestartQuestion
           text={t("deckField.deckQuestion", ask)}
-          confirm={t("deckField.restartWith", { deck: deckName(t, asking) })}
+          confirm={t("deckField.restartWith", { deck: deckInSentence(t, asking) })}
           onConfirm={() => send(asking)}
-          onCancel={() => {
-            setAsking(null);
-            // After this render the apply button is back: give it the focus again.
-            requestAnimationFrame(() => applyButton.current?.focus());
-          }}
+          onCancel={() => setAsking(null)}
+          leftWithFocus={questionLeftWithFocus}
         />
       ) : null}
     </div>
@@ -336,6 +378,8 @@ interface CustomEditorProps {
   applyButton: React.RefObject<HTMLButtonElement | null>;
   onApply: () => void;
   pending: boolean;
+  /** The field holds the room's deck already: applying it is a no-op. */
+  inUse: boolean;
 }
 
 function CustomEditor({
@@ -347,14 +391,24 @@ function CustomEditor({
   applyButton,
   onApply,
   pending,
+  inUse,
 }: CustomEditorProps) {
   const t = useT();
   const ids = { field: useId(), hint: useId(), error: useId(), count: useId() };
-  // An empty field is not an error until the PO tries to use it.
+  // An empty field is not an error until the PO tries to use it. Each try counts, so a
+  // problem said again after another Enter is a new alert a screen reader reads.
   const [tried, setTried] = useState(false);
+  const [tries, setTries] = useState(0);
+  function tryApply() {
+    setTried(true);
+    setTries((was) => was + 1);
+    onApply();
+  }
   const problem =
     check.ok || (check.problem.code === "deck_empty" && !tried) ? null : check.problem;
-  const shown = check.ok ? check.cards : typed.filter((card) => card !== "");
+  const cards = check.ok ? check.cards : typed.filter((card) => card !== "");
+  // The preview stops at the most a deck holds; the count and the problem say the rest.
+  const shown = cards.slice(0, MAX_DECK_CARDS);
   const fault =
     problem === null
       ? undefined
@@ -388,18 +442,24 @@ function CustomEditor({
         onKeyDown={(event) => {
           if (event.key !== "Enter") return;
           event.preventDefault();
-          setTried(true);
-          onApply();
+          tryApply();
         }}
       />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <CardPreview cards={shown} fault={fault} />
         <span id={ids.count} data-deck-count className="text-sm text-ink-2">
-          {t("deckField.customCount", { count: check.ok ? check.cards.length : shown.length })}
+          {t("deckField.customCount", { count: cards.length })}
         </span>
       </div>
       {problem !== null ? (
-        <p id={ids.error} data-deck-problem className="m-0 flex items-start gap-2 text-sm">
+        <p
+          // A new alert for each try: typing stays quiet, Enter or the button speaks.
+          key={tried ? tries : "typing"}
+          id={ids.error}
+          role={tried ? "alert" : undefined}
+          data-deck-problem
+          className="m-0 flex items-start gap-2 text-sm"
+        >
           <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
           {deckProblemMessage(t, problem)}
         </p>
@@ -409,12 +469,9 @@ function CustomEditor({
         ref={applyButton}
         type="button"
         className="justify-self-start aria-disabled:opacity-60"
-        aria-disabled={pending || undefined}
+        aria-disabled={pending || inUse || undefined}
         data-deck-apply
-        onClick={() => {
-          setTried(true);
-          onApply();
-        }}
+        onClick={tryApply}
       >
         {t("deckField.useCustom")}
       </Button>
@@ -566,6 +623,17 @@ export function SpecialsControl({
   const switches = useRef(new Map<SpecialCard, HTMLButtonElement>());
   const names = { "?": useId(), "☕": useId(), "∞": useId() } as const;
   const ask = restartToAsk(room);
+  const question = asking !== null && ask !== null;
+  const questionLeftWithFocus = useRef(false);
+  const lastFrom = useRef<SpecialCard>("?");
+  if (asking !== null) lastFrom.current = asking.from;
+
+  // The question went with the focus inside it (the votes went): back to its switch.
+  useLayoutEffect(() => {
+    if (question || !questionLeftWithFocus.current) return;
+    questionLeftWithFocus.current = false;
+    switches.current.get(lastFrom.current)?.focus();
+  });
 
   function toggle(card: SpecialCard, on: boolean) {
     if (pending) return;
@@ -602,7 +670,7 @@ export function SpecialsControl({
           </div>
         ))}
       </fieldset>
-      {asking !== null && ask !== null ? (
+      {question ? (
         <RestartQuestion
           text={t("deckField.specialsQuestion", ask)}
           confirm={t("deckField.restartSpecials")}
@@ -617,6 +685,7 @@ export function SpecialsControl({
             setAsking(null);
             switches.current.get(from)?.focus();
           }}
+          leftWithFocus={questionLeftWithFocus}
         />
       ) : null}
     </div>

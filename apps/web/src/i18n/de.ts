@@ -56,6 +56,9 @@ export const de: Catalog = {
     pow2: "Zweierpotenzen",
     seq: "1 bis 10",
     custom: "Eigenes Kartendeck",
+    named: "„{{deck}}“",
+    // After „mit“ and „zu“, the only places a deck is named inside a sentence: dative.
+    customInSentence: "einem eigenen Kartendeck",
   },
   room: {
     title: "Raum {{code}}",
@@ -354,13 +357,13 @@ export const de: Catalog = {
     poVotesOff: "Der Product Owner stimmt nicht mehr mit ab.",
     observersCountOn: "Beobachter belegen jetzt einen der {{max, number}} Plätze.",
     observersCountOff: "Beobachter belegen keinen der {{max, number}} Plätze mehr.",
-    deckChanged: "Der Product Owner wechselt ab der nächsten Runde zum Kartendeck {{deck}}.",
+    deckChanged: "Der Product Owner wechselt ab der nächsten Runde zu {{deck}}.",
     specialsChanged: "Der Product Owner ändert die Sonderkarten ab der nächsten Runde.",
     deckRestarted: "Der Product Owner hat Runde {{round, number}} mit {{deck}} neu gestartet.",
     specialsRestarted:
       "Der Product Owner hat Runde {{round, number}} mit neuen Sonderkarten neu gestartet.",
     voteAgain: "Stimmen Sie erneut ab.",
-    deckNow: "Der Product Owner hat zum Kartendeck {{deck}} gewechselt.",
+    deckNow: "Der Product Owner hat zu {{deck}} gewechselt.",
     specialsNow: "Der Product Owner hat die Sonderkarten geändert.",
     timerChanged: "Der Product Owner hat das Zeitlimit geändert.",
     revealAnyone: "Alle, die abstimmen, können die Karten jetzt aufdecken.",

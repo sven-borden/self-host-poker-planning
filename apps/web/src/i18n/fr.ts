@@ -56,6 +56,8 @@ export const fr: Catalog<"many"> = {
     pow2: "Puissances de 2",
     seq: "De 1 à 10",
     custom: "Jeu personnalisé",
+    named: "«\u{202f}{{deck}}\u{202f}»",
+    customInSentence: "un jeu personnalisé",
   },
   room: {
     title: "Salle {{code}}",
@@ -165,7 +167,7 @@ export const fr: Catalog<"many"> = {
       "Plus de {{max, number}} personnes sont là en comptant les observateurs. Ils pourront de nouveau compter quand il y en aura {{max, number}} ou moins.",
   },
   deckField: {
-    inUse: "En cours",
+    inUse: "Utilisé",
     use: "Utiliser {{deck}}",
     customLabel: "Cartes, séparées par des virgules",
     customHint:
@@ -364,13 +366,13 @@ export const fr: Catalog<"many"> = {
     poVotesOff: "Le product owner ne vote plus.",
     observersCountOn: "Les observateurs occupent désormais l’une des {{max, number}} places.",
     observersCountOff: "Les observateurs ne comptent plus parmi les {{max, number}} places.",
-    deckChanged: "Le product owner passe au jeu {{deck}} à partir du tour suivant.",
+    deckChanged: "Le product owner passe à {{deck}} à partir du tour suivant.",
     specialsChanged: "Le product owner change les cartes spéciales à partir du tour suivant.",
     deckRestarted: "Le product owner a relancé le tour {{round, number}} avec {{deck}}.",
     specialsRestarted:
       "Le product owner a relancé le tour {{round, number}} avec de nouvelles cartes spéciales.",
     voteAgain: "Votez de nouveau.",
-    deckNow: "Le product owner est passé au jeu {{deck}}.",
+    deckNow: "Le product owner est passé à {{deck}}.",
     specialsNow: "Le product owner a modifié les cartes spéciales.",
     timerChanged: "Le product owner a modifié le minuteur.",
     revealAnyone: "Toute personne qui vote peut désormais révéler les cartes.",

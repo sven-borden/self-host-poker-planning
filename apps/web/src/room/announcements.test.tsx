@@ -296,7 +296,7 @@ describe("settings (#25)", () => {
       patch: { deck: { kind: "preset", id: "tshirt" }, whoCanReveal: "anyone" },
     });
     expect(said(liveEvents(deck.room, deck.causes, several.room))).toBe(
-      "The product owner changed the deck to T-shirt sizes from the next round. Anyone who votes can now reveal the cards.",
+      "The product owner changed the deck to “T-shirt sizes” from the next round. Anyone who votes can now reveal the cards.",
     );
     const rest = run("me", {
       type: "updateSettings",
@@ -314,7 +314,7 @@ describe("settings (#25)", () => {
     });
     expect(said(liveEvents(rest.room, rest.causes, deck.room))).toBe(
       [
-        "The product owner changed the deck to Custom deck from the next round.",
+        "The product owner changed the deck to a custom deck from the next round.",
         "The product owner changed the special cards from the next round.",
         "The product owner changed the timer.",
         "The cards now turn over once everyone has voted.",
@@ -349,7 +349,7 @@ describe("settings (#25)", () => {
     });
     // The restart, not a new round: no "Voting started", and Ana has a hand to play again.
     expect(said(liveEvents(restarted.room, restarted.causes, before.room))).toBe(
-      "The product owner restarted round 1 with T-shirt sizes. Vote again.",
+      "The product owner restarted round 1 with “T-shirt sizes”. Vote again.",
     );
     const specials = run("me", { type: "updateSettings", patch: { specials: ["?"] } });
     expect(said(liveEvents(specials.room, specials.causes, restarted.room))).toBe(
@@ -358,7 +358,7 @@ describe("settings (#25)", () => {
     // A reconnect's snapshot has no causes; the settings it shows are still news, and the
     // round it missed starting already plays with them.
     expect(said(liveEvents(restarted.room, [], seated.room))).toContain(
-      "The product owner changed the deck to T-shirt sizes.",
+      "The product owner changed the deck to “T-shirt sizes”.",
     );
     expect(said(liveEvents(started.room, [], seated.room))).toBe("");
   });
@@ -375,16 +375,16 @@ describe("settings (#25)", () => {
       patch: { deck: { kind: "custom", cards: ["🐜", "🐈", "🐘"] } },
     });
     expect(said(liveEvents(restarted.room, restarted.causes, voted.room))).toBe(
-      "The product owner restarted round 1 with Custom deck.",
+      "The product owner restarted round 1 with a custom deck.",
     );
     await loadLanguage("fr");
     await loadLanguage("de");
     const events = liveEvents(restarted.room, restarted.causes, voted.room);
     expect(describeEvents(fixedT("fr"), events)).toBe(
-      "Le product owner a relancé le tour 1 avec Jeu personnalisé.",
+      "Le product owner a relancé le tour 1 avec un jeu personnalisé.",
     );
     expect(describeEvents(fixedT("de"), events)).toBe(
-      "Der Product Owner hat Runde 1 mit Eigenes Kartendeck neu gestartet.",
+      "Der Product Owner hat Runde 1 mit einem eigenen Kartendeck neu gestartet.",
     );
   });
 

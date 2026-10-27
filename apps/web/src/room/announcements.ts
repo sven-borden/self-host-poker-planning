@@ -3,7 +3,7 @@ import type { CauseView, RoomSettingsView, RoomView, RoundView } from "@pp/proto
 import type { TFunction } from "../i18n/i18n.ts";
 import { cardLabel } from "../table/cards.tsx";
 import { type RevealSummary, revealSummary, summarySentence } from "./results-view.ts";
-import { deckName, SETTING_KEYS, type SettingKey, sameSetting } from "./settings-words.ts";
+import { deckInSentence, SETTING_KEYS, type SettingKey, sameSetting } from "./settings-words.ts";
 import { subjectName } from "./subject.ts";
 
 // What the table's live region says (#17): joins, leaves, away and back, votes, a new
@@ -318,16 +318,18 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
 function settingSentence(t: TFunction, setting: NonNullable<LiveEvent["setting"]>): string {
   const { key, to, nextRound, restarted } = setting;
   if (restarted !== undefined && (key === "deck" || key === "specials")) {
-    // "The product owner restarted round 4 with T-shirt sizes. Vote again."
+    // "The product owner restarted round 4 with “T-shirt sizes”. Vote again."
     const said =
       key === "deck"
-        ? t("live.deckRestarted", { round: restarted, deck: deckName(t, to.deck) })
+        ? t("live.deckRestarted", { round: restarted, deck: deckInSentence(t, to.deck) })
         : t("live.specialsRestarted", { round: restarted });
     return setting.voteAgain ? `${said} ${t("live.voteAgain")}` : said;
   }
   switch (key) {
     case "deck":
-      return t(setting.now ? "live.deckNow" : "live.deckChanged", { deck: deckName(t, to.deck) });
+      return t(setting.now ? "live.deckNow" : "live.deckChanged", {
+        deck: deckInSentence(t, to.deck),
+      });
     case "specials":
       return t(setting.now ? "live.specialsNow" : "live.specialsChanged");
     case "timer":
