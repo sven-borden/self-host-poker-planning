@@ -57,7 +57,7 @@ function RoomPage() {
     const notFound = state.code === "room_not_found";
     return (
       <RiseIn className="max-w-2xl">
-        <h1 className="text-3xl font-[760] [font-stretch:110%] sm:text-4xl">
+        <h1 className="text-3xl font-[760] break-words [font-stretch:110%] sm:text-4xl">
           {notFound ? t("room.notFoundTitle") : t("room.title", { code })}
         </h1>
         <p className="mt-4 text-ink-2" role={notFound ? undefined : "alert"}>
@@ -80,27 +80,39 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
   const linkId = useId();
   const linkInput = useRef<HTMLInputElement>(null);
   const [showLink, setShowLink] = useState(false);
+  /** What the toast would have said, when the toast cannot be shown. */
+  const [note, setNote] = useState<string | null>(null);
   const url = `${window.location.origin}/r/${header.code}`;
 
   useEffect(() => {
-    if (showLink) linkInput.current?.select();
+    // The link is there to be copied by hand: focused and fully selected.
+    if (showLink) {
+      linkInput.current?.focus();
+      linkInput.current?.select();
+    }
   }, [showLink]);
 
   async function copyLink() {
-    // The toaster is a lazy chunk, so the toasts are too.
-    const toasts = import("sonner");
+    let copied = false;
     try {
       // Missing outside a secure context (an http address on a LAN), refused when the
       // browser denies the permission.
       if (!navigator.clipboard) throw new Error("no clipboard");
       await navigator.clipboard.writeText(url);
-      const { toast } = await toasts;
-      toast.success(t("room.linkCopied"), { id: "link-copied" });
+      copied = true;
     } catch {
       setShowLink(true);
-      linkInput.current?.select();
-      const { toast } = await toasts;
-      toast(t("room.copyFailed"), { id: "link-copy-failed" });
+    }
+    const message = t(copied ? "room.linkCopied" : "room.copyFailed");
+    try {
+      // The toaster is a lazy chunk, so the toasts are too: after a redeploy the import can
+      // fail, and the message is then shown in the page.
+      const { toast } = await import("sonner");
+      if (copied) toast.success(message, { id: "link-copied" });
+      else toast(message, { id: "link-copy-failed" });
+      setNote(null);
+    } catch {
+      setNote(message);
     }
   }
 
@@ -108,7 +120,8 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
     <RiseIn className="flex flex-col gap-10">
       <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-3xl font-[760] break-words [font-stretch:110%] sm:text-4xl">
+          {/* overflow-hidden: whatever the name stacks above or below its letters stays inside. */}
+          <h1 className="overflow-hidden py-1 text-3xl font-[760] break-words [font-stretch:110%] sm:text-4xl">
             {header.name !== null ? (
               <bdi>{header.name}</bdi>
             ) : (
@@ -132,6 +145,11 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
           {t("room.copyLink")}
         </Button>
       </header>
+      {note && (
+        <p role="status" className="max-w-xl text-sm text-ink-2">
+          {note}
+        </p>
+      )}
       {showLink && (
         <div className="flex max-w-xl flex-col gap-2">
           <label htmlFor={linkId} className="font-medium">
