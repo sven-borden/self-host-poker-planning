@@ -16,7 +16,11 @@ export type Results = {
   mode: Card | null;
   /** Mode count divided by core count, from 0 to 1; 0 with no core votes. */
   agreement: number;
-  /** The lowest and highest core card by deck order. */
+  /**
+   * The lowest and highest core card: by value on a numeric deck, so a custom deck in any
+   * order stays right (equal values keep the earlier card in deck order); by deck order
+   * otherwise.
+   */
   spread: [Card, Card] | null;
   /** At least 3 core votes, all the same card. */
   consensus: boolean;
@@ -96,6 +100,18 @@ export function computeResults(votes: readonly Card[], deck: DeckSpec): Results 
   const half = Math.floor(m / 2);
   const median = m % 2 ? (values[half] ?? 0) : ((values[half - 1] ?? 0) + (values[half] ?? 0)) / 2;
 
+  // The lowest and highest by value; `core` runs in deck order, so a strict comparison
+  // keeps the earlier card of two equal values ("0.5" and "½").
+  let low = core[0] ?? null;
+  let high = low;
+  let lowValue = Number.POSITIVE_INFINITY;
+  let highValue = Number.NEGATIVE_INFINITY;
+  for (const card of core) {
+    const value = cardValue(card) ?? 0;
+    if (value < lowValue) [low, lowValue] = [card, value];
+    if (value > highValue) [high, highValue] = [card, value];
+  }
+
   let suggested: Card | null = null;
   let best = Number.POSITIVE_INFINITY;
   let bestValue = Number.POSITIVE_INFINITY;
@@ -108,5 +124,6 @@ export function computeResults(votes: readonly Card[], deck: DeckSpec): Results 
       bestValue = value;
     }
   }
-  return { ...results, average, median, suggested };
+  const spread: [Card, Card] | null = low !== null && high !== null ? [low, high] : null;
+  return { ...results, spread, average, median, suggested };
 }
