@@ -245,6 +245,11 @@ describe("cards", () => {
     expect(labelEms("Huge")).toBeCloseTo(3.4);
     expect(labelEms("mmmm")).toBe(4);
     expect(labelEms("a")).toBe(0.8);
+    // Only ASCII lowercase counts as narrow; ½, ¼ and ¾ are 1 em, not a digit's 0.72 (#26).
+    expect(labelEms("œœœœ")).toBe(4);
+    expect(labelEms("щщщщ")).toBe(4);
+    expect(labelEms("½½½½")).toBe(4);
+    expect(labelEms("1½")).toBeCloseTo(1.72);
     // A skin-toned thumb is one grapheme of two code points.
     expect(labelEms("👍🏽👍")).toBeCloseTo(2.6);
     expect(labelScale("13", 1.88)).toBe(1);
@@ -258,23 +263,41 @@ describe("cards", () => {
     const value = document.querySelector<HTMLElement>("[data-card-value]");
     expect(value?.className).toContain("whitespace-nowrap");
     // At 42 % it would be 5 px on a phone's chip: it narrows to 70 % width and grows.
-    expect(value?.style.fontSize).toBe("0.579em");
+    // Never under 7 px, whatever the parent's size.
+    expect(value?.style.fontSize).toBe("max(7px, 0.579em)");
     expect(value?.style.fontStretch).toBe("70%");
   });
 
   it("narrows a long label rather than shrinking it below 80 % (#22)", () => {
-    expect(labelFit("13", 1.4545)).toEqual({ scale: 1, narrow: false });
-    expect(labelFit("100", 1.88)).toEqual({ scale: 0.87, narrow: false });
+    expect(labelFit("13", 1.4545)).toMatchObject({ scale: 1, narrow: false });
+    expect(labelFit("100", 1.88)).toMatchObject({ scale: 0.87, narrow: false });
     // An emoji's font has no width axis.
     expect(labelFit("👍🏽👍", 1.4).narrow).toBe(false);
     // The dense phone slot: 16 px of room in an 11 px font.
     const dense = 16 / 11;
-    expect(labelFit("XXL", dense)).toEqual({ scale: 0.664, narrow: true });
+    expect(labelFit("XXL", dense)).toMatchObject({ scale: 0.664, narrow: true });
     expect(labelFit("100", dense).scale * 11).toBeGreaterThan(10);
     expect(labelFit("XL", dense).scale * 11).toBeGreaterThan(10);
     for (const value of ["XS", "XL", "XXL", "100", "½"]) {
       expect(labelFit(value, dense).scale * 11, value).toBeGreaterThanOrEqual(7);
     }
+  });
+
+  it("clips a label that does not fit at 7 px on the dense phone slot only, centred", () => {
+    const { container } = render(
+      <>
+        <SlotCard face="up" value="WWWW" size={{ width: 20, height: 28 }} />
+        <SlotCard face="up" value="XL" size={{ width: 20, height: 28 }} />
+        <SlotCard face="up" value="WWWW" size={{ width: 27, height: 38 }} />
+      </>,
+    );
+    const [dense, fits, wider] = [...container.querySelectorAll("[data-face='up']")];
+    expect(dense?.querySelector("[data-clipped]")?.textContent).toBe("WWWW");
+    expect(dense?.querySelector<HTMLElement>("[data-label-clip]")?.className).toContain(
+      "overflow-hidden",
+    );
+    expect(fits?.querySelector("[data-clipped]")).toBeNull();
+    expect(wider?.querySelector("[data-clipped]")).toBeNull();
   });
 
   it("sizes slot cards in whole pixels from the layout", () => {

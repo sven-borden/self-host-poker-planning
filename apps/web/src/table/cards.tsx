@@ -3,6 +3,7 @@ import { CoffeeIcon, InfinityIcon } from "lucide-react";
 import { type ComponentProps, type RefObject, useLayoutEffect, useRef } from "react";
 import type { TFunction } from "../i18n/i18n.ts";
 import { cn } from "../lib/utils.ts";
+import { measuredEms, useLabelFonts } from "./label-width.ts";
 import type { Size } from "./layout.ts";
 import { cancelAll, fadeAway, play, prefersReducedMotion, turnUp } from "./reveal-motion.ts";
 import "./table.css";
@@ -32,55 +33,93 @@ export function cardLabel(t: TFunction, value: string): string {
 
 const PICTOGRAPH = /\p{Extended_Pictographic}/u;
 const NUMERAL = /^[\d.,½¼¾]+$/u;
+const FRACTION = /[½¼¾]/u;
 
 /** A lowercase letter narrower than "m" and "w": at most 0.8 em of Archivo ExtraBold. */
-const NARROW_LOWERCASE = /(?![mw])\p{Ll}/gu;
+const NARROW_LOWERCASE = /[a-ln-vx-z]/g;
+
+/** No card label is drawn smaller than this, in CSS pixels (docs/03-design-brief.md, "Cards"). */
+export const MIN_LABEL_PX = 7;
 
 /**
- * The widest a label can be, in ems of Archivo ExtraBold at 110 % width: per grapheme
- * (the domain's `cardLength`, at most 4), 0.72 em for digits, 1 em for any letter (W
- * and M are the widest) but 0.8 em for a lowercase one other than m and w (#26: a
- * custom "Huge" fits a phone's slot at 7 px or more), 1.3 em for an emoji.
+ * An estimate of the widest a label can be, in ems of Archivo ExtraBold at 110 % width,
+ * for when it cannot be measured (`label-width.ts`: tests, or before the font loads): per
+ * grapheme (the domain's `cardLength`, at most 4), 0.72 em for a digit, 1 em for ½, ¼ and
+ * ¾ and for any letter (W and M are the widest) but 0.8 em for a lowercase ASCII letter
+ * other than m and w, 1.3 em for an emoji.
  */
 export function labelEms(value: string): number {
   if (PICTOGRAPH.test(value)) return Math.max(1, cardLength(value)) * 1.3;
-  if (NUMERAL.test(value)) return Math.max(1, cardLength(value)) * 0.72;
+  if (NUMERAL.test(value)) {
+    const ems = [...value].reduce((sum, char) => sum + (FRACTION.test(char) ? 1 : 0.72), 0);
+    return Math.max(0.72, ems);
+  }
   const narrow = value.match(NARROW_LOWERCASE)?.length ?? 0;
   return Math.max(0.8, Math.max(1, cardLength(value)) - 0.2 * narrow);
 }
 
-/** The scale (at most 1) that fits `value` into `room` ems of the card's font size. */
-export function labelScale(value: string, room: number): number {
-  return Math.min(1, Math.floor((room / labelEms(value)) * 1000) / 1000);
-}
-
-/** Below this scale a label narrows instead (`labelFit`). */
-const NARROW_BELOW = 0.8;
 /**
  * How wide Archivo ExtraBold is at 70 % width against the faces' 110 %: 0.66 ("XXL",
  * "100") to 0.72 ("M"), measured in Chromium; rounded up, so a label never overflows.
  */
 const NARROW_WIDTH = 0.73;
 
+/** The label's width in ems at 110 % (`narrow` false) or 70 % width: measured, or estimated. */
+function labelWidth(value: string, narrow: boolean): number {
+  return measuredEms(value, narrow ? 70 : 110) ?? labelEms(value) * (narrow ? NARROW_WIDTH : 1);
+}
+
+const scaleFor = (room: number, width: number) =>
+  Math.min(1, Math.floor((room / width) * 1000) / 1000);
+
+/** The scale (at most 1) that fits `value` into `room` ems of the card's font size. */
+export function labelScale(value: string, room: number): number {
+  return scaleFor(room, labelWidth(value, false));
+}
+
+/** Below this scale a label narrows instead (`labelFit`). */
+const NARROW_BELOW = 0.8;
+
 /**
- * How a label fits `room` ems: its scale, and whether it uses Archivo's width axis at
- * 70 % (`narrow`). A label that would shrink below 80 % narrows instead, so "XXL" and
- * "100" stay legible on the dense phone slot and the results' chips (#22).
+ * How a label fits `room` ems: its scale, whether it uses Archivo's width axis at 70 %
+ * (`narrow`), and its width in ems at that axis. A label that would shrink below 80 %
+ * narrows first, then shrinks (#22, #26), so "XXL" and "100" stay legible on the dense
+ * phone slot and the results' chips. The drawn size never goes under `MIN_LABEL_PX`
+ * (`CardValue`).
  */
-export function labelFit(value: string, room: number): { scale: number; narrow: boolean } {
-  const scale = labelScale(value, room);
+export function labelFit(
+  value: string,
+  room: number,
+): { scale: number; narrow: boolean; width: number } {
+  const wide = labelWidth(value, false);
+  const scale = scaleFor(room, wide);
   // An emoji comes from another font, which has no width axis: it only shrinks.
-  if (scale >= NARROW_BELOW || PICTOGRAPH.test(value)) return { scale, narrow: false };
-  return { scale: labelScale(value, room / NARROW_WIDTH), narrow: true };
+  if (scale >= NARROW_BELOW || PICTOGRAPH.test(value)) {
+    return { scale, narrow: false, width: wide };
+  }
+  const width = labelWidth(value, true);
+  return { scale: scaleFor(room, width), narrow: true, width };
 }
 
 /**
- * A card's face value, in the font size of its parent, shrunk so that it fits in `room`
- * ems of that size on one line (narrowed first when it is long, `labelFit`). ☕ and ∞ are
- * drawn as icons: emoji and missing glyphs would render in another font, colour or size
- * on every system.
+ * A card's face value, in the font size of its parent, fitted into `room` ems of that size
+ * on one line (narrowed first when it is long, `labelFit`), never under 7 px. Given the
+ * parent's size in pixels (`fontPx`, the dense phone slot), a label that still does not
+ * fit at 7 px is clipped there, centred (`data-clipped`); everywhere else every label
+ * fits whole. ☕ and ∞ are drawn as icons: emoji and missing glyphs would render in
+ * another font, colour or size on every system.
  */
-export function CardValue({ value, room }: { value: string; room: number }) {
+export function CardValue({
+  value,
+  room,
+  fontPx,
+}: {
+  value: string;
+  room: number;
+  /** The parent's font size in pixels, where a label may be clipped (the dense slot). */
+  fontPx?: number;
+}) {
+  useLabelFonts();
   if (value === "☕" || value === "∞") {
     const Icon = value === "☕" ? CoffeeIcon : InfinityIcon;
     return (
@@ -94,16 +133,34 @@ export function CardValue({ value, room }: { value: string; room: number }) {
       />
     );
   }
-  const { scale, narrow } = labelFit(value, room);
-  return (
+  const { scale, narrow, width } = labelFit(value, room);
+  const clipped =
+    fontPx !== undefined && Math.max(MIN_LABEL_PX, scale * fontPx) * width > room * fontPx + 0.5;
+  const label = (
     <span
       aria-hidden="true"
       data-card-value
       data-narrow={narrow || undefined}
+      data-clipped={clipped || undefined}
       className="whitespace-nowrap"
-      style={{ fontSize: `${scale}em`, fontStretch: narrow ? "70%" : undefined }}
+      style={{
+        fontSize: `max(${MIN_LABEL_PX}px, ${scale}em)`,
+        fontStretch: narrow ? "70%" : undefined,
+      }}
     >
       {value}
+    </span>
+  );
+  if (!clipped) return label;
+  // Centred in the room and cut at both edges: justify-content centres an overflowing item.
+  return (
+    <span
+      aria-hidden="true"
+      data-label-clip
+      className="flex justify-center overflow-hidden"
+      style={{ width: `${room}em` }}
+    >
+      {label}
     </span>
   );
 }
@@ -275,8 +332,13 @@ export function SlotCard({ face, value, size, turnDelay = 0, className }: SlotCa
       )}
       style={{ ...box, fontSize }}
     >
-      {/* The inner width less 2 px a side (1 px on the dense phone slot). */}
-      <CardValue value={value ?? ""} room={inner / fontSize} />
+      {/* The inner width less 2 px a side (1 px on the dense phone slot), where a label
+          that does not fit at 7 px is clipped: the seat's popover and the results say it. */}
+      <CardValue
+        value={value ?? ""}
+        room={inner / fontSize}
+        fontPx={small ? fontSize : undefined}
+      />
       <Cover radius={radius} cover={cover} />
     </div>
   );
