@@ -35,7 +35,7 @@ export const fr: Catalog<"many"> = {
     submit: "Créer la salle",
     creating: "Création de la salle…",
     notAllowed:
-      "Le serveur a refusé cette demande : son adresse configurée n’est pas celle que vous utilisez. Demandez à la personne qui l’héberge de vérifier BASE_URL.",
+      "Le serveur a refusé cette demande\u{202F}: son adresse configurée n’est pas celle que vous utilisez. Demandez à la personne qui l’héberge de vérifier BASE_URL.",
   },
   decks: {
     fib: "Fibonacci",

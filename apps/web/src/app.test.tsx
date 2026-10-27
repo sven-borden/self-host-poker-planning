@@ -54,7 +54,7 @@ describe("app shell", () => {
       "Estimate together, around one table",
     );
     expect(screen.getByRole("heading", { level: 2, name: "Create a room" })).toBeDefined();
-    expect(screen.getByRole("textbox", { name: "Room name" })).toHaveProperty("value", "");
+    expect(screen.getByRole("textbox", { name: /^Room name/ })).toHaveProperty("value", "");
     expect(screen.getByRole("radio", { name: /^Fibonacci/ })).toHaveProperty("checked", true);
     expect(screen.getAllByRole("radio")).toHaveLength(5);
     const create = screen.getByRole("button", { name: "Create the room" });
@@ -69,7 +69,7 @@ describe("app shell", () => {
       "GET /api/rooms/Abc1234567": () => json({ code: "Abc1234567", name: "Sprint 42" }),
     });
     const router = await renderAt("/");
-    fireEvent.change(await screen.findByRole("textbox", { name: "Room name" }), {
+    fireEvent.change(await screen.findByRole("textbox", { name: /^Room name/ }), {
       target: { value: "Sprint 42" },
     });
     fireEvent.click(screen.getByRole("radio", { name: /^T-shirt sizes/ }));
@@ -82,27 +82,52 @@ describe("app shell", () => {
     expect(calls).toContain("POST /api/rooms");
   });
 
-  it("says why a room could not be created and keeps the form", async () => {
+  const NAME_REFUSED =
+    "A room name needs 1 to 60 visible characters. Shorten it, or leave the field empty.";
+
+  it("refuses a bad name in the browser, without a request, and focuses the field", async () => {
+    const calls = serve({
+      "GET /api/auth/get-session": () => json({ user: { id: "u1", name: "" } }),
+    });
+    await renderAt("/");
+    const input = await screen.findByRole("textbox", { name: /^Room name/ });
+    fireEvent.change(input, { target: { value: "x".repeat(61) } });
+    fireEvent.click(screen.getByRole("button", { name: "Create the room" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(NAME_REFUSED);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.getAttribute("aria-describedby")).toContain(alert.id);
+    expect(document.activeElement).toBe(input);
+    expect(calls).not.toContain("POST /api/rooms");
+    expect(input.getAttribute("maxlength")).toBe("240");
+  });
+
+  it("says why a room could not be created, keeps the form and the focus", async () => {
     serve({
       "GET /api/auth/get-session": () => json({ user: { id: "u1", name: "" } }),
       "POST /api/rooms": () => json({ code: "bad_room_name" }, 400),
     });
     await renderAt("/");
-    fireEvent.change(await screen.findByRole("textbox", { name: "Room name" }), {
-      target: { value: "x".repeat(61) },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Create the room" }));
+    const input = await screen.findByRole("textbox", { name: /^Room name/ });
+    fireEvent.change(input, { target: { value: "Sprint" } });
+    const create = screen.getByRole("button", { name: "Create the room" });
+    fireEvent.click(create);
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toBe(
-      "A room name needs 1 to 60 visible characters. Shorten it, or leave the field empty.",
-    );
-    const input = screen.getByRole("textbox", { name: "Room name" });
-    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(alert.textContent).toBe(NAME_REFUSED);
     expect(input.getAttribute("aria-describedby")).toContain(alert.id);
-    expect(screen.getByRole("button", { name: "Create the room" })).toHaveProperty(
-      "disabled",
-      false,
-    );
+    expect(document.activeElement).toBe(input);
+    expect(create).toHaveProperty("disabled", false);
+    expect(create.getAttribute("aria-disabled")).toBeNull();
+  });
+
+  it("explains a refused origin as a setup problem, not as a room setting", async () => {
+    serve({
+      "GET /api/auth/get-session": () => json({ user: { id: "u1", name: "" } }),
+      "POST /api/rooms": () => json({ code: "not_allowed" }, 403),
+    });
+    await renderAt("/");
+    fireEvent.click(await screen.findByRole("button", { name: "Create the room" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/check BASE_URL/);
   });
 
   it("shows a room without a name by its code, and copy falls back to the link", async () => {
@@ -126,6 +151,21 @@ describe("app shell", () => {
     serve({ "GET /api/rooms/Abc1234567": () => answers.shift() ?? json({}, 500) });
     await renderAt("/r/Abc1234567");
     fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Back" })).toBeDefined();
+  });
+
+  it("shows the rate-limit message for a limited header read, and Try again recovers", async () => {
+    const answers = [
+      json({ code: "rate_limited" }, 429),
+      json({ code: "Abc1234567", name: "Back" }),
+    ];
+    serve({ "GET /api/rooms/Abc1234567": () => answers.shift() ?? json({}, 500) });
+    await renderAt("/r/Abc1234567");
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Too many attempts. Wait a moment, then try again.",
+    );
+    expect((await screen.findByRole("heading", { level: 1 })).textContent).toBe("Room Abc1234567");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Back" })).toBeDefined();
   });
 
