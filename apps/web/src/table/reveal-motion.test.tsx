@@ -2,21 +2,22 @@ import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SlotCard } from "./cards.tsx";
 import {
-  DEAL_MS,
-  DEAL_STAGGER_MS,
-  dealIn,
   FADE_AWAY_MS,
   FLIP_MS,
+  FLIP_STAGGER_MS,
   fadeAway,
+  POP_MS,
+  popIn,
   REDUCED_FADE_MS,
+  revealSettleMs,
   turnUp,
 } from "./reveal-motion.ts";
 import { TableStage } from "./table-stage.tsx";
 
 // The reveal's motion (#19; docs/03-design-brief.md, "Motion spec"): a 650 ms turn,
 // 90 ms apart in seat order from the viewer; after an anonymous reveal the seats' cards
-// shrink to 0.6 and fade in 350 ms while the row deals in 70 ms apart; under reduced
-// motion a 120 ms cross-fade and no travel.
+// shrink to 0.6 and fade in 350 ms; once the cards are settled the results start (#20);
+// under reduced motion a 120 ms cross-fade and no travel.
 
 const transforms = (keyframes: Keyframe[]) => keyframes.map((k) => k.transform);
 
@@ -59,11 +60,19 @@ describe("the anonymous reveal", () => {
     });
     expect(fadeAway(true).keyframes).toEqual([{ opacity: 1 }, { opacity: 0 }]);
   });
+});
 
-  it("deals the row 70 ms apart once the seats' cards have gone, or fades it in at once", () => {
-    expect(dealIn(0, false).timing).toMatchObject({ duration: DEAL_MS, delay: FADE_AWAY_MS });
-    expect(dealIn(3, false).timing.delay).toBe(FADE_AWAY_MS + 3 * DEAL_STAGGER_MS);
-    expect(dealIn(3, true)).toEqual({
+describe("once the cards are settled (#20)", () => {
+  it("is when the last flip ends, or when the seats' cards have gone", () => {
+    expect(revealSettleMs(0, false)).toBe(0);
+    expect(revealSettleMs(1, false)).toBe(FLIP_MS);
+    expect(revealSettleMs(8, false)).toBe(FLIP_MS + 7 * FLIP_STAGGER_MS);
+    expect(revealSettleMs(8, true)).toBe(FADE_AWAY_MS);
+  });
+
+  it("pops a seat's badge in then, or fades it in at once", () => {
+    expect(popIn(1280, false).timing).toMatchObject({ duration: POP_MS, delay: 1280 });
+    expect(popIn(1280, true)).toEqual({
       keyframes: [{ opacity: 0 }, { opacity: 1 }],
       timing: { duration: REDUCED_FADE_MS, fill: "backwards" },
     });
@@ -178,6 +187,41 @@ describe("SlotCard and the table at a reveal", () => {
       { value: "1", delay: 0 },
       { value: "3", delay: 90 },
       { value: "4", delay: 180 },
+    ]);
+  });
+  it("marks the lowest and highest seats once the last card has turned (#20)", () => {
+    const people = (revealed: boolean) =>
+      (["me", "ana", "ben"] as const).map((id, i) => ({
+        id,
+        name: id,
+        status: !revealed
+          ? ({ kind: "voted" } as const)
+          : ({
+              kind: "revealed",
+              card: String(i + 1),
+              extreme: i === 0 ? "low" : i === 2 ? "high" : undefined,
+            } as const),
+      }));
+    // A reload shows the marks at rest.
+    const { unmount } = render(<TableStage people={people(true)} variant="desktop" />);
+    expect(document.querySelectorAll("[data-badge='lowest'], [data-badge='highest']")).toHaveLength(
+      2,
+    );
+    expect(animate).not.toHaveBeenCalled();
+    unmount();
+    const { rerender } = render(<TableStage people={people(false)} variant="desktop" />);
+    rerender(<TableStage people={people(true)} variant="desktop" />);
+    const popped = animate.mock.contexts
+      .map((element, i) => ({ element: element as HTMLElement, i }))
+      .filter(({ element }) => element.dataset.badge !== undefined)
+      .map(({ element, i }) => ({
+        badge: element.dataset.badge,
+        delay: (animate.mock.calls[i]?.[1] as KeyframeAnimationOptions | undefined)?.delay,
+      }));
+    // Three cards turn: the last starts at 180 ms and ends 650 ms later.
+    expect(popped).toEqual([
+      { badge: "lowest", delay: FLIP_MS + 2 * FLIP_STAGGER_MS },
+      { badge: "highest", delay: FLIP_MS + 2 * FLIP_STAGGER_MS },
     ]);
   });
 });

@@ -1,4 +1,5 @@
-import { CheckIcon, CrownIcon, MoonIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, CheckIcon, CrownIcon, MoonIcon } from "lucide-react";
+import { type Ref, useLayoutEffect, useRef } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover.tsx";
 import { useT } from "../i18n/hooks.ts";
 import type { TFunction } from "../i18n/i18n.ts";
@@ -6,6 +7,10 @@ import { cn } from "../lib/utils.ts";
 import { Avatar, type AvatarLook } from "./avatar.tsx";
 import { cardLabel, isSpecialCard } from "./cards.tsx";
 import type { SeatGeometry, SeatPlace } from "./layout.ts";
+import { cancelAll, play, popIn, prefersReducedMotion } from "./reveal-motion.ts";
+
+/** After a named reveal whose cards differ: the lowest or the highest card played (#20). */
+export type Extreme = "low" | "high";
 
 /** Where a person stands in the round, as the server's snapshot says (W1). */
 export type SeatStatus =
@@ -16,8 +21,11 @@ export type SeatStatus =
    * under the table (#19) and only the fact that the person voted stays with them.
    */
   | { kind: "voted"; dealt?: boolean }
-  /** After reveal: the card played, or null when the person did not vote. */
-  | { kind: "revealed"; card: string | null };
+  /**
+   * After reveal: the card played, or null when the person did not vote; `extreme` marks
+   * the lowest and highest cards of a named round, to start the discussion (#20).
+   */
+  | { kind: "revealed"; card: string | null; extreme?: Extreme | undefined };
 
 /** Who someone is at the table, beside their state in the round (#17). */
 export interface PersonFlags {
@@ -75,10 +83,18 @@ export function seatLabel(t: TFunction, person: TablePerson): string {
       if (status.card === null) {
         return t("table.seatNoVote", { name });
       }
-      return isSpecialCard(status.card)
-        ? t("table.seatCardWord", { name, card: cardLabel(t, status.card) })
-        : t("table.seatCard", { name, card: status.card });
+      return [
+        isSpecialCard(status.card)
+          ? t("table.seatCardWord", { name, card: cardLabel(t, status.card) })
+          : t("table.seatCard", { name, card: status.card }),
+        ...(status.extreme ? [extremeWord(t, status.extreme)] : []),
+      ].join(", ");
   }
+}
+
+/** "lowest card", "highest card", as a seat's label or a column's says it. */
+export function extremeWord(t: TFunction, extreme: Extreme): string {
+  return t(extreme === "low" ? "table.lowest" : "table.highest");
 }
 
 function statusText(t: TFunction, status: SeatStatus): string | null {
@@ -148,12 +164,67 @@ export function AvatarBadges({ voted, owner, away, size }: BadgesProps) {
   );
 }
 
+interface ExtremeMarkProps {
+  extreme: Extreme;
+  /** The disc's diameter in pixels. */
+  size: number;
+  className?: string;
+  ref?: Ref<HTMLSpanElement> | undefined;
+}
+
+/**
+ * The lowest or highest card's mark (#20): an arrow down or up in a spruce disc, so the
+ * shape says which, never the colour alone. On a seat it overhangs the avatar bottom right
+ * (the voted check's corner, free after a named reveal); the results panel repeats it.
+ */
+export function ExtremeMark({ extreme, size, className, ref }: ExtremeMarkProps) {
+  const Icon = extreme === "low" ? ArrowDownIcon : ArrowUpIcon;
+  return (
+    <span
+      ref={ref}
+      aria-hidden="true"
+      data-badge={extreme === "low" ? "lowest" : "highest"}
+      className={cn(
+        "grid shrink-0 place-items-center rounded-full bg-spruce text-on-spruce",
+        className,
+      )}
+      style={{ width: size, height: size }}
+    >
+      <Icon width={size - 5} height={size - 5} strokeWidth={3.25} />
+    </span>
+  );
+}
+
+interface SeatAvatarProps {
+  person: TablePerson;
+  size: number;
+  badge: number;
+  /** When the cards are settled after a reveal (ms): an extreme badge pops in then. */
+  settle: number;
+}
+
 /**
  * The avatar with its badges. Away, its disc turns grey with a dashed edge and the
  * initials stay readable (the moon badge and the label say so too); the viewer's gets a
- * spruce ring outside its own, 4 px out at most.
+ * spruce ring outside its own, 4 px out at most. A lowest or highest mark that appears
+ * on screen (a reveal) pops in once the cards are settled; one there when the seat mounts
+ * (a reload) shows at rest.
  */
-function SeatAvatar({ person, size, badge }: { person: TablePerson; size: number; badge: number }) {
+function SeatAvatar({ person, size, badge, settle }: SeatAvatarProps) {
+  const extreme = person.status.kind === "revealed" ? person.status.extreme : undefined;
+  const mark = useRef<HTMLSpanElement>(null);
+  const before = useRef(extreme);
+  const delay = useRef(settle);
+  delay.current = settle;
+
+  useLayoutEffect(() => {
+    const was = before.current;
+    before.current = extreme;
+    if (!extreme || was === extreme) return;
+    const popping = play(mark.current, popIn(delay.current, prefersReducedMotion()));
+    return () => cancelAll([popping]);
+  }, [extreme]);
+
   return (
     <span className="relative block">
       <Avatar
@@ -170,6 +241,14 @@ function SeatAvatar({ person, size, badge }: { person: TablePerson; size: number
         away={person.away}
         size={badge}
       />
+      {extreme ? (
+        <ExtremeMark
+          ref={mark}
+          extreme={extreme}
+          size={badge}
+          className="absolute -right-1 -bottom-1 ring-2 ring-surface"
+        />
+      ) : null}
     </span>
   );
 }
@@ -184,6 +263,9 @@ function SeatPopover({ person, side }: { person: TablePerson; side: SeatPlace["l
     person.owner ? t("table.ownerTag") : null,
     person.away ? t("table.awayTag") : null,
     statusText(t, person.status),
+    person.status.kind === "revealed" && person.status.extreme
+      ? t(person.status.extreme === "low" ? "table.lowestTag" : "table.highestTag")
+      : null,
   ]
     .filter((part) => part !== null)
     .join(" · ");
@@ -204,6 +286,8 @@ interface SeatProps {
   person: TablePerson;
   place: SeatPlace;
   geometry: SeatGeometry;
+  /** When the cards are settled after a reveal, in ms (`revealSettleMs`). */
+  settle?: number;
 }
 
 /**
@@ -214,7 +298,7 @@ interface SeatProps {
  * in words. A seat stays a button whatever its state, so the focus never drops when
  * someone votes or goes away.
  */
-export function Seat({ person, place, geometry }: SeatProps) {
+export function Seat({ person, place, geometry, settle = 0 }: SeatProps) {
   const t = useT();
   const label = seatLabel(t, person);
   const avatar = geometry.avatar;
@@ -247,7 +331,7 @@ export function Seat({ person, place, geometry }: SeatProps) {
               data-seat-part="avatar"
               className="grid size-full cursor-pointer place-items-center rounded-full"
             >
-              <SeatAvatar person={person} size={avatar} badge={badge} />
+              <SeatAvatar person={person} size={avatar} badge={badge} settle={settle} />
             </button>
           </PopoverTrigger>
           <SeatPopover person={person} side={place.label} />
@@ -261,7 +345,7 @@ export function Seat({ person, place, geometry }: SeatProps) {
   const parts = (
     <>
       <span data-seat-part="avatar" aria-hidden="true">
-        <SeatAvatar person={person} size={avatar} badge={badge} />
+        <SeatAvatar person={person} size={avatar} badge={badge} settle={settle} />
       </span>
       <span
         data-seat-part="name"

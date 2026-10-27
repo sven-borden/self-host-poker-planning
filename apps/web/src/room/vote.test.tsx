@@ -129,6 +129,9 @@ const voting = () => {
 // The table is a lazy chunk; load it once up front, so no test's wait pays for its transform.
 beforeAll(async () => {
   await import("./seated.tsx");
+  // The results' module, through its loader: a reveal then draws it at once.
+  const { loadResults } = await import("./results-chunk.tsx");
+  expect(await loadResults()).not.toBeNull();
 }, 30_000);
 
 beforeEach(() => {
@@ -403,11 +406,12 @@ describe("the table's centre", () => {
     await screen.findByText("Only the product owner can do that.");
   });
 
-  it("tells everyone else the cards are revealed", async () => {
+  it("tells everyone else the result of the reveal", async () => {
     const revealed = apply(voting(), { type: "reveal" }, { actor: "po", now: 60 });
     if (!revealed.ok) throw new Error(revealed.error);
     await renderRoom(revealed.state);
-    expect(centre()).toBe("Cards revealed");
+    // Nobody voted: nothing to count (#20).
+    await waitFor(() => expect(centre()).toBe("Nothing to count."));
     expect(screen.queryByRole("button", { name: "Next round" })).toBeNull();
   });
 });
@@ -555,20 +559,68 @@ describe("the reveal (#19)", () => {
     expect(card("5").getAttribute("aria-disabled")).toBe("true");
   });
 
-  it("deals an anonymous round's cards under the table, tied to nobody", async () => {
+  it("shows a named round's result in the centre, the panel and the seats (#20)", async () => {
+    await renderRoom(ownerRound());
+    fireEvent.click(card("5"));
+    await waitFor(() => expect(handLive()).toBe("Your vote: 5."));
+    run("po", { type: "castVote", card: "3" });
+    // 3, 5 and 8: the average 5.33 is nearest 5, one vote in three.
+    const sentence = await waitFor(() => {
+      const text = document.querySelector("[data-centre-result] .sr-only")?.textContent;
+      expect(text).toBeTruthy();
+      return text;
+    });
+    expect(sentence).toBe("Suggested 5. Agreement 33%.");
+    expect(screen.getByRole("button", { name: "Next round" })).toBeTruthy();
+    const panel = await screen.findByRole("region", { name: "Results" });
+    const stat = (key: string) => panel.querySelector(`[data-stat='${key}'] dd`)?.textContent;
+    expect([stat("average"), stat("median"), stat("agreement"), stat("spread")]).toEqual([
+      "5.3",
+      "5",
+      "33%",
+      "3–83 to 8",
+    ]);
+    const extremes = within(panel).getByRole("list", { name: "Lowest and highest cards" });
+    expect(
+      within(extremes)
+        .getAllByRole("listitem")
+        .map((item) => item.querySelector(".sr-only")?.textContent),
+    ).toEqual(["Lowest card 3: Name po", "Highest card 8: Name ana"]);
+    const seat = (label: string) => screen.getByRole("button", { name: label });
+    expect(
+      seat("Name po, card 3, lowest card").querySelector("[data-badge='lowest']"),
+    ).toBeTruthy();
+    expect(
+      seat("Name ana, card 8, highest card").querySelector("[data-badge='highest']"),
+    ).toBeTruthy();
+    expect(document.querySelectorAll("[data-badge='lowest'], [data-badge='highest']")).toHaveLength(
+      // The seats and the panel's list; the columns mark them too.
+      6,
+    );
+  });
+
+  it("shows an anonymous round's cards in the results' columns, tied to nobody (#20)", async () => {
     await renderRoom(ownerRound({ revealNames: false }));
-    expect(document.querySelector("[data-results]")).toBeNull();
+    expect(document.querySelector("[data-results-panel]")).toBeNull();
     fireEvent.click(card("5"));
     await waitFor(() => expect(handLive()).toBe("Your vote: 5."));
     run("po", { type: "castVote", card: "?" });
-    const row = await screen.findByRole("list", { name: "Cards played" });
+    const columns = await screen.findByRole("list", { name: "Votes per card" });
     const spoken = (item: HTMLElement) => item.querySelector(".sr-only")?.textContent;
-    expect(within(row).getAllByRole("listitem").map(spoken)).toEqual(["5", "8", "unsure"]);
-    // Nothing in the row names a person or points at one.
-    const html = row.outerHTML;
-    for (const leak of ["Name", "ana", ME, "po", "data-you", "data-seat"]) {
+    expect(within(columns).getAllByRole("listitem").map(spoken)).toEqual([
+      "5: 1 vote",
+      "8: 1 vote",
+    ]);
+    const uncounted = screen.getByRole("list", { name: "Not counted" });
+    expect(within(uncounted).getAllByRole("listitem").map(spoken)).toEqual(["unsure: 1 vote"]);
+    // Nothing in the panel names a person or points at one, and nobody is lowest or highest.
+    const html = document.querySelector("[data-results-panel]")?.outerHTML ?? "";
+    expect(html).toContain('data-results-panel="anonymous"');
+    for (const leak of ["Name", "data-you", "data-seat", "data-extreme", "Lowest", "Highest"]) {
       expect(html).not.toContain(leak);
     }
+    expect(document.querySelector("[data-badge='lowest'], [data-badge='highest']")).toBeNull();
+    expect(document.querySelector("[data-results]")).toBeNull();
     // The seats keep only who voted; their cards left for the row.
     expect(document.querySelectorAll("[data-face='gone']")).toHaveLength(3);
     expect(document.querySelectorAll("[data-face='up']")).toHaveLength(0);
@@ -629,7 +681,7 @@ describe("the reveal (#19)", () => {
     run(ME, { type: "reveal" });
     run("ana", { type: "setRole", role: "observer" });
     expect(screen.queryByRole("list", { name: "Not at the table" })).toBeNull();
-    const row = await screen.findByRole("list", { name: "Cards played" });
-    expect(row.outerHTML).not.toContain("ana");
+    const columns = await screen.findByRole("list", { name: "Votes per card" });
+    expect(columns.outerHTML).not.toContain("Name");
   });
 });

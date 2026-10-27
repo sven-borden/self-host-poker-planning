@@ -1,62 +1,71 @@
 import type { RoomView } from "@pp/protocol";
-import { useId, useLayoutEffect, useRef } from "react";
+import { useId } from "react";
 import { useT } from "../i18n/hooks.ts";
 import type { TFunction } from "../i18n/i18n.ts";
 import { cardLabel, isSpecialCard, MiniCard } from "../table/cards.tsx";
-import { cancelAll, dealIn, play, prefersReducedMotion } from "../table/reveal-motion.ts";
+import { type Extreme, ExtremeMark, extremeWord } from "../table/seat.tsx";
+import { extremeOf } from "./results-view.ts";
 
 /** A named vote whose person has no seat; `name` is unknown for an old departed vote. */
-type OffTableVote = { who: string; card: string; name: string | undefined };
+type OffTableVote = {
+  who: string;
+  card: string;
+  name: string | undefined;
+  /** The round's lowest or highest card, marked as on a seat (#20). */
+  extreme: Extreme | undefined;
+};
 
 /**
- * Under the table after a reveal (#19): the seam #20 builds the results around
- * (`[data-results]`).
- * - Anonymous: every card played, face up, in the deck's order (`round.cards`), dealt in
- *   when the reveal happens on screen (`live`), shown at rest after a reload. Nothing
- *   here belongs to a person: no name, id, order or attribute ties a card to anyone.
- * - Named: the seats show the cards of the voters at the table; this lists every other
- *   vote, "Not at the table": a voter who left after the reveal (with the name the server
- *   kept), one who switched to observer after it, or one who left and came back as an
- *   observer. The vote still counts, so it shows somewhere.
+ * Under the table after a named reveal (#19): the seats show the cards of the voters at
+ * the table; this lists every other vote, "Not at the table": a voter who left after the
+ * reveal (with the name the server kept), one who switched to observer after it, or one
+ * who left and came back as an observer. The vote still counts, so it shows somewhere,
+ * with the seats' arrow when it is the lowest or the highest card (#20). An anonymous
+ * round has no such row: its cards show only in the results' columns (#20), which tie
+ * none to anyone, or in `PlayedCards` when the results cannot load.
  */
-export function RevealedCards({ room, live }: { room: RoomView; live: boolean }) {
+export function RevealedCards({ room }: { room: RoomView }) {
   const round = room.round;
-  if (round?.phase !== "revealed") return null;
-  if (round.anonymous) {
-    return round.cards.length > 0 ? <DealtCards cards={round.cards} live={live} /> : null;
-  }
+  if (round?.phase !== "revealed" || round.anonymous) return null;
   const people = new Map(room.participants.map((p) => [p.id, p]));
   const offTable = round.votes.flatMap((vote): OffTableVote[] => {
     const person = people.get(vote.who);
     if (person?.role === "voter") return [];
-    return [{ who: vote.who, card: vote.card, name: vote.name ?? person?.name }];
+    return [
+      {
+        who: vote.who,
+        card: vote.card,
+        name: vote.name ?? person?.name,
+        extreme: extremeOf(round, vote.card),
+      },
+    ];
   });
   return offTable.length > 0 ? <OffTableVotes votes={offTable} /> : null;
 }
 
 const CAPTION = "m-0 font-mono text-[11px] tracking-[0.08em] text-ink-2 uppercase";
 
-function DealtCards({ cards, live }: { cards: readonly string[]; live: boolean }) {
+/** As a seat says it: "Hana, card 2, lowest card". */
+function offTableLabel(t: TFunction, name: string, card: string, extreme?: Extreme): string {
+  const label = isSpecialCard(card)
+    ? t("table.seatCardWord", { name, card: cardLabel(t, card) })
+    : t("table.seatCard", { name, card });
+  return extreme ? `${label}, ${extremeWord(t, extreme)}` : label;
+}
+
+/**
+ * An anonymous round's cards, face up in the deck's order (`round.cards`), when the
+ * results' chunk cannot load: the round's cards still show somewhere, tied to nobody.
+ */
+export function PlayedCards({ cards }: { cards: readonly string[] }) {
   const t = useT();
   const caption = useId();
-  const list = useRef<HTMLUListElement>(null);
-  // Only a reveal seen on screen deals; a reload or a late joiner sees the row at rest.
-  const deal = useRef(live);
-
-  useLayoutEffect(() => {
-    if (!deal.current || !list.current) return;
-    const reduced = prefersReducedMotion();
-    const animations = [...list.current.children].map((item, i) => play(item, dealIn(i, reduced)));
-    return () => cancelAll(animations);
-  }, []);
-
   return (
     <div data-results="anonymous" className="mt-3 flex flex-col items-center gap-2">
-      <p id={caption} className={CAPTION}>
+      <p id={caption} aria-hidden="true" className={CAPTION}>
         {t("results.cards")}
       </p>
       <ul
-        ref={list}
         aria-labelledby={caption}
         data-results-row
         className="m-0 flex list-none flex-wrap justify-center gap-2 p-0"
@@ -74,12 +83,6 @@ function DealtCards({ cards, live }: { cards: readonly string[]; live: boolean }
   );
 }
 
-function offTableLabel(t: TFunction, name: string, card: string): string {
-  return isSpecialCard(card)
-    ? t("table.seatCardWord", { name, card: cardLabel(t, card) })
-    : t("table.seatCard", { name, card });
-}
-
 function OffTableVotes({ votes }: { votes: readonly OffTableVote[] }) {
   const t = useT();
   const caption = useId();
@@ -88,7 +91,7 @@ function OffTableVotes({ votes }: { votes: readonly OffTableVote[] }) {
       data-results="off-table"
       className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-2"
     >
-      <p id={caption} className={CAPTION}>
+      <p id={caption} aria-hidden="true" className={CAPTION}>
         {t("results.offTable")}
       </p>
       <ul
@@ -98,7 +101,13 @@ function OffTableVotes({ votes }: { votes: readonly OffTableVote[] }) {
         {votes.map((vote) => {
           const name = vote.name ?? t("results.someone");
           return (
-            <li key={vote.who} data-off-table className="flex items-center gap-1.5">
+            <li
+              key={vote.who}
+              data-off-table
+              data-extreme={vote.extreme}
+              className="flex items-center gap-1.5"
+            >
+              {vote.extreme ? <ExtremeMark extreme={vote.extreme} size={16} /> : null}
               <MiniCard value={vote.card} />
               {/* Up to two lines, the whole name on hover; the list item's one accessible
                   name is the sr-only sentence. */}
@@ -110,7 +119,7 @@ function OffTableVotes({ votes }: { votes: readonly OffTableVote[] }) {
               >
                 <bdi>{name}</bdi>
               </span>
-              <span className="sr-only">{offTableLabel(t, name, vote.card)}</span>
+              <span className="sr-only">{offTableLabel(t, name, vote.card, vote.extreme)}</span>
             </li>
           );
         })}

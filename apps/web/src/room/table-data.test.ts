@@ -101,12 +101,39 @@ describe("the table's states (#17)", () => {
       { kind: "revealed", card: null },
     ]);
     const anonymous = tableData(view(revealed(true), "u0")).people;
-    // Who voted is public; no card belongs to anyone: it went to the row under the table.
+    // Who voted is public; no card belongs to anyone: it went to the results' columns.
     expect(anonymous.map((p) => p.status)).toEqual([
       { kind: "revealed", card: null },
       { kind: "voted", dealt: true },
       { kind: "revealed", card: null },
     ]);
+  });
+
+  it("marks the lowest and highest cards of a named reveal, never an anonymous one (#20)", () => {
+    const revealed = (cards: Record<string, string>, anonymous = false): RoomState => {
+      const s = round();
+      if (!s.round) throw new Error("no round");
+      const votes = Object.fromEntries(Object.entries(cards).map(([who, card]) => [who, { card }]));
+      return {
+        ...s,
+        round: { ...s.round, votes, anonymous, phase: "revealed", revealedAt: 200 },
+      };
+    };
+    const statuses = (state: RoomState) => tableData(view(state, "u0")).people.map((p) => p.status);
+    expect(statuses(revealed({ u0: "3", u1: "8", u3: "13" }))).toEqual([
+      { kind: "revealed", card: "3", extreme: "low" },
+      { kind: "revealed", card: "8" },
+      { kind: "revealed", card: "13", extreme: "high" },
+    ]);
+    // A special card is neither; equal cards have no spread to mark.
+    expect(statuses(revealed({ u0: "?", u1: "8", u3: "8" }))).toEqual([
+      { kind: "revealed", card: "?" },
+      { kind: "revealed", card: "8" },
+      { kind: "revealed", card: "8" },
+    ]);
+    expect(JSON.stringify(statuses(revealed({ u0: "3", u1: "8", u3: "13" }, true)))).not.toMatch(
+      /extreme|"3"|"13"/,
+    );
   });
 
   it("gives everyone in the room initials and a colour of their own, the same for every viewer", () => {

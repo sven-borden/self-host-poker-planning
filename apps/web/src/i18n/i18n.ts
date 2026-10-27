@@ -152,6 +152,14 @@ export function fixedT(language: Language): TFunction {
   return t;
 }
 
+/** The language a `t` from `fixedT` speaks: lists in a sentence join the way it does. */
+export function languageOf(t: TFunction): Language {
+  for (const [language, known] of bound) {
+    if (known === t) return language;
+  }
+  return current;
+}
+
 // --- The current language ----------------------------------------------------------------
 
 let current: Language = "en";

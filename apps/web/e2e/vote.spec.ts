@@ -128,7 +128,7 @@ for (const anonymous of [false, true]) {
       // The reveal (its button is #19's): the frames now hold the card, so they were read.
       if (!anonymous) expect(await po.enter(code)).toMatchObject({ ok: true });
       expect(await po.cmd("reveal")).toMatchObject({ ok: true });
-      await expect(centre(voter.page)).toHaveText("Cards revealed");
+      await expect(centre(voter.page)).toHaveAttribute("data-centre-status", "revealed");
       await expect.poll(() => observerFrames.some((frame) => frame.includes('"13"'))).toBe(true);
       if (anonymous) {
         // Still nobody's card: the revealed round lists cards, never who played them.
@@ -267,7 +267,7 @@ test("a vote the server refuses after the reveal rolls back (AC 3)", async ({
     // The PO reveals (the button is #19's), then the held vote reaches the server.
     expect(await po.enter(code)).toMatchObject({ ok: true });
     expect(await po.cmd("reveal")).toMatchObject({ ok: true });
-    await expect(centre(other.page)).toHaveText("Cards revealed");
+    await expect(centre(other.page)).toHaveAttribute("data-centre-status", "revealed");
     for (const send of held) send();
 
     await expect(page.getByRole("alert")).toHaveText(

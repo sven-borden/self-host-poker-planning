@@ -4,11 +4,13 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useT } from "../i18n/hooks.ts";
 import { cardLabel } from "../table/cards.tsx";
 import { Hand } from "../table/hand.tsx";
+import { revealSettleMs } from "../table/reveal-motion.ts";
 import { TableStage } from "../table/table-stage.tsx";
 import { type Box, CardFlight, type Flight, type InAir } from "./card-flight.tsx";
 import { failureMessage } from "./failure.ts";
 import { confirmedOf, shownCard, withShownVote } from "./hand-state.ts";
 import { LiveAnnouncer } from "./live-announcer.tsx";
+import { prefetchResults, ResultsPanel } from "./results-chunk.tsx";
 import { RevealedCards } from "./revealed-cards.tsx";
 import { RoundCentre } from "./round-centre.tsx";
 import { handView, tableData } from "./table-data.ts";
@@ -52,9 +54,11 @@ const boxOf = (rect: DOMRect): Box => ({
  * settle on the server's snapshot when the ack comes back.
  *
  * The reveal (#19): the table turns the cards over by itself (a seat's card seen face
- * down that turns up flips), and `RevealedCards` deals an anonymous round's cards under
- * the table when this page saw the round voting just before (`liveReveal`); after a
- * reload everything shows at rest.
+ * down that turns up flips), and `RevealedCards` lists a named round's votes without a
+ * seat under the table. The results (#20) fill the centre and a panel under the table,
+ * from a chunk prefetched while a round is on; they rise once the cards are settled when
+ * this page saw the round voting just before (`liveReveal`). After a reload everything
+ * shows at rest.
  */
 export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedProps) {
   const t = useT();
@@ -75,6 +79,16 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
     setSeen({ key: roundKey, liveReveal });
     setCentreFailure(null);
   }
+  const inRound = room.round !== null;
+  useEffect(() => {
+    // A reveal is in sight: load the results' module now, so the reveal draws it at once.
+    if (inRound) prefetchResults();
+  }, [inRound]);
+  const faceUp = people.filter((p) => p.status.kind === "revealed" && p.status.card !== null);
+  const reveal = {
+    live: seen.liveReveal,
+    settle: revealSettleMs(faceUp.length, room.round?.anonymous === true),
+  };
   const [flight, setFlight] = useState<Flight | null>(null);
   const flights = useRef(0);
   /** An interrupted flight's card, for the next one to start from. */
@@ -126,9 +140,10 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           observers={observers}
           hiddenSlot={flight?.kind === "play" ? me.id : null}
         >
-          <RoundCentre room={shown} onFailure={setCentreFailure} />
+          <RoundCentre room={shown} onFailure={setCentreFailure} reveal={reveal} />
         </TableStage>
-        <RevealedCards room={room} live={seen.liveReveal} />
+        <RevealedCards room={room} />
+        {room.round?.phase === "revealed" ? <ResultsPanel room={room} motion={reveal} /> : null}
         <LiveAnnouncer />
         {centreFailure !== null ? (
           <p role="alert" className="mt-3 flex items-start justify-center gap-2 text-sm">

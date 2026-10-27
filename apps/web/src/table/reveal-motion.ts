@@ -1,6 +1,7 @@
 // The reveal's motion (#19; docs/03-design-brief.md, "Motion spec"): a slot card turns
-// face up, or after an anonymous reveal fades from its seat while the cards deal into the
-// row under the table. Decorative only: the seats' labels, the faces at rest and the live
+// face up, or after an anonymous reveal fades from its seat; once they are settled the
+// lowest and highest seats get their badge (#20; the results panel's own motion is in
+// `room/results-motion.ts`, in the results chunk). Decorative only: the seats' labels, the faces at rest and the live
 // region say the same without motion.
 //
 // The Web Animations API, not Motion, as for the card's flight (#18, ADR-008 amended):
@@ -18,12 +19,10 @@ export const FLIP_STAGGER_MS = 90;
 export const FADE_AWAY_MS = 350;
 /** …to this scale. */
 const FADE_AWAY_SCALE = 0.6;
-/** The cards then deal into the row under the table, this far apart… */
-export const DEAL_STAGGER_MS = 70;
-/** …each falling into place in this long. */
-export const DEAL_MS = 320;
+/** A badge pops onto a seat in this long (#20). */
+export const POP_MS = 300;
 /** The design brief's easing (`EASE_STANDARD` in motion.tsx). */
-const EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+export const EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
 
 export interface Motion {
   keyframes: Keyframe[];
@@ -103,11 +102,18 @@ export function fadeAway(reduced: boolean): Motion {
 }
 
 /**
- * The `index`th card of the row under the table, dealt face up once the seats' cards
- * have faded: it drops 12 px into place and fades in, 70 ms after the one before. Under
- * reduced motion every card fades in together, in 120 ms.
+ * When the cards are settled after a reveal, in ms from the reveal: the last of `faceUp`
+ * flips has ended (named), or the seats' cards have gone (anonymous). The results (#20)
+ * start then: the columns rise, the consensus pops, the lowest and highest seats are
+ * marked. Under reduced motion every one of those ignores it and cross-fades at once.
  */
-export function dealIn(index: number, reduced: boolean): Motion {
+export function revealSettleMs(faceUp: number, anonymous: boolean): number {
+  if (anonymous) return FADE_AWAY_MS;
+  return faceUp > 0 ? FLIP_MS + (faceUp - 1) * FLIP_STAGGER_MS : 0;
+}
+
+/** A badge popping onto a seat once the cards are settled (`delay`), 300 ms. */
+export function popIn(delay: number, reduced: boolean): Motion {
   return reduced
     ? {
         keyframes: [{ opacity: 0 }, { opacity: 1 }],
@@ -115,15 +121,11 @@ export function dealIn(index: number, reduced: boolean): Motion {
       }
     : {
         keyframes: [
-          { opacity: 0, transform: "translateY(-12px) scale(0.9)" },
-          { opacity: 1, transform: "none" },
+          { offset: 0, opacity: 0, transform: "scale(0.4)" },
+          { offset: 0.7, opacity: 1, transform: "scale(1.12)" },
+          { offset: 1, opacity: 1, transform: "none" },
         ],
-        timing: {
-          duration: DEAL_MS,
-          delay: FADE_AWAY_MS + index * DEAL_STAGGER_MS,
-          easing: EASE,
-          fill: "backwards",
-        },
+        timing: { duration: POP_MS, delay, easing: EASE, fill: "backwards" },
       };
 }
 

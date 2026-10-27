@@ -54,6 +54,11 @@
   opacity: 0.38;
 }
 
+/* A column of the results' distribution (#20): its height is the count. */
+.pp-bar {
+  background: var(--spruce);
+}
+
 /*
  * Forced colours (Windows contrast themes) drop backgrounds and shadows. The table keeps
  * its border as an outline, and a played card keeps a striped back in system colours, so
@@ -72,5 +77,10 @@
   .pp-card-back::before {
     background: repeating-linear-gradient(45deg, transparent 0 3px, Canvas 3px 6px);
     opacity: 1;
+  }
+
+  .pp-bar {
+    forced-color-adjust: none;
+    background: CanvasText;
   }
 }

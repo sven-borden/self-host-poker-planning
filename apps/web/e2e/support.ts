@@ -166,3 +166,51 @@ export function snapshotsIn(frames: readonly string[]): Snapshot[] {
   }
   return found;
 }
+
+export interface Animated {
+  keyframes: string;
+  duration: number;
+  delay: number;
+  /**
+   * `cover` (a slot card's back), `up` (a slot card's face), `bar` (a results column,
+   * #20), a seat's `lowest` or `highest` badge, or the element's tag.
+   */
+  target: string;
+  /** On the viewer's own slot. */
+  you: boolean;
+}
+
+/**
+ * Records every `Element.animate` call on the page from now on, in `window.__animated`;
+ * with `reload`, from the next page load on.
+ */
+export async function recordAnimations(page: Page, { reload = false } = {}) {
+  const install = () => {
+    const seen: unknown[] = [];
+    Object.assign(window, { __animated: seen });
+    const original = Element.prototype.animate;
+    Element.prototype.animate = function (keyframes, options) {
+      const timing = typeof options === "number" ? { duration: options } : (options ?? {});
+      seen.push({
+        keyframes: JSON.stringify(keyframes),
+        duration: Number(timing.duration ?? 0),
+        delay: Number(timing.delay ?? 0),
+        target: this.hasAttribute("data-cover")
+          ? "cover"
+          : this.hasAttribute("data-bar")
+            ? "bar"
+            : (this.getAttribute("data-face") ??
+              this.getAttribute("data-badge") ??
+              this.tagName.toLowerCase()),
+        you: this.closest("[data-slot-card]")?.hasAttribute("data-you") === true,
+      });
+      return original.call(this, keyframes, options);
+    };
+  };
+  if (!reload) return page.evaluate(install);
+  await page.addInitScript(install);
+  await page.reload();
+}
+
+export const animated = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __animated: Animated[] }).__animated);

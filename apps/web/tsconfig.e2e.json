@@ -2,7 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./.tsbuild/e2e",
-    // The e2e tests import the protocol version and the leak scan from their source.
+    // The e2e tests import the protocol version, the leak scan and the domain's results
+    // (#20: the numbers on screen must equal them) from their source.
     "rootDir": "../..",
     "lib": ["es2024", "dom", "dom.iterable"],
     "types": ["node"]
@@ -13,6 +14,8 @@
     "src/table/layout.ts",
     "src/table/geometry.ts",
     "../../packages/protocol/src/version.ts",
-    "../../packages/protocol/src/leak-scan.ts"
+    "../../packages/protocol/src/leak-scan.ts",
+    "../../packages/domain/src/results.ts",
+    "../../packages/domain/src/decks.ts"
   ]
 }

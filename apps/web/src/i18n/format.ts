@@ -5,9 +5,15 @@
 // cached on the kind, the locale and the options, never on the value, because building
 // one costs far more than using it.
 
-const cache = new Map<string, Intl.NumberFormat | Intl.DateTimeFormat | Intl.RelativeTimeFormat>();
+type Formatter =
+  | Intl.NumberFormat
+  | Intl.DateTimeFormat
+  | Intl.RelativeTimeFormat
+  | Intl.ListFormat;
 
-function cached<T extends Intl.NumberFormat | Intl.DateTimeFormat | Intl.RelativeTimeFormat>(
+const cache = new Map<string, Formatter>();
+
+function cached<T extends Formatter>(
   kind: string,
   locale: string,
   options: object | undefined,
@@ -30,6 +36,16 @@ export function formatNumber(
   return cached("number", locale, options, () => new Intl.NumberFormat(locale, options)).format(
     value,
   );
+}
+
+/** Names joined as the language joins them: "Ana, Ben and Cleo", "Ana, Ben et Cleo". */
+export function formatList(items: readonly string[], locale: string): string {
+  return cached(
+    "list",
+    locale,
+    undefined,
+    () => new Intl.ListFormat(locale, { type: "conjunction" }),
+  ).format(items);
 }
 
 /** A calendar date, "27 Oct 2026" style by default. */
