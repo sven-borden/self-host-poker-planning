@@ -172,7 +172,7 @@ describe("SlotCard and the table at a reveal", () => {
       .filter(({ element }) => element.dataset.face === "up")
       .map(({ element, i }) => ({
         value: element.querySelector("[data-card-value]")?.textContent,
-        delay: (animate.mock.calls[i]?.[1] as KeyframeAnimationOptions).delay,
+        delay: (animate.mock.calls[i]?.[1] as KeyframeAnimationOptions | undefined)?.delay,
       }));
     expect(turned).toEqual([
       { value: "1", delay: 0 },
