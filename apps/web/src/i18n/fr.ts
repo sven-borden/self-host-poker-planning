@@ -141,6 +141,7 @@ export const fr: Catalog<"many"> = {
   round: {
     start: "Lancer le vote",
     next: "Tour suivant",
+    revote: "Revoter",
     waiting: "En attente du PO",
     revealed: "Cartes révélées",
     reveal: "Révéler les cartes",
@@ -190,6 +191,16 @@ export const fr: Catalog<"many"> = {
     offTable: "Hors de la table",
     someone: "Une personne partie",
   },
+  final: {
+    label: "Estimation finale",
+    record: "Enregistrer {{card}}",
+    recordNothing: "Enregistrer",
+    recorded: "Enregistrée",
+    pick: "Choisissez l’estimation finale, puis enregistrez-la.",
+    suggested: "{{card}}, suggérée",
+    tied: "{{card}}, à égalité",
+    centre: "Estimation finale : {{card}}.",
+  },
   hand: {
     hintVoting: "Choisissez une carte pour voter. Choisissez-la à nouveau pour retirer votre vote.",
     hintLobby: "Vous pourrez jouer dès que le product owner lancera le tour.",
@@ -222,6 +233,9 @@ export const fr: Catalog<"many"> = {
     votedMany_other: "{{count, number}} personnes ont voté.",
     roundStarted: "Le vote a commencé : {{subject}}.",
     revealed: "Les cartes sont révélées.",
+    finalRecorded: "Le PO a enregistré {{card}} comme estimation finale.",
+    finalChanged: "Le PO a changé l’estimation finale en {{card}}.",
+    revote: "Le PO a relancé le vote sur le même sujet.",
   },
   cards: {
     yourCards: "Vos cartes",

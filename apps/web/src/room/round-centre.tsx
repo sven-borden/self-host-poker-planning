@@ -12,7 +12,7 @@ interface RoundCentreProps {
   room: RoomView;
   /** A refused reveal, as an error code, or null when a new attempt begins. */
   onFailure: (code: string | null) => void;
-  /** The PO's next round (#21): the subject field's draft, sent by the centre's button. */
+  /** The PO's first round (#21): the subject field's draft, sent by "Start voting". */
   next: NextRound;
   /** How the results arrive after a reveal (#20): live, and when the cards are settled. */
   reveal?: RevealMotion;
@@ -26,10 +26,12 @@ const CENTRE_BUTTON =
  * The status in the middle of the table (#18). Voting: how many have voted out of how
  * many can vote, and for the PO the reveal button (#19, also the key R). Lobby: "Start
  * voting" for the PO and a calm line for everyone else. Revealed: the result (#20,
- * `CentreResult`, from the results chunk; the result as a sentence until it has loaded),
- * and for the PO "Next round" under it. Both buttons start the round with the subject in
- * the PO's field above the table (#21, `next-round.tsx`); a voting round offers none, so
- * the PO never abandons one by a click.
+ * `CentreResult`, from the results chunk; the result as a sentence until it has loaded)
+ * and the recorded final estimate (#32), the same for everyone; the PO's "Next round"
+ * sits under the table with the final estimate's picker (`final-estimate.tsx`). "Start
+ * voting" and "Next round" start the round with the subject in the PO's field above the
+ * table (#21, `next-round.tsx`); a voting round offers neither, so the PO never abandons
+ * one by a click.
  */
 export function RoundCentre({
   room,
@@ -57,21 +59,16 @@ export function RoundCentre({
   }
   if (round === null) {
     return owner ? (
-      <StartRound again={false} next={next} />
+      <StartRound next={next} />
     ) : (
       <p data-centre-status="lobby" className="m-0">
         {t("round.waiting")}
       </p>
     );
   }
-  const result = <CentreResult room={room} compact={owner} motion={reveal} />;
-  if (!owner) return result;
-  return (
-    <div className="flex flex-col items-center gap-1.5 in-data-[variant=phone]:gap-0.5">
-      {result}
-      <StartRound again next={next} />
-    </div>
-  );
+  // After the reveal the PO's controls sit under the table (#32, `final-estimate.tsx`): the
+  // centre shows the result, and the final estimate once recorded, the same for everyone.
+  return <CentreResult room={room} motion={reveal} />;
 }
 
 /**
@@ -92,8 +89,18 @@ export function focusSoon(...selectors: string[]) {
   });
 }
 
-/** After the reveal the PO's next step is the next round: the focus goes to its button. */
-const focusAfterReveal = () => focusSoon("[data-start-round]");
+/**
+ * After the reveal the PO's next step is the final estimate (#32): the focus goes to
+ * "Record 8" when a card is preselected, so one press records the suggestion; else to the
+ * picker, where the PO picks; then to "Next round" if neither is there.
+ */
+const focusAfterReveal = () =>
+  focusSoon(
+    "[data-record-final]:not([aria-disabled])",
+    "[data-final-picker] input:checked",
+    "[data-final-picker] input",
+    "[data-start-round]",
+  );
 
 /** Fields where R is a letter being typed, not the reveal. */
 const NOT_TYPING = new Set([
@@ -145,7 +152,8 @@ export function isRevealKey(event: KeyboardEvent): boolean {
  * hand (`isRevealKey`); the button's title says so. A refusal shows under the table;
  * `not_voting` says nothing, since the round revealed itself in the meantime (the last
  * vote) or a new one began. When the button leaves with the voting round while it has the
- * focus (pressed, or the last vote revealed the round), the focus goes to "Next round".
+ * focus (pressed, or the last vote revealed the round), the focus goes to the PO's
+ * decision under the table (`focusAfterReveal`).
  */
 function RevealButton({ onFailure }: { onFailure: (code: string | null) => void }) {
   const t = useT();
@@ -204,8 +212,8 @@ function RevealButton({ onFailure }: { onFailure: (code: string | null) => void 
   );
 }
 
-/** "Start voting" or "Next round": sends the PO's draft subject (`useNextRound`). */
-function StartRound({ again, next }: { again: boolean; next: NextRound }) {
+/** "Start voting": sends the PO's draft subject (`useNextRound`). */
+function StartRound({ next }: { next: NextRound }) {
   const t = useT();
   return (
     <Button
@@ -215,7 +223,7 @@ function StartRound({ again, next }: { again: boolean; next: NextRound }) {
       onClick={() => void next.start()}
       className={CENTRE_BUTTON}
     >
-      {again ? t("round.next") : t("round.start")}
+      {t("round.start")}
     </Button>
   );
 }

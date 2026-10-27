@@ -191,6 +191,7 @@ export const en = {
   round: {
     start: "Start voting",
     next: "Next round",
+    revote: "Vote again",
     waiting: "Waiting for the PO",
     revealed: "Cards revealed",
     reveal: "Reveal cards",
@@ -239,6 +240,16 @@ export const en = {
     offTable: "Not at the table",
     someone: "Someone who left",
   },
+  final: {
+    label: "Final estimate",
+    record: "Record {{card}}",
+    recordNothing: "Record",
+    recorded: "Recorded",
+    pick: "Pick the final estimate, then record it.",
+    suggested: "{{card}}, suggested",
+    tied: "{{card}}, tied",
+    centre: "Final estimate: {{card}}.",
+  },
   hand: {
     hintVoting: "Pick a card to vote. Pick it again to take your vote back.",
     hintLobby: "Your cards open when the product owner starts the round.",
@@ -266,6 +277,9 @@ export const en = {
     votedMany_other: "{{count, number}} people voted.",
     roundStarted: "Voting started: {{subject}}.",
     revealed: "Cards revealed.",
+    finalRecorded: "The PO recorded {{card}} as the final estimate.",
+    finalChanged: "The PO changed the final estimate to {{card}}.",
+    revote: "The PO started a new vote on the same subject.",
   },
   cards: {
     yourCards: "Your cards",

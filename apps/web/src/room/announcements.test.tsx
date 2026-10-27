@@ -122,8 +122,9 @@ describe("liveEvents", () => {
     // belong to nobody; whose card is what is never said.
     expect(text).toBe("Me voted. Cards revealed. Suggested 13. Agreement 50%.");
     expect(text).not.toMatch(/21/);
-    const final = run("me", { type: "setFinal", card: "13" });
-    expect(liveEvents(final.room, final.causes, revealed.room)).toEqual([]);
+    // A settings change is not news for the live region.
+    const quiet = run("me", { type: "updateSettings", patch: { poVotes: false } });
+    expect(liveEvents(quiet.room, quiet.causes, revealed.room)).toEqual([]);
   });
 
   it("says the reveal once, to everyone, the PO who forced it too (#19)", () => {
@@ -189,6 +190,73 @@ describe("liveEvents", () => {
     run("me", { type: "startRound", subject: { kind: "none" } });
     const later = run("me", { type: "reveal" });
     expect(liveEvents(later.room, [], voting.room)).toEqual([]);
+  });
+});
+
+describe("the final estimate and the re-vote (#32)", () => {
+  /** Me (the PO) and Ana in a named round on "Login", revealed: Ana 8, me 5. */
+  function revealedStory(viewer = "ana") {
+    const { run } = story(viewer);
+    run("me", { type: "join", name: "Me", role: "voter" });
+    run("ana", { type: "join", name: "Ana", role: "voter" });
+    run("me", { type: "startRound", subject: { kind: "title", text: "Login" } });
+    run("ana", { type: "castVote", card: "8" });
+    const revealed = run("me", { type: "castVote", card: "5" });
+    return { run, revealed };
+  }
+
+  it("says a recorded final, then a changed one, to everyone, the PO too", () => {
+    for (const viewer of ["ana", "me"]) {
+      const { run, revealed } = revealedStory(viewer);
+      const recorded = run("me", { type: "setFinal", card: "8" });
+      expect(said(liveEvents(recorded.room, recorded.causes, revealed.room))).toBe(
+        "The PO recorded 8 as the final estimate.",
+      );
+      const changed = run("me", { type: "setFinal", card: "13" });
+      expect(said(liveEvents(changed.room, changed.causes, recorded.room))).toBe(
+        "The PO changed the final estimate to 13.",
+      );
+    }
+  });
+
+  it("says a re-vote as a new vote on the same subject", () => {
+    const { run, revealed } = revealedStory();
+    const again = run("me", { type: "revote" });
+    expect(said(liveEvents(again.room, again.causes, revealed.room))).toBe(
+      "The PO started a new vote on the same subject.",
+    );
+    // A next round with the same title is a next round.
+    const next = run("me", { type: "startRound", subject: { kind: "title", text: "Login" } });
+    expect(said(liveEvents(next.room, next.causes, again.room))).toBe("Voting started: Login.");
+  });
+
+  it("says two finals in one batch once, with the later card, and drops one a new round made moot", () => {
+    const { run, revealed } = revealedStory();
+    const first = run("me", { type: "setFinal", card: "8" });
+    const second = run("me", { type: "setFinal", card: "5" });
+    const batch = mergeEvents(
+      liveEvents(first.room, first.causes, revealed.room),
+      liveEvents(second.room, second.causes, first.room),
+    );
+    expect(said(batch)).toBe("The PO recorded 5 as the final estimate.");
+    const next = run("me", { type: "startRound", subject: { kind: "none" } });
+    expect(said(mergeEvents(batch, liveEvents(next.room, next.causes, second.room)))).toBe(
+      "Voting started: Round 2.",
+    );
+  });
+
+  it("says the final in French and German", async () => {
+    await loadLanguage("fr");
+    await loadLanguage("de");
+    const { run, revealed } = revealedStory();
+    const recorded = run("me", { type: "setFinal", card: "8" });
+    const events = liveEvents(recorded.room, recorded.causes, revealed.room);
+    expect(describeEvents(fixedT("fr"), events)).toBe(
+      "Le PO a enregistré 8 comme estimation finale.",
+    );
+    expect(describeEvents(fixedT("de"), events)).toBe(
+      "Der PO hat 8 als endgültige Schätzung festgehalten.",
+    );
   });
 });
 

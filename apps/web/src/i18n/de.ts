@@ -140,6 +140,7 @@ export const de: Catalog = {
   round: {
     start: "Runde starten",
     next: "Nächste Runde",
+    revote: "Neu abstimmen",
     waiting: "Warten auf den PO",
     revealed: "Karten aufgedeckt",
     reveal: "Karten aufdecken",
@@ -188,6 +189,16 @@ export const de: Catalog = {
     offTable: "Nicht am Tisch",
     someone: "Jemand, der gegangen ist",
   },
+  final: {
+    label: "Endgültige Schätzung",
+    record: "{{card}} festhalten",
+    recordNothing: "Festhalten",
+    recorded: "Festgehalten",
+    pick: "Wählen Sie die endgültige Schätzung und halten Sie sie fest.",
+    suggested: "{{card}}, vorgeschlagen",
+    tied: "{{card}}, gleichauf",
+    centre: "Endgültige Schätzung: {{card}}.",
+  },
   hand: {
     hintVoting:
       "Wählen Sie eine Karte, um abzustimmen. Wählen Sie sie erneut, um Ihre Stimme zurückzunehmen.",
@@ -217,6 +228,9 @@ export const de: Catalog = {
     votedMany_other: "{{count, number}} Personen haben abgestimmt.",
     roundStarted: "Die Abstimmung hat begonnen: {{subject}}.",
     revealed: "Die Karten sind aufgedeckt.",
+    finalRecorded: "Der PO hat {{card}} als endgültige Schätzung festgehalten.",
+    finalChanged: "Der PO hat die endgültige Schätzung auf {{card}} geändert.",
+    revote: "Der PO hat eine neue Abstimmung zum selben Thema gestartet.",
   },
   cards: {
     yourCards: "Ihre Karten",
