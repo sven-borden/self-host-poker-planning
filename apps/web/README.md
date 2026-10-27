@@ -115,11 +115,36 @@ server sends and never decides the outcome of a round.
   lands) and back on a retract, with the Web Animations API (see "Motion" below);
   `flightKeyframes` is pure. `round-centre.tsx` (`RoundCentre`) fills the table's centre:
   "5/8 voted so far" while Voting (`voteCount`: voters, less a PO who does not vote, less
-  people away who have not voted; #19 adds the reveal button here), and in the lobby or
+  people away who have not voted), and in the lobby or
   after a reveal a minimal `StartRound` button for the PO (`startRound` without a
   subject, "Start voting" or "Next round"; #21 replaces it) and a calm line for the
   others ("Waiting for the PO", "Cards revealed"; #20 puts the results there). A refused
-  start shows under the table. Copy: `round.*` and `hand.*`.
+  start or reveal shows under the table, and clears when the round or its phase changes.
+  Copy: `round.*` and `hand.*`.
+  The reveal (#19): while Voting the PO's centre adds `RevealButton` ("Reveal cards",
+  `[data-reveal]`), which sends `reveal` through the `commandSender()` taken at the
+  press; the key R does the same (`isRevealKey`: no modifier, no repeat, not while an
+  input method composes, not in a text field; `aria-keyshortcuts="R"`). `not_voting`
+  says nothing (the last vote revealed the round meanwhile); other refusals show. When
+  the button leaves with the voting round while it has the focus (a layout cleanup runs
+  while it is still in the document), or after R with the focus nowhere, the focus goes
+  to "Next round". The page treats the forced, automatic and timer reveals alike: they
+  are one revealed snapshot. `seatStatus` gives `revealed {card}` after a named reveal
+  and `voted {dealt: true}` after an anonymous one. `SlotCard` (table/cards.tsx) keeps
+  a `Cover` (the brass back, `[data-cover]`, hidden at rest) mounted over a face-up or
+  `gone` card; a card it showed `down` that turns `up` flips, one that turns `gone`
+  shrinks and fades. A card that mounts revealed (a reload, a late joiner) shows at rest.
+  `TableStage` gives each face-up card a `turnDelay`: 90 ms per face-up card before it in
+  seat order, from the viewer. `table/reveal-motion.ts` holds the keyframes (pure:
+  `turnUp`, `fadeAway`, `dealIn`) and `play`/`cancelAll` for `Element.animate`; a new
+  face cancels a running turn. `revealed-cards.tsx` (`RevealedCards`, `[data-results]`)
+  is the seam #20 builds on, under the table: after an anonymous reveal the "Cards
+  played" row (`[data-results-row]`, mini cards in the snapshot's deck order, keyed by
+  place, with no name, id or person-ordered attribute), dealt in only when `Seated` saw
+  the round voting just before (`liveReveal`); after a named reveal the "Left the room"
+  row for votes whose voter is no longer a participant, with the `name` the server kept
+  (or "Someone who left"). The table's live region says "Cards revealed." once per
+  reveal (`announcements.ts`). Copy: `results.*`, `round.reveal`, `live.revealed`.
   `failure.ts` turns refusal codes into copy. Focus: after joining it moves to the "You"
   heading, after leaving or when a seat frees up to the name field (a free seat is also
   announced in a polite live region, `[data-room-notice]`); each request is cleared once
@@ -172,11 +197,13 @@ server sends and never decides the outcome of a round.
   JavaScript. Measured in #18: importing Motion's `m` (or `motion.tsx`) from a lazy chunk
   makes Vite 8's rolldown split shared modules (tailwind-merge, the English catalog,
   React's runtime) out of the entry chunk and costs the room route 12.8 kB gzipped. A
-  keyframed one-off such as the card's flight uses `Element.animate` instead (no
-  dependency, interruptible with `cancel`, `matchMedia` for reduced motion). Two splits
+  keyframed one-off such as the card's flight or the reveal (#19) uses `Element.animate`
+  instead (no dependency, interruptible with `cancel`, `matchMedia` for reduced motion;
+  the reveal cost the lazy `seated` and `table-stage` chunks 1.8 kB and the room route
+  nothing). Two splits
   keep Motion within budget, measured by #18's review: one lazy boundary for every
   Motion component (room route 167.6 kB), or a dynamic `import("motion/mini")` inside the
-  effect (3.2 kB lazy). #19's flip and #20's columns may use either, or `Element.animate`;
+  effect (3.2 kB lazy). #20's columns may use either, or `Element.animate`;
   check the budget before reaching for `m` in a lazy chunk (ADR-008). An animated
   component wraps its `m.div` elements in `<MotionFeatures>`
   (`<MotionFeatures layout>` when it needs layout animations): the features chunk

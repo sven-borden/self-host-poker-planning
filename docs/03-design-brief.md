@@ -92,6 +92,17 @@ Positions are percentages of the stage, so one formula serves every width:
   reveal the PO gets one button there, drawn as a card face (warm face, card ink, 44 px
   tall, two lines on phones): "Start voting", then "Next round"; everyone else reads
   "Waiting for the PO" or "Cards revealed".
+- The reveal (#19). While Voting the PO's centre holds the count above a "Reveal cards"
+  button in the same card-face style (key R, shown to assistive tech as
+  `aria-keyshortcuts`); on phones the count drops to 10 px so both fit the 68 × 60 box.
+  Nobody else gets a button. After the reveal the PO's focus moves to "Next round" when
+  it was on the button (or nowhere). A named reveal turns the seats' cards face up; the
+  seats then read "Ana, card 5". An anonymous reveal leaves each voter's seat with its
+  voted badge and an empty outline (the card went to the row), and a "Cards played" row
+  of mini cards under the table holds every card in the deck's order, with nothing that
+  points at a person. A voter who leaves after a named reveal keeps their card and name
+  in a "Left the room" row under the table (mini card, then the name); #20 builds the
+  results around these rows.
 - Observers sit off the table (a small row under it) so voters keep the seats.
 - The others follow the viewer clockwise in join order, starting with whoever joined
   after the viewer, so the order around the table is the same for everyone (#16).
@@ -169,8 +180,8 @@ interruptible and disabled under `prefers-reduced-motion` (120 ms cross-fades in
 | Hand → seat travel | 520 ms arc, midpoint 36 px above the line, −9° tilt, scales to the slot; lands face down with a 380 ms drop |
 | Seat → hand (vote taken back, #18) | the face-down card flies back on the same 520 ms arc and fades over its hand card |
 | Voted badge | 300 ms pop with slight overshoot |
-| Reveal flip | `rotateY(180deg)` 650 ms, 90 ms stagger in seat order from the viewer |
-| Anonymous reveal | slot cards shrink to 0.6 and fade (350 ms); mini cards deal into the results row, 70 ms stagger |
+| Reveal flip | `rotateY(180deg)` 650 ms, 90 ms stagger in seat order from the viewer (#19: only the face-up cards count, so an empty seat adds no pause; built as a turn to the edge with the back on, then back bare, so nothing keeps a transform at rest) |
+| Anonymous reveal | slot cards shrink to 0.6 and fade (350 ms); mini cards deal into the results row, 70 ms stagger (#19: the row starts as the seats' cards are gone, at 350 ms; each card drops 12 px and fades in over 320 ms; a card whose vote came with the reveal never lay on its seat, so only the row shows it) |
 | Results | columns rise 500 ms, 60 ms stagger, starting after the last flip |
 | Consensus | pill pops (400 ms) and one soft ring pulse; no confetti storm |
 | Timer | ring drains linearly; last 10 s turns `--warn` and pulses at 1 Hz |
@@ -192,7 +203,10 @@ interruptible and disabled under `prefers-reduced-motion` (120 ms cross-fades in
 - Live region announces "Ana voted", "Cards revealed: average 5", never a hidden value.
   The table's region (#17) says joins, leaves, away and back, others' first votes and a
   new round; a burst becomes one sentence per kind ("3 people voted."), after 600 ms of quiet or
-  1.5 s at most, and the viewer's own actions are never announced there.
+  1.5 s at most, and the viewer's own actions are never announced there. The reveal (#19)
+  is said once, to everyone, the PO too, whether forced, automatic or at the deadline:
+  "Cards revealed.", after the votes of its batch ("Ana voted. Cards revealed."); a new
+  round in the same batch drops it. It never reads the cards out; #20 says the results.
 - Touch targets at least 44 px; no hover-only controls.
 
 ## Copy
