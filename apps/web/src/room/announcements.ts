@@ -51,7 +51,9 @@ function nameOf(id: string, ...rooms: (RoomView | null)[]): string | null {
  * not news, and saying so would hint that something changed. A person who left is named
  * from `previous`. A new round and the reveal (forced, automatic or at the deadline) are
  * said to everyone, the PO who caused them too: the hand and the centre change under
- * their focus.
+ * their focus. A snapshot with no causes (the one a reconnect brings) still says the
+ * reveal when it shows the round revealed that `previous` showed voting: the cards turn
+ * over on screen, so the reveal is news, once.
  */
 export function liveEvents(
   next: RoomView,
@@ -91,7 +93,22 @@ export function liveEvents(
     const name = nameOf(who, next, previous);
     if (name !== null) events.push({ kind, who, name });
   }
+  if (!events.some((e) => e.kind === "revealed") && revealedSince(previous, next)) {
+    events.push({ kind: "revealed", who: "", name: "" });
+  }
   return events;
+}
+
+/** Whether `next` shows revealed the same round that `previous` showed voting. */
+function revealedSince(previous: RoomView | null, next: RoomView): boolean {
+  const was = previous?.round;
+  const now = next.round;
+  return (
+    was?.phase === "voting" &&
+    now?.phase === "revealed" &&
+    now.number === was.number &&
+    now.startedAt === was.startedAt
+  );
 }
 
 /**

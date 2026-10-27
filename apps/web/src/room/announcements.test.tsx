@@ -111,6 +111,29 @@ describe("liveEvents", () => {
     const both = mergeEvents(events, liveEvents(next.room, next.causes, forced.room));
     expect(said(both)).toBe("Voting started.");
   });
+
+  it("says a reveal it missed while away from the server, once, from the phase it shows", () => {
+    const { run } = story("ana");
+    run("me", { type: "join", name: "Me", role: "voter" });
+    run("ana", { type: "join", name: "Ana", role: "voter" });
+    run("me", { type: "startRound", subject: { kind: "none" } });
+    const voting = run("ana", { type: "castVote", card: "13" });
+    const forced = run("me", { type: "reveal" });
+    // The snapshot a reconnect brings: no causes, the round now revealed.
+    expect(liveEvents(forced.room, [], voting.room)).toEqual([
+      { kind: "revealed", who: "", name: "" },
+    ]);
+    // With the cause too, still once.
+    expect(liveEvents(forced.room, forced.causes, voting.room)).toEqual([
+      { kind: "revealed", who: "", name: "" },
+    ]);
+    // Already revealed before, a first look, or a later round: nothing to say.
+    expect(liveEvents(forced.room, [], forced.room)).toEqual([]);
+    expect(liveEvents(forced.room, [], null)).toEqual([]);
+    run("me", { type: "startRound", subject: { kind: "none" } });
+    const later = run("me", { type: "reveal" });
+    expect(liveEvents(later.room, [], voting.room)).toEqual([]);
+  });
 });
 
 describe("batching", () => {
@@ -202,6 +225,23 @@ describe("LiveAnnouncer", () => {
       });
     }
     expect(region()?.textContent).toMatch(/^\d people joined\.$/);
+  });
+
+  it("says the reveal a reconnect brings, though its snapshot has no causes", () => {
+    const { run } = story("ana");
+    run("me", { type: "join", name: "Me", role: "voter" });
+    run("ana", { type: "join", name: "Ana", role: "voter" });
+    run("me", { type: "startRound", subject: { kind: "none" } });
+    act(() => {
+      useRoomStore.getState().receive(run("ana", { type: "castVote", card: "13" }));
+    });
+    render(<LiveAnnouncer />);
+    const revealed = run("me", { type: "reveal" });
+    act(() => {
+      useRoomStore.getState().receive({ ...revealed, causes: [] });
+      vi.advanceTimersByTime(LIVE_QUIET_MS);
+    });
+    expect(region()?.textContent).toBe("Cards revealed.");
   });
 
   it("says the same words again as a new announcement", () => {

@@ -11,7 +11,8 @@ export const LIVE_MAX_WAIT_MS = 1500;
 /**
  * The table's polite live region (#17): "Ana joined.", "Ben is away.", "Ana voted.", or
  * "3 people voted." for a burst. It follows every snapshot the room store keeps (not each
- * render, which could merge two), reads its causes, and batches what they say.
+ * render, which could merge two), reads its causes (and, for a snapshot without any, the
+ * reveal it shows), and batches what they say.
  */
 export function LiveAnnouncer() {
   const t = useT();
@@ -34,7 +35,8 @@ export function LiveAnnouncer() {
     };
     const unsubscribe = useRoomStore.subscribe((state, before) => {
       const next = state.snapshot;
-      if (!next || next === before.snapshot || next.causes.length === 0) return;
+      // No causes is not nothing: a reconnect's snapshot can show the reveal it missed.
+      if (!next || next === before.snapshot) return;
       const previous = before.snapshot?.room.code === next.room.code ? before.snapshot.room : null;
       const events = liveEvents(next.room, next.causes, previous);
       if (events.length === 0) return;
