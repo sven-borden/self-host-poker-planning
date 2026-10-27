@@ -11,7 +11,11 @@ import type { SeatGeometry, SeatPlace } from "./layout.ts";
 export type SeatStatus =
   | { kind: "present" }
   | { kind: "thinking" }
-  | { kind: "voted" }
+  /**
+   * Voted; `dealt` after an anonymous reveal, when the card left the seat for the row
+   * under the table (#19) and only the fact that the person voted stays with them.
+   */
+  | { kind: "voted"; dealt?: boolean }
   /** After reveal: the card played, or null when the person did not vote. */
   | { kind: "revealed"; card: string | null };
 

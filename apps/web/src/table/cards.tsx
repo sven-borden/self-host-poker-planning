@@ -1,9 +1,10 @@
 import { cardLength } from "@pp/domain";
 import { CoffeeIcon, InfinityIcon } from "lucide-react";
-import type { ComponentProps } from "react";
+import { type ComponentProps, type RefObject, useLayoutEffect, useRef } from "react";
 import type { TFunction } from "../i18n/i18n.ts";
 import { cn } from "../lib/utils.ts";
 import type { Size } from "./layout.ts";
+import { cancelAll, fadeAway, play, prefersReducedMotion, turnUp } from "./reveal-motion.ts";
 import "./table.css";
 
 // Cards (docs/03-design-brief.md, "Cards"): warm faces in both themes, wide Archivo
@@ -129,35 +130,89 @@ export function HandCard({ value, selected = false, label, className, ...props }
   );
 }
 
-export type SlotFace = "empty" | "down" | "up";
+/**
+ * `empty`: an outline waiting for a card; `down`: the brass back; `up`: the value;
+ * `gone`: after an anonymous reveal, the card left the seat for the row under the table,
+ * and the slot is an outline again.
+ */
+export type SlotFace = "empty" | "down" | "up" | "gone";
 
 interface SlotCardProps {
-  /** `empty`: an outline waiting for a card; `down`: the brass back; `up`: the value. */
   face: SlotFace;
   value?: string | null;
   /** From the layout: 36 × 50 or 30 × 42 on desktop, 27 × 38 or 20 × 28 on phones. */
   size: Size;
+  /**
+   * When this card turns face up while on screen (the reveal, #19), it waits this many
+   * milliseconds first: the table staggers the cards in seat order.
+   */
+  turnDelay?: number;
   className?: string;
 }
 
-/** The card on the table in front of a seat. Decorative: the seat says the same. */
-export function SlotCard({ face, value, size, className }: SlotCardProps) {
+/** The brass back over a slot card, shown only while it turns or fades (#19). */
+function Cover({ radius, cover }: { radius: number; cover: RefObject<HTMLDivElement | null> }) {
+  return (
+    <div
+      ref={cover}
+      data-cover
+      className="pointer-events-none absolute -inset-px border border-transparent bg-card-face p-px opacity-0 shadow-md"
+      style={{ borderRadius: radius }}
+    >
+      <div className="pp-card-back size-full" style={{ borderRadius: radius - 2 }} />
+    </div>
+  );
+}
+
+/**
+ * The card on the table in front of a seat. Decorative: the seat says the same. A card
+ * seen face down that turns `up` flips (after `turnDelay`), and one that is `gone` (an
+ * anonymous reveal) shrinks and fades; both keep their back mounted over the slot for
+ * that (`Cover`, hidden at rest). A card that is already up or gone when it mounts (a
+ * late joiner, a reload) shows at rest, with no motion. A new face cancels the motion.
+ */
+export function SlotCard({ face, value, size, turnDelay = 0, className }: SlotCardProps) {
+  const root = useRef<HTMLDivElement>(null);
+  const cover = useRef<HTMLDivElement>(null);
+  const before = useRef(face);
+  const delay = useRef(turnDelay);
+  delay.current = turnDelay;
   const radius = size.width >= 27 ? 5 : 4;
   const box = { width: size.width, height: size.height, borderRadius: radius };
-  if (face === "empty" || (face === "up" && !value)) {
+  const shown: SlotFace = face === "up" && !value ? "empty" : face;
+
+  useLayoutEffect(() => {
+    const was = before.current;
+    before.current = shown;
+    if (was !== "down" || (shown !== "up" && shown !== "gone")) return;
+    const reduced = prefersReducedMotion();
+    if (shown === "gone") {
+      const fading = play(cover.current, fadeAway(reduced));
+      return () => cancelAll([fading]);
+    }
+    const turn = turnUp(delay.current, reduced, size.width * 6);
+    const animations = [play(root.current, turn.face), play(cover.current, turn.cover)];
+    return () => cancelAll(animations);
+  }, [shown, size.width]);
+
+  if (shown === "empty" || shown === "gone") {
     // Dashed in forced colours, where the filled back of a played card reads solid.
     return (
       <div
+        ref={root}
         aria-hidden="true"
-        data-face="empty"
-        className={cn("border border-table-ink/30 forced-colors:border-dashed", className)}
+        data-face={shown}
+        className={cn("relative border border-table-ink/30 forced-colors:border-dashed", className)}
         style={box}
-      />
+      >
+        {shown === "gone" ? <Cover radius={radius} cover={cover} /> : null}
+      </div>
     );
   }
-  if (face === "down") {
+  if (shown === "down") {
     return (
       <div
+        ref={root}
         aria-hidden="true"
         data-face="down"
         className={cn("border border-transparent bg-card-face p-px shadow-md", className)}
@@ -170,13 +225,19 @@ export function SlotCard({ face, value, size, className }: SlotCardProps) {
   const fontSize = Math.round(size.height * 0.34);
   return (
     <div
+      ref={root}
       aria-hidden="true"
       data-face="up"
-      className={cn(CARD_FACE, "grid place-items-center leading-none shadow-md", className)}
+      className={cn(
+        CARD_FACE,
+        "relative grid place-items-center leading-none shadow-md",
+        className,
+      )}
       style={{ ...box, fontSize }}
     >
       {/* The inner width less 2 px a side. */}
       <CardValue value={value ?? ""} room={(size.width - 6) / fontSize} />
+      <Cover radius={radius} cover={cover} />
     </div>
   );
 }

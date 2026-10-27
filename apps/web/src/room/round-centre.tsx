@@ -1,36 +1,48 @@
 import type { RoomView } from "@pp/protocol";
-import { useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
-import { sendCommand } from "../realtime/room-connection.ts";
+import { commandSender, sendCommand } from "../realtime/room-connection.ts";
 import { voteCount } from "./table-data.ts";
 
 interface RoundCentreProps {
   /** The room as the viewer sees it, their unconfirmed pick included. */
   room: RoomView;
-  /** A refused start, as an error code, or null when a new attempt begins. */
+  /** A refused start or reveal, as an error code, or null when a new attempt begins. */
   onFailure: (code: string | null) => void;
 }
 
+/** The PO's buttons in the centre, drawn as a card face (warm face, card ink, 44 px tall). */
+const CENTRE_BUTTON =
+  "h-auto min-h-11 max-w-full border-card-edge bg-card-face px-3 py-1.5 text-[12.5px]/tight font-semibold whitespace-normal text-card-ink shadow-md hover:bg-card-face hover:text-card-ink aria-disabled:opacity-60 in-data-[variant=phone]:px-1.5 in-data-[variant=phone]:text-[11px]/tight dark:bg-card-face dark:hover:bg-card-face";
+
 /**
  * The status in the middle of the table (#18). Voting: how many have voted out of how
- * many can vote (#19 adds the reveal button here). Lobby or revealed: a minimal start
- * button for the PO, which sends `startRound` without a subject, and a calm line for
- * everyone else. #21 replaces `StartRound` with "Next round" and its subject field; #20
- * puts the results here after a reveal.
+ * many can vote, and for the PO the reveal button (#19, also the key R). Lobby or
+ * revealed: a minimal start button for the PO, which sends `startRound` without a
+ * subject, and a calm line for everyone else. #21 replaces `StartRound` with "Next round"
+ * and its subject field; #20 puts the results here after a reveal.
  */
 export function RoundCentre({ room, onFailure }: RoundCentreProps) {
   const t = useT();
   const round = room.round;
+  const owner = room.you !== null && room.you === room.ownerId;
   if (round?.phase === "voting") {
     const { count, total } = voteCount(room);
-    return (
+    const status = (
       <p data-centre-status="voting" tabIndex={-1} className="m-0 outline-none">
         {t("table.votedSoFar", { count, total })}
       </p>
     );
+    if (!owner) return status;
+    return (
+      <div className="flex flex-col items-center gap-1.5 in-data-[variant=phone]:gap-0.5 in-data-[variant=phone]:text-[10px]/tight">
+        {status}
+        <RevealButton onFailure={onFailure} />
+      </div>
+    );
   }
-  if (room.you !== null && room.you === room.ownerId) {
+  if (owner) {
     return <StartRound again={round !== null} onFailure={onFailure} />;
   }
   return (
@@ -41,20 +53,127 @@ export function RoundCentre({ room, onFailure }: RoundCentreProps) {
 }
 
 /**
+ * Once the screen changed under the focus, it goes to `selector`, after a frame for React
+ * to draw it, unless the person already moved it somewhere.
+ */
+function focusSoon(...selectors: string[]) {
+  requestAnimationFrame(() => {
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    for (const selector of selectors) {
+      const target = document.querySelector<HTMLElement>(selector);
+      if (target) {
+        target.focus();
+        return;
+      }
+    }
+  });
+}
+
+/**
  * The button is gone once the round starts, and the focus with it: it goes to the hand's
  * tab stop, or to the centre's status for a PO without a hand. The snapshot is already in
  * the store when the ack resolves; the frame waits for React to draw it.
  */
-function focusAfterStart() {
-  requestAnimationFrame(() => {
-    // Someone who already moved on keeps their focus.
-    const active = document.activeElement;
-    if (active !== null && active !== document.body) return;
-    const target =
-      document.querySelector<HTMLElement>("[data-hand] [tabindex='0']") ??
-      document.querySelector<HTMLElement>("[data-centre-status='voting']");
-    target?.focus();
-  });
+const focusAfterStart = () =>
+  focusSoon("[data-hand] [tabindex='0']", "[data-centre-status='voting']");
+
+/** After the reveal the PO's next step is the next round: the focus goes to its button. */
+const focusAfterReveal = () => focusSoon("[data-start-round]");
+
+/** Fields where R is a letter being typed, not the reveal. */
+const NOT_TYPING = new Set([
+  "button",
+  "checkbox",
+  "radio",
+  "submit",
+  "reset",
+  "range",
+  "color",
+  "file",
+  "image",
+]);
+
+function isTyping(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
+  return target instanceof HTMLInputElement && !NOT_TYPING.has(target.type);
+}
+
+/**
+ * The key R alone reveals (docs/03-design-brief.md, "Accessibility"): no modifier, not a
+ * held key's repeats, not inside a field where it is a letter, not while an input method
+ * composes, and not when something else already used the key.
+ */
+export function isRevealKey(event: KeyboardEvent): boolean {
+  if (event.key !== "r" && event.key !== "R") return false;
+  if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return false;
+  if (event.repeat || event.isComposing || event.defaultPrevented) return false;
+  return !isTyping(event.target);
+}
+
+/**
+ * "Reveal cards", for the PO while Voting (#19): always allowed, whoever has voted. The
+ * key R does the same while the button is on screen. A refusal shows under the table;
+ * `not_voting` says nothing, since the round revealed itself in the meantime (the last
+ * vote) or a new one began. When the button leaves with the voting round while it has the
+ * focus (pressed, or the last vote revealed the round), the focus goes to "Next round".
+ */
+function RevealButton({ onFailure }: { onFailure: (code: string | null) => void }) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const button = useRef<HTMLButtonElement>(null);
+
+  const reveal = useCallback(async () => {
+    // Focusable while busy (aria-disabled), so a second press lands here and is dropped.
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    onFailure(null);
+    const send = commandSender();
+    try {
+      const ack = await send({ type: "reveal" });
+      if (ack.ok) focusAfterReveal();
+      else if (ack.code !== "not_voting") onFailure(ack.code);
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  }, [onFailure]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!isRevealKey(event)) return;
+      event.preventDefault();
+      void reveal();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [reveal]);
+
+  // A layout cleanup runs while the button is still in the document, focus included.
+  useLayoutEffect(() => {
+    const element = button.current;
+    return () => {
+      if (element !== null && document.activeElement === element) focusAfterReveal();
+    };
+  }, []);
+
+  return (
+    <Button
+      ref={button}
+      data-reveal
+      variant="outline"
+      aria-keyshortcuts="R"
+      aria-disabled={busy || undefined}
+      onClick={() => void reveal()}
+      className={CENTRE_BUTTON}
+    >
+      {t("round.reveal")}
+    </Button>
+  );
 }
 
 function StartRound({
@@ -87,7 +206,7 @@ function StartRound({
       variant="outline"
       aria-disabled={busy || undefined}
       onClick={start}
-      className="h-auto min-h-11 max-w-full border-card-edge bg-card-face px-3 py-1.5 text-[12.5px]/tight font-semibold whitespace-normal text-card-ink shadow-md hover:bg-card-face hover:text-card-ink aria-disabled:opacity-60 in-data-[variant=phone]:px-1.5 in-data-[variant=phone]:text-[11px]/tight dark:bg-card-face dark:hover:bg-card-face"
+      className={CENTRE_BUTTON}
     >
       {again ? t("round.next") : t("round.start")}
     </Button>

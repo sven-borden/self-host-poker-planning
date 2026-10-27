@@ -23,7 +23,8 @@ export interface TableData {
  * belongs to anyone, so a seat shows only that its person voted; who did not vote is
  * public, so their seat says "no vote" as in a named reveal. A PO who does not vote
  * (`poVotes` off) is never thinking and never missing a vote: their seat stays present.
- * #19 builds the flip on the `revealed` status.
+ * The table turns a `voted` card face up when it becomes `revealed` (#19), and lets it go
+ * from the seat when it becomes `dealt`.
  */
 export function seatStatus(participant: ParticipantView, room: RoomView): SeatStatus {
   const round = room.round;
@@ -34,7 +35,7 @@ export function seatStatus(participant: ParticipantView, room: RoomView): SeatSt
   if (round.phase === "voting") {
     return voted ? { kind: "voted" } : counts ? { kind: "thinking" } : { kind: "present" };
   }
-  if (round.anonymous) return voted ? { kind: "voted" } : missing;
+  if (round.anonymous) return voted ? { kind: "voted", dealt: true } : missing;
   const vote = round.votes.find((v) => v.who === participant.id);
   return vote ? { kind: "revealed", card: vote.card } : missing;
 }

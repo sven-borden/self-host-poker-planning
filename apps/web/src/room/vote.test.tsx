@@ -99,7 +99,10 @@ const pressed = () =>
     .filter((b) => b.getAttribute("aria-pressed") === "true")
     .map((b) => b.getAttribute("aria-label"));
 const handLive = () => document.querySelector("[data-hand-live]")?.textContent ?? "";
-const centre = () => document.querySelector("[data-centre]")?.textContent ?? "";
+/** The centre's status line (the PO's buttons beside it are not part of it). */
+const centre = () =>
+  (document.querySelector("[data-centre-status]") ?? document.querySelector("[data-centre]"))
+    ?.textContent ?? "";
 const mySlot = () => document.querySelector("[data-slot-card][data-you] [data-face]");
 
 const table: Array<[string, Participant["role"]]> = [

@@ -4,6 +4,7 @@ import { cn } from "../lib/utils.ts";
 import { Avatar } from "./avatar.tsx";
 import { SlotCard, type SlotFace } from "./cards.tsx";
 import { layoutTable, type TableVariant, variantFor } from "./layout.ts";
+import { FLIP_STAGGER_MS } from "./reveal-motion.ts";
 import { flagWords, type PersonFlags, Seat, type SeatStatus, type TablePerson } from "./seat.tsx";
 import { useRoomWidth } from "./use-room-width.ts";
 import "./table.css";
@@ -36,7 +37,7 @@ interface TableStageProps {
 function slotFace(status: SeatStatus): { face: SlotFace; value: string | null } {
   switch (status.kind) {
     case "voted":
-      return { face: "down", value: null };
+      return { face: status.dealt ? "gone" : "down", value: null };
     case "revealed":
       return status.card === null
         ? { face: "empty", value: null }
@@ -49,7 +50,8 @@ function slotFace(status: SeatStatus): { face: SlotFace; value: string | null } 
 /**
  * The boardroom table (ADR-005): a stage with the stadium table, a card slot per person,
  * the seats around it, and a status area in the middle. Presentational only: it renders
- * the people it is given and decides nothing.
+ * the people it is given and decides nothing. At a reveal the face-up cards turn over one
+ * after the other in seat order, from the viewer at the bottom (`FLIP_STAGGER_MS`).
  */
 export function TableStage({
   people,
@@ -67,6 +69,8 @@ export function TableStage({
   );
   const seated = people.slice(0, layout.count);
   const observersId = useId();
+  // The nth face-up card in seat order turns n × 90 ms after the first (#19).
+  let turned = 0;
 
   return (
     <div ref={roomRef} className={cn("w-full", className)}>
@@ -97,6 +101,7 @@ export function TableStage({
             return null;
           }
           const { face, value } = slotFace(person.status);
+          const turnDelay = face === "up" ? turned++ * FLIP_STAGGER_MS : 0;
           return (
             <div
               key={person.id}
@@ -109,7 +114,7 @@ export function TableStage({
                 top: `calc(${point.y}% - ${layout.slot.height / 2}px)`,
               }}
             >
-              <SlotCard face={face} value={value} size={layout.slot} />
+              <SlotCard face={face} value={value} size={layout.slot} turnDelay={turnDelay} />
             </div>
           );
         })}

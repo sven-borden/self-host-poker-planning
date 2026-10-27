@@ -137,6 +137,12 @@ export const de: Catalog = {
     next: "Nächste Runde",
     waiting: "Warten auf den PO",
     revealed: "Karten aufgedeckt",
+    reveal: "Karten aufdecken",
+  },
+  results: {
+    cards: "Gespielte Karten",
+    left: "Haben den Raum verlassen",
+    someone: "Jemand, der gegangen ist",
   },
   hand: {
     hintVoting:
@@ -166,6 +172,7 @@ export const de: Catalog = {
     votedMany_one: "{{count, number}} Person hat abgestimmt.",
     votedMany_other: "{{count, number}} Personen haben abgestimmt.",
     roundStarted: "Die Abstimmung hat begonnen.",
+    revealed: "Die Karten sind aufgedeckt.",
   },
   cards: {
     yourCards: "Ihre Karten",

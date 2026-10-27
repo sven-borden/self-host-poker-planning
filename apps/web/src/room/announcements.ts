@@ -1,11 +1,13 @@
 import type { CauseView, RoomView } from "@pp/protocol";
 import type { TFunction } from "../i18n/i18n.ts";
 
-// What the table's live region says (#17): joins, leaves, away and back, votes, and a new
-// round (#18), read from a snapshot's causes. Never a card: a vote cause carries who, never what. Pure, so
-// the batching rules are tested without timers; `live-announcer.tsx` runs them.
+// What the table's live region says (#17): joins, leaves, away and back, votes, a new
+// round (#18) and the reveal (#19), read from a snapshot's causes. Never a card: a vote
+// cause carries who, never what, and the reveal is said without its cards (#20 says the
+// results). Pure, so the batching rules are tested without timers; `live-announcer.tsx`
+// runs them.
 
-export type LiveKind = "roundStarted" | "joined" | "left" | "away" | "back" | "voted";
+export type LiveKind = "roundStarted" | "joined" | "left" | "away" | "back" | "voted" | "revealed";
 
 export interface LiveEvent {
   kind: LiveKind;
@@ -15,8 +17,16 @@ export interface LiveEvent {
   name: string;
 }
 
-/** Said in this order, whatever order the events came in. */
-const ORDER: readonly LiveKind[] = ["roundStarted", "joined", "left", "away", "back", "voted"];
+/** Said in this order, whatever order the events came in: the last vote, then the reveal. */
+const ORDER: readonly LiveKind[] = [
+  "roundStarted",
+  "joined",
+  "left",
+  "away",
+  "back",
+  "voted",
+  "revealed",
+];
 
 /** Events that undo each other inside one batch: nothing is said for either. */
 const UNDOES: Partial<Record<LiveKind, LiveKind>> = {
@@ -39,8 +49,9 @@ function nameOf(id: string, ...rooms: (RoomView | null)[]): string | null {
  * own actions are left out: they see them happen, and their own controls speak for them.
  * A vote counts only when the person had not voted yet in this round: changing a card is
  * not news, and saying so would hint that something changed. A person who left is named
- * from `previous`. A new round is said to everyone, the PO who started it too: the hand
- * and the centre change under their focus.
+ * from `previous`. A new round and the reveal (forced, automatic or at the deadline) are
+ * said to everyone, the PO who caused them too: the hand and the centre change under
+ * their focus.
  */
 export function liveEvents(
   next: RoomView,
@@ -56,7 +67,8 @@ export function liveEvents(
     let kind: LiveKind;
     switch (cause.type) {
       case "roundStarted":
-        events.push({ kind: "roundStarted", who: "", name: "" });
+      case "revealed":
+        events.push({ kind: cause.type, who: "", name: "" });
         continue;
       case "joined":
       case "left":
@@ -84,11 +96,14 @@ export function liveEvents(
 
 /**
  * Adds `events` to a batch waiting to be said: a repeat is dropped, and an event that
- * undoes one in the batch (a person away and back again) removes both.
+ * undoes one in the batch (a person away and back again) removes both. A new round makes
+ * a reveal still waiting in the batch moot (a timer's reveal resolved by the next round's
+ * start): the revealed cards are already gone.
  */
 export function mergeEvents(pending: readonly LiveEvent[], events: readonly LiveEvent[]) {
   let merged = [...pending];
   for (const event of events) {
+    if (event.kind === "roundStarted") merged = merged.filter((e) => e.kind !== "revealed");
     const undone = UNDOES[event.kind];
     const opposite = merged.findIndex((e) => e.who === event.who && e.kind === undone);
     if (opposite >= 0) {
@@ -119,6 +134,8 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
       return one ? t("live.back", { name }) : t("live.backMany", { count });
     case "voted":
       return one ? t("live.voted", { name }) : t("live.votedMany", { count });
+    case "revealed":
+      return t("live.revealed");
   }
 }
 
