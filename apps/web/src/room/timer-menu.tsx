@@ -48,7 +48,8 @@ export default function TimerMenu({ running, compact, busy, onCommand }: TimerMe
               if (!busy) onCommand({ type: "extendTimer", payload: { seconds: EXTEND_SECONDS } });
             }}
           >
-            {t("timer.add")}
+            <span aria-hidden="true">{t("timer.add")}</span>
+            <span className="sr-only">{t("timer.addSpoken")}</span>
           </Button>
           <Button
             variant="outline"

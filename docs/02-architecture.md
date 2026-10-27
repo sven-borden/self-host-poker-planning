@@ -235,8 +235,10 @@ sends it. So every tab open across that deploy kept its room instead of reloadin
   unknown cause is dropped); only `finalSet` carries a card; in an anonymous round after
   reveal no vote cause carries `who`, even one the domain sent with it (defence in depth).
 - **Projection rules** (the round view, built field by field from an allow-list):
-  - Every phase: `number`, `subject`, `startedAt`, `deadlineAt?`, `deck`, `specials`,
-    `anonymous`, `voted` (user ids in participant order) and `yourVote?` (the viewer's
+  - Every phase: `number`, `subject`, `startedAt`, `deadlineAt?`, `timerStartedAt?` and
+    `timeUpAt?` (#27; a reveal clears all three, so only a voting round carries them),
+    `deck`, `specials`, `anonymous`, `voted` (user ids in participant order) and
+    `yourVote?` (the viewer's
     own card, only for the viewer).
   - Voting: no other card anywhere.
   - Revealed: plus `revealedAt`, `final?` and `results` (`computeResults`).
@@ -562,11 +564,23 @@ password, no social provider before W5.
   `serverNow + roundTrip / 2 − arrival` in the page's own clock, where the round trip is
   the last `enter`'s (sent to its snapshot back). The offset is the median of the last 9
   samples, so one late packet does not move the ring; time left is `deadlineAt −
-  (Date.now() + offset)`, never below 0. At 0:00 the page waits for the server: it never
-  reveals and sends nothing. Three pages with clocks at −5 s, 0 and +5 s agree within
+  (localNow() + offset)`, never below 0, where `localNow()` is the page's monotonic clock
+  (`performance.timeOrigin + performance.now()`), not `Date.now()`: a step of the wall
+  clock moves nothing. A browser may pause that clock while the computer sleeps, which
+  raises every later sample by the time asleep: a sample more than 1 s above the median
+  starts the window over from it. A sample far below it is a snapshot that arrived late,
+  and the median outvotes it. `serverTime()`, `onClockOffset` and `useClockOffset` are
+  what any other page part that compares a server timestamp with now reads. At 0:00 the
+  page waits for the server and never reveals. Three pages with clocks at −5 s, 0 and +5 s agree within
   about 15 ms locally (`e2e/timer.spec.ts`, AC 1 asks 0.5 s). The ring drains over
   `deadlineAt − timerStartedAt`; a round from a server that sends no start (before #27)
   drains over the time left when the page first saw it.
+- The client ping (#27): each page sends `timeUp` once per deadline, 1 s plus a random
+  0 to 1 s after its estimate of the deadline, if the round it shows still votes with that
+  deadline. Normally the server's timeout got there first and nothing is sent. A `timeUp`
+  that finds nothing to do returns the loaded state, so the runner writes nothing, bumps no
+  version and broadcasts nothing (`room-sync.db.test.ts`: with the timeout off through the
+  test-only `deadlineTimeouts: false`, four pings give one reveal and one write).
 - No arming at start-up (#27 decision): after a restart a room's deadline is armed again
   by the first socket that enters it (`armDeadline` on enter), not by a scan of every room
   at boot. The stored result is the same whoever resolves the deadline, since `apply`

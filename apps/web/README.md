@@ -140,8 +140,11 @@ server sends and never decides the outcome of a round.
   sentences are in `announcements.ts`. Copy: `final.*`, `round.revote`, `live.final*`,
   `live.revote*`.
   The timer (#27): `realtime/server-clock.ts` keeps the server's clock offset (each
-  snapshot's `serverNow` plus half the last `enter`'s round trip, minus its arrival; the
-  median of the last 9; `onClockOffset` for React). `room/timer-view.ts` is pure: the
+  snapshot's `serverNow` plus half the last `enter`'s round trip, minus its arrival on
+  `localNow()`, the monotonic clock; the median of the last 9, started over by a sample
+  more than 1 s above it). Anything that compares a server time with now reads
+  `serverTime()` and draws again on `useClockOffset()` (or `onClockOffset`), never
+  `Date.now()`. `room/timer-view.ts` is pure: the
   round's `timerState` (none, running from `timerStartedAt`, or up from `timeUpAt`),
   `clockText` ("0:45", never negative), `inWarnPhase` (the last 10 s), `ringLeft`,
   `durationWords` and `shortDuration`, `parseDuration` (seconds or m:ss, 5 s to 60 min).
@@ -149,14 +152,20 @@ server sends and never decides the outcome of a round.
   whole second of the time left and when the offset moves; `TimerChip` is everyone's
   `[data-timer]` (`role="timer"`, never live; `data-timer` is `running`, `warn`, `zero`
   or `up`; `data-ends-at` is the deadline in the page's own clock), a stadium SVG ring
-  (`.pp-timer-*` in `table/table.css`) drained with the Web Animations API, or stepped
+  (`.pp-timer-*` in `table/table.css`) drained in `ringSteps` steps (a device pixel of
+  its length each, at most 20 a second) by a timeout that sets `stroke-dashoffset`, not
+  an animation (one restyled the page every frame, `steps()` easing or not), or stepped
   once a second under reduced motion (`useReducedMotionQuery`), with a 1 Hz scale pulse
   in the warn phase (never under reduced motion; Playwright cannot click a pulsing chip,
   so the e2e opens its menu by keyboard). `TimerControls` is the PO's: the same chip as
   `[data-timer-button]`, a popover trigger whose menu (`timer-menu.tsx`, a lazy chunk,
   `[data-timer-menu]`) starts 30 s, 60 s, 2 min or a typed length and, on a phone, holds
   "+30 s" and "Stop" (`[data-menu-extend]`, `[data-menu-stop]`); on a desktop
-  `[data-timer-stop]` and `[data-timer-extend]` flank the chip. `useLastSecondsWarning`
+  `[data-timer-stop]` and `[data-timer-extend]` flank the chip. The chip's name says its
+  state only; the time is in the sr-only `[data-timer-spoken]` (`role="timer"`) beside it.
+  `useMenuHandOff` sends the focus to the PO's decision when the menu leaves with the round.
+  `useTimeUpPing` sends `timeUp` once per deadline, 1 to 2 s after it, while the store's
+  round still votes with that deadline. `useLastSecondsWarning`
   says "10 seconds left." once per deadline through the store's `announce`; the start,
   extension, stop and time up are `timer` and `timeUp` events in `announcements.ts`
   (their lengths from the round, never a clock). The room's timer is `TimerSetting`

@@ -565,7 +565,7 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
       await expect(timerText(page)).toHaveText(/^(2:00|1:5\d)$/);
       await expect(tableLive(page)).toContainText("Timer started: 2 minutes.");
     }
-    await ana.press(ana.page.getByRole("button", { name: "+30\u{a0}s" }));
+    await ana.press(ana.page.getByRole("button", { name: "Add 30 seconds" }));
     for (const { page } of everyone) {
       await expect(timerText(page)).toHaveText(/^2:[23]\d$/);
       await expect(tableLive(page)).toContainText("30 seconds added.");

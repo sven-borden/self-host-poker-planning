@@ -134,18 +134,31 @@ test("the PO starts, extends and stops a timer; everyone counts down and hears i
       await expect(tableLive(viewer)).toContainText("Timer started: 1 minute.");
     }
     await expect(ben.page.getByRole("timer")).toContainText(/Time left: (1:00|0:5\d)/);
-    // The ring drains smoothly, linearly, to the deadline.
-    const drain = await ben.page.evaluate(() => {
+    // The PO's chip is named by its state; the time is in the timer beside it.
+    await expect(timerButton(page)).toHaveAccessibleName("Timer, running");
+    await expect(page.getByRole("timer")).toContainText(/Time left: (1:00|0:5\d)/);
+    // The ring drains linearly in small steps, about a device pixel each, with no
+    // animation running between them (the page restyles only when a step comes).
+    const drain = await ben.page.evaluate(async () => {
       const ring = document.querySelector(".pp-timer-progress");
-      const [animation] = ring?.getAnimations() ?? [];
-      const timing = animation?.effect?.getTiming();
-      return { easing: timing?.easing, duration: Number(timing?.duration) };
+      const seen: number[] = [];
+      for (let i = 0; i < 80; i += 1) {
+        const value = Number(ring?.getAttribute("stroke-dashoffset"));
+        if (seen.at(-1) !== value) seen.push(value);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      return { animations: ring?.getAnimations().length, seen };
     });
-    expect(drain.easing).toBe("linear");
-    expect(drain.duration).toBeGreaterThan(50_000);
-    expect(drain.duration).toBeLessThanOrEqual(60_000);
+    expect(drain.animations).toBe(0);
+    expect(drain.seen.length).toBeGreaterThanOrEqual(3);
+    for (const [i, value] of drain.seen.entries()) {
+      if (i === 0) continue;
+      const step = value - (drain.seen[i - 1] ?? 0);
+      expect(step).toBeGreaterThan(0);
+      expect(step).toBeLessThan(1);
+    }
 
-    await page.getByRole("button", { name: `+30${NB}s` }).click();
+    await page.getByRole("button", { name: "Add 30 seconds" }).click();
     for (const viewer of [page, ben.page]) {
       await expect(chipText(viewer)).toHaveText(/^1:[23]\d$/);
       await expect(tableLive(viewer)).toContainText("30 seconds added.");
@@ -396,7 +409,7 @@ test("the PO's timer by keyboard alone, on a desktop", async ({ page }) => {
   await expect(chipText(page)).toHaveText(/^0:(30|2\d)$/);
 
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("button", { name: `+30${NB}s` })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Add 30 seconds" })).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(chipText(page)).toHaveText(/^0:5\d|1:00$/);
   await page.keyboard.press("Shift+Tab");
@@ -438,7 +451,7 @@ test("the PO's timer by keyboard alone, on a phone, with the hand docked under t
     await page.keyboard.press("Enter");
     await expect(centreStatus(page)).toHaveAttribute("data-centre-status", "voting");
     // On a phone the chip stands alone: "+30 s" and "Stop" live in its menu.
-    await expect(page.getByRole("button", { name: `+30${NB}s` })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Add 30 seconds" })).toHaveCount(0);
     await tabTo(page, timerButton(page), true);
     await page.keyboard.press("Enter");
     await tabTo(page, timerMenu(page).locator("[data-timer-preset='60']"));
