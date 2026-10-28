@@ -14,13 +14,16 @@ export const ARGON2_PARAMS = { memory: 19_456, passes: 2, parallelism: 1 } as co
 const SALT_BYTES = 16;
 const TAG_BYTES = 32;
 
-/** At most this many hashings or checks run at once; past that, `rate_limited`. */
-export const MAX_CONCURRENT_HASHES = 4;
+/**
+ * The hash gate (#31): at most `running` hashings or checks at once, at most `waiting`
+ * more in line, each for at most `waitMs`; past that, `busy`.
+ */
+export const HASH_GATE = { running: 2, waiting: 32, waitMs: 2000 } as const;
 
 /**
  * The password as it is hashed and checked: NFC-normalised, so "é" typed as one code
  * point or as "e" and a combining accent is the same password. Never trimmed: a space is
- * a character like any other. Null when it is not 4 to 128 characters or not well-formed
+ * a character like any other. Null when it is not 6 to 128 characters or not well-formed
  * text (a lone surrogate), which the API answers with `bad_password`.
  */
 export function normalisePassword(raw: string): string | null {
@@ -69,64 +72,108 @@ export async function hashPassword(password: string): Promise<string> {
   return `$argon2id$v=19$m=${memory},t=${passes},p=${parallelism}$${b64(salt)}$${b64(tag)}`;
 }
 
-const PHC =
-  /^\$argon2id\$v=19\$m=(\d{1,7}),t=(\d{1,3}),p=(\d{1,2})\$([A-Za-z0-9+/]+)\$([A-Za-z0-9+/]+)$/;
+/**
+ * The only PHC string a room may hold: the parameters this code writes, a 16-byte salt
+ * and a 32-byte tag, both unpadded base64.
+ */
+const PHC = new RegExp(
+  String.raw`^\$argon2id\$v=19\$m=${ARGON2_PARAMS.memory},t=${ARGON2_PARAMS.passes},p=${ARGON2_PARAMS.parallelism}\$([A-Za-z0-9+/]{22})\$([A-Za-z0-9+/]{43})$`,
+);
+
+/** A stored hash this code did not write. Its message never holds the hash. */
+export class CorruptHashError extends Error {
+  constructor() {
+    super("corrupt password hash");
+    this.name = "CorruptHashError";
+  }
+}
 
 /**
  * Whether a normalised password matches a stored PHC string: the key is derived again
- * with the stored salt and parameters and compared with `timingSafeEqual`, so the time
- * taken says nothing about how much of it matched. A string this code did not write is
- * no match.
+ * with the stored salt and compared with `timingSafeEqual`, so the time taken says
+ * nothing about how much of it matched. Only the parameters in `ARGON2_PARAMS` are
+ * accepted: a hash with others (a cost of gigabytes, or a cheap one) was not written
+ * here, and throws `CorruptHashError` before any work.
  */
 export async function verifyPassword(password: string, phc: string): Promise<boolean> {
   const match = PHC.exec(phc);
-  if (!match) return false;
-  const [, m, t, p, salt, tag] = match as unknown as [
-    string,
-    string,
-    string,
-    string,
-    string,
-    string,
-  ];
+  if (!match) throw new CorruptHashError();
+  const [, salt, tag] = match as unknown as [string, string, string];
   const expected = Buffer.from(tag, "base64");
-  const run = {
-    memory: Number(m),
-    passes: Number(t),
-    parallelism: Number(p),
+  const { memory, passes, parallelism } = ARGON2_PARAMS;
+  const actual = await derive(password, {
+    memory,
+    passes,
+    parallelism,
     salt: Buffer.from(salt, "base64"),
-    tagLength: expected.length,
-  };
-  if (run.salt.length < 8 || expected.length < 16) return false;
-  const actual = await derive(password, run);
+    tagLength: TAG_BYTES,
+  });
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-/** A gate of `max` concurrent runs: `run` resolves null at once when they are all taken. */
+/** The hash gate: `run` resolves null when the line is full or the wait ran out. */
 export interface HashGate {
   run<T>(task: () => Promise<T>): Promise<T | null>;
-  /** Runs in progress, for tests. */
+  /** Runs in progress, and runs waiting, for tests. */
   readonly busy: number;
+  readonly waiting: number;
 }
 
 /**
- * At most `max` argon2 runs at once (19 MiB each), so a flood of tries can neither take
- * the memory nor queue up behind libuv's 4 threads: the fifth is refused, never queued.
+ * At most `running` argon2 runs at once (19 MiB each), so a flood of tries can neither
+ * take the memory nor starve libuv's 4 threads. The next ones wait in line, first come
+ * first served: at most `waiting` of them, each at most `waitMs`. One that finds the line
+ * full, or waits longer, resolves null (`busy`) without running.
  */
-export function createHashGate(max: number = MAX_CONCURRENT_HASHES): HashGate {
+export function createHashGate({
+  running = HASH_GATE.running,
+  waiting = HASH_GATE.waiting,
+  waitMs = HASH_GATE.waitMs,
+}: {
+  running?: number;
+  waiting?: number;
+  waitMs?: number;
+} = {}): HashGate {
   let busy = 0;
+  /** Each waiter's wake-up: it takes over the place of the run that ended. */
+  const line: Array<() => void> = [];
+
+  function place(): Promise<boolean> {
+    if (busy < running) {
+      busy += 1;
+      return Promise.resolve(true);
+    }
+    if (line.length >= waiting) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const wake = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      const timer = setTimeout(() => {
+        line.splice(line.indexOf(wake), 1);
+        resolve(false);
+      }, waitMs);
+      line.push(wake);
+    });
+  }
+
   return {
     async run(task) {
-      if (busy >= max) return null;
-      busy += 1;
+      if (!(await place())) return null;
       try {
         return await task();
       } finally {
-        busy -= 1;
+        // The place goes to the first in line, or is freed.
+        const next = line.shift();
+        if (next) next();
+        else busy -= 1;
       }
     },
     get busy() {
       return busy;
+    },
+    get waiting() {
+      return line.length;
     },
   };
 }

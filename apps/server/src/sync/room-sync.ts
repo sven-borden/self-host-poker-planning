@@ -175,6 +175,12 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
    * nothing until it passed, unless it belongs to a participant or the PO.
    */
   const admitted = new WeakMap<RealtimeSocket, string>();
+  /**
+   * How often each room (by id) locked its sockets out for a new password (#31). An enter
+   * that read a grant before a lockout ran read the old password's grant, which the
+   * change dropped: it sees the count move, and is refused.
+   */
+  const lockouts = new Map<string, number>();
   const deadlines = createDeadlineTimers(
     options.deadlineTimeouts === false
       ? () => {}
@@ -475,6 +481,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     deadlines.clear(id);
     graces.clearRoom(id);
     awayFailures.delete(id);
+    lockouts.delete(id);
     watched.delete(id);
     members.delete(id);
     newest.delete(id);
@@ -559,6 +566,8 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       }
       // The password gate (#31): a member passes on the state; anyone else needs a grant.
       if (loaded.state.hasPassword && !isMember(loaded.state, user.id)) {
+        // This socket sits in the room's channel already, so a lockout from here on finds it.
+        const lockedBefore = lockouts.get(loaded.id) ?? 0;
         const granted = await hasAccess(loaded.id, user.id);
         if (!socket.connected) return gone();
         if (!granted) {
@@ -572,6 +581,12 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
         if (!loaded || loaded.id !== joined) {
           undo();
           return refuse("room_not_found");
+        }
+        // A new password locked the room out while the grant was read (before this socket
+        // had a room to be locked out of): the grant was the old password's.
+        if ((lockouts.get(loaded.id) ?? 0) !== lockedBefore) {
+          undo();
+          return refuse("password_required");
         }
       }
       admitted.set(socket, loaded.id);
@@ -613,6 +628,8 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       if (socket.data.room?.id === room.id) leaveRoom(socket);
       return refuse("password_required");
     }
+    // Locked out by a new password while the grant was read: the grant was the old one's.
+    if (command.type === "join" && socket.data.room !== room) return refuse("password_required");
     return acks.remember(user.id, ackKey(room.id, id), () => execute(room, user.id, command));
   }
 
@@ -625,6 +642,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
 
   /** The sockets of anyone but a member leave a room that just got a new password (#31). */
   function lockOut(id: string, state: RoomState) {
+    lockouts.set(id, (lockouts.get(id) ?? 0) + 1);
     for (const socket of socketsOf(id)) {
       const viewer = socket.data.user?.id;
       if (viewer !== undefined && isMember(state, viewer)) continue;

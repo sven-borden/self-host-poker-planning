@@ -3,9 +3,13 @@
  * over HTTP; people in the room stay, anyone else enters it once; a removed participant
  * must enter it again (AC 3); grants live in the database, so they survive a restart; a
  * brute force hits each limit, the per-room one across two instances (AC 1); and neither
- * a password nor its hash ever reaches a log line or a socket frame (AC 2).
+ * a password nor its hash ever reaches a log line or a socket frame (AC 2), even with a
+ * logger that redacts nothing; each limit counts exactly, with tries sent at once; members
+ * skip the check; a burst of right passwords waits in line instead of being refused; and a
+ * grant never outlives the password it was given for (B1), over HTTP or on the socket.
  */
 import { apply, type Command, createRoom, type RoomState } from "@pp/domain";
+import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Config } from "./config.ts";
 import type { Database } from "./database.ts";
@@ -14,6 +18,7 @@ import { hashPassword } from "./password.ts";
 import { PASSWORD_LIMITS } from "./room-password.ts";
 import { createServer, type PokerServer } from "./server.ts";
 import { setupServer } from "./setup.ts";
+import { createRoomSync } from "./sync/room-sync.ts";
 import { roomCode, SESSION_COOKIE, type TestClient, testClient } from "./sync/test-support.ts";
 import { collectLogs, testConfig, VALID_ENV } from "./test-support.ts";
 
@@ -204,7 +209,7 @@ async function storedHash(id: string): Promise<string | null> {
 }
 
 describe("setting, changing and removing a password", () => {
-  it("is the PO's alone, takes 4 to 128 characters, and keeps everyone in the room", async () => {
+  it("is the PO's alone, takes 6 to 128 characters, and keeps everyone in the room", async () => {
     const [ana, ben, cleo] = await Promise.all([guest(), guest(), guest()]);
     const { code, id } = await roomWith(ana, [ben]);
     const a = client(ana);
@@ -216,10 +221,12 @@ describe("setting, changing and removing a password", () => {
       status: 403,
       json: { code: "not_allowed" },
     });
-    expect(await setPassword(code, ana, "q#7")).toMatchObject({
-      status: 400,
-      json: { code: "bad_password" },
-    });
+    for (const short of ["q#7", "5char"]) {
+      expect(await setPassword(code, ana, short)).toMatchObject({
+        status: 400,
+        json: { code: "bad_password" },
+      });
+    }
     expect(await setPassword(code, ana, "x".repeat(129))).toMatchObject({
       status: 400,
       json: { code: "bad_password" },
@@ -379,63 +386,263 @@ describe("setting, changing and removing a password", () => {
   });
 });
 
-describe("a brute force hits the limit (AC 1)", () => {
-  it("10 wrong tries per address and room, then rate_limited, even for the right password", async () => {
-    const [ana, ivy] = await Promise.all([guest(), guest()]);
-    const { code } = await roomWith(ana, [], "per address");
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** How many answers had each status. */
+function statuses(answers: ReadonlyArray<{ status: number }>): Record<number, number> {
+  const by: Record<number, number> = {};
+  for (const { status } of answers) by[status] = (by[status] ?? 0) + 1;
+  return by;
+}
+
+const retryAfterOf = (answer: { response: Response }) =>
+  Number(answer.response.headers.get("retry-after"));
+
+describe("a brute force hits the limits (AC 1), counted exactly", () => {
+  it("10 wrong tries per person and room, sent at once; others at that address go on", async () => {
+    const [ana, ivy, max] = await Promise.all([guest(), guest(), guest()]);
+    const { code } = await roomWith(ana, [], "per person");
     const ip = freshIp();
-    for (let i = 0; i < PASSWORD_LIMITS.addressRoom.max; i++) {
-      expect((await tryPassword(code, ivy, `guess ${i}`, ip)).status).toBe(403);
-    }
-    const limited = await tryPassword(code, ivy, "per address", ip);
+    // Each try is reserved before the check, so tries at once are counted exactly.
+    const tries = await Promise.all(
+      Array.from({ length: 14 }, (_, i) => tryPassword(code, ivy, `guess ${i} wrong`, ip)),
+    );
+    expect(statuses(tries)).toEqual({ 403: 10, 429: 4 });
+    const limited = await tryPassword(code, ivy, "per person", ip);
     expect(limited).toMatchObject({ status: 429, json: { code: "rate_limited" } });
-    const wait = Number(limited.response.headers.get("retry-after"));
-    expect(wait).toBeGreaterThan(500);
-    expect(wait).toBeLessThanOrEqual(600);
-    // Another address still gets its own tries.
-    expect((await tryPassword(code, ivy, "per address")).status).toBe(204);
+    expect(retryAfterOf(limited)).toBeGreaterThan(500);
+    expect(retryAfterOf(limited)).toBeLessThanOrEqual(600);
+    // Max sits behind the same address (one office, one proxy): Ivy's tries cost him nothing.
+    expect((await tryPassword(code, max, "per person", ip)).status).toBe(204);
   }, 60_000);
 
-  it("50 wrong tries per room from any addresses, counted across two instances", async () => {
-    const [ana, jon] = await Promise.all([guest(), guest()]);
+  it("50 wrong tries per room from anyone, across two instances, sent at once", async () => {
+    const [ana, ...people] = (await Promise.all(Array.from({ length: 10 }, () => guest()))) as [
+      Person,
+      ...Person[],
+    ];
     const { code } = await roomWith(ana, [], "per room");
     const second = instances[1]?.server ?? (await startInstance()).server;
-    for (let i = 0; i < PASSWORD_LIMITS.room.max; i++) {
-      const server = i % 2 === 0 ? instances[0]?.server : second;
-      const ip = `10.50.${Math.floor(i / 5)}.1`;
-      expect((await tryPassword(code, jon, `guess ${i}`, ip, server)).status).toBe(403);
+    const servers = [instances[0]?.server, second];
+    const wrong = (who: Person, n: number, i: number) =>
+      tryPassword(code, who, `guess ${n}.${i} wrong`, freshIp(), servers[i % 2]);
+    // 40 wrong tries: five people, eight each at once.
+    for (const [n, who] of people.slice(0, 5).entries()) {
+      const batch = await Promise.all(Array.from({ length: 8 }, (_, i) => wrong(who, n, i)));
+      expect(statuses(batch)).toEqual({ 403: 8 });
     }
-    for (const server of [instances[0]?.server, second]) {
-      const limited = await tryPassword(code, jon, "per room", freshIp(), server);
+    // A right password is reserved like any other try, and given back.
+    for (const who of people.slice(5, 7)) {
+      expect((await tryPassword(code, who, "per room", freshIp(), second)).status).toBe(204);
+    }
+    // 18 at once, for the last 10 places.
+    const last = await Promise.all(
+      [7, 8].flatMap((n) => Array.from({ length: 9 }, (_, i) => wrong(people[n] as Person, n, i))),
+    );
+    expect(statuses(last)).toEqual({ 403: 10, 429: 8 });
+    for (const server of servers) {
+      const limited = await tryPassword(code, people[4] as Person, "per room", freshIp(), server);
       expect(limited).toMatchObject({ status: 429, json: { code: "rate_limited" } });
-      expect(Number(limited.response.headers.get("retry-after"))).toBeGreaterThan(500);
+      expect(retryAfterOf(limited)).toBeGreaterThan(500);
     }
   }, 120_000);
 
-  it("100 wrong tries per address across rooms", async () => {
-    const [ana, kim] = await Promise.all([guest(), guest()]);
+  it("300 checks per address, right, wrong or for no room, then rate_limited", async () => {
+    const [ana, lea] = await Promise.all([guest(), guest()]);
+    const { code } = await roomWith(ana, [], "address guard");
     const ip = freshIp();
-    const rooms = PASSWORD_LIMITS.address.max / PASSWORD_LIMITS.addressRoom.max;
-    for (let r = 0; r < rooms; r++) {
-      const { code } = await roomWith(ana, [], `room ${r}`);
-      for (let i = 0; i < PASSWORD_LIMITS.addressRoom.max; i++) {
-        expect((await tryPassword(code, kim, `guess ${i}`, ip)).status).toBe(403);
+    expect((await tryPassword(code, lea, "address guard", ip)).status).toBe(204);
+    // A 404 tells that a room does not exist: those count too.
+    for (let sent = 1; sent < PASSWORD_LIMITS.address.max; sent += 33) {
+      const n = Math.min(33, PASSWORD_LIMITS.address.max - sent);
+      const batch = await Promise.all(
+        Array.from({ length: n }, (_, i) =>
+          i % 3 === 0
+            ? tryPassword(code, lea, "address guard", ip)
+            : tryPassword(roomCode(), lea, "no such room", ip),
+        ),
+      );
+      expect(batch.every(({ status }) => status === 204 || status === 404)).toBe(true);
+    }
+    const limited = await tryPassword(code, lea, "address guard", ip);
+    expect(limited).toMatchObject({ status: 429, json: { code: "rate_limited" } });
+    expect(retryAfterOf(limited)).toBeGreaterThan(500);
+    expect((await tryPassword(code, lea, "address guard")).status).toBe(204);
+  }, 60_000);
+
+  it("a password outside the bounds is wrong without a check or a try counted (N4)", async () => {
+    const [ana, mia] = await Promise.all([guest(), guest()]);
+    const { code } = await roomWith(ana, [], "in bounds");
+    const ip = freshIp();
+    for (const outside of ["short", "x".repeat(129)]) {
+      for (let i = 0; i < PASSWORD_LIMITS.user.max + 2; i++) {
+        expect(await tryPassword(code, mia, outside, ip)).toMatchObject({
+          status: 403,
+          json: { code: "wrong_password" },
+        });
       }
     }
-    const { code } = await roomWith(ana, [], "one more room");
-    expect(await tryPassword(code, kim, "one more room", ip)).toMatchObject({
-      status: 429,
-      json: { code: "rate_limited" },
-    });
-    expect((await tryPassword(code, kim, "one more room")).status).toBe(204);
-  }, 180_000);
+    expect((await tryPassword(code, mia, "in bounds", ip)).status).toBe(204);
+  }, 60_000);
+});
 
-  it("a right password does not count against any limit", async () => {
-    const [ana, lea] = await Promise.all([guest(), guest()]);
-    const { code } = await roomWith(ana, [], "always right");
-    const ip = freshIp();
-    for (let i = 0; i < PASSWORD_LIMITS.addressRoom.max + 2; i++) {
-      expect((await tryPassword(code, lea, "always right", ip)).status).toBe(204);
+describe("who is checked, and how many at once", () => {
+  it("the PO, a participant and a grant holder get in for any password, unchecked", async () => {
+    const [ana, ben, dan, eli] = await Promise.all([guest(), guest(), guest(), guest()]);
+    const { code } = await roomWith(ana, [ben], "members skip");
+    expect((await tryPassword(code, dan, "members skip")).status).toBe(204);
+    for (const who of [ana, ben, dan]) {
+      expect((await tryPassword(code, who, "not the password")).status).toBe(204);
+    }
+    expect((await tryPassword(code, eli, "not the password")).status).toBe(403);
+  });
+
+  it("16 right passwords sent at once all pass: they wait in line, none is refused (S1)", async () => {
+    const [ana, ...people] = (await Promise.all(Array.from({ length: 17 }, () => guest()))) as [
+      Person,
+      ...Person[],
+    ];
+    const { code } = await roomWith(ana, [], "all at once");
+    const answers = await Promise.all(
+      people.map((who) => tryPassword(code, who, "all at once", freshIp())),
+    );
+    expect(statuses(answers)).toEqual({ 204: 16 });
+  }, 60_000);
+});
+
+describe("a grant never outlives the password it was given for (B1)", () => {
+  it("waits for a change in progress and is not written under the old hash", async () => {
+    const [ana, dan] = await Promise.all([guest(), guest()]);
+    const { code, id } = await roomWith(ana, [], "before change");
+    const store = instances[0]?.database.store;
+    if (!store) throw new Error("not started");
+    const old = await storedHash(id);
+    if (!old) throw new Error("no hash");
+    const next = await hashPassword("after change");
+    secrets.push("after change", next);
+    // The PO's change, held open mid-transaction: the hash written, every grant dropped.
+    const change = await admin.connect();
+    try {
+      await change.query("begin");
+      await change.query("update room set password_hash = $1 where id = $2", [next, id]);
+      await change.query("delete from room_access where room_id = $1", [id]);
+      let settled = false;
+      const grant = store.grantAccess(id, dan.id, old).finally(() => {
+        settled = true;
+      });
+      await sleep(150);
+      expect(settled).toBe(false);
+      await change.query("commit");
+      expect(await grant).toBe(false);
+    } finally {
+      change.release();
+    }
+    const { rows } = await admin.query(
+      "select 1 from room_access where room_id = $1 and user_id = $2",
+      [id, dan.id],
+    );
+    expect(rows).toHaveLength(0);
+    expect(await store.grantAccess(id, dan.id, next)).toBe(true);
+    expect(await store.grantAccess(id, dan.id, next)).toBe(true);
+    expect((await client(dan).enter(code)).ok).toBe(true);
+  });
+
+  it("the old password, checked while the PO changes it, lets nobody in over HTTP", async () => {
+    const ana = await guest();
+    let current = "old password 0";
+    const { code } = await roomWith(ana, [], current);
+    for (const [n, delay] of [0, 5, 10, 15, 20, 25, 30, 40].entries()) {
+      const joiner = await guest();
+      const old = current;
+      current = `new password ${n + 1}`;
+      const [change, check] = await Promise.all([
+        setPassword(code, ana, current),
+        sleep(delay).then(() => tryPassword(code, joiner, old)),
+      ]);
+      expect(change.status).toBe(204);
+      expect([204, 403]).toContain(check.status);
+      expect(await client(joiner).enter(code)).toEqual({ ok: false, code: "password_required" });
     }
   }, 60_000);
+
+  it("an enter that reads a grant while the password changes is refused on the socket", async () => {
+    const [ana, dan] = await Promise.all([guest(), guest()]);
+    const { code } = await roomWith(ana, [], "socket before");
+    expect((await tryPassword(code, dan, "socket before")).status).toBe(204);
+    // An instance whose grant check lets the PO's change commit (and lock the room out)
+    // between reading the grant and admitting the socket.
+    const setup = await setupServer(config, logs.logger);
+    const { runner, store } = setup.database;
+    let during: (() => Promise<void>) | undefined;
+    const sync = createRoomSync({
+      runner,
+      store,
+      logger: logs.logger,
+      access: {
+        hasAccess: async (roomId, who) => {
+          const granted = await store.hasAccess(roomId, who);
+          const run = during;
+          during = undefined;
+          await run?.();
+          return granted;
+        },
+      },
+    });
+    const server = createServer(config, { ...setup.deps, handlers: sync, logger: logs.logger });
+    await server.listen();
+    instances.push({
+      server,
+      dispose: async () => {
+        sync.close();
+        await setup.dispose?.();
+      },
+      database: setup.database,
+    });
+    const next = await hashPassword("socket after");
+    secrets.push("socket after", next);
+    during = async () => {
+      expect((await sync.changePassword(code, ana.id, next)).ok).toBe(true);
+    };
+    const d = client(dan, server);
+    expect(await d.enter(code)).toEqual({ ok: false, code: "password_required" });
+    expect(during).toBeUndefined();
+    expect(d.received).toHaveLength(0);
+    // With the new password, Dan enters on that instance.
+    expect((await tryPassword(code, dan, "socket after")).status).toBe(204);
+    expect((await d.enter(code)).ok).toBe(true);
+  });
+});
+
+describe("a request body never reaches a log line", () => {
+  it("not even through a logger that redacts nothing", async () => {
+    const raw: string[] = [];
+    const bare = pino({ level: "trace" }, { write: (chunk: string) => void raw.push(chunk) });
+    const setup = await setupServer(config, bare);
+    const server = createServer(config, { ...setup.deps, logger: bare });
+    await server.listen();
+    instances.push({
+      server,
+      dispose: () => setup.dispose?.() ?? Promise.resolve(),
+      database: setup.database,
+    });
+    const [ana, ben] = await Promise.all([guest(), guest()]);
+    const { code, id } = await roomWith(ana);
+    const secret = "plain sight 1";
+    const wrongOne = "plain sight 2";
+    secrets.push(secret, wrongOne);
+    const send = (method: string, path: string, who: Person, body: unknown) =>
+      call(path, { method, cookie: who.cookie, body, server });
+    const set = await send("PUT", `/api/rooms/${code}/password`, ana, { password: secret });
+    expect(set.status).toBe(204);
+    const access = `/api/rooms/${code}/access`;
+    expect((await send("POST", access, ben, { password: wrongOne })).status).toBe(403);
+    expect((await send("POST", access, ben, { password: secret, x: 1 })).status).toBe(400);
+    expect((await send("POST", access, ben, { password: secret })).status).toBe(204);
+    const hash = await storedHash(id);
+    const written = raw.join("");
+    expect(written).toContain("room access granted");
+    for (const text of [secret, wrongOne, hash ?? "argon2id", "argon2id", code]) {
+      expect(written).not.toContain(text);
+    }
+  });
 });

@@ -22,10 +22,12 @@ export interface RateLimitResult {
 export interface RateLimiter {
   consume(key: string, rule: RateLimitRule): Promise<RateLimitResult>;
   /**
-   * Whether a call under `key` would pass now, without counting one: the password limits
-   * (#31) count failed tries only, so they look first and count after a wrong one.
+   * Counts one call like `consume`, and hands back `release`, which takes it back: the
+   * password limits (#31) reserve a try before the check, so tries at once are counted
+   * exactly, and release it when the password was right. `release` does nothing once the
+   * window it counted in has ended, or a second time.
    */
-  peek(key: string, rule: RateLimitRule): Promise<RateLimitResult>;
+  reserve(key: string, rule: RateLimitRule): Promise<RateLimitResult & { release(): void }>;
 }
 
 /** At most this many counters live at once; the oldest tenth goes when it is reached. */
@@ -48,40 +50,59 @@ export function memoryRateLimit(
 ): RateLimiter {
   const windows = new Map<string, { count: number; resetAt: number }>();
   let nextSweep = 0;
-  return {
-    peek: async (key, { max }) => {
-      const at = now();
-      const entry = windows.get(key);
-      if (!entry || entry.resetAt <= at || entry.count < max) {
-        return { allowed: true, retryAfter: null };
-      }
-      return { allowed: false, retryAfter: Math.ceil((entry.resetAt - at) / 1000) };
-    },
-    consume: async (key, { window, max }) => {
-      const at = now();
-      if (at >= nextSweep) {
-        nextSweep = at + SWEEP_EVERY_MS;
-        for (const [k, entry] of windows) if (entry.resetAt <= at) windows.delete(k);
-      }
-      const entry = windows.get(key);
-      if (!entry || entry.resetAt <= at) {
-        // Re-inserted, so the map stays ordered by window start.
-        windows.delete(key);
-        if (windows.size >= maxKeys) {
-          let drop = Math.max(1, Math.floor(maxKeys / 10));
-          for (const k of windows.keys()) {
-            windows.delete(k);
-            if (--drop === 0) break;
-          }
+  const nothing = () => {};
+
+  /** Counts one call; the counter it counted in, or null when refused. */
+  function count(key: string, { window, max }: RateLimitRule) {
+    const at = now();
+    if (at >= nextSweep) {
+      nextSweep = at + SWEEP_EVERY_MS;
+      for (const [k, entry] of windows) if (entry.resetAt <= at) windows.delete(k);
+    }
+    const entry = windows.get(key);
+    if (!entry || entry.resetAt <= at) {
+      // Re-inserted, so the map stays ordered by window start.
+      windows.delete(key);
+      if (windows.size >= maxKeys) {
+        let drop = Math.max(1, Math.floor(maxKeys / 10));
+        for (const k of windows.keys()) {
+          windows.delete(k);
+          if (--drop === 0) break;
         }
-        windows.set(key, { count: 1, resetAt: at + window * 1000 });
-        return { allowed: true, retryAfter: null };
       }
-      if (entry.count >= max) {
-        return { allowed: false, retryAfter: Math.ceil((entry.resetAt - at) / 1000) };
-      }
-      entry.count += 1;
-      return { allowed: true, retryAfter: null };
+      const fresh = { count: 1, resetAt: at + window * 1000 };
+      windows.set(key, fresh);
+      return { allowed: true as const, retryAfter: null, entry: fresh };
+    }
+    if (entry.count >= max) {
+      return {
+        allowed: false as const,
+        retryAfter: Math.ceil((entry.resetAt - at) / 1000),
+        entry: null,
+      };
+    }
+    entry.count += 1;
+    return { allowed: true as const, retryAfter: null, entry };
+  }
+
+  return {
+    consume: async (key, rule) => {
+      const { allowed, retryAfter } = count(key, rule);
+      return { allowed, retryAfter };
+    },
+    reserve: async (key, rule) => {
+      const { allowed, retryAfter, entry } = count(key, rule);
+      if (!entry) return { allowed, retryAfter, release: nothing };
+      let held = true;
+      return {
+        allowed,
+        retryAfter,
+        release: () => {
+          // The same counter, so a window that ended meanwhile is never touched.
+          if (held && windows.get(key) === entry && entry.count > 0) entry.count -= 1;
+          held = false;
+        },
+      };
     },
   };
 }

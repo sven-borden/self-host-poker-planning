@@ -24,7 +24,7 @@ export const PROTOCOL_ERROR_CODES = [
   /** `POST /api/rooms/:code/access`: the password is not the room's (#31). HTTP only. */
   "wrong_password",
   /**
-   * `PUT /api/rooms/:code/password`: a password needs 4 to 128 characters (#31). HTTP
+   * `PUT /api/rooms/:code/password`: a password needs 6 to 128 characters (#31). HTTP
    * only, like `bad_room_name`, so adding it changed no socket message.
    */
   "bad_password",

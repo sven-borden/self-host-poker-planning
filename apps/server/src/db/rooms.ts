@@ -56,11 +56,15 @@ export interface AccessWrite {
 export interface StoredPassword {
   id: string;
   hash: string | null;
-  /** The room's PO: always lets in, password or not. */
-  ownerId: UserId;
-  /** Wrong tries in the current window, and seconds until it ends (0 when none runs). */
-  failures: number;
+  /** The caller needs no password: the PO, a participant or a grant holder. */
+  free: boolean;
+  /** Seconds until the window of wrong tries ends (0 when none runs). */
   retryAfter: number;
+}
+
+/** A try reserved on the room's count (`reserveTry`): the window it was counted in. */
+export interface ReservedTry {
+  since: string;
 }
 
 /** The version a new room starts at. */
@@ -93,16 +97,25 @@ export interface RoomStore {
 export interface AccessStore {
   /** Whether `user` holds a grant for the room (by id). */
   hasAccess(roomId: string, user: UserId): Promise<boolean>;
-  /** Grants `user` access to the room (a correct password); a second grant changes nothing. */
-  grantAccess(roomId: string, user: UserId): Promise<void>;
-  /** The room's hash and its count of wrong tries in a window of `windowSeconds`. */
-  loadPassword(code: string, windowSeconds: number): Promise<StoredPassword | null>;
   /**
-   * Counts one wrong try on the room: a fixed window of `windowSeconds` that starts with
-   * the first try after the last one ended. Atomic, so every instance counts in the same
-   * row. Resolves the count in the window, with this try.
+   * Grants `user` access to the room for a correct password, but only while the room
+   * still holds `checked`, the hash the password was checked against: a change committed
+   * meanwhile dropped every grant, and this one must not outlive it. The room's row is
+   * read `for share`, so a change in progress is waited for. Resolves whether `user`
+   * holds a grant under `checked` (a second grant changes nothing).
    */
-  recordFailure(roomId: string, windowSeconds: number): Promise<number>;
+  grantAccess(roomId: string, user: UserId, checked: string): Promise<boolean>;
+  /** The room's hash, whether `user` needs none, and its window of wrong tries. */
+  loadPassword(code: string, user: UserId, windowSeconds: number): Promise<StoredPassword | null>;
+  /**
+   * Reserves one try on the room's count before the check: a fixed window of
+   * `windowSeconds` that starts with the first try after the last one ended, at most `max`
+   * tries in it. Atomic, so every instance counts in the same row and tries at once are
+   * counted exactly. Null when the window is full.
+   */
+  reserveTry(roomId: string, windowSeconds: number, max: number): Promise<ReservedTry | null>;
+  /** Takes a reserved try back (the password was right), if its window still runs. */
+  releaseTry(roomId: string, reserved: ReservedTry): Promise<void>;
 }
 
 const hasHash = sql<boolean>`${room.passwordHash} is not null`;
@@ -243,41 +256,80 @@ export function createRoomStore(db: Db): RoomStore & AccessStore {
         return rows.length > 0;
       }),
 
-    grantAccess: (roomId, who) =>
+    grantAccess: (roomId, who, checked) =>
       guard("grant access", async () => {
-        await writeAccess(db, roomId, { grant: [who] });
+        // One statement: the room's row is locked `for share` while its hash is compared,
+        // so a change in progress commits first and the comparison sees its new hash.
+        // Only users that exist: a guest purged since gets no row.
+        const { rows } = await db.execute<{ granted: number }>(sql`
+          with checked as (
+            select ${room.id} as id from ${room}
+            where ${room.id} = ${roomId}::uuid and ${room.passwordHash} = ${checked}
+            for share
+          ),
+          added as (
+            insert into ${roomAccess} (room_id, user_id)
+            select checked.id, u.id from checked join "user" u on u.id = ${who}
+            on conflict do nothing
+            returning 1
+          )
+          select (select count(*) from added)::int
+            + (select count(*) from ${roomAccess} a join checked on a.room_id = checked.id
+               where a.user_id = ${who})::int as granted`);
+        return Number(rows[0]?.granted ?? 0) > 0;
       }),
 
-    loadPassword: (code, windowSeconds) =>
+    loadPassword: (code, who, windowSeconds) =>
       guard("load password", async () => {
         const rows = await db
           .select({
             id: room.id,
             hash: room.passwordHash,
-            ownerId: room.ownerUserId,
-            failures: sql<number>`case when ${inWindow(windowSeconds)} then ${room.passwordFailures} else 0 end`,
+            free: sql<boolean>`(${room.ownerUserId} = ${who}
+              or jsonb_exists(${room.live} -> 'participants', ${who})
+              or exists (select 1 from ${roomAccess} a where a.room_id = ${room.id} and a.user_id = ${who}))`,
             retryAfter: sql<number>`case when ${inWindow(windowSeconds)} then ceil(extract(epoch from ${room.passwordFailuresSince} + make_interval(secs => ${windowSeconds}) - now()))::int else 0 end`,
           })
           .from(room)
           .where(eq(room.code, code));
         const row = rows[0];
-        return row
-          ? { ...row, failures: Number(row.failures), retryAfter: Number(row.retryAfter) }
-          : null;
+        return row ? { ...row, free: row.free === true, retryAfter: Number(row.retryAfter) } : null;
       }),
 
-    recordFailure: (roomId, windowSeconds) =>
-      guard("record password failure", async () => {
-        // Every SET expression reads the row as it was, so both see the same window.
+    reserveTry: (roomId, windowSeconds, max) =>
+      guard("reserve password try", async () => {
+        // Every SET expression reads the row as it was, so both see the same window. A try
+        // at once waits for this row and checks the count again on the new one.
         const rows = await db
           .update(room)
           .set({
             passwordFailures: sql`case when ${inWindow(windowSeconds)} then ${room.passwordFailures} + 1 else 1 end`,
             passwordFailuresSince: sql`case when ${inWindow(windowSeconds)} then ${room.passwordFailuresSince} else now() end`,
           })
-          .where(eq(room.id, roomId))
-          .returning({ failures: room.passwordFailures });
-        return rows[0]?.failures ?? 0;
+          .where(
+            and(
+              eq(room.id, roomId),
+              sql`(not ${inWindow(windowSeconds)} or ${room.passwordFailures} < ${max})`,
+            ),
+          )
+          .returning({ since: sql<string>`${room.passwordFailuresSince}::text` });
+        const since = rows[0]?.since;
+        return since === undefined ? null : { since };
+      }),
+
+    releaseTry: (roomId, { since }) =>
+      guard("release password try", async () => {
+        // Only in the window it was counted in: a new window, or a new password, is left alone.
+        await db
+          .update(room)
+          .set({ passwordFailures: sql`${room.passwordFailures} - 1` })
+          .where(
+            and(
+              eq(room.id, roomId),
+              sql`${room.passwordFailuresSince} = ${since}::timestamptz`,
+              sql`${room.passwordFailures} > 0`,
+            ),
+          );
       }),
   };
 }
