@@ -259,13 +259,17 @@ export const GROUPS: readonly SettingGroup[] = [
         label: (t) => t("settings.changeAfterReveal"),
         hint: (t) => t("settings.changeAfterRevealHint"),
         value: (t, s) => t(s.allowChangeAfterReveal ? "settings.allowed" : "settings.notAllowed"),
-        // #29: applies at once, to a named round already revealed too. Locked while
-        // anonymity is on: an anonymous round never changes after its reveal (ADR-011).
+        // #29: applies at once, to a named round already revealed too. While anonymity is
+        // on it cannot be turned on: an anonymous round never changes after its reveal
+        // (ADR-011). It can always be turned off, so the PO can stop changes to a named
+        // round still on the table after turning anonymity on for the next one.
         toggle: {
           read: (s) => s.allowChangeAfterReveal,
           write: (on) => ({ allowChangeAfterReveal: on }),
           locked: (room, t) =>
-            room.settings.revealNames ? null : t("settings.changeAfterRevealLocked"),
+            room.settings.revealNames || room.settings.allowChangeAfterReveal
+              ? null
+              : t("settings.changeAfterRevealLocked"),
         },
       },
     ],

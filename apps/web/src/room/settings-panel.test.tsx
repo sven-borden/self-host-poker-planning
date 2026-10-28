@@ -159,7 +159,7 @@ describe("the settings panel", () => {
     ).toBe("The results show the cards without names. A change applies from the next round.");
   });
 
-  it("lets the PO allow changes after the reveal, at once, and locks the switch while anonymity is on (#29)", async () => {
+  it("lets the PO allow changes after the reveal, at once; while anonymity is on, only turning them off (#29)", async () => {
     mocks.sendCommand.mockResolvedValue({ ok: true, version: 2 });
     render(<RoomSettingsButton />);
     show(newRoom(), PO);
@@ -184,6 +184,27 @@ describe("the settings panel", () => {
     const sent = mocks.sendCommand.mock.calls.length;
     fireEvent.click(change);
     expect(mocks.sendCommand).toHaveBeenCalledTimes(sent);
+
+    // The lock holds one way only: with changes on when anonymity comes on (a named round
+    // still on the table), the PO can still turn them off.
+    show(
+      {
+        ...newRoom(),
+        settings: { ...DEFAULT_SETTINGS, revealNames: false, allowChangeAfterReveal: true },
+      },
+      PO,
+    );
+    await waitFor(() => expect(change.getAttribute("aria-checked")).toBe("true"));
+    expect(change.getAttribute("aria-disabled")).toBeNull();
+    expect(row(dialog, "allowChangeAfterReveal").querySelector("[data-setting-locked]")).toBeNull();
+    fireEvent.click(change);
+    expect(mocks.sendCommand).toHaveBeenLastCalledWith({
+      type: "updateSettings",
+      payload: { patch: { allowChangeAfterReveal: false } },
+    });
+    // Once off, it locks again.
+    show({ ...newRoom(), settings: { ...DEFAULT_SETTINGS, revealNames: false } }, PO);
+    await waitFor(() => expect(change.getAttribute("aria-disabled")).toBe("true"));
     // Everyone else reads the value and the explanation, never the lock.
     cleanup();
     render(<RoomSettingsButton />);

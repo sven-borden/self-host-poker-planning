@@ -387,9 +387,11 @@ As built (#25):
   one change. While "Reveal when everyone has voted" is off and every present voter has
   voted, the PO reads under that switch "Everyone has voted: turning this on reveals the
   cards.", since turning it on then reveals the round at once. A setting that cannot
-  change now says why under it, with a lock: while "Anonymous voting" is on, "Change a
-  vote after the reveal" reads "Anonymous rounds lock their votes at the reveal." (#29;
-  an anonymous round never changes after its reveal, ADR-011).
+  change now says why under it, with a lock: while "Anonymous voting" is on and changes
+  are off, "Change a vote after the reveal" reads "Anonymous rounds lock their votes at
+  the reveal." (#29; an anonymous round never changes after its reveal, ADR-011). The lock
+  holds one way only: with changes on when anonymity comes on, a named round may still be
+  on the table, so the PO can always turn changes off; the switch locks once it is off.
 - **A change.** The switch moves at once and the row says "Saving…" until the server's
   snapshot confirms it; the switch looks unavailable meanwhile and another press of it
   does nothing. If the connection drops, the change moves back at once and the row says

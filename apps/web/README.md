@@ -360,8 +360,10 @@ server sends and never decides the outcome of a round.
   the panel so the table's helpers stay out of its chunk). Changes after the reveal (#29)
   is a switch that applies at once, to a named round already revealed too; it is
   `locked` ("Anonymous rounds lock their votes at the reveal.",
-  `settings.changeAfterRevealLocked`) while "Anonymous voting" is on, since an anonymous
-  round never changes after its reveal (ADR-011).
+  `settings.changeAfterRevealLocked`) while "Anonymous voting" is on and changes are off,
+  since an anonymous round never changes after its reveal (ADR-011). It locks one way
+  only: while changes are on the PO can always turn them off, for a named round still on
+  the table.
   **Adding a control (#26 to #29).** Give the setting's field in `GROUPS` either
   `toggle: { read, write, locked? }` for an on-off setting, or a `Control` component. A
   `Control` gets `ControlProps`: `room` (the round's phase and anonymity, the people),
@@ -374,7 +376,7 @@ server sends and never decides the outcome of a round.
   keeps it at the row's end, at most 11 rem wide. `refusals` maps a server code to the
   field's own words (observers' `room_full` says `settings.observersCountRefused`);
   other codes say `errorMessage`'s. `toggle.locked(room, t)` returns why the switch
-  cannot move now (#29: locked while anonymity is on), shown under
+  cannot move now (#29: locked off while anonymity is on), shown under
   the setting with a lock and in the switch's description. `key` stays a setting key:
   #30's actions (hand the PO role over, remove someone, claim it) belong to the seats
   and the table, not to this panel; only its "The PO votes too" setting is here. The
