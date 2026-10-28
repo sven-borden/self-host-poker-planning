@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../stores/room-store.ts";
 import {
   commandSender,
+  enterRoomAgain,
   isCmdAck,
   isEnterAck,
   isSnapshot,
@@ -204,6 +205,49 @@ describe("openRoom", () => {
     // A later close the server forces is final again.
     fake.fire("disconnect", "io server disconnect");
     expect(useRoomStore.getState()).toMatchObject({ status: "error", error: "offline" });
+  });
+
+  it("locks on password_required, keeps the socket, and enters again once asked (#31)", async () => {
+    let answer: unknown = { ok: false, code: "password_required" };
+    const fake = fakeSocket(() => answer);
+    open(fake);
+    fake.up();
+    await settle();
+    expect(useRoomStore.getState()).toMatchObject({
+      status: "locked",
+      locked: "required",
+      snapshot: null,
+    });
+    expect(fake.socket.disconnect).not.toHaveBeenCalled();
+    // A blip while locked keeps the form: the next enter asks again.
+    fake.drop();
+    expect(status()).toBe("locked");
+    fake.up();
+    await settle();
+    expect(status()).toBe("locked");
+
+    answer = { ok: true, snapshot: snapshot(4) };
+    expect(await enterRoomAgain()).toBe("ok");
+    expect(useRoomStore.getState()).toMatchObject({ status: "live", locked: null });
+    expect(useRoomStore.getState().snapshot?.version).toBe(4);
+  });
+
+  it("says the password changed when the room it showed had one, and re-enters on locked", async () => {
+    const withPassword = { ...createRoom({ ownerId: "ua" }), hasPassword: true as const };
+    let answer: unknown = { ok: true, snapshot: snapshot(2, withPassword) };
+    const fake = fakeSocket(() => answer);
+    open(fake);
+    fake.up();
+    await settle();
+    answer = { ok: false, code: "password_required" };
+    fake.fire("locked");
+    await settle();
+    expect(useRoomStore.getState()).toMatchObject({ status: "locked", locked: "changed" });
+    expect(await enterRoomAgain()).toBe("password_required");
+  });
+
+  it("resolves offline when no room is open", async () => {
+    expect(await enterRoomAgain()).toBe("offline");
   });
 
   it("resets the store when closed", async () => {

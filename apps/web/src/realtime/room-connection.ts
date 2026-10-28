@@ -25,6 +25,12 @@ import {
 // its own; nothing here adds a second reconnect loop: only a refused `enter` that passes
 // on its own (`internal`, `rate_limited`, `busy`) is sent again after a backoff.
 //
+// A room with a password (#31) answers `password_required` to someone it does not let in:
+// the store goes `locked` and the socket stays connected, so once the page has the
+// password checked over HTTP, `enterRoomAgain` enters on the same socket. The server's
+// `locked` (the PO set or changed the password while this viewer was not in the room)
+// sends `enter` again, which then answers `password_required`.
+//
 // Messages are checked by shape (`isSnapshot`, `isEnterAck`, `isCmdAck`), not with the
 // protocol's zod schemas: zod would add about 27 kB gzipped to the room route (200 kB
 // budget), and the only peer is our own server, built from the same commit, whose
@@ -57,6 +63,8 @@ interface ActiveRoom {
   code: string;
   socket: RoomSocket;
   close: () => void;
+  /** Sends `enter` again; resolves "ok" or the refusal's code once it is answered. */
+  enterAgain: () => Promise<string>;
 }
 
 let active: ActiveRoom | null = null;
@@ -84,6 +92,13 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
    */
   let removed = false;
   let retry: ReturnType<typeof setTimeout> | undefined;
+  /** Waiting for the answer to the next `enter` (`enterAgain`). */
+  let waiting: Array<(outcome: string) => void> = [];
+  const settle = (outcome: string) => {
+    const now = waiting;
+    waiting = [];
+    for (const resolve of now) resolve(outcome);
+  };
 
   const fail = (error: string) => {
     if (stopped) return;
@@ -92,6 +107,7 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
   /** A final answer: the socket has nothing more to do. */
   const stop = (error: string) => {
     fail(error);
+    settle(error);
     socket.disconnect();
   };
 
@@ -102,6 +118,17 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
       reauthenticated = false;
       store().receive(ack.snapshot);
       store().setStatus("live");
+      settle("ok");
+      return;
+    }
+    if (ack.code === "password_required") {
+      // Said as a change when the page last saw the room with a password, and the viewer
+      // was not removed (a removal says so itself).
+      attempt = 0;
+      const { snapshot, removed: wasRemoved } = store();
+      const changed = !wasRemoved && snapshot?.room.settings.hasPassword === true;
+      store().lock(changed ? "changed" : "required");
+      settle(ack.code);
       return;
     }
     if (RETRIED_ENTER.has(ack.code)) {
@@ -173,10 +200,16 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
     removed = true;
     store().setRemoved(true);
   };
+  /** The PO set or changed the password, and this viewer is not in the room (#31). */
+  const onLocked = () => {
+    if (stopped) return;
+    enter();
+  };
 
   socket.on("connect", onConnect);
   socket.on("snapshot", onSnapshot);
   socket.on("kicked", onKicked);
+  socket.on("locked", onLocked);
   const stopTracking = trackConnection(socket, (connection) => {
     if (stopped) return;
     // The disconnect before a fresh sign-in is ours, and the socket connects again after.
@@ -193,7 +226,8 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
     store().setConnection(connection);
     const { status } = store();
     if (status === "error") return;
-    if (connection === "reconnecting") store().setStatus("reconnecting");
+    // The password form stays while the socket reconnects: its next `enter` asks again.
+    if (connection === "reconnecting" && status !== "locked") store().setStatus("reconnecting");
     else if (connection === "offline") fail("offline");
   });
   const stopConnecting = (options.connect ?? connectWhenIdentified)(socket);
@@ -207,15 +241,36 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
     socket.off("connect", onConnect);
     socket.off("snapshot", onSnapshot);
     socket.off("kicked", onKicked);
+    socket.off("locked", onLocked);
+    settle("offline");
     socket.disconnect();
     if (active === room) {
       active = null;
       store().reset();
     }
   };
-  const room: ActiveRoom = { code, socket, close };
+  const enterAgain = () =>
+    new Promise<string>((resolve) => {
+      if (stopped) {
+        resolve("offline");
+        return;
+      }
+      waiting.push(resolve);
+      // Not connected: the next connect enters, and answers this.
+      enter();
+    });
+  const room: ActiveRoom = { code, socket, close, enterAgain };
   active = room;
   return close;
+}
+
+/**
+ * Enters the open room again on its socket (#31: after its password was accepted) and
+ * resolves "ok" once the page shows it live, or the refusal's code (`password_required`
+ * again when the PO changed it meanwhile); "offline" when no room is open.
+ */
+export function enterRoomAgain(): Promise<string> {
+  return active ? active.enterAgain() : Promise.resolve("offline");
 }
 
 /** A command as `sendCommand` takes it: the wire command without its id. */

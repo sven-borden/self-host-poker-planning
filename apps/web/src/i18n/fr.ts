@@ -509,6 +509,26 @@ export const fr: Catalog<"many"> = {
     cookiesBlocked:
       "Ce site a besoin des cookies pour vous reconnaître dans une salle. Autorisez-les pour ce site, puis rechargez la page.",
   },
+  password: {
+    label: "Mot de passe",
+    show: "Afficher le mot de passe",
+    roomHas: "Cette salle a un mot de passe.",
+    linkCopied: "Lien copié. Il faudra aussi le mot de passe.",
+    changed: "Le product owner a changé le mot de passe.",
+    missing: "Saisissez le mot de passe de la salle.",
+    tooMany_one: "Trop d’essais. Réessayez dans {{count, number}} minute.",
+    tooMany_many: "Trop d’essais. Réessayez dans {{count, number}} minutes.",
+    tooMany_other: "Trop d’essais. Réessayez dans {{count, number}} minutes.",
+    settingHint:
+      "Les personnes déjà dans la salle y restent. Les autres le saisissent une fois sur chaque appareil.",
+    set: "Définir le mot de passe",
+    change: "Changer le mot de passe",
+    remove: "Supprimer le mot de passe",
+    cancel: "Annuler",
+    liveSet: "Le product owner a défini un mot de passe pour cette salle.",
+    liveChanged: "Le product owner a changé le mot de passe de la salle.",
+    liveRemoved: "Le product owner a supprimé le mot de passe de la salle.",
+  },
   common: {
     network: "Impossible de joindre le serveur. Vérifiez votre connexion, puis réessayez.",
     close: "Fermer",

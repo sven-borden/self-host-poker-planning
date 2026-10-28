@@ -494,6 +494,24 @@ export const de: Catalog = {
     cookiesBlocked:
       "Diese Website braucht Cookies, um Sie in einem Raum wiederzuerkennen. Erlauben Sie Cookies für diese Website und laden Sie die Seite dann neu.",
   },
+  password: {
+    label: "Passwort",
+    show: "Passwort anzeigen",
+    roomHas: "Dieser Raum hat ein Passwort.",
+    linkCopied: "Link kopiert. Das Passwort braucht es auch.",
+    changed: "Der Product Owner hat das Passwort geändert.",
+    missing: "Geben Sie das Passwort des Raums ein.",
+    tooMany_one: "Zu viele Versuche. Versuchen Sie es in {{count, number}} Minute erneut.",
+    tooMany_other: "Zu viele Versuche. Versuchen Sie es in {{count, number}} Minuten erneut.",
+    settingHint: "Wer schon im Raum ist, bleibt. Alle anderen geben es auf jedem Gerät einmal ein.",
+    set: "Passwort festlegen",
+    change: "Passwort ändern",
+    remove: "Passwort entfernen",
+    cancel: "Abbrechen",
+    liveSet: "Der Product Owner hat ein Passwort für diesen Raum festgelegt.",
+    liveChanged: "Der Product Owner hat das Passwort des Raums geändert.",
+    liveRemoved: "Der Product Owner hat das Passwort des Raums entfernt.",
+  },
   common: {
     network:
       "Der Server ist nicht erreichbar. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",

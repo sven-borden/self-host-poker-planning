@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { LinkIcon } from "lucide-react";
+import { LinkIcon, LockIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, buttonVariants } from "../../components/ui/button.tsx";
 import { Input } from "../../components/ui/input.tsx";
@@ -113,6 +113,15 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
     (state) =>
       state.code === header.code && state.status === "error" && state.error === "room_not_found",
   );
+  // The room's password (#31): the live snapshot's word once there is one, the header's
+  // before (and while the page asks for it, when it holds no snapshot).
+  const live = useRoomStore((state) =>
+    state.code === header.code && state.snapshot
+      ? state.snapshot.room.settings.hasPassword === true
+      : null,
+  );
+  const locked = useRoomStore((state) => state.code === header.code && state.status === "locked");
+  const hasPassword = live ?? (header.hasPassword || locked);
   if (gone) return <RoomNotFound />;
 
   async function copyLink() {
@@ -126,7 +135,12 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
     } catch {
       setShowLink(true);
     }
-    const message = t(copied ? "room.linkCopied" : "room.copyFailed");
+    // In a room with a password the link alone does not let anyone in: say so.
+    const message = !copied
+      ? t("room.copyFailed")
+      : hasPassword
+        ? t("password.linkCopied")
+        : t("room.linkCopied");
     try {
       // The toaster is a lazy chunk, so the toasts are too: after a redeploy the import can
       // fail, and the message is then shown in the page.
@@ -156,6 +170,18 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
             ) : (
               t("room.title", { code: header.code })
             )}
+            {hasPassword ? (
+              // A lock beside the name, named for screen readers (#31).
+              <span
+                role="img"
+                data-room-lock
+                aria-label={t("password.roomHas")}
+                title={t("password.roomHas")}
+                className="ml-2 inline-flex align-baseline text-ink-2"
+              >
+                <LockIcon aria-hidden className="size-[0.6em] translate-y-[0.05em]" />
+              </span>
+            ) : null}
           </h1>
           <div className="mt-4 flex flex-wrap items-baseline gap-x-4 gap-y-1 squat:mt-1 phone:col-span-2 phone:mt-0 phone:text-sm">
             <dl className="m-0 flex items-baseline gap-x-3">
