@@ -850,10 +850,17 @@ French and German tone is reviewed in #41.
 
 ## CSP notes for #36
 
-- `style-src` needs `'unsafe-inline'` or a nonce: sonner injects a `<style>` element when
-  it loads, and react-remove-scroll (under Radix Dialog, Sheet and DropdownMenu) injects
-  one each time a menu or dialog opens. React's `style={…}` props go through the CSSOM
-  and are not affected.
+- `style-src 'self'`, no `'unsafe-inline'`: the app writes no `<style>` element. React's
+  `style={…}` props go through the CSSOM and are not affected. Two libraries would write
+  one, and are worked around: react-remove-scroll (under Radix Dialog, Sheet and
+  DropdownMenu) through `react-style-singleton`, aliased in `vite.config.ts` to
+  `src/csp/style-singleton.ts`, which adopts a constructed sheet; and sonner, whose
+  `<style>` the `pp:sonner-styles-as-css` plugin cuts from the build (and fails the build
+  if any is left), its `styles.css` bundled instead.
+- Not used today, refused by the policy: Radix Select and ScrollArea inject a `<style>`
+  element of their own (not through `react-style-singleton`). Whoever adds one must move
+  that sheet into the app's CSS or a constructed sheet, and check it with
+  `e2e/security.spec.ts`; the e2e guard fails any page that hits it.
 - `script-src 'self'` is enough: there is no inline script. `public/theme-init.js` runs
   before first paint as an external file.
 - `theme-init.js` has no content hash in its name, so it must be served with

@@ -151,6 +151,16 @@ from the bundled database; to use your own Postgres, run the image alone with
   and the cross-origin opener and resource policies. With an `https://` `BASE_URL` it
   adds HSTS for a year (`includeSubDomains`, no `preload`: submit your domain to the
   preload list yourself if you want it) and `upgrade-insecure-requests`.
+  - `includeSubDomains` reaches every subdomain of the host in `BASE_URL`. On a
+    subdomain such as `poker.example.com` that is only its own children; on an apex
+    domain (`https://example.com`) it is every `*.example.com`, for a year, in every
+    browser that opened the app: serve them all over https first, or install the app on a
+    subdomain.
+  - `upgrade-insecure-requests` makes the browser load everything over https. Opened
+    over plain http (a LAN address such as `http://192.168.1.20:3000` while `BASE_URL`
+    says https), the page stays blank: its scripts are asked for over https, which that
+    address does not answer. Open the app at `BASE_URL`, or run a second instance whose
+    `BASE_URL` is the http address.
 - **Your own additions**: if you inject a script or load something from another origin
   (a status widget, your own analytics), the policy blocks it. Run with
   `CSP_REPORT_ONLY=true` first and read the browser console: it lists what the policy

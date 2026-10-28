@@ -49,8 +49,7 @@ describe("judgeAudit", () => {
     const verdict = judgeAudit({
       status: 1,
       stdout: "",
-      stderr:
-        "\nError: ERR_PNPM_AUDIT_BAD_RESPONSE\n\n  × Failed to request the audit endpoint\n",
+      stderr: "\nError: ERR_PNPM_AUDIT_BAD_RESPONSE\n\n  × Failed to request the audit endpoint\n",
     });
     expect(verdict).toEqual({
       exit: 0,
