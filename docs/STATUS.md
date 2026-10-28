@@ -105,6 +105,12 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   join's commit), limits on wrong tries (10 per person, 25 per address, 50 per room per
   10 minutes) behind a 300-check guard per address, the PO's row in the panel, a lock in
   the header and a password field on the join screen. The room route loads 174.9 kB.
+- Changing a vote after the reveal from #29: the panel's switch (locked only from off to
+  on while anonymous voting is on), a playable hand after a named reveal for people who
+  voted (a first card after the reveal is refused), a "changed" mark, live results, and
+  the PO's bar noting a moved suggestion while the recorded final stays. The room route
+  loads 175.0 kB.
+- **W2 is complete** (2026-10-28).
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -115,22 +121,22 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#29 (PP-029)** change a vote after the reveal: the panel's toggle (locked for
-  anonymous rounds), a playable hand after a named reveal, a "changed" chip, live
-  results. PR #94 in review. CI's `db-tests` failed twice: its new wire tests drain a
-  shared user's message bucket before the #25 settings block (`rate_limited` for
-  `not_owner`), the burst-test chore; the fixer isolates the buckets.
 - **#33 (PP-033)** round history, the first of W3: a `history` socket request for
   people in the room, a lazy "History" sheet, rows that open to their votes (names only
-  for named rounds). Building in `../pp-wt-33`.
+  for named rounds). PR #95 in review (CI green); its fixer merges `main` (with #29).
+- **#35 (PP-035)** retention: a daily purge of rooms idle for `ROOM_TTL_DAYS`, their
+  history and orphan guests, under an advisory lock; a visit counts as activity.
+  Building in `../pp-wt-35`.
 
 ## Next
 
-- W2 ends with #29. W3 (#33–#41) has begun with #33. Next as slots free: #35
-  (retention), #36 (hardening, now unblocked by #31), #39 (scale-out); #34 and #37 need
-  #33; #38 and #41 need Sven's OQ-1 and OQ-2; #40 needs #36.
-- Chores to fold into a later issue: a lazy catalog for the settings panel (about
-  2 kB off both pages); the burst test's one `room_not_found` (see the build log).
+- W3 (#33–#41): #33 and #35 in flight. Next as slots free: #36 (hardening), #39
+  (scale-out); #34 and #37 need #33; #38 and #41 need Sven's OQ-1 and OQ-2; #40 needs
+  #36.
+- Chores to fold into a later issue: a lazy catalog for the panels' copy (settings and
+  history, a few kB off both pages); the burst test's one `room_not_found` under load;
+  a higher anonymous sign-in limit for the db tests through `SetupTuning` (about 41 of
+  60 a minute used, 3 more per new block).
   - Each later setting drops its control into #25's panel (see the web README).
 - Notes to carry into the briefs:
   - #29: change after reveal never applies to anonymous rounds. The panel's `locked`
