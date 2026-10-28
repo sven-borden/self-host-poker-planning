@@ -5,6 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { changeLanguage } from "../i18n/i18n.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { RoomHistoryButton } from "./history-button.tsx";
+import { forgetSummaryRounds } from "./history-summary.tsx";
 
 const mocks = vi.hoisted(() => ({ requestHistory: vi.fn() }));
 vi.mock("../realtime/room-connection.ts", () => ({ requestHistory: mocks.requestHistory }));
@@ -127,6 +128,7 @@ afterEach(async () => {
   cleanup();
   useRoomStore.getState().reset();
   mocks.requestHistory.mockReset();
+  forgetSummaryRounds();
   await act(() => changeLanguage("en"));
 });
 
@@ -408,7 +410,9 @@ describe("the summary and the exports", () => {
     );
     fireEvent.click(within(summary).getByRole("radio", { name: "All rounds" }));
     expect(figure(summary, "rounds")).toBe("Rounds2");
-    expect(figure(summary, "total")).toBe("Total of final estimates51 round without a number");
+    expect(figure(summary, "total")).toBe(
+      "Total of final estimates51 round without a numeric estimate",
+    );
     // The summary read every round, 50 a page.
     expect(mocks.requestHistory).toHaveBeenCalledWith({ limit: 50 });
   });

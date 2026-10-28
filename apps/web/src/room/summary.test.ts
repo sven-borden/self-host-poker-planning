@@ -3,11 +3,14 @@ import { type HistoryRoundView, toSnapshot } from "@pp/protocol";
 import { describe, expect, it } from "vitest";
 import {
   capRounds,
+  covers,
   defaultRange,
   type ExportRound,
   exportRounds,
   inRange,
   MAX_EXPORT_ROUNDS,
+  sameSubject,
+  startOfDay,
   summarize,
   tableRound,
   voteCount,
@@ -199,16 +202,84 @@ describe("the summary", () => {
     expect(round && voteCount(round)).toBe(3);
   });
 
+  it("counts a story once, by its last round, when a re-vote keeps its subject", () => {
+    const pay = { kind: "title", text: "PAY-17 Checkout" } as const;
+    const link = {
+      kind: "link",
+      url: "https://acme.atlassian.net/browse/PAY-9",
+      key: "PAY-9",
+    } as const;
+    const rounds = exportRounds(
+      [
+        // "Record 5", "Vote again", "Record 8": the story is 8.
+        row(1, "5", { subject: pay }),
+        row(2, "8", { subject: pay }),
+        // A re-vote that ended without a number: the story has none.
+        row(3, "3", { subject: link }),
+        row(4, "?", { subject: link }),
+        // The same title later, after another story: a story of its own again.
+        row(5, "2", { subject: { kind: "title", text: "Other" } }),
+        row(6, "1", { subject: pay }),
+        // Rounds without a subject never merge.
+        row(7, "1"),
+        row(8, "1"),
+      ],
+      null,
+    );
+    const summary = summarize(rounds);
+    expect(summary.rounds).toBe(8);
+    expect(summary.total).toBe(8 + 2 + 1 + 1 + 1);
+    expect(summary.withoutNumber).toBe(1);
+    expect(sameSubject(pay, { kind: "title", text: "PAY-17 checkout" })).toBe(false);
+    expect(sameSubject(link, { kind: "link", url: link.url })).toBe(true);
+    expect(sameSubject({ kind: "none" }, { kind: "none" })).toBe(false);
+  });
+
   it("caps the rounds at 1,000 and says when older ones were left out", () => {
     const many = Array.from({ length: MAX_EXPORT_ROUNDS + 20 }, (_, i) =>
       row(MAX_EXPORT_ROUNDS + 20 - i, "1"),
     );
-    expect(capRounds({ rounds: many, next: undefined })).toMatchObject({ capped: true });
-    expect(capRounds({ rounds: many, next: undefined }).rounds).toHaveLength(MAX_EXPORT_ROUNDS);
-    expect(capRounds({ rounds: many.slice(0, 50), next: 7 }).capped).toBe(true);
-    expect(capRounds({ rounds: many.slice(0, 50), next: undefined })).toEqual({
+    expect(capRounds({ rounds: many, next: undefined }, "all", NOW)).toMatchObject({
+      capped: true,
+    });
+    expect(capRounds({ rounds: many, next: undefined }, "all", NOW).rounds).toHaveLength(
+      MAX_EXPORT_ROUNDS,
+    );
+    const thousand = many.slice(0, MAX_EXPORT_ROUNDS);
+    expect(capRounds({ rounds: thousand, next: 20 }, "all", NOW).capped).toBe(true);
+    expect(capRounds({ rounds: thousand, next: undefined }, "all", NOW).capped).toBe(false);
+    // Fewer than 1,000 read: not capped, whether or not more pages exist.
+    expect(capRounds({ rounds: many.slice(0, 50), next: 7 }, "all", NOW).capped).toBe(false);
+    expect(capRounds({ rounds: many.slice(0, 50), next: undefined }, "all", NOW)).toEqual({
       rounds: many.slice(0, 50),
       capped: false,
     });
+    // "Today" is not capped when the cut rounds ended before today.
+    const older = thousand.map((round, i) =>
+      i === thousand.length - 1 ? { ...round, finishedAt: YESTERDAY } : round,
+    );
+    expect(capRounds({ rounds: older, next: 20 }, "today", NOW).capped).toBe(false);
+    expect(capRounds({ rounds: thousand, next: 20 }, "today", NOW).capped).toBe(true);
+  });
+});
+
+describe("how far the summary reads", () => {
+  const page = (from: number, finishedAt: number) =>
+    Array.from({ length: 50 }, (_, i) => row(from - i, "1", { finishedAt }));
+
+  it("reads on until the oldest round, or 1,000 rounds", () => {
+    expect(covers({ rounds: page(100, NOW), next: 51 }, "all", NOW)).toBe(false);
+    expect(covers({ rounds: page(100, NOW), next: undefined }, "all", NOW)).toBe(true);
+    const thousand = Array.from({ length: MAX_EXPORT_ROUNDS }, (_, i) => row(2000 - i, "1"));
+    expect(covers({ rounds: thousand, next: 1001 }, "all", NOW)).toBe(true);
+    expect(covers({ rounds: thousand.slice(1), next: 1001 }, "all", NOW)).toBe(false);
+  });
+
+  it("stops for Today once a round ended before local midnight", () => {
+    expect(covers({ rounds: page(100, EARLY_TODAY), next: 51 }, "today", NOW)).toBe(false);
+    const reached = [...page(100, EARLY_TODAY), row(50, "1", { finishedAt: YESTERDAY })];
+    expect(covers({ rounds: reached, next: 50 }, "today", NOW)).toBe(true);
+    expect(covers({ rounds: reached, next: 50 }, "all", NOW)).toBe(false);
+    expect(startOfDay(NOW)).toBe(new Date(2026, 9, 28).getTime());
   });
 });

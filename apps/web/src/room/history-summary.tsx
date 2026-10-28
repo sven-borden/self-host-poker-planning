@@ -6,7 +6,7 @@ import {
   FileSpreadsheetIcon,
   FileTextIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import {
   DropdownMenu,
@@ -19,6 +19,7 @@ import { localeFor } from "../i18n/language.ts";
 import { cn } from "../lib/utils.ts";
 import { requestHistory } from "../realtime/room-connection.ts";
 import { useRoomStore } from "../stores/room-store.ts";
+import { createPacer, SUMMARY_PACE } from "./history-pace.ts";
 import {
   CAPTION,
   durationSpoken,
@@ -32,6 +33,7 @@ import {
 } from "./history-view.ts";
 import {
   capRounds,
+  covers,
   defaultRange,
   EXPORT_PAGE,
   type ExportRound,
@@ -48,63 +50,135 @@ type ExportsModule = typeof import("./exports.ts");
 /** The export code: a chunk of its own, fetched when someone opens the export menu. */
 const loadExports = () => import("./exports.ts");
 
-type Counting = "loading" | "ready" | "failed";
+/**
+ * The rounds the summary read, kept across opens of the panel: the room they belong to
+ * (its code, never logged), the `historyKey` its first page answered for, and the rounds,
+ * newest first. A reopen asks for the first page only and joins it to them.
+ */
+let held: { room: string; key: string; list: HistoryList } | null = null;
+/** Every summary request waits for its turn here, whichever open of the panel asks. */
+const pace = createPacer(SUMMARY_PACE);
+
+/** Forgets the rounds held and refills the pace (tests). */
+export function forgetSummaryRounds(): void {
+  held = null;
+  pace.reset();
+}
+
+/** The range shown: the one chosen, else "Today" when a round held or the table's ended today. */
+function rangeFor(
+  list: HistoryList,
+  chosen: Range | null,
+  table: ExportRound | null,
+  now: number,
+): Range {
+  return chosen ?? defaultRange(exportRounds(capRounds(list, "all", now).rounds, table), now);
+}
 
 /**
- * Every finished round, up to `MAX_EXPORT_ROUNDS`, for the summary and the exports: the
- * history fetched 50 at a time, newest first. Fetched when the panel opens, and again
- * from the top when `key` changes (a round started, the table's round got its final): the
- * new rounds join the ones held, so a long history is read once per open. An answer a
- * newer fetch overtook is dropped.
+ * The finished rounds for the summary and the exports: the history read 50 at a time,
+ * newest first, at `SUMMARY_PACE`, as far as the range needs (`covers`: to the oldest
+ * round or `MAX_EXPORT_ROUNDS`, or for "Today" to a round that ended before local
+ * midnight). The rounds stay held across opens (`held`), so a reopen, a new round or a
+ * new final asks for the first page alone. Closing the panel stops the reading; a range
+ * that needs more goes on from where it stopped. `list` is null until a first page of
+ * this room came in.
  */
-function useAllRounds(key: string) {
-  const [list, setList] = useState<HistoryList>(NO_ROUNDS);
-  const [state, setState] = useState<Counting>("loading");
-  const held = useRef<HistoryList>(NO_ROUNDS);
-  const asked = useRef(0);
+function useSummaryRounds(
+  room: string | null,
+  key: string,
+  chosen: Range | null,
+  table: ExportRound | null,
+) {
+  const [list, setList] = useState<HistoryList | null>(() =>
+    held !== null && held.room === room && held.key === key ? held.list : null,
+  );
+  const [failed, setFailed] = useState(false);
+  const run = useRef<{ stopped: boolean } | null>(null);
+  const chosenNow = useRef(chosen);
+  const tableNow = useRef(table);
+  chosenNow.current = chosen;
+  tableNow.current = table;
 
-  const fetchAll = useCallback(async () => {
-    const ask = ++asked.current;
-    const first = await requestHistory({ limit: EXPORT_PAGE });
-    if (ask !== asked.current) return;
-    if (!first.ok) {
-      setState("failed");
-      return;
-    }
-    let merged = withFirstPage(held.current, first);
-    while (merged.next !== undefined && merged.rounds.length < MAX_EXPORT_ROUNDS) {
-      const page = await requestHistory({ before: merged.next, limit: EXPORT_PAGE });
-      if (ask !== asked.current) return;
-      if (!page.ok) {
-        // What came in stays; "Try again" goes on from where it stopped.
-        held.current = merged;
+  const read = useCallback(
+    async (fromTop: boolean) => {
+      if (room === null) return;
+      if (run.current) run.current.stopped = true;
+      const me = { stopped: false };
+      run.current = me;
+      const done = () => {
+        if (run.current === me) run.current = null;
+      };
+      setFailed(false);
+      const ask = async (before?: number) => {
+        if (!(await pace.wait(() => me.stopped))) return null;
+        const page = await requestHistory(
+          before === undefined ? { limit: EXPORT_PAGE } : { before, limit: EXPORT_PAGE },
+        );
+        return me.stopped ? null : page;
+      };
+      const mine = held?.room === room ? held : null;
+      let merged = mine?.list ?? NO_ROUNDS;
+      let at = mine?.key ?? key;
+      const keep = () => {
+        held = { room, key: at, list: merged };
         setList(merged);
-        setState("failed");
-        return;
+      };
+      if (fromTop || mine === null) {
+        const first = await ask();
+        if (first === null) return;
+        if (!first.ok) {
+          done();
+          setFailed(true);
+          return;
+        }
+        merged = withFirstPage(merged, first);
+        at = key;
+        keep();
       }
-      merged = withEarlierPage(merged, page);
-    }
-    held.current = merged;
-    setList(merged);
-    setState("ready");
-  }, []);
+      const needs = () => {
+        const now = Date.now();
+        return !covers(merged, rangeFor(merged, chosenNow.current, tableNow.current, now), now);
+      };
+      while (needs()) {
+        const page = await ask(merged.next);
+        if (page === null) return;
+        if (!page.ok) {
+          // What came in stays; "Try again" goes on from where it stopped.
+          done();
+          setFailed(true);
+          return;
+        }
+        merged = withEarlierPage(merged, page);
+        keep();
+      }
+      done();
+    },
+    [room, key],
+  );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` is what asks again.
   useEffect(() => {
-    void fetchAll();
-  }, [key, fetchAll]);
+    void read(true);
+    return () => {
+      if (run.current) run.current.stopped = true;
+      run.current = null;
+    };
+  }, [read]);
 
-  const retry = () => {
-    setState("loading");
-    void fetchAll();
-  };
-  return { list, state, retry };
+  const range = rangeFor(list ?? NO_ROUNDS, chosen, table, Date.now());
+  // A range that needs more than the rounds held ("All rounds" after "Today") reads on.
+  useEffect(() => {
+    if (run.current !== null || failed || list === null) return;
+    if (!covers(list, range, Date.now())) void read(false);
+  }, [range, list, failed, read]);
+
+  return { list, failed, range, retry: () => void read(true) };
 }
 
 /**
  * The session summary and the exports (#34), at the top of the history panel, for
  * everyone in the room: how many rounds, the total of the numeric final estimates (and
- * how many rounds have no number), the average agreement and the average voting time,
+ * how many stories have no number), the average agreement and the average voting time,
  * over "Today" or "All rounds". The export menu downloads a CSV or a Markdown file, or
  * copies the Markdown or "KEY estimate" lines for Jira or Azure DevOps; what it did is
  * said once in a live region. The round on the table counts once it has a final.
@@ -113,19 +187,24 @@ export function HistorySummary({ roomName }: { roomName: string | null }) {
   const t = useT();
   const format = useFormat();
   const heading = useId();
+  const room = useRoomStore((state) => state.code);
   const key = useRoomStore((state) => historyKey(state.snapshot?.room));
   const round = useRoomStore((state) => state.snapshot?.room.round);
-  const all = useAllRounds(key);
+  const table = useMemo(() => tableRound(round), [round]);
   const [chosen, setChosen] = useState<Range | null>(null);
+  const all = useSummaryRounds(room, key, chosen, table);
 
-  const { rounds: fetched, capped } = capRounds(all.list);
-  const rows = exportRounds(fetched, tableRound(round));
+  const now = Date.now();
+  const list = all.list ?? NO_ROUNDS;
+  const { range } = all;
+  const { rounds: fetched, capped } = capRounds(list, range, now);
+  const rows = exportRounds(fetched, table);
   if (rows.length === 0) {
     // Nothing to sum: the list below says why (loading, failed or empty).
-    return all.state === "failed" ? <CountFailed onRetry={all.retry} /> : null;
+    return all.failed ? <CountFailed onRetry={all.retry} /> : null;
   }
-  const now = Date.now();
-  const range = chosen ?? defaultRange(rows, now);
+  // Until the rounds the range needs are in, figures would count only some of them.
+  const counting = !all.failed && (all.list === null || !covers(list, range, now));
   const shown = inRange(rows, range, now);
   const summary = summarize(shown);
   const noValue = t("results.noValue");
@@ -143,12 +222,18 @@ export function HistorySummary({ roomName }: { roomName: string | null }) {
         </h3>
         <RangeChoice value={range} onChange={setChosen} />
       </div>
-      {shown.length === 0 ? (
+      {counting ? (
+        <p data-summary-counting className="m-0 text-sm text-ink-2">
+          {t("summary.counting")}
+        </p>
+      ) : shown.length === 0 ? (
         <p data-summary-none className="m-0 text-sm text-ink-2">
           {t("summary.noneToday")}
         </p>
       ) : (
-        <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3">
+        // Each figure spans three rows of one grid (caption, value, note), so the values
+        // of a row line up when a caption wraps.
+        <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-0.5 [&>div:nth-child(n+3)]:mt-2.5">
           <Stat name="rounds" label={t("summary.rounds")} value={format.number(summary.rounds)} />
           <Stat
             name="total"
@@ -182,12 +267,12 @@ export function HistorySummary({ roomName }: { roomName: string | null }) {
           {t("summary.capped", { max: MAX_EXPORT_ROUNDS })}
         </p>
       ) : null}
-      {all.state === "failed" ? <CountFailed onRetry={all.retry} inline /> : null}
+      {all.failed ? <CountFailed onRetry={all.retry} inline /> : null}
       <ExportMenu
         rounds={shown}
         range={range}
         roomName={roomName}
-        disabled={all.state !== "ready" || shown.length === 0}
+        disabled={counting || all.failed || shown.length === 0}
       />
     </section>
   );
@@ -229,9 +314,9 @@ function Stat({
   spoken?: string | undefined;
 }) {
   return (
-    <div data-summary-stat={name} className="flex min-w-0 flex-col gap-0.5">
+    <div data-summary-stat={name} className="row-span-3 grid min-w-0 grid-rows-subgrid">
       <dt className={CAPTION}>{label}</dt>
-      <dd className="m-0 text-xl font-semibold tabular-nums">
+      <dd className="m-0 self-start text-xl font-semibold tabular-nums">
         {spoken === undefined ? (
           value
         ) : (
@@ -309,6 +394,13 @@ function ExportMenu({
   const fieldId = useId();
   const loaded = useRef<ExportsModule | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  /**
+   * A copy was picked: the menu must not hand the focus back to "Export" on closing, since
+   * a refused clipboard puts it on the text to copy instead (Radix restores the focus in a
+   * timeout, after the copy may already have failed).
+   */
+  const copying = useRef(false);
   /** What the last pick did, said once (`id` tells two equal sentences apart). */
   const [said, setSaid] = useState<{ id: number; text: string } | null>(null);
   /** The text the browser refused to copy, shown to copy by hand. */
@@ -325,6 +417,8 @@ function ExportMenu({
     return loaded.current;
   };
   const say = (text: string) => setSaid((now) => ({ id: (now?.id ?? 0) + 1, text }));
+  /** After a copy that needs no field: the focus goes back to "Export". */
+  const back = () => trigger.current?.focus();
 
   async function copy(text: string, done: string) {
     try {
@@ -332,6 +426,7 @@ function ExportMenu({
       await navigator.clipboard.writeText(text);
       setManual(null);
       say(done);
+      back();
     } catch {
       setManual((now) => ({ id: (now?.id ?? 0) + 1, text }));
       say(t("exports.refused"));
@@ -344,6 +439,7 @@ function ExportMenu({
       exports = loaded.current ?? (await load());
     } catch {
       say(t("exports.failed"));
+      back();
       return;
     }
     const context = {
@@ -373,6 +469,7 @@ function ExportMenu({
         if (lines.lines === 0) {
           setManual(null);
           say(t("exports.noKeys"));
+          back();
           return;
         }
         const copied = t("exports.keysCopied", { count: lines.lines });
@@ -403,19 +500,33 @@ function ExportMenu({
         }}
       >
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" disabled={disabled} data-export-menu>
+          <Button ref={trigger} variant="outline" disabled={disabled} data-export-menu>
             <DownloadIcon aria-hidden />
             {t("exports.menu")}
             <ChevronDownIcon aria-hidden className="text-ink-2" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="min-w-60">
+        <DropdownMenuContent
+          align="start"
+          className="min-w-60"
+          onCloseAutoFocus={(event) => {
+            if (!copying.current) return;
+            // The copy's outcome places the focus: the field when refused, else "Export".
+            copying.current = false;
+            event.preventDefault();
+            field.current?.focus();
+            field.current?.select();
+          }}
+        >
           {items.map(({ action, icon: Icon }) => (
             <DropdownMenuItem
               key={action}
               data-export={action}
               className="min-h-11"
-              onSelect={() => void run(action)}
+              onSelect={() => {
+                copying.current = action === "copyMarkdown" || action === "copyKeys";
+                void run(action);
+              }}
             >
               <Icon aria-hidden />
               {t(`exports.${action}`)}

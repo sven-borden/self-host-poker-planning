@@ -66,6 +66,13 @@ export function exportRounds(
   return [...byNumber.values()].sort((a, b) => a.number - b.number);
 }
 
+/** The start of `now`'s day where the reader is: local midnight, as epoch ms. */
+export function startOfDay(now: number): number {
+  const day = new Date(now);
+  day.setHours(0, 0, 0, 0);
+  return day.getTime();
+}
+
 /** The rounds in `range`: "today" keeps those that ended on `now`'s day where the reader is. */
 export function inRange(rounds: readonly ExportRound[], range: Range, now: number): ExportRound[] {
   return range === "all" ? [...rounds] : rounds.filter((round) => sameDay(round.finishedAt, now));
@@ -79,9 +86,15 @@ export function defaultRange(rounds: readonly ExportRound[], now: number): Range
 export interface Summary {
   /** How many rounds. */
   rounds: number;
-  /** The numeric final estimates, summed ("½" counts 0.5). */
+  /**
+   * The numeric final estimates, summed ("½" counts 0.5). A story counts once: of
+   * consecutive rounds with the same subject (a re-vote keeps it), only the last.
+   */
   total: number;
-  /** Rounds whose final is not a number (`?`, a T-shirt size) or was never recorded. */
+  /**
+   * Stories (counted as `total` counts them) whose final is not a number (`?`, a T-shirt
+   * size) or was never recorded.
+   */
   withoutNumber: number;
   /** The mean agreement, from 0 to 1, of the rounds where some vote counted; null if none. */
   agreement: number | null;
@@ -89,23 +102,37 @@ export interface Summary {
   votingSeconds: number | null;
 }
 
-/** What the summary says about `rounds`. */
+/**
+ * Whether two rounds estimate the same story: the same title or the same link. Rounds
+ * without a subject never do, since a team that types none plays every story that way.
+ */
+export function sameSubject(a: ExportRound["subject"], b: ExportRound["subject"]): boolean {
+  if (a.kind === "title" && b.kind === "title") return a.text === b.text;
+  if (a.kind === "link" && b.kind === "link") return a.url === b.url;
+  return false;
+}
+
+/** What the summary says about `rounds`, oldest first. */
 export function summarize(rounds: readonly ExportRound[]): Summary {
   let total = 0;
   let withoutNumber = 0;
   let agreements = 0;
   let agreed = 0;
   let voting = 0;
-  for (const round of rounds) {
-    const value = round.final === null ? null : cardValue(round.final);
-    if (value === null) withoutNumber += 1;
-    else total += value;
+  rounds.forEach((round, index) => {
+    const later = rounds[index + 1];
+    // A re-vote follows: the story counts by its last round only.
+    if (later === undefined || !sameSubject(round.subject, later.subject)) {
+      const value = round.final === null ? null : cardValue(round.final);
+      if (value === null) withoutNumber += 1;
+      else total += value;
+    }
     if (round.stats.core.length > 0) {
       agreements += round.stats.agreement;
       agreed += 1;
     }
     voting += Math.max(0, round.revealedAt - round.startedAt);
-  }
+  });
   return {
     rounds: rounds.length,
     total,
@@ -120,11 +147,36 @@ export function voteCount(round: ExportRound): number {
   return round.stats.distribution.reduce((sum, { count }) => sum + count, 0);
 }
 
+/** Whether the oldest round held ended before `now`'s day began where the reader is. */
+function reachesBefore(list: HistoryList, now: number): boolean {
+  const oldest = list.rounds.at(-1);
+  return oldest !== undefined && oldest.finishedAt < startOfDay(now);
+}
+
+/**
+ * Whether `list` holds every round `range` needs, so no further page is read: the oldest
+ * round is in, or `MAX_EXPORT_ROUNDS` are, or (for "Today") a round that ended before
+ * local midnight is.
+ */
+export function covers(list: HistoryList, range: Range, now: number): boolean {
+  if (list.next === undefined || list.rounds.length >= MAX_EXPORT_ROUNDS) return true;
+  return range === "today" && reachesBefore(list, now);
+}
+
 /**
  * The rounds fetched so far for the summary, newest first (a `HistoryList`), capped at
- * `MAX_EXPORT_ROUNDS`; `capped` when older rounds were left out.
+ * `MAX_EXPORT_ROUNDS`; `capped` when the cap left out older rounds that `range` counts.
  */
-export function capRounds(list: HistoryList): { rounds: HistoryRoundView[]; capped: boolean } {
-  const capped = list.next !== undefined || list.rounds.length > MAX_EXPORT_ROUNDS;
-  return { rounds: list.rounds.slice(0, MAX_EXPORT_ROUNDS), capped };
+export function capRounds(
+  list: HistoryList,
+  range: Range,
+  now: number,
+): { rounds: HistoryRoundView[]; capped: boolean } {
+  const rounds = list.rounds.slice(0, MAX_EXPORT_ROUNDS);
+  const cut = list.rounds.length > MAX_EXPORT_ROUNDS || list.next !== undefined;
+  const capped =
+    rounds.length === MAX_EXPORT_ROUNDS &&
+    cut &&
+    !(range === "today" && reachesBefore({ rounds, next: undefined }, now));
+  return { rounds, capped };
 }
