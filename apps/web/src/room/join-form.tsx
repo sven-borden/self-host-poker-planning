@@ -206,6 +206,12 @@ export function JoinForm({
 
   const nameRefused = failure?.field === "name";
   const passwordRefused = failure?.field === "password";
+  const alert = failure ? (
+    <p id={ids.error} role="alert" className="m-0 flex items-start gap-2 text-sm">
+      <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
+      {failure.message}
+    </p>
+  ) : null;
 
   return (
     <section
@@ -240,6 +246,7 @@ export function JoinForm({
                 ? t("password.changed")
                 : errorMessage(t, "password_required")}
             </p>
+            {passwordRefused ? alert : null}
           </div>
         ) : null}
         <div className="flex flex-col gap-2">
@@ -299,12 +306,8 @@ export function JoinForm({
             ))}
           </div>
         </fieldset>
-        {failure && (
-          <p id={ids.error} role="alert" className="flex items-start gap-2 text-sm">
-            <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
-            {failure.message}
-          </p>
-        )}
+        {/* A refused password is said under its field; anything else above the button. */}
+        {failure && !passwordRefused ? alert : null}
         {/* aria-disabled, not disabled: a disabled button drops the focus to the page. */}
         <Button
           type="submit"
