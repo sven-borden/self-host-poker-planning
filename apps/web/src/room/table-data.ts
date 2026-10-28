@@ -169,8 +169,8 @@ export function voteCount(room: RoomView): { count: number; total: number } {
  * - `owner`: the PO in a room where the PO does not vote (`poVotes` off) has none either,
  *   and the page says why;
  * - `cards`: the round's deck and enabled specials (the room's own in the lobby), playable
- *   while Voting, and after a named reveal while the room lets votes change (`change`,
- *   #29). In the lobby, after an anonymous reveal, and after a reveal while changes are
+ *   while Voting, and after a named reveal while the room lets votes change, to someone
+ *   who has a vote in the round (`change`, #29). In the lobby, after an anonymous reveal, and after a reveal while changes are
  *   not allowed, the cards stay on screen, disabled, with the reason (`lobby`,
  *   `revealed`). The round's own `anonymous` flag decides, as in the domain.
  */
@@ -200,11 +200,18 @@ export function handView(room: RoomView, me: ParticipantView): HandView {
 }
 
 /**
- * Whether a vote may still change in the revealed round on the table (#29), as the domain
- * decides it: the room allows it and the round is named. An anonymous round locks its
- * votes at the reveal whatever the setting says now (ADR-011).
+ * Whether the viewer may still change their vote in the revealed round on the table (#29),
+ * as the domain decides it: the room allows it, the round is named and the viewer has a
+ * vote in it. An anonymous round locks its votes at the reveal whatever the setting says
+ * now (ADR-011), and the setting changes a vote, never adds one: someone with no card
+ * in the round keeps a disabled hand.
  */
 export function mayChange(room: RoomView): boolean {
   const round = room.round;
-  return round?.phase === "revealed" && !round.anonymous && room.settings.allowChangeAfterReveal;
+  return (
+    round?.phase === "revealed" &&
+    !round.anonymous &&
+    room.settings.allowChangeAfterReveal &&
+    round.yourVote !== undefined
+  );
 }

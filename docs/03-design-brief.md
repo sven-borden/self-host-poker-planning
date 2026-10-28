@@ -717,10 +717,16 @@ to an anonymous round: an anonymous round's votes are final at its reveal, so th
   on a tie. Nothing is recorded until the PO acts. The note goes once the PO records
   again or the suggestion comes back.
 - **The live region**, once per change, to everyone but the person who changed: "Ben
-  changed their card to 8." (or "Cy played 3 after the reveal." for a first card),
-  followed by the new result when the suggested card or the consensus moved ("Suggested
-  8. Agreement 50%."). Values are said only after a named reveal, where everyone sees
-  them; the person hears "You changed your card to 8." in their own region.
+  changed their card: 8." (a special card in words: "Ben changed their card: needs a
+  break."), followed by the new result when the suggested card or the consensus moved
+  ("Suggested 8. Agreement 50%."). Values are said only after a named reveal, where
+  everyone sees them; the person hears "You changed your card: 8." in their own region,
+  and the new result in the room's when it moved.
+- **Only a change.** Someone with no card in the round (a voter who had not voted, an
+  observer turned voter, someone who joined after the reveal) keeps a disabled hand
+  with the revealed line ("The cards are revealed. Votes can no longer change in this
+  round."): a card played after seeing everyone's is anchored on them, and would move
+  the suggestion without an estimate.
 
 ## Motion spec
 

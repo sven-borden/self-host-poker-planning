@@ -1030,7 +1030,7 @@ describe("a change after the reveal (#29)", () => {
     expect(card("13").getAttribute("aria-disabled")).toBeNull();
     expect(pressed()).toEqual(["5"]);
     fireEvent.click(card("13"));
-    await waitFor(() => expect(handLive()).toBe("You changed your card to 13."));
+    await waitFor(() => expect(handLive()).toBe("You changed your card: 13."));
     expect(sent.at(-1)).toEqual({
       type: "castVote",
       payload: { card: "13", round: 1, restart: 0 },
@@ -1059,7 +1059,7 @@ describe("a change after the reveal (#29)", () => {
     fireEvent.keyDown(card("5"), { key: "ArrowRight" });
     expect(document.activeElement).toBe(card("8"));
     fireEvent.click(card("8"));
-    await waitFor(() => expect(handLive()).toBe("You changed your card to 8."));
+    await waitFor(() => expect(handLive()).toBe("You changed your card: 8."));
     expect(pressed()).toEqual(["8"]);
   });
 

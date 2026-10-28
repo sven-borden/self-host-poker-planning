@@ -141,10 +141,12 @@ server sends and never decides the outcome of a round.
   PO, whose decision's action row docks there. A changed vote is `changed` on its seat
   status: a "changed" chip on the slot card's foot (`[data-changed-chip]`, also under
   "Not at the table"), "changed after the reveal" in the seat's name and "Changed after
-  the reveal" in its popover. The viewer hears "You changed your card to 8."
-  (`hand.youChanged`); everyone else "Ben changed their card to 8." (`live.changed`, or
-  `live.votedAfterReveal` for a first card), with the result when the suggestion or the
-  consensus moved (`changedEvent` in `announcements.ts`).
+  the reveal" in its popover. The viewer hears "You changed your card: 8."
+  (`hand.youChanged`) and, in the room's region, the result when it moved; everyone else
+  "Ben changed their card: 8." (`live.changed`) with that result (`changedEvent` in
+  `announcements.ts`). `mayChange` (`table-data.ts`) also needs the viewer's own vote
+  (`yourVote`): the domain refuses a first card after the reveal, so a hand without one
+  stays disabled with the `revealed` reason.
   The final estimate (#32): `final-estimate.tsx` (`Decision`, `[data-decision]`, in the
   `seated` chunk) is the PO's bar under the table after a reveal: a native radio group
   (`[data-final-picker]`, "Final estimate"; `finalChoice` in `results-view.ts` gives

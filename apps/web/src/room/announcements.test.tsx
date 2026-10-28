@@ -891,45 +891,61 @@ describe("a change after the reveal (#29)", () => {
         kind: "changed",
         who: "ana",
         name: "Ana",
-        change: { card: "8", late: false },
+        change: { card: "8" },
         summary: { kind: "suggested", card: "5", agreement: 2 / 3, mostVoted: false },
       },
     ]);
-    expect(said(events)).toBe("Ana changed their card to 8. Suggested 5. Agreement 67%.");
+    expect(said(events)).toBe("Ana changed their card: 8. Suggested 5. Agreement 67%.");
     const ben = run("ben", { type: "castVote", card: "8" });
     expect(said(liveEvents(ben.room, ben.causes, ana.room))).toBe(
-      "Ben changed their card to 8. Suggested 8. Agreement 67%.",
+      "Ben changed their card: 8. Suggested 8. Agreement 67%.",
     );
     // The suggestion stays 8: the change alone is said.
     const again = run("ana", { type: "castVote", card: "13" });
     expect(said(liveEvents(again.room, again.causes, ben.room))).toBe(
-      "Ana changed their card to 13.",
+      "Ana changed their card: 13.",
     );
     // A special card is said in words.
     const unsure = run("ben", { type: "castVote", card: "?" });
     expect(said(liveEvents(unsure.room, unsure.causes, again.room))).toMatch(
-      /^Ben changed their card to unsure\./,
+      /^Ben changed their card: unsure\./,
     );
   });
 
-  it("never tells the person their own change: their hand says it", () => {
+  it("tells the person who changed only the result that moved: their hand says their card", () => {
     const { run, revealed } = revealedRound("ana");
+    // 5, 5, 5 was a consensus; 5, 8, 5 suggests 5: the consensus moved.
     const own = run("ana", { type: "castVote", card: "8" });
-    expect(liveEvents(own.room, own.causes, revealed.room)).toEqual([]);
-    // Everyone else hears it, the PO who did not change anything too.
+    const events = liveEvents(own.room, own.causes, revealed.room);
+    expect(events).toEqual([
+      {
+        kind: "changed",
+        who: "ana",
+        name: "",
+        summary: { kind: "suggested", card: "5", agreement: 2 / 3, mostVoted: false },
+      },
+    ]);
+    expect(said(events)).toBe("Suggested 5. Agreement 67%.");
+    // A change that moves nothing says nothing to them.
+    const again = run("ana", { type: "castVote", card: "3" });
+    expect(liveEvents(again.room, again.causes, own.room)).toEqual([]);
+    // Everyone else hears the card, the PO who did not change anything too.
     const ben = run("ben", { type: "castVote", card: "3" });
-    expect(said(liveEvents(ben.room, ben.causes, own.room))).toMatch(
-      /^Ben changed their card to 3\./,
+    expect(said(liveEvents(ben.room, ben.causes, again.room))).toMatch(
+      /^Ben changed their card: 3\./,
     );
   });
 
-  it("says a first card played after the reveal as such", () => {
+  it("says a special card in words after a colon, in every language", () => {
     const { run, revealed } = revealedRound();
-    const joined = run("cy", { type: "join", name: "Cy", role: "voter" });
-    expect(said(liveEvents(joined.room, joined.causes, revealed.room))).toBe("Cy joined.");
-    const late = run("cy", { type: "castVote", card: "5" });
-    expect(said(liveEvents(late.room, late.causes, joined.room))).toBe(
-      "Cy played 5 after the reveal.",
+    const pause = run("ben", { type: "castVote", card: "\u{2615}" });
+    const events = liveEvents(pause.room, pause.causes, revealed.room);
+    expect(said(events)).toMatch(/^Ben changed their card: needs a break\./);
+    expect(describeEvents(fixedT("fr"), events)).toMatch(
+      /^Ben a changé de carte\u{202f}: besoin d’une pause\./u,
+    );
+    expect(describeEvents(fixedT("de"), events)).toMatch(
+      /^Ben hat die Karte geändert: braucht eine Pause\./,
     );
   });
 
@@ -942,11 +958,11 @@ describe("a change after the reveal (#29)", () => {
       liveEvents(second.room, second.causes, first.room),
     );
     // 5, 3 and 5 still suggest 5, as the first change already said.
-    expect(said(batch)).toBe("Ana changed their card to 3. Suggested 5. Agreement 67%.");
+    expect(said(batch)).toBe("Ana changed their card: 3. Suggested 5. Agreement 67%.");
     // Another person in the same batch: both changes, then the result, once.
     const ben = run("ben", { type: "castVote", card: "13" });
     expect(said(mergeEvents(batch, liveEvents(ben.room, ben.causes, second.room)))).toBe(
-      "Ana changed their card to 3. Ben changed their card to 13. Suggested 8. Agreement 33%.",
+      "Ana changed their card: 3. Ben changed their card: 13. Suggested 8. Agreement 33%.",
     );
     // A new round makes the changes moot.
     const next = run("me", { type: "startRound", subject: { kind: "none" } });

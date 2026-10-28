@@ -375,7 +375,7 @@ export const fr: Catalog<"many"> = {
     hintRevealed: "Les cartes sont révélées. Les votes ne peuvent plus changer dans ce tour.",
     youVoted: "Votre vote : {{card}}.",
     hintChange: "Vous pouvez encore changer votre carte.",
-    youChanged: "Vous avez changé votre carte pour {{card}}.",
+    youChanged: "Vous avez changé de carte\u{202f}: {{card}}.",
     retracted: "Vote retiré.",
     ownerDoesNotVote: "En tant que product owner, vous ne votez pas dans cette salle.",
   },
@@ -467,8 +467,7 @@ export const fr: Catalog<"many"> = {
     revealOwner: "Seul le product owner peut désormais révéler les cartes.",
     changeAfterRevealOn: "Les votes peuvent désormais changer après la révélation.",
     changeAfterRevealOff: "Les votes ne peuvent plus changer après la révélation.",
-    changed: "{{name}} a changé sa carte pour {{card}}.",
-    votedAfterReveal: "{{name}} a joué {{card}} après la révélation.",
+    changed: "{{name}} a changé de carte\u{202f}: {{card}}.",
   },
   cards: {
     yourCards: "Vos cartes",

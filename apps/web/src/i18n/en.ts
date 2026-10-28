@@ -411,7 +411,7 @@ export const en = {
     hintRevealed: "The cards are revealed. Votes can no longer change in this round.",
     youVoted: "Your vote: {{card}}.",
     hintChange: "You can still change your card.",
-    youChanged: "You changed your card to {{card}}.",
+    youChanged: "You changed your card: {{card}}.",
     retracted: "Vote taken back.",
     ownerDoesNotVote: "As the product owner, you do not vote in this room.",
   },
@@ -495,8 +495,7 @@ export const en = {
     revealOwner: "Only the product owner can reveal the cards now.",
     changeAfterRevealOn: "Votes can now change after the reveal.",
     changeAfterRevealOff: "Votes can no longer change after the reveal.",
-    changed: "{{name}} changed their card to {{card}}.",
-    votedAfterReveal: "{{name}} played {{card}} after the reveal.",
+    changed: "{{name}} changed their card: {{card}}.",
   },
   cards: {
     yourCards: "Your cards",

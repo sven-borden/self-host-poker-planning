@@ -110,7 +110,7 @@ test("the PO allows changes after a reveal: Ben changes his card, everyone sees 
 
     await recordAnimations(page);
     await handCard(ben.page, "13").click();
-    await expect(handLive(ben.page)).toHaveText("You changed your card to 13.");
+    await expect(handLive(ben.page)).toHaveText("You changed your card: 13.");
     await expect(handCard(ben.page, "13")).toHaveAttribute("aria-pressed", "true");
     // Everyone sees the chip, the seat says it, and the results follow: 5 and 13 suggest 8.
     for (const viewer of [page, ben.page]) {
@@ -123,7 +123,7 @@ test("the PO allows changes after a reveal: Ben changes his card, everyone sees 
       }),
     ).toBeVisible();
     await expect(tableLive(page)).toContainText(
-      "Ben changed their card to 13. Suggested 8. Agreement 50%.",
+      "Ben changed their card: 13. Suggested 8. Agreement 50%.",
     );
     // His card turned over to its new value.
     const turned = (await animated(page)).filter(
@@ -242,9 +242,9 @@ test("a change by keyboard alone, on a phone too, with no turn under reduced mot
     // The page put the focus there: Enter waits out the guard.
     await ana.page.waitForTimeout(400);
     await ana.page.keyboard.press("Enter");
-    await expect(handLive(ana.page)).toHaveText("You changed your card to 8.");
+    await expect(handLive(ana.page)).toHaveText("You changed your card: 8.");
     await expect(chips(ana.page)).toHaveText(["changed"]);
-    await expect(tableLive(page)).toContainText("Ana changed their card to 8.");
+    await expect(tableLive(page)).toContainText("Ana changed their card: 8.");
     // Under reduced motion the new value replaces the old without a turn.
     await expect(ana.page.locator("[data-slot-card][data-you] [data-face='up']")).toHaveText("8");
     expect((await animated(ana.page)).filter((a) => a.keyframes.includes("rotateY"))).toEqual([]);
@@ -255,9 +255,9 @@ test("a change by keyboard alone, on a phone too, with no turn under reduced mot
     await expect(handCard(page, "2")).toBeFocused();
     await page.waitForTimeout(400);
     await page.keyboard.press("Space");
-    await expect(handLive(page)).toHaveText("You changed your card to 2.");
+    await expect(handLive(page)).toHaveText("You changed your card: 2.");
     await expect(handOf(page).getByRole("button", { pressed: true })).toHaveAccessibleName("2");
-    await expect(tableLive(ana.page)).toContainText("Pia changed their card to 2.");
+    await expect(tableLive(ana.page)).toContainText("Pia changed their card: 2.");
     await expect(chips(page)).toHaveCount(2);
   } finally {
     await ana.context.close();

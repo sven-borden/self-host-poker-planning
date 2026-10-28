@@ -325,11 +325,13 @@ describe("the round's centre and the hand (#18)", () => {
       reason: "change",
     });
     expect(mayChange(voter.room)).toBe(true);
-    // Someone who had not voted may still play a card; an observer has no hand.
+    // Someone who had not voted keeps a disabled hand: a change, never a first card. An
+    // observer has no hand.
     expect(handView(me(revealed, "u2").room, me(revealed, "u2").person)).toMatchObject({
-      playable: true,
-      reason: "change",
+      playable: false,
+      reason: "revealed",
     });
+    expect(mayChange(me(revealed, "u2").room)).toBe(false);
     expect(handView(me(revealed, "u3").room, me(revealed, "u3").person)).toEqual({
       kind: "none",
     });

@@ -366,7 +366,7 @@ export const de: Catalog = {
       "Die Karten sind aufgedeckt. In dieser Runde lassen sich die Stimmen nicht mehr ändern.",
     youVoted: "Ihre Stimme: {{card}}.",
     hintChange: "Sie können Ihre Karte noch ändern.",
-    youChanged: "Sie haben Ihre Karte auf {{card}} geändert.",
+    youChanged: "Sie haben Ihre Karte geändert: {{card}}.",
     retracted: "Stimme zurückgenommen.",
     ownerDoesNotVote: "Als Product Owner stimmen Sie in diesem Raum nicht ab.",
   },
@@ -454,8 +454,7 @@ export const de: Catalog = {
     revealOwner: "Nur der Product Owner kann die Karten jetzt aufdecken.",
     changeAfterRevealOn: "Stimmen können jetzt nach dem Aufdecken geändert werden.",
     changeAfterRevealOff: "Stimmen können nach dem Aufdecken nicht mehr geändert werden.",
-    changed: "{{name}} hat die Karte auf {{card}} geändert.",
-    votedAfterReveal: "{{name}} hat nach dem Aufdecken {{card}} gespielt.",
+    changed: "{{name}} hat die Karte geändert: {{card}}.",
   },
   cards: {
     yourCards: "Ihre Karten",

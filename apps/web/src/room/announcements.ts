@@ -80,10 +80,10 @@ export interface LiveEvent {
   /** The timer started, got more time or stopped (#27): said to everyone, the PO too. */
   timer?: TimerNews;
   /**
-   * A card changed after a named reveal (#29): the new card, and whether it is the
-   * person's first card of the round (`late`: they had not voted before the reveal).
+   * A card changed after a named reveal (#29): the new card. Left out for the viewer's own
+   * change, whose card their hand says; the event then carries only the moved result.
    */
-  change?: { card: string; late: boolean };
+  change?: { card: string };
   /**
    * The room's password (#31): whether it had one before and has one after. Both true is
    * a change; a batch that set and removed it says nothing.
@@ -357,11 +357,12 @@ function revealerName(who: string | undefined, next: RoomView, previous: RoomVie
 }
 
 /**
- * A card changed after a named reveal (#29), to everyone but the person who changed it
- * (their hand says it): "Ben changed their card to 8.", or "Ben played 8 after the
- * reveal." for a first card, with the new result when the suggested card or the consensus
- * moved. Null when `previous` did not show the same round revealed: the vote is the one
- * the reveal came with. Never in an anonymous round, whose votes are locked at the reveal.
+ * A card changed after a named reveal (#29): "Ben changed their card: 8.", with the new
+ * result when the suggested card or the consensus moved. The person who changed it hears
+ * only that result (their hand says their card). Null when `previous` did not show the
+ * same round revealed: the vote is the one the reveal came with. Never in an anonymous
+ * round, whose votes are locked at the reveal. Only a change: the domain refuses a first
+ * card after the reveal.
  */
 function changedEvent(
   who: string | undefined,
@@ -378,21 +379,15 @@ function changedEvent(
   ) {
     return null;
   }
-  if (round.anonymous || before.anonymous || who === undefined || who === next.you) return [];
+  if (round.anonymous || before.anonymous || who === undefined) return [];
+  const summary = revealSummary(round);
+  const moved = !sameOutcome(revealSummary(before), summary);
+  if (who === next.you) return moved ? [{ kind: "changed", who, name: "", summary }] : [];
   const vote = round.votes.find((v) => v.who === who);
   const name = nameOf(who, next, previous);
   if (vote === undefined || name === null) return [];
-  const summary = revealSummary(round);
-  const moved = !sameOutcome(revealSummary(before), summary);
-  const late = !before.votes.some((v) => v.who === who);
   return [
-    {
-      kind: "changed",
-      who,
-      name,
-      change: { card: vote.card, late },
-      ...(moved ? { summary } : {}),
-    },
+    { kind: "changed", who, name, change: { card: vote.card }, ...(moved ? { summary } : {}) },
   ];
 }
 
@@ -481,15 +476,7 @@ export function mergeEvents(pending: readonly LiveEvent[], events: readonly Live
       const earlier = merged.find((e) => e.kind === "changed" && e.who === event.who);
       merged = merged.filter((e) => e !== earlier);
       const summary = event.summary ?? earlier?.summary;
-      const change = event.change && {
-        card: event.change.card,
-        late: earlier?.change?.late ?? event.change.late,
-      };
-      merged.push({
-        ...event,
-        ...(change ? { change } : {}),
-        ...(summary ? { summary } : {}),
-      });
+      merged.push({ ...event, ...(summary ? { summary } : {}) });
       continue;
     }
     const earlier = merged.find((e) => e.kind === "final");
@@ -585,12 +572,10 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
       return first?.summary ? `${said} ${summarySentence(t, first.summary)}` : said;
     }
     case "changed": {
-      // Each change, then the latest result that moved, once.
-      const said = events.map((e) =>
-        t(e.change?.late ? "live.votedAfterReveal" : "live.changed", {
-          name: e.name,
-          card: cardLabel(t, e.change?.card ?? ""),
-        }),
+      // Each change (the viewer's own is said by their hand), then the latest result that
+      // moved, once.
+      const said = events.flatMap((e) =>
+        e.change ? [t("live.changed", { name: e.name, card: cardLabel(t, e.change.card) })] : [],
       );
       const summary = events.findLast((e) => e.summary !== undefined)?.summary;
       return [...said, ...(summary ? [summarySentence(t, summary)] : [])].join(" ");
