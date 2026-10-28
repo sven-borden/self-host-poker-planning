@@ -52,6 +52,17 @@ describe("the summary's pace", () => {
     expect(at[8]).toBe(500);
   });
 
+  it("lets the list spend without waiting, and the summary waits for it", async () => {
+    const pacer = createPacer(SUMMARY_PACE);
+    for (let i = 0; i < 3; i++) pacer.spend();
+    const at = await turns(pacer, 6);
+    expect(at).toEqual([0, 0, 0, 0, 0, 500]);
+    // The debt stops at one burst.
+    for (let i = 0; i < 100; i++) pacer.spend();
+    const later = await turns(pacer, 1);
+    expect(later).toEqual([4500]);
+  });
+
   it("gives up waiting once the caller stopped", async () => {
     const pacer = createPacer({ burst: 1, perSecond: 1 });
     expect(await pacer.wait(() => false)).toBe(true);

@@ -2,7 +2,8 @@
 // requests from a bucket of its own (#36: 10 at once, then 2 a second) and every message,
 // votes included, from a shared one: paging through a long history must leave both room
 // for the list's own requests and for the person's commands. So the summary takes at most
-// 8 at once, then 2 a second, across every open of the panel.
+// 8 at once, then 2 a second, across every open of the panel, and the list's requests,
+// which never wait, take their share from the same budget (`spend`).
 
 export interface PaceOptions {
   /** Requests that may go at once, after a quiet spell. */
@@ -20,6 +21,11 @@ export interface Pacer {
    * not go any more (the panel closed, a newer read took over).
    */
   wait(stopped: () => boolean): Promise<boolean>;
+  /**
+   * Takes a turn without waiting, for a request the person asked for (the list's): the
+   * waiting ones then wait longer. The debt stops at one burst.
+   */
+  spend(): void;
   /** Back to a full burst (tests). */
   reset(): void;
 }
@@ -46,9 +52,16 @@ export function createPacer({ burst, perSecond }: PaceOptions): Pacer {
         await new Promise((resolve) => setTimeout(resolve, ms));
       }
     },
+    spend() {
+      refill();
+      tokens = Math.max(-burst, tokens - 1);
+    },
     reset() {
       tokens = burst;
       at = Date.now();
     },
   };
 }
+
+/** The page's one budget of history requests: the summary waits on it, the list spends. */
+export const historyPace = createPacer(SUMMARY_PACE);

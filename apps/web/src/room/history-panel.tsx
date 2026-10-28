@@ -23,6 +23,7 @@ import { cn } from "../lib/utils.ts";
 import { type HistoryResult, requestHistory } from "../realtime/room-connection.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { cardLabel, MiniCard } from "../table/cards.tsx";
+import { historyPace } from "./history-pace.ts";
 import { HistorySummary } from "./history-summary.tsx";
 import {
   CAPTION,
@@ -124,6 +125,7 @@ function HistoryBody({ side, roomName }: { side: boolean; roomName: string | nul
 
   const fetchFirst = useCallback(async () => {
     const ask = ++asked.current;
+    historyPace.spend();
     const answer = await requestHistory();
     if (ask !== asked.current) return;
     if (!answer.ok) {
@@ -166,6 +168,7 @@ function HistoryBody({ side, roomName }: { side: boolean; roomName: string | nul
     const before = list.next;
     if (before === undefined || earlier === "loading") return;
     setEarlier("loading");
+    historyPace.spend();
     const answer: HistoryResult = await requestHistory({ before });
     if (!answer.ok) {
       setEarlier("failed");

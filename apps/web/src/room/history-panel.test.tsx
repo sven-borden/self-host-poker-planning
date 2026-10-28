@@ -11,10 +11,10 @@ const mocks = vi.hoisted(() => ({ requestHistory: vi.fn() }));
 vi.mock("../realtime/room-connection.ts", () => ({ requestHistory: mocks.requestHistory }));
 // The summary's pace (8 at once, then 2 a second) is tested in history-pace.test.ts; here
 // pages come as fast as the mock answers.
-vi.mock("./history-pace.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./history-pace.ts")>()),
-  SUMMARY_PACE: { burst: 1000, perSecond: 1000 },
-}));
+vi.mock("./history-pace.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./history-pace.ts")>();
+  return { ...actual, historyPace: actual.createPacer({ burst: 1000, perSecond: 1000 }) };
+});
 
 const CODE = "abcdefghij";
 const PO = "po";

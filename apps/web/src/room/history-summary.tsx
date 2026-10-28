@@ -19,7 +19,7 @@ import { localeFor } from "../i18n/language.ts";
 import { cn } from "../lib/utils.ts";
 import { requestHistory } from "../realtime/room-connection.ts";
 import { useRoomStore } from "../stores/room-store.ts";
-import { createPacer, SUMMARY_PACE } from "./history-pace.ts";
+import { historyPace as pace } from "./history-pace.ts";
 import {
   CAPTION,
   durationSpoken,
@@ -56,8 +56,6 @@ const loadExports = () => import("./exports.ts");
  * newest first. A reopen asks for the first page only and joins it to them.
  */
 let held: { room: string; key: string; list: HistoryList } | null = null;
-/** Every summary request waits for its turn here, whichever open of the panel asks. */
-const pace = createPacer(SUMMARY_PACE);
 
 /** Forgets the rounds held and refills the pace (tests). */
 export function forgetSummaryRounds(): void {
