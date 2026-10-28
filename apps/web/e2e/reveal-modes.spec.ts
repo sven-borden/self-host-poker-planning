@@ -291,7 +291,8 @@ test("under anyone who votes, a voter reveals an anonymous round and no frame ma
     await expect(revealButton(ben.page)).toHaveAccessibleDescription(
       "Wait for two cards: in an anonymous round, a lone card shows whose it is.",
     );
-    await revealButton(ben.page).click();
+    // Playwright waits for an aria-disabled button to enable: force the press through.
+    await revealButton(ben.page).click({ force: true });
     await ben.page.keyboard.press("r");
     await handCard(ben.page, "8").click();
     // The second card: the button is live, and the round was never revealed.
