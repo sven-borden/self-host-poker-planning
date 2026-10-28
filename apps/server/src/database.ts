@@ -16,7 +16,13 @@ import pg from "pg";
 import type { DbStatus } from "./app.ts";
 import type { Config } from "./config.ts";
 import { DatabaseError, errorCode, guard } from "./db/errors.ts";
-import { type AccessStore, createRoomStore, type Db, type RoomStore } from "./db/rooms.ts";
+import {
+  type AccessStore,
+  createRoomStore,
+  type Db,
+  type HistoryStore,
+  type RoomStore,
+} from "./db/rooms.ts";
 import { type CommandRunner, createCommandRunner } from "./db/runner.ts";
 import type { Logger } from "./logger.ts";
 import type { Setup } from "./run.ts";
@@ -259,7 +265,7 @@ export async function migrateDatabase(
 export interface Database {
   /** drizzle on the pool: the room store's, and Better Auth's (#10). */
   readonly db: Db;
-  readonly store: RoomStore & AccessStore;
+  readonly store: RoomStore & AccessStore & HistoryStore;
   readonly runner: CommandRunner;
   /** `select 1`: `ok`, or `error` on any failure. `/api/health` gives it 2 s. */
   checkDb(): Promise<DbStatus>;

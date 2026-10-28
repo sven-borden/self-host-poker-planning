@@ -5,10 +5,10 @@
  * lost one.
  */
 import type { RoomState, UserId } from "@pp/domain";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, ne, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { guard } from "./errors.ts";
-import { type EndedRound, historyRow, isHistory } from "./history.ts";
+import { type EndedRound, historyRow, isHistory, type StoredHistoryRound } from "./history.ts";
 import { room, roomAccess, roundHistory } from "./schema.ts";
 
 export type Db = NodePgDatabase;
@@ -126,12 +126,33 @@ export interface AccessStore {
   releaseTry(roomId: string, reserved: ReservedTry): Promise<void>;
 }
 
+/** One page of a room's history (#33), newest first. */
+export interface HistoryPage {
+  rounds: StoredHistoryRound[];
+  /** Older rounds remain below the page's last one. */
+  more: boolean;
+}
+
+/** What `loadHistory` reads: the rounds below `before`, at most `limit`, never `exclude`. */
+export interface HistoryQuery {
+  before?: number | undefined;
+  limit: number;
+  /** The round still on the table: it may already have a row, and is left out (#33). */
+  exclude?: number | undefined;
+}
+
+/** The history panel's read side (#33). */
+export interface HistoryStore {
+  /** One page of the room's (by id) `round_history`, newest first. */
+  loadHistory(roomId: string, query: HistoryQuery): Promise<HistoryPage>;
+}
+
 const hasHash = sql<boolean>`${room.passwordHash} is not null`;
 
 /** Thrown inside a commit's transaction to roll it back: the grant it needs is gone. */
 const NO_GRANT = Symbol("no grant");
 
-export function createRoomStore(db: Db): RoomStore & AccessStore {
+export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore {
   /** Whether the window of wrong tries that started at `password_failures_since` still runs. */
   const inWindow = (seconds: number) =>
     sql`(${room.passwordFailuresSince} is not null and ${room.passwordFailuresSince} > now() - make_interval(secs => ${seconds}))`;
@@ -266,6 +287,34 @@ export function createRoomStore(db: Db): RoomStore & AccessStore {
             if ((first ?? error) === NO_GRANT) return "password_required";
             throw first ?? error;
           });
+      }),
+
+    loadHistory: (roomId, { before, limit, exclude }) =>
+      guard("load history", async () => {
+        // One more than the page, to tell whether older rounds remain. The unique index on
+        // (room_id, number) serves both the filter and the order.
+        const rows = await db
+          .select({
+            number: roundHistory.number,
+            subject: roundHistory.subject,
+            votes: roundHistory.votes,
+            stats: roundHistory.stats,
+            final: roundHistory.final,
+            startedAt: roundHistory.startedAt,
+            revealedAt: roundHistory.revealedAt,
+            finishedAt: roundHistory.finishedAt,
+          })
+          .from(roundHistory)
+          .where(
+            and(
+              eq(roundHistory.roomId, roomId),
+              before === undefined ? undefined : lt(roundHistory.number, before),
+              exclude === undefined ? undefined : ne(roundHistory.number, exclude),
+            ),
+          )
+          .orderBy(desc(roundHistory.number))
+          .limit(limit + 1);
+        return { rounds: rows.slice(0, limit), more: rows.length > limit };
       }),
 
     hasAccess: (roomId, who) =>
