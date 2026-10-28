@@ -4,7 +4,7 @@
 //
 // Usage: node scripts/docker-smoke.mjs <base url> [expected commit]
 // Checks: /api/health answers ok with db ok (and the expected commit); / serves the web
-// app; a WebSocket with the right Origin connects and `enter` gets an ack; a foreign
+// app; the security headers (#36) are on every kind of answer; a WebSocket with the right Origin connects and `enter` gets an ack; a foreign
 // Origin is refused. When /api/auth exists (#10) it signs in anonymously first and sends
 // the session cookie with the WebSocket.
 
@@ -40,6 +40,42 @@ async function webApp() {
     res.status === 200 && text.includes('<div id="root">'),
     "/ serves the web app's index.html",
   );
+}
+
+/**
+ * The security headers (#36) on the page, the API, a static file and a 404, as the image
+ * sends them. HSTS only over https, which this check does not run.
+ */
+async function securityHeaders() {
+  for (const path of ["/", "/api/health", "/theme-init.js", "/api/nope"]) {
+    const res = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    await res.arrayBuffer();
+    const csp = res.headers.get("content-security-policy") ?? "";
+    check(
+      csp.includes("default-src 'self'; script-src 'self'; style-src 'self'") &&
+        csp.includes("frame-ancestors 'none'") &&
+        !/unsafe-inline|unsafe-eval/.test(csp),
+      `${path}: a strict Content-Security-Policy`,
+    );
+    const expected = {
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "referrer-policy": "same-origin",
+      "cross-origin-opener-policy": "same-origin",
+      "cross-origin-resource-policy": "same-origin",
+    };
+    for (const [name, value] of Object.entries(expected)) {
+      check(res.headers.get(name) === value, `${path}: ${name}: ${value}`);
+    }
+    check(
+      (res.headers.get("permissions-policy") ?? "").includes("camera=()"),
+      `${path}: a Permissions-Policy`,
+    );
+    check(
+      base.startsWith("https:") === res.headers.has("strict-transport-security"),
+      `${path}: HSTS only over https`,
+    );
+  }
 }
 
 /**
@@ -128,6 +164,7 @@ async function sockets() {
 try {
   await health();
   await webApp();
+  await securityHeaders();
   await sockets();
   console.log("smoke test passed");
 } catch (error) {
