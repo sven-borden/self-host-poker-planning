@@ -281,7 +281,23 @@ test("under anyone who votes, a voter reveals an anonymous round and no frame ma
     await page.getByRole("button", { name: "Start voting" }).click();
     await expect(status(ben.page)).toHaveText("0/4 voted so far");
     await handCard(page, "5").click();
+    // One card down: Ben's reveal waits, since the lone card would show it is Pia's.
+    await expect(status(ben.page)).toHaveText("1/4 voted so far");
+    await expect(revealButton(ben.page)).toHaveAttribute("aria-disabled", "true");
+    const wait = ben.page.locator("[data-reveal-wait]");
+    await expect(wait).toHaveText(
+      "Wait for two cards: in an anonymous round, a lone card shows whose it is.",
+    );
+    await expect(revealButton(ben.page)).toHaveAccessibleDescription(
+      "Wait for two cards: in an anonymous round, a lone card shows whose it is.",
+    );
+    await revealButton(ben.page).click();
+    await ben.page.keyboard.press("r");
     await handCard(ben.page, "8").click();
+    // The second card: the button is live, and the round was never revealed.
+    await expect(revealButton(ben.page)).not.toHaveAttribute("aria-disabled", "true");
+    await expect(wait).toHaveCount(0);
+    await expect(status(page)).toHaveText("2/4 voted so far");
     const [cleo] = guests;
     expect(await cleo?.cmd("castVote", { card: "3", round: 1, restart: 0 })).toMatchObject({
       ok: true,
