@@ -100,6 +100,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   region, and a warning before turning auto-reveal on with everyone voted. A voter
   reveals an anonymous round only once two cards are down (ADR-011 amended). The room
   route loads 173.4 kB.
+- The room password from #31: argon2id (Node's built-in), access granted on the server
+  per session user (`room_access`; a kick or a change drops grants, checked inside the
+  join's commit), limits on wrong tries (10 per person, 25 per address, 50 per room per
+  10 minutes) behind a 300-check guard per address, the PO's row in the panel, a lock in
+  the header and a password field on the join screen. The room route loads 174.9 kB.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -110,20 +115,20 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#31 (PP-031)** room password: argon2id, access granted on the server per session
-  user (a kick or a password change drops grants), limits on failed tries, the PO's row
-  in the panel and a password field on the join screen. PR #93 reviewed: one security
-  blocker (a grant racing a password change) and the limits reworked; the fixer in
-  `../pp-wt-31` merges `main` (with #28).
 - **#29 (PP-029)** change a vote after the reveal: the panel's toggle (locked for
   anonymous rounds), a playable hand after a named reveal, a "changed" chip, live
-  results. Building in `../pp-wt-29`.
+  results. PR #94 in review. CI's `db-tests` failed twice: its new wire tests drain a
+  shared user's message bucket before the #25 settings block (`rate_limited` for
+  `not_owner`), the burst-test chore; the fixer isolates the buckets.
+- **#33 (PP-033)** round history, the first of W3: a `history` socket request for
+  people in the room, a lazy "History" sheet, rows that open to their votes (names only
+  for named rounds). Building in `../pp-wt-33`.
 
 ## Next
 
-- W2 ends with #29 and #31. W3 (#33–#41) begins as a slot frees: #33 (round history)
-  first; #35 (retention) and #39 (scale-out) have their dependencies merged too; #36
-  (hardening) needs #31; #37 needs #33; #38 and #41 need Sven's OQ-1 and OQ-2.
+- W2 ends with #29. W3 (#33–#41) has begun with #33. Next as slots free: #35
+  (retention), #36 (hardening, now unblocked by #31), #39 (scale-out); #34 and #37 need
+  #33; #38 and #41 need Sven's OQ-1 and OQ-2; #40 needs #36.
 - Chores to fold into a later issue: a lazy catalog for the settings panel (about
   2 kB off both pages); the burst test's one `room_not_found` (see the build log).
   - Each later setting drops its control into #25's panel (see the web README).
@@ -163,10 +168,11 @@ issues are merged.
 - Optional, after #12:
   - Rotate `BETTER_AUTH_SECRET` (it went through my session when Sven asked me to add
     it).
-  - **Now pressing (#31):** let Coolify's Traefik trust the Synology
+  - **Now pressing (#31 is live):** let Coolify's Traefik trust the Synology
     (`forwardedHeaders.trustedIPs`), then set `TRUST_PROXY=2`. This restarts the proxy
     for all his apps. Until then, per-address limits (room creation, header reads, the
-    password guard) see one address for everyone.
+    password guard) see one address for everyone: 300 requests lock newcomers out of
+    every password room for 10 minutes.
 - **#38**: pick the Azure service (OQ-1).
 - **#41**: French and German tone (OQ-2).
 - **#56**: licence and pricing model for branding (OQ-3).
