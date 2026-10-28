@@ -111,6 +111,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   the PO's bar noting a moved suggestion while the recorded final stays. The room route
   loads 175.0 kB.
 - **W2 is complete** (2026-10-28).
+- Round history from #33: "History" in the room header opens a lazy sheet of past
+  rounds (subject, final, distribution, voting time, end time), each opening to its
+  votes, names only for named rounds. A `history` socket request, for people in the
+  room only, pages newest first; the round on the table shows once the next starts.
+  The room route loads 175.9 kB.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -121,18 +126,18 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#33 (PP-033)** round history, the first of W3: a `history` socket request for
-  people in the room, a lazy "History" sheet, rows that open to their votes (names only
-  for named rounds). PR #95 in review (CI green); its fixer merges `main` (with #29).
 - **#35 (PP-035)** retention: a daily purge of rooms idle for `ROOM_TTL_DAYS`, their
-  history and orphan guests, under an advisory lock; a visit counts as activity.
-  Building in `../pp-wt-35`.
+  history and orphan guests, under an advisory lock; a visit counts as activity. PR
+  #96 reviewed (no blocker); the fixer in `../pp-wt-35` adds the small-TTL touch, the
+  Postgres clock, two indexes and the README's restore warning.
+- **#34 (PP-034)** session summary and exports (CSV, Markdown, "KEY estimate" lines)
+  in the history sheet. Building in `../pp-wt-34`.
 
 ## Next
 
-- W3 (#33–#41): #33 and #35 in flight. Next as slots free: #36 (hardening), #39
-  (scale-out); #34 and #37 need #33; #38 and #41 need Sven's OQ-1 and OQ-2; #40 needs
-  #36.
+- W3 (#33–#41): #33 merged; #34 and #35 in flight. Next as slots free: #36
+  (hardening), #37 (accessibility audit), #39 (scale-out); #38 and #41 need Sven's OQ-1
+  and OQ-2; #40 needs #36.
 - Chores to fold into a later issue: a lazy catalog for the panels' copy (settings and
   history, a few kB off both pages); the burst test's one `room_not_found` under load;
   a higher anonymous sign-in limit for the db tests through `SetupTuning` (about 41 of
