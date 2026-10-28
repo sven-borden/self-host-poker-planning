@@ -31,6 +31,7 @@ import { baseCards, deckCards } from "./decks.ts";
 import {
   MAX_MEMBERS,
   MAX_PARTICIPANTS,
+  MIN_ANONYMOUS_REVEAL_CARDS,
   OWNER_CLAIM_AFTER_MS,
   type Participant,
   ROLES,
@@ -131,6 +132,15 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       if (!mayReveal(state, actor)) return refuse("not_allowed");
       const round = state.round;
       if (round?.phase !== "voting") return refuse("not_voting");
+      // Anonymity hides who played which card: a lone card would show it (#28, ADR-011).
+      // The PO keeps the reveal at any count, so a room with one voter still moves on.
+      if (
+        actor !== state.ownerId &&
+        round.anonymous &&
+        Object.keys(round.votes).length < MIN_ANONYMOUS_REVEAL_CARDS
+      ) {
+        return refuse("too_few_cards");
+      }
       return done(withRound(state, reveal(round, now)), {
         type: "revealed",
         by: "manual",

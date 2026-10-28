@@ -847,11 +847,58 @@ describe("rounds", () => {
   it("names the revealer in an anonymous round too: it ties nobody to a card (#28)", () => {
     const before = room({
       settings: { whoCanReveal: "anyone", revealNames: false },
-      round: voting({ anonymous: true, votes: { [A]: { card: "3" } } }),
+      round: voting({ anonymous: true, votes: { [A]: { card: "3" }, [PO]: { card: "5" } } }),
     });
     expect(send(before, { type: "reveal" }, B).causes).toEqual([
       { type: "revealed", by: "manual", who: B },
     ]);
+  });
+
+  it("refuses a voter's reveal of an anonymous round before two cards are down: one would tell whose it is (#28)", () => {
+    const anyone = { whoCanReveal: "anyone", revealNames: false } as const;
+    for (const votes of [{}, { [A]: { card: "3" } }, { [B]: { card: "8" } }]) {
+      const before = room({ settings: anyone, round: voting({ anonymous: true, votes }) });
+      const result = send(before, { type: "reveal" }, B);
+      expect(result).toMatchObject({ ok: false, error: "too_few_cards", causes: [] });
+      expect(result.state).toBe(before);
+    }
+    // Two cards: the voter may.
+    const two = room({
+      settings: anyone,
+      round: voting({ anonymous: true, votes: { [A]: { card: "3" }, [B]: { card: "8" } } }),
+    });
+    expect(ok(send(two, { type: "reveal" }, B)).round?.phase).toBe("revealed");
+  });
+
+  it("lets the PO reveal an anonymous round at any count, and a voter a named one (#28)", () => {
+    const lone = voting({ anonymous: true, votes: { [A]: { card: "3" } } });
+    for (const settings of [
+      { whoCanReveal: "anyone", revealNames: false },
+      { whoCanReveal: "po", revealNames: false },
+      { whoCanReveal: "anyone", revealNames: false, poVotes: false },
+    ] as const) {
+      expect(ok(send(room({ settings, round: lone }), { type: "reveal" })).round?.phase).toBe(
+        "revealed",
+      );
+      expect(
+        ok(send(room({ settings, round: voting({ anonymous: true }) }), { type: "reveal" })).round
+          ?.phase,
+      ).toBe("revealed");
+    }
+    // The round's own flag decides: a named round with one card, in a room now anonymous.
+    const named = room({
+      settings: { whoCanReveal: "anyone", revealNames: false },
+      round: voting({ votes: { [A]: { card: "3" } } }),
+    });
+    expect(ok(send(named, { type: "reveal" }, B)).round?.phase).toBe("revealed");
+  });
+
+  it("checks who may reveal before the count: an observer hears not_allowed, a revealed round not_voting (#28)", () => {
+    const settings = { whoCanReveal: "anyone", revealNames: false } as const;
+    const lone = room({ settings, round: voting({ anonymous: true }) });
+    expect(send(lone, { type: "reveal" }, OBS)).toMatchObject({ ok: false, error: "not_allowed" });
+    const done = room({ settings, round: revealed({ anonymous: true }) });
+    expect(send(done, { type: "reveal" }, B)).toMatchObject({ ok: false, error: "not_voting" });
   });
 
   it("never lets an observer reveal, even when anyone who votes may (#28)", () => {

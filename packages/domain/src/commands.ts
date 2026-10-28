@@ -101,6 +101,7 @@ export type ErrorCode =
   | "round_changed"
   | "not_voting"
   | "not_allowed"
+  | "too_few_cards"
   | "not_revealed"
   | "bad_seconds"
   | "no_timer"
