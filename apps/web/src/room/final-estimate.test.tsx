@@ -265,3 +265,71 @@ describe("the final estimate (#32)", () => {
     );
   });
 });
+
+describe("the final estimate after a change (#29)", () => {
+  const note = () => document.querySelector("[data-decision-note]");
+  /** Ana and Ben voted 3 and 8 (suggested 5) in a room that allows changes. */
+  const changeable = () => {
+    const state = revealedRound(["3", "8"]);
+    return { ...state, settings: { ...state.settings, allowChangeAfterReveal: true } };
+  };
+
+  it("keeps the recorded final, says the votes moved and preselects the new suggestion", async () => {
+    await renderRoom(changeable());
+    fireEvent.click(recordButton() as HTMLElement);
+    await waitFor(() => expect(server.round?.final).toBe("5"));
+    expect(note()).toBeNull();
+    // Ben changes to 13: 3 and 13 suggest 8.
+    run("ben", { type: "castVote", card: "13" });
+    expect(server.round?.final).toBe("5");
+    expect(centreFinal()?.textContent).toContain("Final estimate: 5.");
+    expect(note()?.textContent).toBe("Votes changed since you recorded 5.");
+    expect(checked()).toEqual(["8, suggested"]);
+    expect(recordButton()?.textContent).toBe("Record 8");
+    expect(recordButton()?.getAttribute("aria-describedby")).toBe(note()?.id);
+    expect(picker().getAttribute("aria-describedby")).toContain(note()?.id);
+    // Nothing is recorded until the PO acts.
+    expect(sent).toHaveLength(1);
+    fireEvent.click(recordButton() as HTMLElement);
+    await waitFor(() => expect(server.round?.final).toBe("8"));
+    expect(note()).toBeNull();
+    expect(recordButton()?.textContent).toBe("Recorded");
+  });
+
+  it("says nothing while the suggestion holds, and lets the PO keep the old final", async () => {
+    await renderRoom(changeable());
+    fireEvent.click(recordButton() as HTMLElement);
+    await waitFor(() => expect(server.round?.final).toBe("5"));
+    // 2 and 8 still suggest 5: nothing to say.
+    run("ana", { type: "castVote", card: "2" });
+    expect(note()).toBeNull();
+    expect(checked()).toEqual(["5, suggested"]);
+    // 2 and 13 suggest 8.
+    run("ben", { type: "castVote", card: "13" });
+    expect(note()?.textContent).toBe("Votes changed since you recorded 5.");
+    // The PO picks 5 again: it is the final already, and nothing is sent.
+    fireEvent.click(radio("5"));
+    expect(recordButton()?.textContent).toBe("Recorded");
+    // Back where it was when recorded: the note goes.
+    run("ben", { type: "castVote", card: "8" });
+    expect(note()).toBeNull();
+  });
+
+  it("preselects nothing when the change makes a tie, and says why under the bar", async () => {
+    const state = revealedRound(["M", "L"], "tshirt");
+    await renderRoom({
+      ...state,
+      settings: { ...state.settings, allowChangeAfterReveal: true },
+    });
+    // M and L tie: the PO picks L and records it.
+    fireEvent.click(radio("L, tied"));
+    fireEvent.click(recordButton() as HTMLElement);
+    await waitFor(() => expect(server.round?.final).toBe("L"));
+    run("ana", { type: "castVote", card: "L" });
+    expect(note()).toBeNull();
+    run("ana", { type: "castVote", card: "S" });
+    expect(note()?.textContent).toBe("Votes changed since you recorded L.");
+    expect(checked()).toEqual([]);
+    expect(recordButton()?.textContent).toBe("Record");
+  });
+});

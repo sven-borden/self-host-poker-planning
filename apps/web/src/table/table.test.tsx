@@ -357,6 +357,31 @@ describe("presence, the PO and the viewer (#17)", () => {
     expect((await screen.findByRole("dialog")).textContent).toBe("AnaAway · Voted");
   });
 
+  it("marks a card changed after the reveal: a chip on the table, words on the seat and in its popover (#29)", async () => {
+    render(
+      <TableStage
+        variant="desktop"
+        people={[
+          person("ana", "Ana", { kind: "revealed", card: "8", extreme: "high", changed: true }),
+          person("ben", "Ben", { kind: "revealed", card: "3", extreme: "low" }),
+        ]}
+      />,
+    );
+    const chips = document.querySelectorAll("[data-slot-card] [data-changed-chip]");
+    expect([...chips].map((chip) => chip.textContent)).toEqual(["changed"]);
+    expect(chips[0]?.closest("[data-slot-card]")?.getAttribute("aria-hidden")).toBe("true");
+    const seat = screen.getByRole("button", {
+      name: "Ana, card 8, highest card, changed after the reveal",
+    });
+    screen.getByRole("button", { name: "Ben, card 3, lowest card" });
+    await act(async () => {
+      fireEvent.click(seat);
+    });
+    expect((await screen.findByRole("dialog")).textContent).toBe(
+      "Ana8 · Highest card · Changed after the reveal",
+    );
+  });
+
   it("puts the PO and away in the popover of a seat that shows initials only", async () => {
     const crowd = Array.from({ length: 11 }, (_, i) => ({
       ...person(`p${i}`, `Person ${i}`, { kind: "thinking" as const }),

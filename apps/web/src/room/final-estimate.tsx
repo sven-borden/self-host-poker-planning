@@ -63,13 +63,14 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
   const choice = finalChoice(round);
   /** The PO's own pick, until the server records it: then the picker follows `final`. */
   const [picked, setPicked] = useState<string | null>(null);
-  /** The suggestion when this page first saw the recorded final (#29). */
-  const [basis, setBasis] = useState({ final: round.final, suggested: choice.suggested });
-  if (basis.final !== round.final) setBasis({ final: round.final, suggested: choice.suggested });
+  /** What the result suggested when this page first saw the recorded final (#29). */
+  const outcome = `${choice.suggested ?? ""}|${choice.tied.join(" ")}`;
+  const [basis, setBasis] = useState({ final: round.final, outcome });
+  if (basis.final !== round.final) setBasis({ final: round.final, outcome });
   const moved =
     round.final !== undefined &&
     basis.final === round.final &&
-    choice.suggested !== basis.suggested &&
+    outcome !== basis.outcome &&
     choice.suggested !== round.final;
   const selected = picked ?? (moved ? choice.suggested : choice.preselected);
   const recorded = selected !== null && selected === round.final;
