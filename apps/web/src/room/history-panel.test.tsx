@@ -9,6 +9,12 @@ import { forgetSummaryRounds } from "./history-summary.tsx";
 
 const mocks = vi.hoisted(() => ({ requestHistory: vi.fn() }));
 vi.mock("../realtime/room-connection.ts", () => ({ requestHistory: mocks.requestHistory }));
+// The summary's pace (8 at once, then 2 a second) is tested in history-pace.test.ts; here
+// pages come as fast as the mock answers.
+vi.mock("./history-pace.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./history-pace.ts")>()),
+  SUMMARY_PACE: { burst: 1000, perSecond: 1000 },
+}));
 
 const CODE = "abcdefghij";
 const PO = "po";
@@ -450,5 +456,169 @@ describe("the summary and the exports", () => {
     await waitFor(() => expect(document.activeElement).toBe(field));
     expect(status()).toMatch(/^The browser did not allow copying\./);
     Reflect.deleteProperty(navigator, "clipboard");
+  });
+
+  /** Rounds `from` down to `to`, newest first, ended at `finishedAt`. */
+  const rounds = (from: number, to: number, finishedAt: number): HistoryRoundView[] =>
+    Array.from({ length: from - to + 1 }, (_, i) => ({ ...named, number: from - i, finishedAt }));
+  /** A history of `pages`, keyed by the `before` that asks for each (undefined: the first). */
+  const history =
+    (pages: Map<number | undefined, ReturnType<typeof page>>) =>
+    async (request?: { before?: number }) =>
+      pages.get(request?.before) ?? page([]);
+  const beforeOf = () =>
+    mocks.requestHistory.mock.calls
+      .map(([request]) => request as { before?: number; limit?: number } | undefined)
+      .filter((request) => request?.limit !== undefined)
+      .map((request) => request?.before);
+
+  it("reads every page, 50 at a time, and counts the rounds of all of them", async () => {
+    const old = NOW - TWO_DAYS;
+    mocks.requestHistory.mockImplementation(
+      history(
+        new Map([
+          [undefined, page(rounds(120, 71, old), 71)],
+          [71, page(rounds(70, 21, old), 21)],
+          [21, page(rounds(20, 1, old))],
+        ]),
+      ),
+    );
+    render(<RoomHistoryButton roomName="Team Sky" />);
+    show(newRoom(), ANA);
+    const summary = await summaryOf(await openPanel());
+    await waitFor(() => expect(figure(summary, "rounds")).toBe("Rounds120"));
+    expect(within(summary).getByRole("radio", { name: "All rounds" })).toHaveProperty(
+      "checked",
+      true,
+    );
+    expect(beforeOf()).toEqual([undefined, 71, 21]);
+    expect(summary.querySelector("[data-summary-capped]")).toBeNull();
+  });
+
+  it("stops at 1,000 rounds and says older ones are left out", async () => {
+    const old = NOW - TWO_DAYS;
+    // An endless history: every page has an earlier one.
+    mocks.requestHistory.mockImplementation(async (request?: { before?: number }) => {
+      const top = (request?.before ?? 5001) - 1;
+      return page(rounds(top, top - 49, old), top - 49);
+    });
+    render(<RoomHistoryButton roomName="Team Sky" />);
+    show(newRoom(), ANA);
+    const summary = await summaryOf(await openPanel());
+    await waitFor(() => expect(figure(summary, "rounds")).toBe("Rounds1,000"));
+    expect(summaryCalls()).toBe(20);
+    expect(summary.querySelector("[data-summary-capped]")?.textContent).toBe(
+      "Only the latest 1,000 rounds are counted.",
+    );
+  });
+
+  it("reads for Today down to a round of yesterday, and on for All rounds", async () => {
+    const old = NOW - TWO_DAYS;
+    mocks.requestHistory.mockImplementation(
+      history(
+        new Map([
+          [undefined, page(rounds(150, 101, NOW - 1_000), 101)],
+          [101, page([...rounds(100, 91, NOW - 1_000), ...rounds(90, 51, old)], 51)],
+          [51, page(rounds(50, 1, old))],
+        ]),
+      ),
+    );
+    render(<RoomHistoryButton roomName="Team Sky" />);
+    show(newRoom(), ANA);
+    const summary = await summaryOf(await openPanel());
+    await waitFor(() => expect(figure(summary, "rounds")).toBe("Rounds60"));
+    expect(within(summary).getByRole("radio", { name: "Today" })).toHaveProperty("checked", true);
+    expect(beforeOf()).toEqual([undefined, 101]);
+    fireEvent.click(within(summary).getByRole("radio", { name: "All rounds" }));
+    await waitFor(() => expect(figure(summary, "rounds")).toBe("Rounds150"));
+    expect(beforeOf()).toEqual([undefined, 101, 51]);
+  });
+
+  it("says it is counting until the pages are in, stops when the panel closes, and keeps the rounds", async () => {
+    const old = NOW - TWO_DAYS;
+    let answer: (value: ReturnType<typeof page>) => void = () => {};
+    const pages = new Map([
+      [undefined, page(rounds(150, 101, old), 101)],
+      [51, page(rounds(50, 1, old))],
+    ]);
+    mocks.requestHistory.mockImplementation(async (request?: { before?: number }) =>
+      request?.before === 101
+        ? new Promise((resolve) => {
+            answer = resolve;
+          })
+        : (pages.get(request?.before) ?? page([])),
+    );
+    render(<RoomHistoryButton roomName="Team Sky" />);
+    show(newRoom(), ANA);
+    let dialog = await openPanel();
+    let summary = await summaryOf(dialog);
+    await waitFor(() => expect(beforeOf()).toEqual([undefined, 101]));
+    // Only the first page is in: no figures yet, and nothing to export.
+    expect(summary.querySelector("[data-summary-counting]")?.textContent).toBe(
+      "Counting the rounds…",
+    );
+    expect(summary.querySelector("[data-summary-stat]")).toBeNull();
+    expect(within(summary).getByRole("button", { name: "Export" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+
+    // Closed: the page that comes in after is dropped, and no further page is asked for.
+    fireEvent.keyDown(document.activeElement ?? dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await act(async () => answer(page(rounds(100, 51, old), 51)));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(beforeOf()).toEqual([undefined, 101]);
+
+    // Reopened: the first page again, then on from where the held rounds end.
+    mocks.requestHistory.mockImplementation(
+      history(new Map([...pages, [101, page(rounds(100, 51, old), 51)]])),
+    );
+    dialog = await openPanel();
+    summary = await summaryOf(dialog);
+    await waitFor(() => expect(figure(summary, "rounds")).toBe("Rounds150"));
+    expect(beforeOf()).toEqual([undefined, 101, undefined, 101, 51]);
+    fireEvent.keyDown(document.activeElement ?? dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // Reopened with every round held: the first page alone, and the figures at once.
+    dialog = await openPanel();
+    summary = await summaryOf(dialog);
+    expect(figure(summary, "rounds")).toBe("Rounds150");
+    await waitFor(() => expect(summaryCalls()).toBe(6));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(beforeOf()).toEqual([undefined, 101, undefined, 101, 51, undefined]);
+  });
+
+  it("focuses and selects the text to copy when the page has no clipboard", async () => {
+    Reflect.deleteProperty(navigator, "clipboard");
+    expect(navigator.clipboard).toBeUndefined();
+    mocks.requestHistory.mockResolvedValue(page([named, { ...anonymous, final: "3" }]));
+    render(<RoomHistoryButton roomName="Team Sky" />);
+    show(newRoom(), ANA);
+    const summary = await summaryOf(await openPanel());
+    const exportButton = within(summary).getByRole("button", { name: "Export" });
+    await waitFor(() => expect(exportButton).toHaveProperty("disabled", false));
+    fireEvent.keyDown(exportButton, { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Copy Markdown" }));
+    const field = await within(summary).findByRole<HTMLTextAreaElement>("textbox", {
+      name: "Text to copy",
+    });
+    // Radix gives the focus back in a timeout once the menu closed: after it, the field
+    // still holds it, with all its text selected.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(document.activeElement).toBe(field);
+    expect(field.value).toMatch(/^# Poker Planning: Team Sky/);
+    expect(field.selectionStart).toBe(0);
+    expect(field.selectionEnd).toBe(field.value.length);
+
+    // A download afterwards gives the focus back to Export, as the menu does.
+    fireEvent.keyDown(exportButton, { key: "Enter" });
+    const saved = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:x");
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Download CSV" }));
+    await waitFor(() => expect(document.activeElement).toBe(exportButton));
+    saved.mockRestore();
+    click.mockRestore();
   });
 });
