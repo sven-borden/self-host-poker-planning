@@ -479,7 +479,9 @@ As built (#33):
 - **Where.** A "History" button with a clock-arrow icon in the room header, between "Copy
   the link" and "Room settings" or "Room rules", for everyone in the room: voters,
   observers and the PO. Nobody on the join form sees it (the server refuses them too).
-  Up to 900 px wide it is the 44 px icon alone, its name for screen readers.
+  Up to 900 px wide it is the 44 px icon alone, its name for screen readers. Under
+  360 px the header's three buttons take a row of their own under the name, the code and
+  the people count, so the name keeps the full width and the room's code never splits.
 - **The panel.** The same modal sheet as the settings: from the right, up to 28 rem wide,
   on a wide screen; from the bottom on a phone, at most 88 % of the screen, rounded top
   corners; safe areas kept clear; a fade in place under reduced motion. A sticky header
@@ -490,19 +492,20 @@ As built (#33):
   "ROUND 3" as a small mono caption (a heading) with the time it ended on the right (the
   reader's format; the date too when it was another day); the subject (a title on two
   lines at most, or the link's key chip, opening in a new tab); then the final estimate
-  under a "FINAL" caption (a mini card, or "No final"), the distribution as small columns
+  under the "FINAL" caption (a mini card, or "None"), the distribution as small columns
   (the count, a spruce bar at most 20 px, the card; "5: 2 votes" for screen readers), and
   how long the voting took, from start to reveal, with a timer icon ("2 min 13 s",
-  "42 s"; said "Voting took 2 minutes 13 seconds.").
+  "42 s", from an hour on "1 h 2 min"; said "Voting took 2 minutes 13 seconds."). The
+  captions are 11 px at the default text size, in rem, so they grow with it.
 - **Its votes.** A "Votes" disclosure (a 44 px button with a chevron, `aria-expanded`,
   named "Votes of round 3") opens the votes under the round: in a named round each name
   with its card on the right and a "changed" chip for a vote changed after the reveal; in
   an anonymous round "Anonymous round", said once, and the cards alone in the deck's
-  order. Never a name there.
+  order. Never a name there. A round nobody voted in says "No votes" instead, with no
+  disclosure.
 - **Paging.** 20 rounds first; "Show earlier rounds" at the end loads the next 20 and
   moves the focus to the first of them.
-- **Empty.** "No rounds yet. A round appears here once its cards are revealed and the
-  next round starts, or the product owner records a final."
+- **Empty.** "No rounds yet. A round appears here once the next round starts."
 - **Live.** The round on the table is not listed, even with a final recorded; it appears
   in an open panel as soon as the next round starts, without a reload.
 

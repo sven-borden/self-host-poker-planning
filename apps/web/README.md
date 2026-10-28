@@ -335,20 +335,24 @@ server sends and never decides the outcome of a round.
   waits for `live`, asks again after a lost answer or `rate_limited`, and checks the
   answer by shape); while open it fetches it again whenever `historyKey` (the table's
   round number and final) changes, and `withFirstPage` (`history-view.ts`) puts the new
-  rows on top of the earlier pages already loaded. "Show earlier rounds" asks for
+  rows on top of the earlier pages already loaded, or replaces them when it does not reach
+  them (more rounds ended than a page holds), so no round is skipped. "Show earlier rounds" asks for
   `before: next` and moves the focus to the first new round's disclosure. Each row
   (`[data-history-round]`, `[data-history-kind=named|anonymous]`) is a list item with an
   `h3` ("Round 3"), the subject, the final (`[data-history-final]`), the distribution as
   small columns, the voting time (`[data-history-duration]`, whole seconds; "2 min 13 s",
-  said in words) and the end time (a `<time>`, the date too on another day), then a
-  disclosure button ("Votes", named "Votes of round 3", `aria-expanded`) over the votes:
-  names and cards with "changed" (`[data-history-vote]`), or "Anonymous round" once and
-  the cards alone. Copy: `history.*`, with `results.cardVotes`, `results.someone` and
-  `round.number`. Budgets after #33: the room route 176.5 kB (174.9 before), the landing
-  page 157.1 kB (156.0), the lazy `history-panel` chunk 3.9 kB. About 1.1 kB is the
-  button, `requestHistory` and the English copy; the rest is rolldown moving the Radix
-  dialog's shared modules (react-remove-scroll and friends) into a chunk of their own now
-  that two lazy chunks use the sheet.
+  "1 h 2 min" from an hour on, said in words) and the end time (a `<time>`, the date too
+  on another day), then a disclosure button ("Votes", named "Votes of round 3",
+  `aria-expanded`) over the votes: names and cards with "changed" (`[data-history-vote]`),
+  or "Anonymous round" once and the cards alone. A round without votes shows
+  `[data-history-no-votes]` ("No votes") and no disclosure. Copy: `history.*`, with
+  `final.short`, `results.cardVotes`, `results.someone`, `timer.minutes` and
+  `round.number`. Under 360 px (the `narrow` variant in `styles.css`, registered after
+  `phone`) the header's buttons take a row of their own. Budgets after #33: the room route
+  175.9 kB, the landing page 156.4 kB, the lazy `history-panel` chunk 4.0 kB. Once two
+  lazy chunks used the sheet, rolldown moved the Radix modules the menus already load
+  (react-remove-scroll and friends) into an eager chunk of their own, 0.8 kB worse
+  compressed; `vite.config.ts` puts them in the `vendor` group by their pnpm folder names.
   The settings (#25): `settings-button.tsx` (`RoomSettingsButton`, in the room header
   beside "Copy the link", `[data-settings-open=owner|rules]`) shows once a snapshot is
   there: "Room settings" for the PO (`room.you === room.ownerId`), "Room rules" for

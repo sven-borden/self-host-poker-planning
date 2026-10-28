@@ -325,8 +325,8 @@ Server: `apps/server/src/sync/room-sync.ts` (the `handlers` of `createRealtime`)
   subject, final, stats, startedAt, revealedAt, finishedAt, votes }`, times in epoch ms;
   named votes are `{ name, card, changedAfterReveal? }` without the voter's id, an
   anonymous round's are the stored cards. The answer's schemas are strict, and
-  `historyLeaks` (`@pp/protocol/leak-scan`) checks real frames for a user id or an
-  anonymous name. The web panel fetches the first page on open and again when the table's
+  `historyLeaks` (`@pp/protocol/leak-scan`) checks real frames for a user id in any
+  string or key (inside a longer one too), a `who` key, or an anonymous name. The web panel fetches the first page on open and again when the table's
   round number or final changes; nothing is pushed. A new client event with its own ack:
   `PROTOCOL_VERSION` stays 4. Logs name the room by id and the count of rows.
 - **Database failure**: a `DatabaseError` may hide a commit that landed. The server
