@@ -276,9 +276,14 @@ test("the panel by keyboard on a desktop: focus trapped, disclosures, Show earli
     await expect(panel.getByRole("heading", { name: "History" })).toBeFocused();
     await expect(rowsOf(panel)).toHaveCount(20);
     expect((await numbersIn(panel))[0]).toBe(21);
-    // Tab: "Close", then round 21's votes.
+    // Tab: "Close", the summary's range and "Export" (#34), then round 21's votes.
+    await expect(panel.getByRole("button", { name: "Export" })).toBeEnabled();
     await page.keyboard.press("Tab");
     await expect(panel.getByRole("button", { name: "Close" })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(panel.getByRole("radio", { name: "Today" })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(panel.getByRole("button", { name: "Export" })).toBeFocused();
     await page.keyboard.press("Tab");
     const toggle21 = panel.getByRole("button", { name: "Votes of round 21" });
     await expect(toggle21).toBeFocused();
@@ -287,9 +292,9 @@ test("the panel by keyboard on a desktop: focus trapped, disclosures, Show earli
     await expect(rowOf(panel, 21).locator("[data-history-vote] .sr-only")).toHaveText(["Ana: 5"]);
     await page.keyboard.press(" ");
     await expect(toggle21).toHaveAttribute("aria-expanded", "false");
-    // Shift+Tab twice wraps from "Close" to the last control: the focus stays inside.
-    await page.keyboard.press("Shift+Tab");
-    await page.keyboard.press("Shift+Tab");
+    // Shift+Tab back past "Export", the range and "Close" wraps to the last control: the
+    // focus stays inside.
+    for (let i = 0; i < 4; i++) await page.keyboard.press("Shift+Tab");
     const more = panel.getByRole("button", { name: "Show earlier rounds" });
     await expect(more).toBeFocused();
     await page.keyboard.press("Enter");
@@ -341,8 +346,9 @@ test("the panel on a phone: a bottom sheet the width of the screen, by keyboard 
     expect(
       await panel.evaluate((sheet) => sheet.scrollWidth - sheet.clientWidth),
     ).toBeLessThanOrEqual(0);
-    await ana.page.keyboard.press("Tab");
-    await ana.page.keyboard.press("Tab");
+    // "Close", the summary's range and "Export" (#34), then round 21's votes.
+    await expect(panel.getByRole("button", { name: "Export" })).toBeEnabled();
+    for (let i = 0; i < 4; i++) await ana.page.keyboard.press("Tab");
     await expect(panel.getByRole("button", { name: "Votes of round 21" })).toBeFocused();
     await ana.page.keyboard.press("Enter");
     await expect(panel.getByRole("button", { name: "Votes of round 21" })).toHaveAttribute(
