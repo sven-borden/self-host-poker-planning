@@ -29,7 +29,8 @@ export interface TableData {
  * (`poVotes` off) is never thinking and never missing a vote: their seat stays present.
  * The table turns a `voted` card face up when it becomes `revealed` (#19), and lets it go
  * from the seat when it becomes `dealt`. A named reveal whose cards differ marks the seats
- * with the lowest and the highest card (`extreme`, #20); an anonymous one never does.
+ * with the lowest and the highest card (`extreme`, #20); an anonymous one never does. A
+ * card changed after a named reveal is marked `changed` (#29).
  */
 export function seatStatus(participant: ParticipantView, room: RoomView): SeatStatus {
   const round = room.round;
@@ -44,9 +45,12 @@ export function seatStatus(participant: ParticipantView, room: RoomView): SeatSt
   const vote = round.votes.find((v) => v.who === participant.id);
   if (!vote) return missing;
   const extreme = extremeOf(round, vote.card);
-  return extreme
-    ? { kind: "revealed", card: vote.card, extreme }
-    : { kind: "revealed", card: vote.card };
+  return {
+    kind: "revealed",
+    card: vote.card,
+    ...(extreme ? { extreme } : {}),
+    ...(vote.changedAfterReveal ? { changed: true } : {}),
+  };
 }
 
 /**
@@ -165,14 +169,20 @@ export function voteCount(room: RoomView): { count: number; total: number } {
  * - `owner`: the PO in a room where the PO does not vote (`poVotes` off) has none either,
  *   and the page says why;
  * - `cards`: the round's deck and enabled specials (the room's own in the lobby), playable
- *   only while Voting. In the lobby and after the reveal the cards stay on screen,
- *   disabled, with the reason (`lobby`, `revealed`). Changing a vote after the reveal
- *   (`allowChangeAfterReveal`) comes with #29.
+ *   while Voting, and after a named reveal while the room lets votes change (`change`,
+ *   #29). In the lobby, after an anonymous reveal, and after a reveal while changes are
+ *   not allowed, the cards stay on screen, disabled, with the reason (`lobby`,
+ *   `revealed`). The round's own `anonymous` flag decides, as in the domain.
  */
 export type HandView =
   | { kind: "none" }
   | { kind: "owner" }
-  | { kind: "cards"; cards: string[]; playable: boolean; reason: "voting" | "lobby" | "revealed" };
+  | {
+      kind: "cards";
+      cards: string[];
+      playable: boolean;
+      reason: "voting" | "lobby" | "revealed" | "change";
+    };
 
 export function handView(room: RoomView, me: ParticipantView): HandView {
   if (me.role !== "voter") return { kind: "none" };
@@ -183,7 +193,18 @@ export function handView(room: RoomView, me: ParticipantView): HandView {
     return { kind: "cards", cards, playable: false, reason: "lobby" };
   }
   const cards = deckCards(round.deck, round.specials);
-  return round.phase === "voting"
-    ? { kind: "cards", cards, playable: true, reason: "voting" }
+  if (round.phase === "voting") return { kind: "cards", cards, playable: true, reason: "voting" };
+  return mayChange(room)
+    ? { kind: "cards", cards, playable: true, reason: "change" }
     : { kind: "cards", cards, playable: false, reason: "revealed" };
+}
+
+/**
+ * Whether a vote may still change in the revealed round on the table (#29), as the domain
+ * decides it: the room allows it and the round is named. An anonymous round locks its
+ * votes at the reveal whatever the setting says now (ADR-011).
+ */
+export function mayChange(room: RoomView): boolean {
+  const round = room.round;
+  return round?.phase === "revealed" && !round.anonymous && room.settings.allowChangeAfterReveal;
 }

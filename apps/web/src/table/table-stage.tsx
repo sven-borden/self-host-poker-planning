@@ -47,16 +47,16 @@ interface TableStageProps {
   className?: string;
 }
 
-function slotFace(status: SeatStatus): { face: SlotFace; value: string | null } {
+function slotFace(status: SeatStatus): { face: SlotFace; value: string | null; changed: boolean } {
   switch (status.kind) {
     case "voted":
-      return { face: status.dealt ? "gone" : "down", value: null };
+      return { face: status.dealt ? "gone" : "down", value: null, changed: false };
     case "revealed":
       return status.card === null
-        ? { face: "empty", value: null }
-        : { face: "up", value: status.card };
+        ? { face: "empty", value: null, changed: false }
+        : { face: "up", value: status.card, changed: status.changed === true };
     default:
-      return { face: "empty", value: null };
+      return { face: "empty", value: null, changed: false };
   }
 }
 
@@ -64,7 +64,8 @@ function slotFace(status: SeatStatus): { face: SlotFace; value: string | null } 
  * The boardroom table (ADR-005): a stage with the stadium table, a card slot per person,
  * the seats around it, and a status area in the middle. Presentational only: it renders
  * the people it is given and decides nothing. At a reveal the face-up cards turn over one
- * after the other in seat order, from the viewer at the bottom (`FLIP_STAGGER_MS`).
+ * after the other in seat order, from the viewer at the bottom (`FLIP_STAGGER_MS`). A
+ * card changed after the reveal carries a "changed" chip on its foot (#29).
  */
 export function TableStage({
   people,
@@ -90,7 +91,7 @@ export function TableStage({
     if (!point) {
       return null;
     }
-    const { face, value } = slotFace(person.status);
+    const { face, value, changed } = slotFace(person.status);
     const turnDelay = face === "up" ? turned++ * FLIP_STAGGER_MS : 0;
     return (
       <div
@@ -105,6 +106,16 @@ export function TableStage({
         }}
       >
         <SlotCard face={face} value={value} size={layout.slot} turnDelay={turnDelay} />
+        {changed ? (
+          // A card changed after the reveal (#29): a word on the card's foot, never a
+          // colour alone. Decorative like the slot: the seat's label says it.
+          <span
+            data-changed-chip
+            className="absolute top-full left-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brass-soft px-1 text-[9px]/[12px] font-semibold whitespace-nowrap text-brass-ink ring-1 ring-surface"
+          >
+            {t("table.changedChip")}
+          </span>
+        ) : null}
       </div>
     );
   });

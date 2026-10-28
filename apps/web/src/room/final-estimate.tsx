@@ -45,6 +45,11 @@ const ACTION =
  * "Vote again" starts a new round on the same subject (the domain's `revote`): the revealed
  * round stays in history with its votes, so it asks for no confirmation.
  *
+ * Votes changed after the reveal (#29) never touch a recorded final: the final is the
+ * PO's. When they move the suggestion away from the one the PO had when recording it, as
+ * this page saw it, the bar says "Votes changed since you recorded 5." and preselects the
+ * new suggestion (none on a tie); nothing is recorded until the PO presses "Record".
+ *
  * Keys: a held Enter or Space never presses twice, and when the page itself put the focus
  * in the bar (after the reveal, `relatedTarget` null) they do nothing for
  * `PLACED_FOCUS_GUARD_MS`, as in the hand (#21): the second press of a double Enter on
@@ -54,11 +59,19 @@ const ACTION =
  */
 export function Decision({ round, next, onFailure }: DecisionProps) {
   const t = useT();
-  const ids = { name: useId(), hint: useId() };
+  const ids = { name: useId(), hint: useId(), note: useId() };
   const choice = finalChoice(round);
   /** The PO's own pick, until the server records it: then the picker follows `final`. */
   const [picked, setPicked] = useState<string | null>(null);
-  const selected = picked ?? choice.preselected;
+  /** The suggestion when this page first saw the recorded final (#29). */
+  const [basis, setBasis] = useState({ final: round.final, suggested: choice.suggested });
+  if (basis.final !== round.final) setBasis({ final: round.final, suggested: choice.suggested });
+  const moved =
+    round.final !== undefined &&
+    basis.final === round.final &&
+    choice.suggested !== basis.suggested &&
+    choice.suggested !== round.final;
+  const selected = picked ?? (moved ? choice.suggested : choice.preselected);
   const recorded = selected !== null && selected === round.final;
   const [recording, setRecording] = useState(false);
   const [revoting, setRevoting] = useState(false);
@@ -150,9 +163,20 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
         choice={choice}
         name={ids.name}
         selected={selected}
-        describedBy={selected === null ? ids.hint : undefined}
+        describedBy={
+          [moved && ids.note, selected === null && ids.hint].filter(Boolean).join(" ") || undefined
+        }
         onPick={setPicked}
       />
+      {moved && round.final !== undefined ? (
+        <p
+          id={ids.note}
+          data-decision-note
+          className="order-last m-0 w-full text-center text-sm text-ink phone:mt-2"
+        >
+          {t("final.changedSince", { card: cardLabel(t, round.final) })}
+        </p>
+      ) : null}
       {selected === null ? (
         <p
           id={ids.hint}
@@ -179,6 +203,7 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
       >
         <Button
           data-record-final
+          aria-describedby={moved ? ids.note : undefined}
           aria-disabled={selected === null || recorded || recording || starting || undefined}
           onClick={() => void record()}
           className={cn(ACTION, "aria-disabled:cursor-default aria-disabled:opacity-60")}

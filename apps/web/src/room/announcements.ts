@@ -10,10 +10,12 @@ import { durationWords } from "./timer-view.ts";
 // What the table's live region says (#17): joins, leaves, away and back, votes, a new
 // round (#18) or a re-vote (#32), the reveal (#19, naming a voter who revealed, #28), the
 // PO's final estimate (#32), the PO's settings changes (#25), the timer (#27), and the PO
-// role handed over or claimed and people removed (#30), read from a snapshot's causes.
-// Never a person's card: a
+// role handed over or claimed and people removed (#30), and a card changed after a named
+// reveal (#29), read from a snapshot's causes. Never a person's card before the reveal: a
 // vote cause carries who, never what, the reveal says the round's result (#20: "Cards
 // revealed. Consensus on 8."), and the final is the PO's decision; both belong to nobody.
+// After a named reveal everyone sees every card, so a change names its card ("Ben changed
+// their card to 8."); an anonymous round never changes after its reveal.
 // Pure, so the batching rules are tested without timers; `live-announcer.tsx` runs them.
 
 export type LiveKind =
@@ -29,6 +31,7 @@ export type LiveKind =
   | "timer"
   | "timeUp"
   | "revealed"
+  | "changed"
   | "final";
 
 /** What happened to the round's timer (#27), and by how many seconds when that is known. */
@@ -74,6 +77,11 @@ export interface LiveEvent {
   };
   /** The timer started, got more time or stopped (#27): said to everyone, the PO too. */
   timer?: TimerNews;
+  /**
+   * A card changed after a named reveal (#29): the new card, and whether it is the
+   * person's first card of the round (`late`: they had not voted before the reveal).
+   */
+  change?: { card: string; late: boolean };
 }
 
 /**
@@ -93,6 +101,7 @@ const ORDER: readonly Exclude<LiveKind, "settings">[] = [
   "voted",
   "timeUp",
   "revealed",
+  "changed",
   "final",
 ];
 
@@ -208,10 +217,17 @@ export function liveEvents(
         }
         continue;
       }
-      case "voteCast":
+      case "voteCast": {
+        // After the reveal (#29) a vote is a change, said with its card.
+        const changed = changedEvent(cause.who, next, previous);
+        if (changed !== null) {
+          events.push(...changed);
+          continue;
+        }
         if (cause.who === undefined || before.has(cause.who)) continue;
         kind = "voted";
         break;
+      }
       default:
         continue;
     }
@@ -315,6 +331,57 @@ function revealerName(who: string | undefined, next: RoomView, previous: RoomVie
   return nameOf(who, next, previous) ?? "";
 }
 
+/**
+ * A card changed after a named reveal (#29), to everyone but the person who changed it
+ * (their hand says it): "Ben changed their card to 8.", or "Ben played 8 after the
+ * reveal." for a first card, with the new result when the suggested card or the consensus
+ * moved. Null when `previous` did not show the same round revealed: the vote is the one
+ * the reveal came with. Never in an anonymous round, whose votes are locked at the reveal.
+ */
+function changedEvent(
+  who: string | undefined,
+  next: RoomView,
+  previous: RoomView | null,
+): LiveEvent[] | null {
+  const round = next.round;
+  const before = previous?.round;
+  if (
+    round?.phase !== "revealed" ||
+    before?.phase !== "revealed" ||
+    before.number !== round.number ||
+    before.startedAt !== round.startedAt
+  ) {
+    return null;
+  }
+  if (round.anonymous || before.anonymous || who === undefined || who === next.you) return [];
+  const vote = round.votes.find((v) => v.who === who);
+  const name = nameOf(who, next, previous);
+  if (vote === undefined || name === null) return [];
+  const summary = revealSummary(round);
+  const moved = !sameOutcome(revealSummary(before), summary);
+  const late = !before.votes.some((v) => v.who === who);
+  return [
+    {
+      kind: "changed",
+      who,
+      name,
+      change: { card: vote.card, late },
+      ...(moved ? { summary } : {}),
+    },
+  ];
+}
+
+/** Whether two results suggest the same: the same consensus, card or tie (not agreement). */
+function sameOutcome(a: RevealSummary, b: RevealSummary): boolean {
+  const key = (r: RevealSummary) =>
+    r.kind === "tie"
+      ? `tie:${r.cards.join(",")}`
+      : r.kind === "none"
+        ? "none"
+        : `${r.kind}:${r.card}`;
+  return key(a) === key(b);
+}
+
 /** Whether `previous` showed a final for the round `next` shows: a new final is a change. */
 function hadFinal(previous: RoomView | null, next: RoomView): boolean {
   const was = previous?.round;
@@ -361,6 +428,7 @@ export function mergeEvents(pending: readonly LiveEvent[], events: readonly Live
           e.kind !== "revealed" &&
           e.kind !== "roundStarted" &&
           e.kind !== "final" &&
+          e.kind !== "changed" &&
           e.kind !== "timer" &&
           e.kind !== "timeUp",
       );
@@ -369,6 +437,23 @@ export function mergeEvents(pending: readonly LiveEvent[], events: readonly Live
       const earlier = merged.find((e) => e.kind === "timer");
       merged = merged.filter((e) => e !== earlier);
       merged.push({ ...event, timer: mergedTimer(earlier?.timer, event.timer) });
+      continue;
+    }
+    if (event.kind === "changed") {
+      // Changed twice in one batch: said once, with the last card. A result said with the
+      // first change still holds unless the second moved it again.
+      const earlier = merged.find((e) => e.kind === "changed" && e.who === event.who);
+      merged = merged.filter((e) => e !== earlier);
+      const summary = event.summary ?? earlier?.summary;
+      const change = event.change && {
+        card: event.change.card,
+        late: earlier?.change?.late ?? event.change.late,
+      };
+      merged.push({
+        ...event,
+        ...(change ? { change } : {}),
+        ...(summary ? { summary } : {}),
+      });
       continue;
     }
     const earlier = merged.find((e) => e.kind === "final");
@@ -452,6 +537,17 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
       // "Ben revealed the cards." for a voter's reveal (#28), else "Cards revealed."
       const said = name === "" ? t("live.revealed") : t("live.revealedBy", { name });
       return first?.summary ? `${said} ${summarySentence(t, first.summary)}` : said;
+    }
+    case "changed": {
+      // Each change, then the latest result that moved, once.
+      const said = events.map((e) =>
+        t(e.change?.late ? "live.votedAfterReveal" : "live.changed", {
+          name: e.name,
+          card: cardLabel(t, e.change?.card ?? ""),
+        }),
+      );
+      const summary = events.findLast((e) => e.summary !== undefined)?.summary;
+      return [...said, ...(summary ? [summarySentence(t, summary)] : [])].join(" ");
     }
     case "final": {
       const card = cardLabel(t, first?.final?.card ?? "");

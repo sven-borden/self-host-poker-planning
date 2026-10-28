@@ -166,6 +166,7 @@ export const fr: Catalog<"many"> = {
     changeAfterReveal: "Changer son vote après la révélation",
     changeAfterRevealHint:
       "Les votants peuvent encore changer de carte après la révélation. Jamais dans un tour anonyme\u{202f}: ses votes sont définitifs une fois révélés.",
+    changeAfterRevealLocked: "Les tours anonymes figent leurs votes à la révélation.",
     allowed: "Autorisé",
     notAllowed: "Non autorisé",
     poVotes: "Le product owner vote aussi",
@@ -262,6 +263,9 @@ export const fr: Catalog<"many"> = {
     highest: "carte la plus haute",
     lowestTag: "Carte la plus basse",
     highestTag: "Carte la plus haute",
+    changed: "changée après la révélation",
+    changedTag: "Changée après la révélation",
+    changedChip: "changée",
   },
   round: {
     start: "Lancer le vote",
@@ -333,6 +337,7 @@ export const fr: Catalog<"many"> = {
     record: "Enregistrer {{card}}",
     recordNothing: "Enregistrer",
     recorded: "Enregistrée",
+    changedSince: "Des votes ont changé depuis que vous avez enregistré {{card}}.",
     pick: "Choisissez l’estimation finale, puis enregistrez-la.",
     suggested: "{{card}}, suggérée",
     tied: "{{card}}, à égalité",
@@ -369,6 +374,8 @@ export const fr: Catalog<"many"> = {
     hintLobbyOwner: "Lancez le vote pour jouer vos cartes.",
     hintRevealed: "Les cartes sont révélées. Les votes ne peuvent plus changer dans ce tour.",
     youVoted: "Votre vote : {{card}}.",
+    hintChange: "Vous pouvez encore changer votre carte.",
+    youChanged: "Vous avez changé votre carte pour {{card}}.",
     retracted: "Vote retiré.",
     ownerDoesNotVote: "En tant que product owner, vous ne votez pas dans cette salle.",
   },
@@ -460,6 +467,8 @@ export const fr: Catalog<"many"> = {
     revealOwner: "Seul le product owner peut désormais révéler les cartes.",
     changeAfterRevealOn: "Les votes peuvent désormais changer après la révélation.",
     changeAfterRevealOff: "Les votes ne peuvent plus changer après la révélation.",
+    changed: "{{name}} a changé sa carte pour {{card}}.",
+    votedAfterReveal: "{{name}} a joué {{card}} après la révélation.",
   },
   cards: {
     yourCards: "Vos cartes",

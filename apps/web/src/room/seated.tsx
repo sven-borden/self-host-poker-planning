@@ -76,6 +76,11 @@ const boxOf = (rect: DOMRect): Box => ({
  * (`Decision`: the picker, "Record 8", "Next round", "Vote again"), and the centre shows
  * the recorded final to everyone.
  *
+ * A change after the reveal (#29): while the room allows it in a named round, the hand
+ * stays playable after the reveal ("You can still change your card."); a press changes
+ * the vote, never takes it back, and the table, the results and the PO's decision follow
+ * the server's next snapshot.
+ *
  * The PO's powers (#30): each person's popover, on a seat or in the observers' row, holds
  * the PO's "Make product owner" and "Remove from the room" (`PersonActions`); a banner
  * above the table offers everyone else the role once the PO has been away for two
@@ -85,7 +90,8 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
   const t = useT();
   const ids = { hint: useId(), wait: useId() };
   const vote = useVote();
-  const shown = withShownVote(room, shownCard(vote.state, confirmedOf(room)));
+  const mine = shownCard(vote.state, confirmedOf(room));
+  const shown = withShownVote(room, mine);
   const { people, observers, looks } = tableData(shown);
   const hand = handView(shown, me);
   /** A refused start or reveal; a new round or phase clears it. */
@@ -118,10 +124,14 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
   const handPanel = useRef<HTMLDivElement>(null);
   // While the team votes, an upright phone docks the hand at the bottom of the screen,
   // within thumb reach whatever part of the table is in view (#22), when the screen leaves
-  // the table, "Reveal cards" and the viewer's seat clear above it (`useHandDock`). Only
-  // while voting: the results, which come with the reveal, sit above the hand and must
-  // never be covered.
-  const docked = useHandDock(hand.kind === "cards" && hand.playable, handPanel);
+  // the table, "Reveal cards" and the viewer's seat clear above it (`useHandDock`). After
+  // the reveal only while votes may change (#29), and never for the PO, whose decision's
+  // action row docks there then (#32).
+  const revealed = room.round?.phase === "revealed";
+  const docked = useHandDock(
+    hand.kind === "cards" && hand.playable && !(revealed && me.isOwner),
+    handPanel,
+  );
   /** An interrupted flight's card, for the next one to start from. */
   const inAir = useRef<InAir | null>(null);
 
@@ -134,6 +144,12 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
   function pick(card: string, element: HTMLButtonElement) {
     const wish = vote.pick(card);
     if (wish === undefined) return;
+    // After the reveal (#29) no card flies: the slot keeps the card the server holds, and
+    // turns over to the new one with the snapshot, as everyone sees it.
+    if (revealed) {
+      setFlight(null);
+      return;
+    }
     const slot = document
       .querySelector("[data-room-table] [data-slot-card][data-you]")
       ?.getBoundingClientRect();
@@ -167,7 +183,9 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
         ? t("hand.hintVoting")
         : hand.reason === "lobby"
           ? t(me.isOwner ? "hand.hintLobbyOwner" : "hand.hintLobby")
-          : t("hand.hintRevealed");
+          : hand.reason === "change"
+            ? t("hand.hintChange")
+            : t("hand.hintRevealed");
   const news = vote.news;
   const owner = [...people, ...observers].find((person) => person.owner);
   // Every popover asks; `PersonActions` shows itself to the PO only.
@@ -240,7 +258,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
         >
           <Hand
             cards={hand.cards}
-            selected={shown.round?.yourVote ?? null}
+            selected={mine}
             disabled={!hand.playable}
             describedBy={ids.hint}
             onPick={pick}
@@ -270,9 +288,11 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           <div role="status" data-hand-live className="sr-only">
             {news === null ? null : (
               <span key={news.id}>
-                {news.what.kind === "voted"
-                  ? t("hand.youVoted", { card: cardLabel(t, news.what.card) })
-                  : t("hand.retracted")}
+                {news.what.kind === "retracted"
+                  ? t("hand.retracted")
+                  : t(news.what.kind === "changed" ? "hand.youChanged" : "hand.youVoted", {
+                      card: cardLabel(t, news.what.card),
+                    })}
               </span>
             )}
           </div>

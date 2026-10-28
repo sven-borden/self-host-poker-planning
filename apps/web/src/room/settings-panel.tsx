@@ -162,10 +162,8 @@ function SettingSwitch({
 }
 
 /**
- * The settings in the order the panel shows them (ADR-011's list). Editable now: the
- * settings whose behaviour the room already shows end to end, the deck and the special
- * cards (#26), the timer (#27) and who can reveal (#28) among them. Changes after the
- * reveal (#29) are read-only until their issue adds a control.
+ * The settings in the order the panel shows them (ADR-011's list), every one editable by
+ * the PO since changes after the reveal got their switch (#29).
  */
 export const GROUPS: readonly SettingGroup[] = [
   {
@@ -254,6 +252,14 @@ export const GROUPS: readonly SettingGroup[] = [
         label: (t) => t("settings.changeAfterReveal"),
         hint: (t) => t("settings.changeAfterRevealHint"),
         value: (t, s) => t(s.allowChangeAfterReveal ? "settings.allowed" : "settings.notAllowed"),
+        // #29: applies at once, to a named round already revealed too. Locked while
+        // anonymity is on: an anonymous round never changes after its reveal (ADR-011).
+        toggle: {
+          read: (s) => s.allowChangeAfterReveal,
+          write: (on) => ({ allowChangeAfterReveal: on }),
+          locked: (room, t) =>
+            room.settings.revealNames ? null : t("settings.changeAfterRevealLocked"),
+        },
       },
     ],
   },
