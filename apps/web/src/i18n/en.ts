@@ -53,8 +53,10 @@ const errors = {
   room_not_found:
     "This room does not exist, or it was deleted after a long time without use. Check the link.",
   password_required: "This room has a password. Enter it to join.",
+  wrong_password: "That password is not right.",
+  bad_password: "A password needs {{min, number}} to {{max, number}} characters.",
   unauthenticated: "Your session has ended. Reload the page to continue.",
-  rate_limited: "Too many attempts. Wait a moment, then try again.",
+  rate_limited: "Too many tries. Wait a moment, then try again.",
   busy: "The room was busy for a moment. Try again.",
   internal: "Something went wrong on the server. Try again in a moment.",
   /** Any code this version does not know yet. */
@@ -538,6 +540,26 @@ export const en = {
     reconnecting: "Connecting to the server…",
     cookiesBlocked:
       "This site needs cookies to recognise you in a room. Allow cookies for it, then reload the page.",
+  },
+  password: {
+    label: "Password",
+    show: "Show password",
+    roomHas: "This room has a password.",
+    linkCopied: "Link copied. They also need the password.",
+    changed: "The product owner changed the password.",
+    missing: "Enter the room’s password.",
+    busy: "Many people are joining at once. Try again in a moment.",
+    tooMany_one: "Too many tries. Try again in {{count, number}} minute.",
+    tooMany_other: "Too many tries. Try again in {{count, number}} minutes.",
+    settingHint: "People already in the room stay. Anyone else enters it once on each device.",
+    set: "Set password",
+    save: "Save password",
+    change: "Change password",
+    remove: "Remove password",
+    cancel: "Cancel",
+    liveSet: "The product owner set a password for this room.",
+    liveChanged: "The product owner changed the room’s password.",
+    liveRemoved: "The product owner removed the room’s password.",
   },
   common: {
     network: "Could not reach the server. Check your connection, then try again.",

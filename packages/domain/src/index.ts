@@ -10,6 +10,7 @@ export type {
   Command,
   CommandType,
   ErrorCode,
+  PasswordChange,
   ServerCommandType,
 } from "./commands.ts";
 export { type CustomDeckErrorCode, validateCustomDeck } from "./custom-deck.ts";
@@ -40,10 +41,12 @@ export {
   MAX_MEMBERS,
   MAX_NAME_LENGTH,
   MAX_PARTICIPANTS,
+  MAX_PASSWORD_LENGTH,
   MAX_ROOM_NAME_LENGTH,
   MAX_TIMER_SECONDS,
   MAX_TITLE_LENGTH,
   MIN_ANONYMOUS_REVEAL_CARDS,
+  MIN_PASSWORD_LENGTH,
   MIN_TIMER_SECONDS,
   OWNER_CLAIM_AFTER_MS,
   type Participant,

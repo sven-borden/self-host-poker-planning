@@ -16,6 +16,8 @@ function memoryStore(rooms: StoredRoom[] = []) {
     beforeCommit: (): void => {},
     /** Forces the next n commits to lose. */
     loseCommits: 0,
+    /** The users holding a grant (#31): a commit that requires another one is refused. */
+    grants: new Set<string>(),
   };
   const store: RoomStore = {
     insertRoom: async () => null,
@@ -26,13 +28,15 @@ function memoryStore(rooms: StoredRoom[] = []) {
     },
     loadRoomHeader: async (code) => {
       const r = byCode.get(code);
-      return r ? { code: r.code, name: null } : null;
+      return r ? { code: r.code, name: null, hasPassword: false } : null;
     },
-    commitRoom: async (id, expected, next, ended) => {
+    commitRoom: async (id, expected, next, ended, access) => {
       commits.push({ id, expected, ...(ended && { ended }) });
       hooks.beforeCommit();
       const r = [...byCode.values()].find((x) => x.id === id);
       if (!r || r.version !== expected) return false;
+      const needed = access?.requireGrant;
+      if (needed !== undefined && !hooks.grants.has(needed)) return "password_required";
       if (hooks.loseCommits > 0) {
         hooks.loseCommits--;
         return false;
@@ -89,6 +93,19 @@ describe("createCommandRunner", () => {
       ok: false,
       error: "room_not_found",
     });
+  });
+
+  it("answers password_required, and writes nothing, when a grant the step needs is gone", async () => {
+    const { store, hooks, room: stored } = memoryStore([room("ABC")]);
+    const runner = createCommandRunner(store);
+    const join = (state: RoomState) => ({
+      ...command("eve", { type: "join", name: "Eve", role: "voter" })(state),
+      access: { requireGrant: "eve" },
+    });
+    expect(await runner.run("ABC", join)).toEqual({ ok: false, error: "password_required" });
+    expect(stored("ABC")?.version).toBe(1);
+    hooks.grants.add("eve");
+    expect(await runner.run("ABC", join)).toMatchObject({ ok: true, version: 2, changed: true });
   });
 
   it("reloads and runs the step again on the fresh state after a lost commit", async () => {

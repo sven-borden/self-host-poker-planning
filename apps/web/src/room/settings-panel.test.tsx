@@ -79,7 +79,7 @@ afterEach(async () => {
 describe("the settings panel", () => {
   it("lists every setting once", () => {
     const keys = GROUPS.flatMap((group) => group.fields.map((field) => field.key));
-    expect(keys).toEqual([...SETTING_KEYS]);
+    expect(keys).toEqual([...SETTING_KEYS, "hasPassword"]);
   });
 
   it("shows a new room's settings as ADR-011 sets them, read-only for everyone but the PO (AC 3)", async () => {

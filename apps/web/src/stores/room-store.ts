@@ -14,9 +14,17 @@ export type ConnectionStatus = "idle" | "connecting" | "connected" | "reconnecti
  * - `live`: entered; snapshots arrive as the room changes;
  * - `reconnecting`: the connection dropped or the server refused for a while; the last
  *   snapshot stays on screen;
+ * - `locked`: the room has a password and this viewer may not enter without it (#31);
+ *   the socket stays connected, the page asks for the password;
  * - `error`: final until the page reloads; `error` says why.
  */
-export type RoomStatus = "idle" | "connecting" | "live" | "reconnecting" | "error";
+export type RoomStatus = "idle" | "connecting" | "live" | "reconnecting" | "locked" | "error";
+
+/**
+ * Why the room asks this viewer for its password (#31): it has one (`required`), or the
+ * PO changed it since this page last saw the room (`changed`).
+ */
+export type LockReason = "required" | "changed";
 
 /**
  * Why the room is in `error`: an ack code (`room_not_found`, `protocol_mismatch`,
@@ -43,6 +51,8 @@ export interface RoomStoreState {
    * a notice, until they join again. Not an error: the room stays open and live.
    */
   removed: boolean;
+  /** Set while `status` is `locked` (#31): why the page asks for the password. */
+  locked: LockReason | null;
   /** Starts following `code`; a different code drops the snapshot held. */
   open: (code: string) => void;
   /**
@@ -57,6 +67,11 @@ export interface RoomStoreState {
   /** Records an announcement of the table's live region. */
   announce: (text: string) => void;
   setRemoved: (removed: boolean) => void;
+  /**
+   * The room asks for its password (#31): status `locked`, and the snapshot held goes,
+   * since the viewer is no longer in the room it shows.
+   */
+  lock: (reason: LockReason) => void;
   reset: () => void;
 }
 
@@ -68,6 +83,7 @@ const initialState = {
   connection: "idle" as ConnectionStatus,
   said: { id: 0, text: "" },
   removed: false,
+  locked: null as LockReason | null,
 };
 
 export const useRoomStore = create<RoomStoreState>()((set, get) => ({
@@ -78,6 +94,7 @@ export const useRoomStore = create<RoomStoreState>()((set, get) => ({
       status: "connecting",
       error: null,
       removed: false,
+      locked: null,
       snapshot: state.code === code ? state.snapshot : null,
     })),
   receive: (snapshot) => {
@@ -87,10 +104,11 @@ export const useRoomStore = create<RoomStoreState>()((set, get) => ({
     set({ snapshot });
     return true;
   },
-  setStatus: (status) => set({ status, error: null }),
-  fail: (error) => set({ status: "error", error }),
+  setStatus: (status) => set({ status, error: null, locked: null }),
+  fail: (error) => set({ status: "error", error, locked: null }),
   setConnection: (connection) => set({ connection }),
   announce: (text) => set((state) => ({ said: { id: state.said.id + 1, text } })),
   setRemoved: (removed) => set({ removed }),
+  lock: (reason) => set({ status: "locked", error: null, locked: reason, snapshot: null }),
   reset: () => set(initialState),
 }));

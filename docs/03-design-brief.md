@@ -521,6 +521,45 @@ As built (#30, ADR-010):
   product owner role to Ben.", "Ben claimed the product owner role.", "The product owner
   removed Cleo from the room." ("… removed 2 people …" in one batch).
 
+## The room password
+
+As built (#31, ADR-010):
+
+- **The PO, in "Room settings".** A "Password" row at the end of People, across the
+  row (`block`), under the hint "People already in the room stay. Anyone else enters it
+  once on each device." Without a password: a password field (44 px, "Show password" as
+  an eye toggle inside its right end, `aria-pressed`, its name constant) and "Set
+  password" beside it (under it on a phone); Enter in the field sets it too. With one: a
+  lock and "This room has a password." (a status), then "Change password" (outline),
+  which opens the field again with "Cancel", and "Remove password" (outline), which does
+  not ask first. After a set the focus lands on "Change password", after a removal on
+  the field, after "Cancel" back on "Change password". A refusal shows under the row
+  with the octagon icon: "A password needs 6 to 128 characters.", or the generic
+  "Too many tries. …". While a password is changed, the field's button says "Save
+  password" ("Set password" for a first one). Everyone else’s "Room rules" says "Password: On" or "Off",
+  never more.
+- **The header** shows a lock beside the room’s name, in `--ink-2`, 0.6 em of the
+  name’s size, named "This room has a password." for screen readers (and as its
+  tooltip). With a password, "Copy the link" confirms "Link copied. They also need the
+  password."
+- **The joiner.** The "Take a seat" card adds a "Password" field above "Your name", with
+  the same eye toggle and, under it, a lock and "This room has a password. Enter it to
+  join." (or "The product owner changed the password." when the page last saw the room
+  with another one). The field takes the focus. One "Join the room" button checks the
+  password, then enters, then joins. A blank field says "Enter the room’s password."; a
+  wrong one "That password is not right." under the field, which keeps the focus with
+  its text selected; past the limit "Too many tries. Try again in 3 minutes."; when the
+  server checks too many at once "Many people are joining at once. Try again in a
+  moment." The browser's own reveal eye (Edge) is hidden: ours is the only one. When one
+  tab gets in, this browser's other tabs on the same room drop the field too. A person
+  with a grant, or back in a room they never left, never sees the field. Someone the PO
+  removed sees "The product owner removed you from this room." above the card, which
+  then asks for the password.
+- **The live region**, once each, to everyone but the PO: "The product owner set a
+  password for this room.", "The product owner changed the room’s password.", "The
+  product owner removed the room’s password." Someone on the join form when the PO sets
+  or changes it is asked for the password at once, without a sentence.
+
 ## The timer
 
 As built (#27; ADR-011: off by default, reveal at its end on):

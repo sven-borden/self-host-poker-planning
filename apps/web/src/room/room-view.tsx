@@ -32,6 +32,9 @@ export function RoomView() {
   const version = useRoomStore((state) => state.snapshot?.version);
   // The PO removed the viewer (#30): the join form says so until they join again.
   const removed = useRoomStore((state) => state.removed);
+  // The room asks for its password (#31): no snapshot, the join form with its field.
+  const code = useRoomStore((state) => state.code);
+  const locked = useRoomStore((state) => (state.status === "locked" ? state.locked : null));
   // The version the server answered `room_full` at; any newer snapshot asks again.
   const [refusedAt, setRefusedAt] = useState<number | null>(null);
   // Set just before the screen changes, and cleared once the new screen took the focus.
@@ -48,7 +51,16 @@ export function RoomView() {
   const ready = room !== undefined && status !== "error";
   const me = ready ? room.participants.find((p) => p.id === room.you) : undefined;
   const full = ready && (isRoomFull(room) || (refusedAt !== null && refusedAt === version));
-  const screen: Screen = !ready ? "none" : me !== undefined ? "seated" : full ? "full" : "join";
+  const screen: Screen =
+    locked !== null
+      ? "join"
+      : !ready
+        ? "none"
+        : me !== undefined
+          ? "seated"
+          : full
+            ? "full"
+            : "join";
 
   // Someone left while the room-full screen showed: the form replaces it, so the focus
   // moves to the name field and the change is announced.
@@ -66,6 +78,12 @@ export function RoomView() {
 
   // Removed (#30): the focus, lost with the table, goes to the name field; once the person
   // is back at the table the notice goes.
+  // Locked (#31): the password field takes the focus when the form first asks for it.
+  const asking = locked !== null;
+  useEffect(() => {
+    if (asking) setFocus("join");
+  }, [asking]);
+
   useEffect(() => {
     if (removed && screen === "join") setFocus("join");
     if (removed && screen === "seated") useRoomStore.getState().setRemoved(false);
@@ -79,10 +97,13 @@ export function RoomView() {
         {notice}
       </p>
       {ready && screen === "full" ? <RoomFull /> : null}
-      {ready && screen === "join" && removed ? <RemovedNotice /> : null}
-      {ready && screen === "join" ? (
+      {screen === "join" && removed ? <RemovedNotice /> : null}
+      {/* One place for the form, locked or not: it stays mounted while the password lets
+          the socket in, and its join goes on from there. */}
+      {screen === "join" ? (
         <JoinForm
-          observersCount={room.settings.observersCount}
+          observersCount={room?.settings.observersCount ?? true}
+          password={locked !== null && code !== null ? { code, reason: locked } : null}
           focusOnMount={focus === "join"}
           onFocused={focused}
           onJoining={(joining) => setFocus(joining ? "you" : null)}

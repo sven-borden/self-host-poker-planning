@@ -10,11 +10,14 @@ export class RoomApiError extends Error {
   readonly code: string;
   /** With `room_not_found`: how many idle days this server keeps a room, when it says. */
   readonly retentionDays: number | undefined;
-  constructor(code: string, retentionDays?: number) {
+  /** With `rate_limited`: the seconds to wait (`Retry-After`), when the server says. */
+  readonly retryAfter: number | undefined;
+  constructor(code: string, retentionDays?: number, retryAfter?: number) {
     super(code);
     this.name = "RoomApiError";
     this.code = code;
     this.retentionDays = retentionDays;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -23,6 +26,8 @@ export interface RoomHeader {
   readonly code: string;
   /** null for a room created without a name. */
   readonly name: string | null;
+  /** The room asks for a password (#31); false from a server before #31. */
+  readonly hasPassword: boolean;
 }
 
 async function json(response: Response): Promise<unknown> {
@@ -48,9 +53,11 @@ async function call(path: string, init: RequestInit = {}): Promise<unknown> {
   if (!response.ok) {
     const code = field(body, "code");
     const days = field(body, "retentionDays");
+    const wait = Number(response.headers.get("retry-after"));
     throw new RoomApiError(
       typeof code === "string" ? code : "internal",
       Number.isSafeInteger(days) && (days as number) > 0 ? (days as number) : undefined,
+      Number.isFinite(wait) && wait > 0 ? wait : undefined,
     );
   }
   return body;
@@ -91,5 +98,39 @@ export async function fetchRoomHeader(code: string): Promise<RoomHeader> {
   const found = field(body, "code");
   const name = field(body, "name");
   if (typeof found !== "string") throw new RoomApiError("internal");
-  return { code: found, name: typeof name === "string" ? name : null };
+  return {
+    code: found,
+    name: typeof name === "string" ? name : null,
+    hasPassword: field(body, "hasPassword") === true,
+  };
+}
+
+const jsonInit = (method: string, body?: object): RequestInit => ({
+  method,
+  ...(body !== undefined && {
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  }),
+});
+
+/**
+ * Sets or changes the room's password (#31), the PO only: resolves once the server stored
+ * it, or throws a `RoomApiError` (`bad_password`, `not_allowed`, `rate_limited`, …).
+ * The password travels in the body of this one request, never over the socket.
+ */
+export async function setRoomPassword(code: string, password: string): Promise<void> {
+  await call(`/api/rooms/${encodeURIComponent(code)}/password`, jsonInit("PUT", { password }));
+}
+
+/** Removes the room's password (#31), the PO only. */
+export async function removeRoomPassword(code: string): Promise<void> {
+  await call(`/api/rooms/${encodeURIComponent(code)}/password`, jsonInit("DELETE"));
+}
+
+/**
+ * Checks the room's password (#31): resolves when it is right, and this browser's user
+ * may then enter the room; throws `wrong_password`, or `rate_limited` with `retryAfter`.
+ */
+export async function enterRoomPassword(code: string, password: string): Promise<void> {
+  await call(`/api/rooms/${encodeURIComponent(code)}/access`, jsonInit("POST", { password }));
 }

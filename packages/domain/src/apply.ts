@@ -62,13 +62,20 @@ const OWNER_ONLY: ReadonlySet<CommandType> = new Set<CommandType>([
   "extendTimer",
   "updateSettings",
   "transferOwner",
+  "password",
 ]);
 
 /**
- * Commands a non-participant may send: entering, the timer ping, and the server's own
- * presence updates (the actor is the server; `who` names the person).
+ * Commands a non-participant may send: entering, the timer ping, the server's own
+ * presence updates (the actor is the server; `who` names the person), and the PO's
+ * password (#31), which the PO may set from outside the room too.
  */
-const OPEN: ReadonlySet<CommandType> = new Set<CommandType>(["join", "timeUp", "presence"]);
+const OPEN: ReadonlySet<CommandType> = new Set<CommandType>([
+  "join",
+  "timeUp",
+  "presence",
+  "password",
+]);
 
 export function apply(state: RoomState, command: Command, ctx: ApplyContext): ApplyResult {
   const resolved = resolveDeadline(state);
@@ -191,6 +198,8 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       return claimOwner(state, actor, now);
     case "presence":
       return presence(state, command.who, command.connected, now);
+    case "password":
+      return password(state, command.on);
     default:
       return unknownCommand(command);
   }
@@ -272,6 +281,27 @@ function presence(state: RoomState, who: UserId, connected: boolean, now: number
     type: "away",
     who,
   });
+}
+
+/**
+ * The PO set, changed or removed the room's password (#31). Only the flag lives in the
+ * state; the server writes the hash and the access grants in the same transaction. A new
+ * password where there was one is still a change (a new state, so a new version): the
+ * grants were just written again. Removing a password the room does not have changes
+ * nothing.
+ */
+function password(state: RoomState, on: unknown): Step {
+  if (typeof on !== "boolean") return refuse("bad_command");
+  const had = state.hasPassword === true;
+  if (on) {
+    return done(
+      { ...state, hasPassword: true },
+      { type: "settingsUpdated", password: had ? "changed" : "set" },
+    );
+  }
+  if (!had) return done(state);
+  const { hasPassword: _, ...open } = state;
+  return done(open, { type: "settingsUpdated", password: "removed" });
 }
 
 // ---------------------------------------------------------------------------------- rounds

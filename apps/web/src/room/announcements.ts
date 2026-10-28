@@ -9,15 +9,16 @@ import { durationWords } from "./timer-view.ts";
 
 // What the table's live region says (#17): joins, leaves, away and back, votes, a new
 // round (#18) or a re-vote (#32), the reveal (#19, naming a voter who revealed, #28), the
-// PO's final estimate (#32), the PO's settings changes (#25), the timer (#27), and the PO
-// role handed over or claimed and people removed (#30), read from a snapshot's causes.
-// Never a person's card: a
+// PO's final estimate (#32), the PO's settings changes (#25), the timer (#27), the PO
+// role handed over or claimed and people removed (#30), and the room's password set,
+// changed or removed (#31), read from a snapshot's causes. Never a person's card: a
 // vote cause carries who, never what, the reveal says the round's result (#20: "Cards
 // revealed. Consensus on 8."), and the final is the PO's decision; both belong to nobody.
 // Pure, so the batching rules are tested without timers; `live-announcer.tsx` runs them.
 
 export type LiveKind =
   | "settings"
+  | "password"
   | "roundStarted"
   | "joined"
   | "left"
@@ -74,6 +75,11 @@ export interface LiveEvent {
   };
   /** The timer started, got more time or stopped (#27): said to everyone, the PO too. */
   timer?: TimerNews;
+  /**
+   * The room's password (#31): whether it had one before and has one after. Both true is
+   * a change; a batch that set and removed it says nothing.
+   */
+  password?: { from: boolean; to: boolean };
 }
 
 /**
@@ -81,7 +87,7 @@ export interface LiveEvent {
  * A settings change is the exception: it is said where it happened among the others
  * (`describeEvents`), so a change made just after "Start voting" follows it.
  */
-const ORDER: readonly Exclude<LiveKind, "settings">[] = [
+const ORDER: readonly Exclude<LiveKind, "settings" | "password">[] = [
   "roundStarted",
   "timer",
   "joined",
@@ -223,7 +229,25 @@ export function liveEvents(
   if (!events.some((e) => e.kind === "revealed") && revealedSince(previous, next)) {
     events.push(revealedEvent(next));
   }
-  return [...settingEvents(previous, next), ...events];
+  return [...settingEvents(previous, next), ...passwordEvents(previous, next, causes), ...events];
+}
+
+/**
+ * The room's password set, changed or removed (#31), once, to everyone but the PO, who did
+ * it in their own panel. Set and removed are read from the settings, so a reconnect still
+ * says them; a change shows only in its cause, since the room had a password before too.
+ */
+function passwordEvents(
+  previous: RoomView | null,
+  next: RoomView,
+  causes: readonly CauseView[],
+): LiveEvent[] {
+  if (previous === null || next.you === next.ownerId) return [];
+  const from = previous.settings.hasPassword === true;
+  const to = next.settings.hasPassword === true;
+  const changed = causes.some((c) => c.type === "settingsUpdated" && c.password === "changed");
+  if (from === to && !(to && changed)) return [];
+  return [{ kind: "password", who: "", name: "", password: { from, to } }];
 }
 
 /**
@@ -346,6 +370,17 @@ function revealedSince(previous: RoomView | null, next: RoomView): boolean {
 export function mergeEvents(pending: readonly LiveEvent[], events: readonly LiveEvent[]) {
   let merged = [...pending];
   for (const event of events) {
+    if (event.password) {
+      // Said once, from where the batch started to where it ended.
+      const earlier = merged.find((e) => e.kind === "password");
+      merged = merged.filter((e) => e !== earlier);
+      const password = {
+        from: earlier?.password?.from ?? event.password.from,
+        to: event.password.to,
+      };
+      if (password.from || password.to) merged.push({ ...event, password });
+      continue;
+    }
     if (event.setting) {
       // A setting changed twice in one batch: said once, from where it started to where
       // it ended, or not at all when it came back.
@@ -417,6 +452,16 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
   switch (kind) {
     case "settings":
       return events.flatMap((e) => (e.setting ? [settingSentence(t, e.setting)] : [])).join(" ");
+    case "password":
+      return first?.password === undefined
+        ? ""
+        : t(
+            !first.password.from
+              ? "password.liveSet"
+              : first.password.to
+                ? "password.liveChanged"
+                : "password.liveRemoved",
+          );
     case "roundStarted":
       if (first?.revote) return t(first.round?.anonymous ? "live.revoteAnonymous" : "live.revote");
       return t(first?.round?.anonymous ? "live.roundStartedAnonymous" : "live.roundStarted", {
@@ -517,12 +562,12 @@ export function describeEvents(t: TFunction, events: readonly LiveEvent[]): stri
     run = [];
   };
   for (const event of events) {
-    if (event.kind !== "settings") {
+    if (event.kind !== "settings" && event.kind !== "password") {
       run.push(event);
       continue;
     }
     sayRun();
-    parts.push(sentence(t, "settings", [event]));
+    parts.push(sentence(t, event.kind, [event]));
   }
   sayRun();
   return parts.join(" ");

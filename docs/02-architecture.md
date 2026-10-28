@@ -362,14 +362,16 @@ and they are committed.
 
 | Table | Content |
 |---|---|
-| `room` | `id` uuid, `code` text unique, `name` text null, `owner_user_id` text (a copy of `live.ownerId`, written by every commit), `live` jsonb (`RoomState`: settings, people, the round), `version` int (starts at 1), `password_hash` text null, `created_at`, `last_active_at` (indexed, for the retention purge) |
+| `room` | `id` uuid, `code` text unique, `name` text null, `owner_user_id` text (a copy of `live.ownerId`, written by every commit), `live` jsonb (`RoomState`: settings, people, the round), `version` int (starts at 1), `password_hash` text null (argon2id PHC string), `password_failures` int and `password_failures_since` null (the per-room count of wrong passwords, #31), `created_at`, `last_active_at` (indexed, for the retention purge) |
+| `room_access` | `room_id` (cascade delete), `user_id` (cascade delete with the user), `granted_at`; primary key `(room_id, user_id)`: who may enter a room with a password without typing it (#31) |
 | `round_history` | `id` identity, `room_id` (cascade delete), `number`, unique `(room_id, number)`, `subject` jsonb, `deck` jsonb (`{ spec, specials }`), `votes` jsonb, `stats` jsonb (`computeResults`), `final` text null, `started_at`, `revealed_at`, `finished_at` |
 | Better Auth (#10) | `user` (with `is_anonymous`), `session`, `account`, `verification`, added by a later migration |
 | later | `backlog_item` (W6), `connector_token` (W6, encrypted), `brand` (W7) |
 
 `live` is the single source of truth for the room's state, settings included; there is
 no separate `settings` column. The password hash stays in its own column and never
-enters `live`, so it can never reach a snapshot. Timestamps are `timestamptz`.
+enters `live`, so it can never reach a snapshot; `live.hasPassword` is the flag alone,
+written in the same transaction as the hash and the grants. Timestamps are `timestamptz`.
 
 **Start** (`apps/server/src/database.ts`, the `setup` hook of `run()`): wait for
 Postgres, retrying with backoff (0.5 s doubling to 5 s) for up to 30 s in all, each
@@ -522,8 +524,82 @@ password, no social provider before W5.
   Errors are `{ code }` with an `AckErrorCode`: `unauthenticated` 401, `not_allowed`
   403, `bad_payload` 400 (a body that does not parse), 413 (over 16 KB) or 415 (not
   JSON), `bad_room_name` 400, `rate_limited` 429, `internal` 500.
-- Password (optional): argon2id hash. A correct entry sets a signed, httpOnly
-  room-access cookie for that room; attempts limited per IP and per room.
+- Password (optional, #31). The PO sets, changes or removes it over HTTP, never over
+  the socket, so a password never enters the command pipeline, its idempotency cache or
+  a log line: `PUT /api/rooms/:code/password { password }` and `DELETE
+  /api/rooms/:code/password` (the PO only, `not_allowed` 403, checked before any hash;
+  this origin; JSON; `no-store`; 30 changes per PO in 10 minutes). A password is 6 to 128
+  characters (code points) after NFC normalisation, any text, never trimmed; otherwise
+  `bad_password` 400. The change runs through the room's command runner as the
+  server-only `password` command (`{ on }`, the PO's alone), so it is ordered with the
+  round's commands, and the runner's commit writes `live.hasPassword`, `password_hash`
+  and the grants in one transaction (`AccessWrite` in `db/rooms.ts`). The snapshot's
+  settings carry `hasPassword` (optional, protocol 4 kept) and `settingsUpdated` its
+  `password` (`set`, `changed`, `removed`); `GET /api/rooms/:code` adds
+  `hasPassword`.
+  - **Hashing**: Node's own `crypto.argon2` (24.7 and later, so `engines` and the Node
+    check ask for 24.7), argon2id with OWASP's parameters (19 MiB, t = 2, p = 1, a 16-byte
+    random salt, a 32-byte tag), stored as a PHC string with its parameters. A check
+    derives the key again with the stored salt and parameters and compares with
+    `timingSafeEqual`. About 25 to 35 ms per hash or check. Only the parameters above
+    are accepted: a stored hash with others (a cost of gigabytes, or a cheap one) is
+    corrupt, logged by room id and refused (`internal`) before any work. At most 2 run
+    at once (19 MiB each, on libuv's 4 threads); the next ones wait in line, first come
+    first served, at most 32 of them and each at most 2 s; past that, 503 `busy`. Sixteen
+    right passwords sent at once all pass, in about 250 ms.
+  - **Access is a grant keyed by the session's user**, in `room_access`, not a cookie per
+    room (amended from the original plan): the guest session cookie (#10) is already
+    signed, httpOnly and per device, so "once per device" holds without another cookie;
+    a cookie per room would grow every request's headers with each room visited, and it
+    could not be revoked for one person. With accounts (W5) the grant follows the account,
+    so "once per account". Who enters a room with a password: a participant, the PO
+    (`live.ownerId`, even after leaving), or a user with a grant; anyone else's `enter`
+    (and `join`) answers `password_required`, and a socket in the room's channel that
+    has not passed this gate gets no snapshot of it. A correct password grants that user;
+    setting a password grants everyone in the room then (and the PO), so people already
+    in the room stay; changing it drops every grant and grants everyone in the room again;
+    removing it drops them all; a kick (#30) drops the removed person's grant in the
+    kick's own commit, so they must type it again. When it is set or changed, the sockets
+    of anyone else on this instance (someone on the join form) hear `locked` and leave
+    the room; their page enters again and is asked for the password.
+  - **Checking**: `POST /api/rooms/:code/access { password }` answers 204 and grants
+    the caller, or 403 `{ code: "wrong_password" }`. The PO, a participant and a grant
+    holder get 204 at once, whatever the password, with no hash run. A password outside
+    the bounds is `wrong_password` at once, neither checked nor counted: it cannot be
+    right. The grant is written only while the room still holds the hash the password was
+    checked against (one statement that reads the room's row `for share`, so a change in
+    progress commits first); a change that won the race answers `wrong_password`, not
+    counted, so a grant never outlives the password it was given for. On the socket, an
+    `enter` that read a grant before a lockout of that room ran on this instance is
+    refused with `password_required`. A `join` by someone neither in the room nor its PO,
+    while it has a password, commits only with their grant: the commit's transaction
+    checks `room_access` after its compare-and-set took the room's row, so a kick or a new
+    password that dropped the grant has committed first, on any instance; a miss writes
+    nothing, answers `password_required`, and the socket leaves the room.
+  - **Limits** (`PASSWORD_LIMITS`, each in 10 minutes): 10 wrong passwords per person
+    (session user) and room, in the process, so one person's typos never lock out a team
+    that shares an address; 25 wrong passwords per address and room, in the process, so
+    one address with a handful of guest sessions cannot spend the room's 50 alone; 50
+    wrong passwords per room whatever the people or addresses,
+    in the database (`room.password_failures`, a fixed window updated atomically), so
+    every instance shares it: the cap on a brute force (about 7,200 tries a day per room,
+    hence 6 characters at least); and 300 checks per address, right, wrong or for a room
+    that does not exist, in the process: the CPU one client can burn, and how many codes
+    it can test (a 204 or 404 tells whether a room exists). Each try is reserved before
+    the check and released when the password was right, so tries sent at once are
+    counted exactly and a right password costs nothing. Past a limit: `rate_limited` 429
+    with `Retry-After`, the right password included. There is no limit per address across
+    rooms: room codes are 58-bit secrets, and behind a shared address it would let one
+    client lock every password room on the instance.
+  - **Behind proxies the app is not told about** (`TRUST_PROXY` too low; Sven's instance
+    needs `TRUST_PROXY=2`, an owner item in STATUS), every client shares one address, so
+    every per-address limit applies to everyone at once: the 300 checks in 10 minutes
+    are the whole instance's (300 requests, even without a session, lock everyone out of
+    password checks for 10 minutes), the 25 wrong tries per room are every client's
+    together, and the identity limits below too. The per-person
+    and per-room limits are as meant whatever the proxies.
+  - Logs name the room by its id ("room password changed", "room access granted",
+    "wrong room password"); never the password, the hash, the code or the address.
 - Limits: names 32 characters, room names 60, subjects 200, custom cards 4 characters
   × 20, payloads 16 KB.
 - Text (names, round titles, room names: the domain's `cleanText`): control characters,
@@ -621,7 +697,10 @@ password, no social provider before W5.
   keeps 15 s. A room's timers are dropped when its last socket leaves the instance, and
   all of them on shutdown; the people still shown connected then get their grace from
   the next first socket.
-- Two instances (#39): each judges presence from its own sockets only, so a person whose
+- Two instances (#39): the password's `locked` (#31) reaches the sockets on the
+  instance that ran the change only; a viewer on the other one keeps watching until their
+  next `enter` or `join`, which the database's grants refuse. Each judges presence from
+  its own sockets only, so a person whose
   sockets sit on the other instance can be marked away by this one's first-socket timers,
   until they enter again. Likewise a removal (#30) sends `kicked` and closes the sockets
   on the instance that ran the `kick` only: a removed person whose socket sits on the
@@ -656,7 +735,8 @@ language, and an unknown code gets a generic one.
   after `/r` or `/api/rooms` and every code-shaped segment replaced by `:code`.
   Every later issue follows the rule. Each HTTP request gets an id (an incoming `x-request-id` is kept when it is at
   most 64 safe characters) echoed in `x-request-id`; each socket gets a random connection
-  id. Never logged: bodies, cookies, session tokens, the signing secret, auth headers,
+  id. Never logged: bodies, cookies, session tokens, the signing secret, room passwords
+  and their hashes, auth headers,
   query strings, config values, client addresses; the logger redacts cookies, auth headers and `auth` payloads as a backstop.
   `/api/*` requests log at `info`; `/api/health` and static files at `debug`; 5xx at
   `error`.

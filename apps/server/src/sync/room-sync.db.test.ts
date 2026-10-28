@@ -505,7 +505,7 @@ describe("the room settings (#25)", () => {
     const code = await insert(lobby());
     const b = client(bob);
     await b.enter(code);
-    expect(b.latest()?.room.settings).toEqual(DEFAULT_SETTINGS);
+    expect(b.latest()?.room.settings).toEqual({ ...DEFAULT_SETTINGS, hasPassword: false });
   });
 
   it("refuses a change from a voter and from an observer, on the wire (AC 2)", async () => {
@@ -545,6 +545,7 @@ describe("the room settings (#25)", () => {
         ...DEFAULT_SETTINGS,
         revealNames: false,
         poVotes: false,
+        hasPassword: false,
       });
     }
     await sleep(100);

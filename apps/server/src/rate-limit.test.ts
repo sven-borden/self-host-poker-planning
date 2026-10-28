@@ -2,6 +2,36 @@ import { describe, expect, it } from "vitest";
 import { memoryRateLimit } from "./rate-limit.ts";
 
 describe("memoryRateLimit", () => {
+  it("reserves a call and takes it back on release, once, in its own window (#31)", async () => {
+    let now = 1000;
+    const store = memoryRateLimit(() => now);
+    const rule = { window: 10, max: 2 };
+    // Released calls never close the window.
+    for (let i = 0; i < 5; i++) {
+      const held = await store.reserve("a", rule);
+      expect(held.allowed).toBe(true);
+      held.release();
+    }
+    const first = await store.reserve("a", rule);
+    const second = await store.reserve("a", rule);
+    expect([first.allowed, second.allowed]).toEqual([true, true]);
+    const refused = await store.reserve("a", rule);
+    expect(refused).toMatchObject({ allowed: false, retryAfter: 10 });
+    // A refused call holds nothing; a second release changes nothing.
+    refused.release();
+    expect((await store.consume("a", rule)).allowed).toBe(false);
+    second.release();
+    second.release();
+    expect((await store.consume("a", rule)).allowed).toBe(true);
+    expect((await store.consume("a", rule)).allowed).toBe(false);
+    // A release after its window ended leaves the new window alone.
+    now = 11_000;
+    expect((await store.consume("a", rule)).allowed).toBe(true);
+    first.release();
+    expect((await store.consume("a", rule)).allowed).toBe(true);
+    expect((await store.consume("a", rule)).allowed).toBe(false);
+  });
+
   it("uses a store of its own per instance", async () => {
     const store = memoryRateLimit(() => 1000);
     const rule = { window: 10, max: 1 };

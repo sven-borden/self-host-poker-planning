@@ -35,16 +35,19 @@ export type Command =
   | { type: "updateSettings"; patch: SettingsPatch }
   | { type: "transferOwner"; to: UserId }
   | { type: "claimOwner" }
-  | { type: "presence"; who: UserId; connected: boolean };
+  | { type: "presence"; who: UserId; connected: boolean }
+  | { type: "password"; on: boolean };
 
 export type CommandType = Command["type"];
 
 /**
  * Commands only the server sends: `presence` (#17), after a person's last socket left
- * and the grace period passed, or when they come back. The wire protocol has no schema
- * for them, so a client that sends one gets `bad_payload` before `apply` runs.
+ * and the grace period passed, or when they come back; `password` (#31), when the PO
+ * sets, changes or removes the room's password over HTTP (the password itself never
+ * enters a command). The wire protocol has no schema for them, so a client that sends
+ * one gets `bad_payload` before `apply` runs.
  */
-export type ServerCommandType = "presence";
+export type ServerCommandType = "presence" | "password";
 /** What a client may send: every command except the server's own. */
 export type ClientCommand = Exclude<Command, { type: ServerCommandType }>;
 export type ClientCommandType = ClientCommand["type"];
@@ -77,10 +80,16 @@ export type Cause =
   | { type: "timerExtended" }
   | { type: "timeUp" }
   | { type: "finalSet"; card: Card }
-  | { type: "settingsUpdated" }
+  | { type: "settingsUpdated"; password?: PasswordChange }
   | { type: "ownerChanged"; by: "transfer" | "claim"; to: UserId }
   | { type: "away"; who: UserId }
   | { type: "back"; who: UserId };
+
+/**
+ * What a `password` command did (#31): a first password, a new one in place of the old,
+ * or none any more. It rides on `settingsUpdated`, since the room's settings show it.
+ */
+export type PasswordChange = "set" | "changed" | "removed";
 
 /** Why a command was refused. Stable snake_case codes; the UI translates them. */
 export type ErrorCode =

@@ -173,7 +173,7 @@ describe("app shell", () => {
     serve({ "GET /api/rooms/Abc1234567": () => answers.shift() ?? json({}, 500) });
     await renderAt("/r/Abc1234567");
     expect((await screen.findByRole("alert")).textContent).toBe(
-      "Too many attempts. Wait a moment, then try again.",
+      "Too many tries. Wait a moment, then try again.",
     );
     expect((await screen.findByRole("heading", { level: 1 })).textContent).toBe("Room Abc1234567");
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
