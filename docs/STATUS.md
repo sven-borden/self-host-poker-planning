@@ -95,6 +95,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   left, or has been away for 120 s (`ownerClaimableAt`, on the server's clock). A
   removed person is back on the join form at once, with a notice, and may join again.
   The room route loads 173.3 kB.
+- Reveal modes from #28: "Who can reveal" in the panel (the PO, or anyone who votes;
+  never an observer), a voter's "Reveal cards" and `R`, the revealer named in the live
+  region, and a warning before turning auto-reveal on with everyone voted. A voter
+  reveals an anonymous round only once two cards are down (ADR-011 amended). The room
+  route loads 173.4 kB.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -105,21 +110,20 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#28 (PP-028)** reveal modes: who can reveal ("anyone" means anyone who votes, never
-  an observer: today the domain lets an observer reveal), a voter's "Reveal cards" and
-  `R`, the revealer named in the live region. Building in `../pp-wt-28`; it merges
-  `main` (with #30) before its PR.
 - **#31 (PP-031)** room password: argon2id, access granted on the server per session
   user (a kick or a password change drops grants), limits on failed tries, the PO's row
-  in the panel and a password field on the join screen. Building in `../pp-wt-31`.
+  in the panel and a password field on the join screen. PR #93 reviewed: one security
+  blocker (a grant racing a password change) and the limits reworked; the fixer in
+  `../pp-wt-31` merges `main` (with #28).
+- **#29 (PP-029)** change a vote after the reveal: the panel's toggle (locked for
+  anonymous rounds), a playable hand after a named reveal, a "changed" chip, live
+  results. Building in `../pp-wt-29`.
 
 ## Next
 
-- W2 order, by dependencies: #29 (change after reveal) needs #28 and starts when it
-  merges. Then W2 is complete and W3 (#33–#41) begins.
-  - PO decision for #28: switching anonymity never re-projects the round on the table;
-    it applies from the next round, as #25 does, since names already seen cannot be
-    hidden and an anonymous round must never gain them.
+- W2 ends with #29 and #31. W3 (#33–#41) begins as a slot frees: #33 (round history)
+  first; #35 (retention) and #39 (scale-out) have their dependencies merged too; #36
+  (hardening) needs #31; #37 needs #33; #38 and #41 need Sven's OQ-1 and OQ-2.
 - Chores to fold into a later issue: a lazy catalog for the settings panel (about
   2 kB off both pages); the burst test's one `room_not_found` (see the build log).
   - Each later setting drops its control into #25's panel (see the web README).
@@ -130,6 +134,8 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
     only on the one that ran it.
   - Later: a person removed while their socket was down comes back to the join form
     with no notice (accepted at #30's review).
+  - #37: at 150 % text on phones, the centre stack touches slot cards (390 px, 7 seats)
+    and "Karten aufdecken" wraps (360 px, 16 seats).
 - **W2 runs without a new go** (Sven, 2026-10-26: "once wave 0 is done, start the
   next one").
 
@@ -157,9 +163,10 @@ issues are merged.
 - Optional, after #12:
   - Rotate `BETTER_AUTH_SECRET` (it went through my session when Sven asked me to add
     it).
-  - Let Coolify's Traefik trust the Synology (`forwardedHeaders.trustedIPs`), then
-    set `TRUST_PROXY=2`. This restarts the proxy for all his apps. Until then,
-    per-address limits see one address for everyone.
+  - **Now pressing (#31):** let Coolify's Traefik trust the Synology
+    (`forwardedHeaders.trustedIPs`), then set `TRUST_PROXY=2`. This restarts the proxy
+    for all his apps. Until then, per-address limits (room creation, header reads, the
+    password guard) see one address for everyone.
 - **#38**: pick the Azure service (OQ-1).
 - **#41**: French and German tone (OQ-2).
 - **#56**: licence and pricing model for branding (OQ-3).

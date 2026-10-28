@@ -8,10 +8,10 @@ import { subjectName } from "./subject.ts";
 import { durationWords } from "./timer-view.ts";
 
 // What the table's live region says (#17): joins, leaves, away and back, votes, a new
-// round (#18) or a re-vote (#32), the reveal (#19), the PO's final estimate (#32), the
-// PO's settings changes (#25), the timer (#27), and the PO role handed over or claimed
-// and people removed (#30), the room's password set, changed or removed (#31), read from a
-// snapshot's causes. Never a person's card: a
+// round (#18) or a re-vote (#32), the reveal (#19, naming a voter who revealed, #28), the
+// PO's final estimate (#32), the PO's settings changes (#25), the timer (#27), the PO
+// role handed over or claimed and people removed (#30), and the room's password set,
+// changed or removed (#31), read from a snapshot's causes. Never a person's card: a
 // vote cause carries who, never what, the reveal says the round's result (#20: "Cards
 // revealed. Consensus on 8."), and the final is the PO's decision; both belong to nobody.
 // Pure, so the batching rules are tested without timers; `live-announcer.tsx` runs them.
@@ -195,7 +195,7 @@ export function liveEvents(
         continue;
       case "revealed":
         if (cause.by === "timer") events.push({ kind: "timeUp", who: "", name: "" });
-        events.push(revealedEvent(next));
+        events.push(revealedEvent(next, revealerName(cause.who, next, previous)));
         continue;
       case "joined":
       case "left":
@@ -318,12 +318,25 @@ function restartedRound(previous: RoomView, next: RoomView): number | null {
     : null;
 }
 
-/** The reveal, with the result `next` shows (none when a new round already replaced it). */
-function revealedEvent(next: RoomView): LiveEvent {
+/**
+ * The reveal, with the result `next` shows (none when a new round already replaced it),
+ * and the name of the voter who revealed it (#28), or "".
+ */
+function revealedEvent(next: RoomView, name = ""): LiveEvent {
   const round = next.round;
   return round?.phase === "revealed"
-    ? { kind: "revealed", who: "", name: "", summary: revealSummary(round) }
-    : { kind: "revealed", who: "", name: "" };
+    ? { kind: "revealed", who: "", name, summary: revealSummary(round) }
+    : { kind: "revealed", who: "", name };
+}
+
+/**
+ * Who revealed by hand, by name, when that is news (#28): a voter under "anyone who votes".
+ * The PO's reveal keeps "Cards revealed.", and so does the voter's own (their button
+ * speaks for them).
+ */
+function revealerName(who: string | undefined, next: RoomView, previous: RoomView | null) {
+  if (who === undefined || who === next.ownerId || who === next.you) return "";
+  return nameOf(who, next, previous) ?? "";
 }
 
 /** Whether `previous` showed a final for the round `next` shows: a new final is a change. */
@@ -480,10 +493,11 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
       return timerSentence(t, first?.timer);
     case "timeUp":
       return t("live.timeUp");
-    case "revealed":
-      return first?.summary
-        ? `${t("live.revealed")} ${summarySentence(t, first.summary)}`
-        : t("live.revealed");
+    case "revealed": {
+      // "Ben revealed the cards." for a voter's reveal (#28), else "Cards revealed."
+      const said = name === "" ? t("live.revealed") : t("live.revealedBy", { name });
+      return first?.summary ? `${said} ${summarySentence(t, first.summary)}` : said;
+    }
     case "final": {
       const card = cardLabel(t, first?.final?.card ?? "");
       return t(first?.final?.changed ? "live.finalChanged" : "live.finalRecorded", { card });

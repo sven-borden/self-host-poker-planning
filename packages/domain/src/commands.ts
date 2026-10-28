@@ -70,7 +70,11 @@ export type Cause =
   | { type: "roundStarted"; number: number; restarted?: true; revote?: true }
   | { type: "voteCast"; who?: UserId }
   | { type: "voteRetracted"; who?: UserId }
-  | { type: "revealed"; by: "manual" | "everyoneVoted" | "timer" }
+  /**
+   * `who`: the person who revealed by hand (#28), the PO or, when anyone who votes may, a
+   * voter. It maps nobody to a value, so it travels in anonymous rounds too.
+   */
+  | { type: "revealed"; by: "manual" | "everyoneVoted" | "timer"; who?: UserId }
   | { type: "timerStarted" }
   | { type: "timerStopped" }
   | { type: "timerExtended" }
@@ -106,6 +110,7 @@ export type ErrorCode =
   | "round_changed"
   | "not_voting"
   | "not_allowed"
+  | "too_few_cards"
   | "not_revealed"
   | "bad_seconds"
   | "no_timer"

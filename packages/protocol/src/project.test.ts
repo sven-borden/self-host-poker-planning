@@ -313,6 +313,12 @@ describe("projectCauses", () => {
     ]);
   });
 
+  it("keeps who revealed after an anonymous reveal: it ties nobody to a card (#28)", () => {
+    expect(
+      projectCauses([{ type: "revealed", by: "manual", who: "c" }], anonymousRevealed),
+    ).toStrictEqual([{ type: "revealed", by: "manual", who: "c" }]);
+  });
+
   it("keeps the voter while Voting: others learn who voted, never what", () => {
     expect(projectCauses([{ type: "voteCast", who: "c" }], anonymousVoting)).toStrictEqual([
       { type: "voteCast", who: "c" },
@@ -326,6 +332,7 @@ describe("projectCauses", () => {
     const sneaky = [
       { type: "voteCast", who: "c", card: "8" },
       { type: "revealed", by: "timer", votes: { c: "8" } },
+      { type: "revealed", by: "manual", who: "c", card: "8" },
       { type: "secret", card: "8" },
       { type: "roundStarted", number: 2, restarted: true },
       { type: "roundStarted", number: 3 },
@@ -340,6 +347,7 @@ describe("projectCauses", () => {
     expect(projectCauses(sneaky, anonymousVoting)).toStrictEqual([
       { type: "voteCast", who: "c" },
       { type: "revealed", by: "timer" },
+      { type: "revealed", by: "manual", who: "c" },
       { type: "roundStarted", number: 2, restarted: true },
       { type: "roundStarted", number: 3 },
       { type: "roundStarted", number: 4, revote: true },
