@@ -351,8 +351,13 @@ function castVote(state: RoomState, actor: UserId, card: unknown, made: MadeFor)
   // `allowChangeAfterReveal` applies to named rounds only: an anonymous round locks its
   // votes at reveal. Who may still change shrinks as people leave, become observers or
   // the PO stops voting, so any change to the public card list would point at someone.
-  // The round's own `anonymous` flag decides, not the current setting.
-  if (round.phase === "revealed" && (!state.settings.allowChangeAfterReveal || round.anonymous)) {
+  // The round's own `anonymous` flag decides, not the current setting. The setting changes
+  // a vote, it never adds one: a first card played after seeing everyone's is anchored on
+  // them, so someone with no vote in the round is refused after the reveal.
+  if (
+    round.phase === "revealed" &&
+    (!state.settings.allowChangeAfterReveal || round.anonymous || !previous)
+  ) {
     return refuse("round_revealed");
   }
   if (typeof card !== "string" || !deckCards(round.deck, round.specials).includes(card)) {

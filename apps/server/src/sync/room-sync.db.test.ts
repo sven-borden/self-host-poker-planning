@@ -3,7 +3,9 @@
  * handshake): join latency (AC 1), a burst past the message limit (AC 3), secrecy on the
  * raw WebSocket frames, the reveal (#19: a non-PO is refused, the last two votes sent
  * together reveal once), reveal modes (#28: a voter reveals under "anyone", an observer
- * never; the automatic reveal off and on again), the room settings (#25: the defaults, refusals on the wire, one
+ * never; the automatic reveal off and on again), a change after the reveal (#29: refused
+ * with the setting off and in an anonymous round, never a take-back, the mark and the
+ * history row), the room settings (#25: the defaults, refusals on the wire, one
  * snapshot for everyone), idempotent ids, a revoked session, one session flooding a room
  * from many sockets, the PO's powers (#30: a claim refused before 120 s, two claims at
  * once, a removed person disconnected within 1 s), and the deadline timeout on one and on
@@ -61,13 +63,23 @@ async function startInstance(tuning: SetupTuning = {}): Promise<Instance> {
 beforeAll(async () => {
   t = await createTestDatabase();
   config = testConfig({ DATABASE_URL: t.url });
-  const first = await startInstance();
-  [ada, bob, cy] = await Promise.all([
-    signInGuest(first.base, ORIGIN),
-    signInGuest(first.base, ORIGIN),
-    signInGuest(first.base, ORIGIN),
-  ]);
+  await startInstance();
 });
+
+/**
+ * New guests for each `describe` block, in its own `beforeAll`. A person's message bucket
+ * (20, refilling at 10 a second) is shared by all their sockets, so a block that spends
+ * Bob's would leave the next block `rate_limited`; with its own guests no block depends
+ * on the buckets the blocks before it left, and none has to wait for a refill. Sign-ins
+ * stay under the 60 a minute an address may make (`ANONYMOUS_SIGN_IN_LIMIT`).
+ */
+async function freshGuests(): Promise<void> {
+  [ada, bob, cy] = await Promise.all([
+    signInGuest(main().base, ORIGIN),
+    signInGuest(main().base, ORIGIN),
+    signInGuest(main().base, ORIGIN),
+  ]);
+}
 
 afterEach(() => {
   for (const client of clients.splice(0)) client.close();
@@ -129,6 +141,8 @@ async function insert(state: RoomState): Promise<string> {
 }
 
 describe("join latency (AC 1)", () => {
+  beforeAll(freshGuests);
+
   it("shows a join to the other client in under 200 ms", async () => {
     const latencies: number[] = [];
     for (let i = 0; i < 10; i++) {
@@ -162,6 +176,8 @@ describe("join latency (AC 1)", () => {
 });
 
 describe("a burst past the message limit (AC 3)", () => {
+  beforeAll(freshGuests);
+
   it("refuses the excess with rate_limited, keeps the room consistent and serves the others", async () => {
     const code = await insert(votingRoom());
     const a = client(ada);
@@ -196,12 +212,12 @@ describe("a burst past the message limit (AC 3)", () => {
     // And the socket goes on working once the bucket refills.
     await sleep(300);
     expect((await b.cmd("retractVote", { round: 1, restart: 0 })).ok).toBe(true);
-    // Bob's bucket is shared by all his sockets, later tests' too: let it fill up again.
-    await sleep(2000);
   });
 });
 
 describe("secrecy on the real frames", () => {
+  beforeAll(freshGuests);
+
   it("while Voting, the observer and the other voter never receive a card", async () => {
     const code = await insert(votingRoom());
     const a = client(ada);
@@ -271,6 +287,8 @@ describe("secrecy on the real frames", () => {
 });
 
 describe("the reveal (#19)", () => {
+  beforeAll(freshGuests);
+
   it("refuses a reveal from someone who is not the PO, on the wire (AC 1)", async () => {
     const code = await insert(votingRoom());
     const b = client(bob);
@@ -355,6 +373,8 @@ describe("the reveal (#19)", () => {
 });
 
 describe("reveal modes (#28)", () => {
+  beforeAll(freshGuests);
+
   /** Ada (PO) and Bob vote, Cy observes; a voting round under `settings`. */
   function roundWith(settings: Partial<RoomState["settings"]>): RoomState {
     let s = createRoom({ ownerId: ada.id });
@@ -492,7 +512,160 @@ describe("reveal modes (#28)", () => {
   });
 });
 
+describe("a change after the reveal (#29)", () => {
+  beforeAll(freshGuests);
+
+  /** Ada (PO) and Bob voted 5 and 8, which revealed; Cy observes. */
+  function revealedWith(settings: Partial<RoomState["settings"]>): RoomState {
+    let s = createRoom({ ownerId: ada.id });
+    s = step(s, ada.id, { type: "join", name: "Ada", role: "voter" });
+    s = step(s, bob.id, { type: "join", name: "Bob", role: "voter" });
+    s = step(s, cy.id, { type: "join", name: "Cy", role: "observer" });
+    s = step(s, ada.id, { type: "updateSettings", patch: settings });
+    s = step(s, ada.id, { type: "startRound", subject: { kind: "title", text: "Login" } });
+    s = step(s, ada.id, { type: "castVote", card: "5" });
+    s = step(s, bob.id, { type: "castVote", card: "8" });
+    if (s.round?.phase !== "revealed") throw new Error("fixture not revealed");
+    return s;
+  }
+
+  async function historyOf(code: string) {
+    const stored = await main().database.store.loadRoom(code);
+    const sql = dbClient(t.url);
+    try {
+      const { rows } = await sql.query(
+        "select number, votes, stats, final from round_history where room_id = $1 order by number",
+        [stored?.id],
+      );
+      return rows;
+    } finally {
+      await sql.end();
+    }
+  }
+
+  it("refuses a change with the setting off, and in an anonymous round with it on (AC 1)", async () => {
+    for (const settings of [
+      { allowChangeAfterReveal: false },
+      { allowChangeAfterReveal: true, revealNames: false },
+    ]) {
+      const code = await insert(revealedWith(settings));
+      const b = client(bob);
+      const c = client(cy);
+      await Promise.all([b.enter(code), c.enter(code)]);
+      expect(await b.cmd("castVote", { card: "3", round: 1, restart: 0 })).toEqual({
+        ok: false,
+        code: "round_revealed",
+      });
+      // Nothing was stored or broadcast.
+      await sleep(100);
+      expect(c.received).toHaveLength(1);
+      const stored = await main().database.store.loadRoom(code);
+      expect(stored?.state.round?.votes[bob.id]).toEqual({ card: "8" });
+    }
+  });
+
+  it("never takes a card back after the reveal, even when changes are allowed", async () => {
+    const code = await insert(revealedWith({ allowChangeAfterReveal: true }));
+    const b = client(bob);
+    await b.enter(code);
+    expect(await b.cmd("retractVote", { round: 1, restart: 0 })).toEqual({
+      ok: false,
+      code: "not_voting",
+    });
+    expect((await main().database.store.loadRoom(code))?.state.round?.votes[bob.id]).toEqual({
+      card: "8",
+    });
+  });
+
+  it("sends a change to everyone with its mark and the new results; turned off, the marks stay", async () => {
+    const code = await insert(revealedWith({ allowChangeAfterReveal: true }));
+    const a = client(ada);
+    const b = client(bob);
+    const c = client(cy);
+    await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
+    expect(await b.cmd("castVote", { card: "13", round: 1, restart: 0 })).toEqual({
+      ok: true,
+      version: 2,
+    });
+    const seen = await c.waitFor((s) => s.version === 2);
+    expect(seen.snapshot.causes).toEqual([{ type: "voteCast", who: bob.id }]);
+    const round = seen.snapshot.room.round;
+    if (round?.phase !== "revealed" || round.anonymous) throw new Error("named reveal expected");
+    expect(round.votes).toEqual([
+      { who: ada.id, card: "5", changedAfterReveal: false },
+      { who: bob.id, card: "13", changedAfterReveal: true },
+    ]);
+    expect(round.results).toEqual(computeResults(["5", "13"], { kind: "preset", id: "fib" }));
+
+    // The PO turns it off: the next change is refused, the mark stays.
+    expect(
+      await a.cmd("updateSettings", { patch: { allowChangeAfterReveal: false } }),
+    ).toMatchObject({ ok: true });
+    expect(await b.cmd("castVote", { card: "3", round: 1, restart: 0 })).toEqual({
+      ok: false,
+      code: "round_revealed",
+    });
+    const last = await c.waitFor((s) => s.version === 3);
+    expect(last.snapshot.room.settings.allowChangeAfterReveal).toBe(false);
+    const after = last.snapshot.room.round;
+    if (after?.phase !== "revealed" || after.anonymous) throw new Error("named reveal expected");
+    expect(after.votes.find((v) => v.who === bob.id)).toEqual({
+      who: bob.id,
+      card: "13",
+      changedAfterReveal: true,
+    });
+  });
+
+  it("updates the history row of a recorded final when a vote changes, final kept (AC 2)", async () => {
+    const code = await insert(revealedWith({ allowChangeAfterReveal: true }));
+    const a = client(ada);
+    const b = client(bob);
+    await Promise.all([a.enter(code), b.enter(code)]);
+    // 5 and 8 suggest 5; Ada records it.
+    expect((await a.cmd("setFinal", { card: "5" })).ok).toBe(true);
+    expect(await historyOf(code)).toMatchObject([
+      {
+        number: 1,
+        final: "5",
+        votes: {
+          kind: "named",
+          votes: [
+            { who: ada.id, name: "Ada", card: "5" },
+            { who: bob.id, name: "Bob", card: "8" },
+          ],
+        },
+      },
+    ]);
+    expect((await b.cmd("castVote", { card: "13", round: 1, restart: 0 })).ok).toBe(true);
+    const [row] = await historyOf(code);
+    expect(row).toEqual({
+      number: 1,
+      final: "5",
+      votes: {
+        kind: "named",
+        votes: [
+          { who: ada.id, name: "Ada", card: "5" },
+          { who: bob.id, name: "Bob", card: "13", changedAfterReveal: true },
+        ],
+      },
+      stats: computeResults(["5", "13"], { kind: "preset", id: "fib" }),
+    });
+    // The round's end writes the same row again, the mark with it.
+    expect((await a.cmd("startRound", { subject: { kind: "none" } })).ok).toBe(true);
+    const rows = await historyOf(code);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.votes.votes[1]).toEqual({
+      who: bob.id,
+      name: "Bob",
+      card: "13",
+      changedAfterReveal: true,
+    });
+  });
+});
+
 describe("the room settings (#25)", () => {
+  beforeAll(freshGuests);
+
   /** Ada (PO) and Bob vote, Cy observes, in the lobby of a new room. */
   function lobby(): RoomState {
     let s = createRoom({ ownerId: ada.id });
@@ -554,6 +727,8 @@ describe("the room settings (#25)", () => {
 });
 
 describe("the deck (#26)", () => {
+  beforeAll(freshGuests);
+
   // These tests send Ada's commands in a burst; her session's bucket (20, 10 a second) is
   // shared with the tests after them, so let it refill.
   afterEach(() => sleep(2_000));
@@ -722,6 +897,8 @@ describe("the deck (#26)", () => {
 });
 
 describe("the next round (#21)", () => {
+  beforeAll(freshGuests);
+
   async function historyOf(code: string) {
     const stored = await main().database.store.loadRoom(code);
     const sql = dbClient(t.url);
@@ -805,6 +982,8 @@ describe("the next round (#21)", () => {
 });
 
 describe("commands", () => {
+  beforeAll(freshGuests);
+
   it("applies a command id once on Postgres too", async () => {
     const code = await insert(votingRoom());
     const b = client(bob);
@@ -835,6 +1014,8 @@ describe("commands", () => {
 });
 
 describe("one session flooding a room from many sockets", () => {
+  beforeAll(freshGuests);
+
   it("gets at most 8 sockets and one bucket, and honest commands keep their latency", async () => {
     const mallory = await signInGuest(main().base, ORIGIN);
     const code = await insert(votingRoom());
@@ -923,6 +1104,8 @@ describe("one session flooding a room from many sockets", () => {
 });
 
 describe("the PO's powers (#30)", () => {
+  beforeAll(freshGuests);
+
   /** Ada (PO), away since `ms` ago; Bob votes and Cy observes, both here. */
   function ownerAway(ms: number): { state: RoomState; since: number } {
     const state = votingRoom();
@@ -1000,6 +1183,8 @@ describe("the PO's powers (#30)", () => {
 });
 
 describe("the deadline timeout", () => {
+  beforeAll(freshGuests);
+
   it("reveals at the deadline with no client action", async () => {
     let state = votingRoom();
     state = step(state, bob.id, { type: "castVote", card: "5" });

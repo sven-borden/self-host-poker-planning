@@ -166,6 +166,7 @@ export const de: Catalog = {
     changeAfterReveal: "Stimme nach dem Aufdecken ändern",
     changeAfterRevealHint:
       "Wer abstimmt, kann die Karte nach dem Aufdecken noch ändern. Nie in einer anonymen Runde: Dort stehen die Stimmen mit dem Aufdecken fest.",
+    changeAfterRevealLocked: "Anonyme Runden halten ihre Stimmen beim Aufdecken fest.",
     allowed: "Erlaubt",
     notAllowed: "Nicht erlaubt",
     poVotes: "Der Product Owner stimmt mit ab",
@@ -256,6 +257,9 @@ export const de: Catalog = {
     highest: "höchste Karte",
     lowestTag: "Niedrigste Karte",
     highestTag: "Höchste Karte",
+    changed: "nach dem Aufdecken geändert",
+    changedTag: "Nach dem Aufdecken geändert",
+    changedChip: "geändert",
   },
   round: {
     start: "Runde starten",
@@ -324,6 +328,7 @@ export const de: Catalog = {
     record: "{{card}} festhalten",
     recordNothing: "Festhalten",
     recorded: "Festgehalten",
+    changedSince: "Stimmen haben sich geändert, seit Sie {{card}} festgehalten haben.",
     pick: "Wählen Sie die endgültige Schätzung und halten Sie sie fest.",
     suggested: "{{card}}, vorgeschlagen",
     tied: "{{card}}, gleichauf",
@@ -360,6 +365,8 @@ export const de: Catalog = {
     hintRevealed:
       "Die Karten sind aufgedeckt. In dieser Runde lassen sich die Stimmen nicht mehr ändern.",
     youVoted: "Ihre Stimme: {{card}}.",
+    hintChange: "Sie können Ihre Karte noch ändern.",
+    youChanged: "Sie haben Ihre Karte geändert: {{card}}.",
     retracted: "Stimme zurückgenommen.",
     ownerDoesNotVote: "Als Product Owner stimmen Sie in diesem Raum nicht ab.",
   },
@@ -447,6 +454,7 @@ export const de: Catalog = {
     revealOwner: "Nur der Product Owner kann die Karten jetzt aufdecken.",
     changeAfterRevealOn: "Stimmen können jetzt nach dem Aufdecken geändert werden.",
     changeAfterRevealOff: "Stimmen können nach dem Aufdecken nicht mehr geändert werden.",
+    changed: "{{name}} hat die Karte geändert: {{card}}.",
   },
   cards: {
     yourCards: "Ihre Karten",

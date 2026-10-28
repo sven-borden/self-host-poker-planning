@@ -14,6 +14,8 @@ type OffTableVote = {
   name: string | undefined;
   /** The round's lowest or highest card, marked as on a seat (#20). */
   extreme: Extreme | undefined;
+  /** Changed after the reveal (#29), before its person left the table. */
+  changed: boolean;
 };
 
 /**
@@ -44,6 +46,7 @@ export function RevealedCards({ room }: { room: RoomView }) {
           ? shownName(t, { name: person.name, namesake: numbers.get(person.id) })
           : vote.name,
         extreme: extremeOf(round, vote.card),
+        changed: vote.changedAfterReveal,
       },
     ];
   });
@@ -52,12 +55,17 @@ export function RevealedCards({ room }: { room: RoomView }) {
 
 const CAPTION = "m-0 font-mono text-[11px] tracking-[0.08em] text-ink-2 uppercase";
 
-/** As a seat says it: "Hana, card 2, lowest card". */
-function offTableLabel(t: TFunction, name: string, card: string, extreme?: Extreme): string {
+/** As a seat says it: "Hana, card 2, lowest card, changed after the reveal". */
+function offTableLabel(t: TFunction, vote: OffTableVote, name: string): string {
+  const { card, extreme } = vote;
   const label = isSpecialCard(card)
     ? t("table.seatCardWord", { name, card: cardLabel(t, card) })
     : t("table.seatCard", { name, card });
-  return extreme ? `${label}, ${extremeWord(t, extreme)}` : label;
+  return [
+    label,
+    ...(extreme ? [extremeWord(t, extreme)] : []),
+    ...(vote.changed ? [t("table.changed")] : []),
+  ].join(", ");
 }
 
 /**
@@ -115,7 +123,18 @@ function OffTableVotes({ votes }: { votes: readonly OffTableVote[] }) {
               className="flex items-center gap-1.5"
             >
               {vote.extreme ? <ExtremeMark extreme={vote.extreme} size={16} /> : null}
-              <MiniCard value={vote.card} />
+              <span className="relative flex">
+                <MiniCard value={vote.card} />
+                {vote.changed ? (
+                  <span
+                    aria-hidden="true"
+                    data-changed-chip
+                    className="absolute top-full left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brass-soft px-1 text-[9px]/[12px] font-semibold whitespace-nowrap text-brass-ink ring-1 ring-surface forced-colors:translate-y-px forced-colors:border forced-colors:border-[CanvasText]"
+                  >
+                    {t("table.changedChip")}
+                  </span>
+                ) : null}
+              </span>
               {/* Up to two lines, the whole name on hover; the list item's one accessible
                   name is the sr-only sentence. */}
               <span
@@ -126,7 +145,7 @@ function OffTableVotes({ votes }: { votes: readonly OffTableVote[] }) {
               >
                 <bdi>{name}</bdi>
               </span>
-              <span className="sr-only">{offTableLabel(t, name, vote.card, vote.extreme)}</span>
+              <span className="sr-only">{offTableLabel(t, vote, name)}</span>
             </li>
           );
         })}

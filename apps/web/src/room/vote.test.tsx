@@ -1001,3 +1001,104 @@ describe("the reveal by anyone who votes (#28)", () => {
     );
   });
 });
+
+describe("a change after the reveal (#29)", () => {
+  /** Ana, the PO and the viewer voted 8, 5 and 5, which revealed; the room allows changes. */
+  async function revealed(settings: Partial<RoomSettings> = {}) {
+    const lobby = stateWith(table, { allowChangeAfterReveal: true, ...settings });
+    const result = apply(
+      lobby,
+      { type: "startRound", subject: { kind: "none" } },
+      { actor: "po", now: 50 },
+    );
+    if (!result.ok) throw new Error(result.error);
+    await renderRoom(result.state);
+    run("ana", { type: "castVote", card: "8" });
+    run("po", { type: "castVote", card: "5" });
+    fireEvent.click(card("5"));
+    await waitFor(() => expect(server.round?.phase).toBe("revealed"));
+  }
+  const hint = () => document.querySelector("[data-hand-hint]")?.textContent;
+  const chips = () =>
+    [...document.querySelectorAll("[data-slot-card] [data-changed-chip]")].map((chip) =>
+      chip.closest("[data-slot-card]")?.hasAttribute("data-you") ? "you" : "other",
+    );
+
+  it("keeps the hand playable, changes the card and tells the viewer", async () => {
+    await revealed();
+    expect(hint()).toBe("You can still change your card.");
+    expect(card("13").getAttribute("aria-disabled")).toBeNull();
+    expect(pressed()).toEqual(["5"]);
+    fireEvent.click(card("13"));
+    await waitFor(() => expect(handLive()).toBe("You changed your card: 13."));
+    expect(sent.at(-1)).toEqual({
+      type: "castVote",
+      payload: { card: "13", round: 1, restart: 0 },
+    });
+    expect(server.round?.votes[ME]).toEqual({ card: "13", changedAfterReveal: true });
+    expect(pressed()).toEqual(["13"]);
+    expect(mySlot()?.textContent).toBe("13");
+    expect(chips()).toEqual(["you"]);
+    // The results follow: 5, 8 and 13 suggest 8.
+    await waitFor(() => expect(centre()).toContain("Suggested 8"));
+  });
+
+  it("never takes the card back: the card shown pressed again sends nothing", async () => {
+    await revealed();
+    const before = sent.length;
+    fireEvent.click(card("5"));
+    fireEvent.keyDown(card("5"), { key: "Enter" });
+    expect(sent).toHaveLength(before);
+    expect(pressed()).toEqual(["5"]);
+    expect(server.round?.votes[ME]).toEqual({ card: "5" });
+  });
+
+  it("changes by keyboard: arrows to a card, Enter plays it", async () => {
+    await revealed();
+    card("5").focus();
+    fireEvent.keyDown(card("5"), { key: "ArrowRight" });
+    expect(document.activeElement).toBe(card("8"));
+    fireEvent.click(card("8"));
+    await waitFor(() => expect(handLive()).toBe("You changed your card: 8."));
+    expect(pressed()).toEqual(["8"]);
+  });
+
+  it("marks another voter's change for the viewer, and keeps the chips once changes stop", async () => {
+    await revealed();
+    run("ana", { type: "castVote", card: "3" });
+    expect(chips()).toEqual(["other"]);
+    expect(
+      screen.getByRole("button", {
+        name: "Name ana, card 3, lowest card, changed after the reveal",
+      }),
+    ).toBeTruthy();
+    // The PO turns it off: the hand stops at once, the chip stays.
+    run("po", { type: "updateSettings", patch: { allowChangeAfterReveal: false } });
+    expect(hint()).toBe("The cards are revealed. Votes can no longer change in this round.");
+    expect(card("8").getAttribute("aria-disabled")).toBe("true");
+    const before = sent.length;
+    fireEvent.click(card("8"));
+    expect(sent).toHaveLength(before);
+    expect(chips()).toEqual(["other"]);
+    // A voter who changed and left keeps the mark under the table.
+    run("po", { type: "updateSettings", patch: { allowChangeAfterReveal: true } });
+    run("ana", { type: "leave" });
+    const left = await screen.findByRole("list", { name: "Not at the table" });
+    expect(left.textContent).toContain("Name ana, card 3, lowest card, changed after the reveal");
+    expect(left.querySelector("[data-changed-chip]")?.textContent).toBe("changed");
+  });
+
+  it("keeps the hand disabled after the reveal while changes are off, or in an anonymous round", async () => {
+    for (const settings of [{ allowChangeAfterReveal: false }, { revealNames: false }]) {
+      await revealed(settings);
+      expect(hint()).toBe("The cards are revealed. Votes can no longer change in this round.");
+      expect(card("13").getAttribute("aria-disabled")).toBe("true");
+      const before = sent.length;
+      fireEvent.click(card("13"));
+      expect(sent).toHaveLength(before);
+      cleanup();
+      useRoomStore.getState().reset();
+      useRoomStore.getState().open(CODE);
+    }
+  });
+});

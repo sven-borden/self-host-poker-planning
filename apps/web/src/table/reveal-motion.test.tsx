@@ -156,6 +156,31 @@ describe("SlotCard and the table at a reveal", () => {
     expect(calls()).toEqual([{ what: "cover", turns: false, delay: 0 }]);
   });
 
+  it("turns a face-up card over to a value changed after the reveal, at once (#29)", () => {
+    const { rerender } = render(<SlotCard face="up" value="5" size={SIZE} turnDelay={180} />);
+    expect(animate).not.toHaveBeenCalled();
+    rerender(<SlotCard face="up" value="8" size={SIZE} turnDelay={180} />);
+    expect(calls()).toEqual([
+      { what: "up", turns: true, delay: 0 },
+      { what: "cover", turns: false, delay: 0 },
+    ]);
+    expect(document.querySelector("[data-card-value]")?.textContent).toBe("8");
+    // The same value again moves nothing.
+    animate.mockClear();
+    rerender(<SlotCard face="up" value="8" size={SIZE} />);
+    expect(animate).not.toHaveBeenCalled();
+  });
+
+  it("replaces a changed value without a turn under reduced motion (#29)", () => {
+    vi.spyOn(window, "matchMedia").mockImplementation(
+      (query) => ({ matches: query.includes("reduce"), media: query }) as MediaQueryList,
+    );
+    const { rerender } = render(<SlotCard face="up" value="5" size={SIZE} />);
+    rerender(<SlotCard face="up" value="8" size={SIZE} />);
+    expect(animate).not.toHaveBeenCalled();
+    expect(document.querySelector("[data-card-value]")?.textContent).toBe("8");
+  });
+
   it("lets an anonymous round's card go from its seat", () => {
     const { rerender } = render(<SlotCard face="down" size={SIZE} />);
     rerender(<SlotCard face="gone" size={SIZE} />);
