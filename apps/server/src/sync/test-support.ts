@@ -55,7 +55,9 @@ export function memoryRoomStore(): MemoryRoomStore {
       return room ? { ...room, state: structuredClone(room.state) } : null;
     },
     loadRoomHeader: async (code) =>
-      rooms.has(code) ? { code, name: null, hasPassword: rooms.get(code)?.state.hasPassword === true } : null,
+      rooms.has(code)
+        ? { code, name: null, hasPassword: rooms.get(code)?.state.hasPassword === true }
+        : null,
     commitRoom: async (id, expectedVersion, next) => {
       const room = byId(id);
       if (!room || room.version !== expectedVersion) return false;

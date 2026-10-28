@@ -69,7 +69,8 @@ export async function hashPassword(password: string): Promise<string> {
   return `$argon2id$v=19$m=${memory},t=${passes},p=${parallelism}$${b64(salt)}$${b64(tag)}`;
 }
 
-const PHC = /^\$argon2id\$v=19\$m=(\d{1,7}),t=(\d{1,3}),p=(\d{1,2})\$([A-Za-z0-9+/]+)\$([A-Za-z0-9+/]+)$/;
+const PHC =
+  /^\$argon2id\$v=19\$m=(\d{1,7}),t=(\d{1,3}),p=(\d{1,2})\$([A-Za-z0-9+/]+)\$([A-Za-z0-9+/]+)$/;
 
 /**
  * Whether a normalised password matches a stored PHC string: the key is derived again
@@ -80,7 +81,14 @@ const PHC = /^\$argon2id\$v=19\$m=(\d{1,7}),t=(\d{1,3}),p=(\d{1,2})\$([A-Za-z0-9
 export async function verifyPassword(password: string, phc: string): Promise<boolean> {
   const match = PHC.exec(phc);
   if (!match) return false;
-  const [, m, t, p, salt, tag] = match as unknown as [string, string, string, string, string, string];
+  const [, m, t, p, salt, tag] = match as unknown as [
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
   const expected = Buffer.from(tag, "base64");
   const run = {
     memory: Number(m),

@@ -2,6 +2,19 @@ import { describe, expect, it } from "vitest";
 import { memoryRateLimit } from "./rate-limit.ts";
 
 describe("memoryRateLimit", () => {
+  it("peeks without counting: only the calls counted close the window (#31)", async () => {
+    let now = 1000;
+    const store = memoryRateLimit(() => now);
+    const rule = { window: 10, max: 2 };
+    for (let i = 0; i < 5; i++) expect((await store.peek("a", rule)).allowed).toBe(true);
+    await store.consume("a", rule);
+    expect((await store.peek("a", rule)).allowed).toBe(true);
+    await store.consume("a", rule);
+    expect(await store.peek("a", rule)).toEqual({ allowed: false, retryAfter: 10 });
+    now = 11_000;
+    expect(await store.peek("a", rule)).toEqual({ allowed: true, retryAfter: null });
+  });
+
   it("uses a store of its own per instance", async () => {
     const store = memoryRateLimit(() => 1000);
     const rule = { window: 10, max: 1 };

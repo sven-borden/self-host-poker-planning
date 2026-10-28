@@ -102,9 +102,7 @@
         "room_code_unique": {
           "name": "room_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
+          "columns": ["code"]
         }
       },
       "policies": {},
@@ -141,12 +139,8 @@
           "name": "room_access_room_id_room_id_fk",
           "tableFrom": "room_access",
           "tableTo": "room",
-          "columnsFrom": [
-            "room_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["room_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -154,12 +148,8 @@
           "name": "room_access_user_id_user_id_fk",
           "tableFrom": "room_access",
           "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -167,10 +157,7 @@
       "compositePrimaryKeys": {
         "room_access_room_id_user_id_pk": {
           "name": "room_access_room_id_user_id_pk",
-          "columns": [
-            "room_id",
-            "user_id"
-          ]
+          "columns": ["room_id", "user_id"]
         }
       },
       "uniqueConstraints": {},
@@ -266,12 +253,8 @@
           "name": "round_history_room_id_room_id_fk",
           "tableFrom": "round_history",
           "tableTo": "room",
-          "columnsFrom": [
-            "room_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["room_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -281,10 +264,7 @@
         "round_history_room_id_number_unique": {
           "name": "round_history_room_id_number_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "room_id",
-            "number"
-          ]
+          "columns": ["room_id", "number"]
         }
       },
       "policies": {},
@@ -398,12 +378,8 @@
           "name": "account_user_id_user_id_fk",
           "tableFrom": "account",
           "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -491,12 +467,8 @@
           "name": "session_user_id_user_id_fk",
           "tableFrom": "session",
           "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -506,9 +478,7 @@
         "session_token_unique": {
           "name": "session_token_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "token"
-          ]
+          "columns": ["token"]
         }
       },
       "policies": {},
@@ -579,9 +549,7 @@
         "user_email_unique": {
           "name": "user_email_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
+          "columns": ["email"]
         }
       },
       "policies": {},

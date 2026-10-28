@@ -47,7 +47,8 @@ const passwordBodySchema = z.strictObject({ password: z.string().max(4096) });
 
 export interface PasswordApiDeps {
   auth: Auth;
-  rooms: Pick<RoomStore, "loadRoom"> & Pick<AccessStore, "loadPassword" | "grantAccess" | "recordFailure">;
+  rooms: Pick<RoomStore, "loadRoom"> &
+    Pick<AccessStore, "loadPassword" | "grantAccess" | "recordFailure">;
   sync: Pick<RoomSync, "changePassword">;
   config: Config;
   limiter: RateLimiter;
@@ -62,7 +63,10 @@ export function registerPasswordApi(
   const ipOf = (c: Parameters<typeof requestIp>[0]) => requestIp(c, config) ?? "unknown";
 
   /** The PO's change: a new hash, or none. Answers 204 or an error code. */
-  async function change(c: Parameters<typeof requestIp>[0], hashOf: (() => Promise<string>) | null) {
+  async function change(
+    c: Parameters<typeof requestIp>[0],
+    hashOf: (() => Promise<string>) | null,
+  ) {
     const code = c.req.param("code") ?? "";
     const me = await sessionUser(auth, c.req.raw.headers);
     if (!me) return c.json({ code: "unauthenticated" }, 401);

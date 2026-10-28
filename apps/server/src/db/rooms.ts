@@ -116,7 +116,11 @@ export function createRoomStore(db: Db): RoomStore & AccessStore {
     if (access.passwordHash !== undefined) {
       await tx
         .update(room)
-        .set({ passwordHash: access.passwordHash, passwordFailures: 0, passwordFailuresSince: null })
+        .set({
+          passwordHash: access.passwordHash,
+          passwordFailures: 0,
+          passwordFailuresSince: null,
+        })
         .where(eq(room.id, id));
     }
     if (access.revokeAll) {
@@ -257,7 +261,9 @@ export function createRoomStore(db: Db): RoomStore & AccessStore {
           .from(room)
           .where(eq(room.code, code));
         const row = rows[0];
-        return row ? { ...row, failures: Number(row.failures), retryAfter: Number(row.retryAfter) } : null;
+        return row
+          ? { ...row, failures: Number(row.failures), retryAfter: Number(row.retryAfter) }
+          : null;
       }),
 
     recordFailure: (roomId, windowSeconds) =>
