@@ -7,6 +7,7 @@ import {
   announceRoomAccess,
   commandSender,
   enterRoomAgain,
+  HISTORY_RETRY_MS,
   isCmdAck,
   isEnterAck,
   isHistoryAck,
@@ -517,6 +518,21 @@ describe("requestHistory (#33)", () => {
     fake.up();
     expect(await requestHistory({ before: 10, limit: 5 })).toEqual(page);
     expect(fake.sent.find((s) => s.event === "history")?.payload).toEqual({ before: 10, limit: 5 });
+  });
+
+  it("asks again after rate_limited, after a pause", async () => {
+    let asks = 0;
+    const fake = fakeSocket(({ event }) => {
+      if (event === "enter") return { ok: true, snapshot: snapshot(1) };
+      asks += 1;
+      return asks === 1 ? { ok: false, code: "rate_limited" } : { ok: true, rounds: [] };
+    });
+    open(fake);
+    fake.up();
+    const started = Date.now();
+    expect(await requestHistory()).toEqual({ ok: true, rounds: [] });
+    expect(asks).toBe(2);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(HISTORY_RETRY_MS - 50);
   });
 
   it("asks again after a lost answer, and turns an unreadable one into bad_payload", async () => {

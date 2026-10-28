@@ -14,7 +14,9 @@ import { PROTOCOL_VERSION } from "../../../packages/protocol/src/version.ts";
 // Shared by the specs that run against the real server and Postgres (join.spec.ts,
 // presence.spec.ts, mobile.spec.ts, four-person.spec.ts, …): guests driven over the
 // protocol from Node, a client address per person, the room page's common steps, phones
-// (#22), the frames a page receives, and Postgres read straight (the history UI is #33).
+// (#22), the frames a page receives, and the room's history read through its request (#33).
+// Postgres is read or written straight only where no request can (po-powers.spec.ts ages
+// the PO's absence).
 
 export const SHOTS = fileURLToPath(new URL("../tmp/screenshots/", import.meta.url));
 export const ROOM_PATH = /\/r\/([1-9A-HJ-NP-Za-km-z]{10})$/;
@@ -28,6 +30,8 @@ export interface Guest {
   socket: Socket;
   enter: (code: string) => Promise<Ack>;
   cmd: (type: string, payload?: Record<string, unknown>) => Promise<Ack>;
+  /** One page of the entered room's history (#33). */
+  history: (request?: { before?: number; limit?: number }) => Promise<HistoryAck>;
   close: () => void;
 }
 
@@ -65,6 +69,7 @@ export async function connectGuest(base: string, cookie: string): Promise<Guest>
     socket,
     enter: (code) => ask("enter", { code, protocol: PROTOCOL_VERSION }),
     cmd: (type, payload) => ask("cmd", { id: `e2e-${++commandIds}`, type, payload }),
+    history: (request = {}) => ask("history", request) as unknown as Promise<HistoryAck>,
     close: () => socket.disconnect(),
   };
 }
@@ -325,7 +330,7 @@ export async function guestsJoin(base: string, code: string, names: readonly str
   return guests;
 }
 
-/** One query against the e2e database, read straight from Postgres. */
+/** One query against the e2e database, straight on Postgres. */
 export async function dbQuery<Row>(sql: string, params: unknown[]): Promise<Row[]> {
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
   client.on("error", () => {});
@@ -337,24 +342,62 @@ export async function dbQuery<Row>(sql: string, params: unknown[]): Promise<Row[
   }
 }
 
+/** A finished round as the history request answers it (#33). */
 export interface HistoryRow {
   number: number;
   subject: unknown;
-  deck: unknown;
+  final: string | null;
   votes: unknown;
   stats: unknown;
+  startedAt: number;
+  revealedAt: number;
+  finishedAt: number;
   /** The whole row as JSON, to look for a name that must not be there. */
   text: string;
 }
 
-/** The room's `round_history` rows, in round order (the history UI is #33). */
-export const historyOf = (code: string) =>
-  dbQuery<HistoryRow>(
-    `select h.number, h.subject, h.deck, h.votes, h.stats, row_to_json(h)::text as text
-    from round_history h join room r on r.id = h.room_id where r.code = $1
-    order by h.number`,
-    [code],
-  );
+export type HistoryAck =
+  | { ok: true; rounds: Omit<HistoryRow, "text">[]; next?: number }
+  | { ok: false; code: string };
+
+/**
+ * The room's finished rounds, oldest first, through the history request (#33) on
+ * `guest`'s socket, which entered the room as someone in it: every page, 50 at a time.
+ * The round on the table is not among them, even with its final recorded.
+ */
+export async function historyOf(guest: Guest): Promise<HistoryRow[]> {
+  const rows: HistoryRow[] = [];
+  let before: number | undefined;
+  for (;;) {
+    const ack = await guest.history(before === undefined ? { limit: 50 } : { before, limit: 50 });
+    if (!ack.ok) throw new Error(`history refused: ${ack.code}`);
+    rows.push(...ack.rounds.map((round) => ({ ...round, text: JSON.stringify(round) })));
+    if (ack.next === undefined) return rows.reverse();
+    before = ack.next;
+  }
+}
+
+/** `historyOf` for the person of `context`: a socket of their own enters `code`, reads, closes. */
+export async function roomHistory(
+  base: string,
+  context: BrowserContext,
+  code: string,
+): Promise<HistoryRow[]> {
+  const guest = await sameUser(base, context);
+  try {
+    expect(await guest.enter(code)).toMatchObject({ ok: true });
+    return await historyOf(guest);
+  } finally {
+    guest.close();
+  }
+}
+
+/** The room's name, as anyone holding its code reads it (`GET /api/rooms/:code`). */
+export async function roomName(base: string, code: string): Promise<string | null> {
+  const response = await fetch(`${base}/api/rooms/${code}`, { headers: ownAddress() });
+  expect(response.status, "room header").toBe(200);
+  return ((await response.json()) as { name: string | null }).name;
+}
 
 /** The round line over the table, and the PO's field for the next round's subject (#21). */
 export const subjectLine = (page: Page) => page.locator("[data-round-subject]");

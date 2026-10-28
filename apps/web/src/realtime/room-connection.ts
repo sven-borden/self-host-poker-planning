@@ -387,14 +387,18 @@ async function send(
   return { ok: false, code: "offline" };
 }
 
+/** The pause before a history request refused as `rate_limited` asks again, times the try. */
+export const HISTORY_RETRY_MS = 600;
+
 /** The answer to `requestHistory`: the server's, or `offline`. */
 export type HistoryResult = HistoryAck | { ok: false; code: "offline" };
 
 /**
  * Asks the open room for one page of its finished rounds (#33), newest first: `before` a
  * round number, `limit` at most 50. It waits for the room to be live; a lost answer (the
- * connection dropped) asks again, at most `MAX_SENDS` times, since a read changes
- * nothing. `offline` when the room was not live in time or the page left it.
+ * connection dropped) asks again, and so does `rate_limited` after a pause (the person's
+ * message budget is shared by all their sockets), at most `MAX_SENDS` times in all, since
+ * a read changes nothing. `offline` when the room was not live in time or the page left it.
  */
 export async function requestHistory(request: HistoryRequest = {}): Promise<HistoryResult> {
   const target = active;
@@ -407,7 +411,12 @@ export async function requestHistory(request: HistoryRequest = {}): Promise<Hist
     } catch {
       continue;
     }
-    return isHistoryAck(raw) ? raw : { ok: false, code: "bad_payload" };
+    const ack: HistoryAck = isHistoryAck(raw) ? raw : { ok: false, code: "bad_payload" };
+    if (!ack.ok && ack.code === "rate_limited" && send < MAX_SENDS - 1) {
+      await sleep(HISTORY_RETRY_MS * (send + 1));
+      continue;
+    }
+    return ack;
   }
   return { ok: false, code: "offline" };
 }
