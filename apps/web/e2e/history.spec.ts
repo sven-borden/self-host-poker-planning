@@ -126,7 +126,7 @@ test("three rounds in the panel, names only where named; a reload keeps them; a 
     // Empty at first.
     const empty = await openHistory(page);
     await expect(empty.locator("[data-history-empty]")).toHaveText(
-      "No rounds yet. A round appears here once its cards are revealed and the next round starts, or the product owner records a final.",
+      "No rounds yet. A round appears here once the next round starts.",
     );
     await shootPanel(page, "history-empty");
     await page.keyboard.press("Escape");
@@ -145,6 +145,13 @@ test("three rounds in the panel, names only where named; a reload keeps them; a 
       .check();
     await page.getByRole("button", { name: "Record 8" }).click();
     await expect(page.locator("[data-centre-final]")).toHaveAttribute("data-centre-final", "8");
+    // The round on the table is not listed, not even decided: the panel stays empty.
+    const decided = await openHistory(page);
+    await expect(decided.locator("[data-history-empty]")).toBeVisible();
+    await expect(rowsOf(decided)).toHaveCount(0);
+    expect(await historyOf(po)).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(decided).toBeHidden();
     // Round 2: the same subject again, voted 5, 5, 8.
     await page.getByRole("button", { name: "Vote again" }).click();
     await vote(guests, ["5", "8"], 2);
@@ -167,6 +174,8 @@ test("three rounds in the panel, names only where named; a reload keeps them; a 
     expect(await po.cmd("startRound", { subject: { kind: "none" } })).toMatchObject({ ok: true });
     await expect(rowsOf(panel)).toHaveCount(3);
     expect(await numbersIn(panel)).toEqual([3, 2, 1]);
+    // Round 4, on the table, is not.
+    await expect(rowOf(panel, 4)).toHaveCount(0);
 
     const first = rowOf(panel, 1);
     await expect(first.getByRole("heading", { name: "Round 1" })).toBeVisible();
@@ -177,7 +186,7 @@ test("three rounds in the panel, names only where named; a reload keeps them; a 
     ).toHaveText(["5: 1 vote", "8: 2 votes"]);
     await expect(first.locator("[data-history-duration]")).toContainText(/^\d+\u{a0}s|min/u);
     await expect(first.locator("time")).toHaveAttribute("datetime", /^\d{4}-\d\d-\d\dT/);
-    await expect(rowOf(panel, 2).locator("[data-history-final]")).toContainText("No final");
+    await expect(rowOf(panel, 2).locator("[data-history-final]")).toContainText("None");
     const third = rowOf(panel, 3);
     await expect(third).toHaveAttribute("data-history-kind", "anonymous");
     await expect(third.getByRole("link", { name: "PAY-482 (opens in a new tab)" })).toHaveAttribute(
