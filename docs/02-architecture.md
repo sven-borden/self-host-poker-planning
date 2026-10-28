@@ -524,7 +524,7 @@ password, no social provider before W5.
   the socket, so a password never enters the command pipeline, its idempotency cache or
   a log line: `PUT /api/rooms/:code/password { password }` and `DELETE
   /api/rooms/:code/password` (the PO only, `not_allowed` 403, checked before any hash;
-  this origin; JSON; `no-store`; 30 changes per PO in 10 minutes). A password is 4 to 128
+  this origin; JSON; `no-store`; 30 changes per PO in 10 minutes). A password is 6 to 128
   characters (code points) after NFC normalisation, any text, never trimmed; otherwise
   `bad_password` 400. The change runs through the room's command runner as the
   server-only `password` command (`{ on }`, the PO's alone), so it is ordered with the
@@ -537,9 +537,12 @@ password, no social provider before W5.
     check ask for 24.7), argon2id with OWASP's parameters (19 MiB, t = 2, p = 1, a 16-byte
     random salt, a 32-byte tag), stored as a PHC string with its parameters. A check
     derives the key again with the stored salt and parameters and compares with
-    `timingSafeEqual`. About 25 to 35 ms per hash or check. At most 4 run at once (they
-    use libuv's 4 threads and 19 MiB each); a fifth is refused with `rate_limited`,
-    never queued.
+    `timingSafeEqual`. About 25 to 35 ms per hash or check. Only the parameters above
+    are accepted: a stored hash with others (a cost of gigabytes, or a cheap one) is
+    corrupt, logged by room id and refused (`internal`) before any work. At most 2 run
+    at once (19 MiB each, on libuv's 4 threads); the next ones wait in line, first come
+    first served, at most 32 of them and each at most 2 s; past that, 503 `busy`. Sixteen
+    right passwords sent at once all pass, in about 250 ms.
   - **Access is a grant keyed by the session's user**, in `room_access`, not a cookie per
     room (amended from the original plan): the guest session cookie (#10) is already
     signed, httpOnly and per device, so "once per device" holds without another cookie;
@@ -556,16 +559,33 @@ password, no social provider before W5.
     of anyone else on this instance (someone on the join form) hear `locked` and leave
     the room; their page enters again and is asked for the password.
   - **Checking**: `POST /api/rooms/:code/access { password }` answers 204 and grants
-    the caller, or 403 `{ code: "wrong_password" }`. Limits on failed tries only, each
-    looked at before the check and counted after a wrong one: 10 per address per room
-    and 100 per address across rooms, in the process (`memoryRateLimit.peek`), and 50
-    per room in the database (`room.password_failures`, a fixed window of 10 minutes
-    updated atomically), so every instance shares the per-room count. Past a limit:
-    `rate_limited` 429 with `Retry-After`, the right password included. Until
-    `TRUST_PROXY` counts every proxy in front (Sven's instance needs `TRUST_PROXY=2`, an
-    owner item in STATUS), every client shares one address: the per-address limits then
-    count the whole team together (10 wrong tries per room in 10 minutes for everyone),
-    and only the per-room limit is as meant.
+    the caller, or 403 `{ code: "wrong_password" }`. The PO, a participant and a grant
+    holder get 204 at once, whatever the password, with no hash run. A password outside
+    the bounds is `wrong_password` at once, neither checked nor counted: it cannot be
+    right. The grant is written only while the room still holds the hash the password was
+    checked against (one statement that reads the room's row `for share`, so a change in
+    progress commits first); a change that won the race answers `wrong_password`, not
+    counted, so a grant never outlives the password it was given for. On the socket, an
+    `enter` that read a grant before a lockout of that room ran on this instance is
+    refused with `password_required`.
+  - **Limits** (`PASSWORD_LIMITS`, each in 10 minutes): 10 wrong passwords per person
+    (session user) and room, in the process, so one person's typos never lock out a team
+    that shares an address; 50 wrong passwords per room whatever the people or addresses,
+    in the database (`room.password_failures`, a fixed window updated atomically), so
+    every instance shares it: the cap on a brute force (about 7,200 tries a day per room,
+    hence 6 characters at least); and 300 checks per address, right, wrong or for a room
+    that does not exist, in the process: the CPU one client can burn, and how many codes
+    it can test (a 204 or 404 tells whether a room exists). Each try is reserved before
+    the check and released when the password was right, so tries sent at once are
+    counted exactly and a right password costs nothing. Past a limit: `rate_limited` 429
+    with `Retry-After`, the right password included. There is no limit per address across
+    rooms: room codes are 58-bit secrets, and behind a shared address it would let one
+    client lock every password room on the instance.
+  - **Behind proxies the app is not told about** (`TRUST_PROXY` too low; Sven's instance
+    needs `TRUST_PROXY=2`, an owner item in STATUS), every client shares one address, so
+    every per-address limit applies to everyone at once: here the 300 checks in 10
+    minutes are the whole instance's, and the identity limits below too. The per-person
+    and per-room limits are as meant whatever the proxies.
   - Logs name the room by its id ("room password changed", "room access granted",
     "wrong room password"); never the password, the hash, the code or the address.
 - Limits: names 32 characters, room names 60, subjects 200, custom cards 4 characters

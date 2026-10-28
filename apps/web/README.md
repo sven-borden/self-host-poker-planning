@@ -358,7 +358,11 @@ server sends and never decides the outcome of a round.
   password (`enterRoomPassword`), calls `enterRoomAgain()` (the open socket enters again)
   and sends `join`. The server's `locked` event makes the connection enter again, which
   then locks. The reason is `changed` when the last snapshot showed a password and the
-  viewer was not removed. The live region says the password's changes as kind
+  viewer was not removed, and stays `changed` through a reconnect. A tab that got in
+  says so on the `pp-room-access` `BroadcastChannel` (`announceRoomAccess`), and this
+  browser's other tabs locked out of that room enter again. The join form's password
+  block (`room/join-password.tsx`) is a lazy chunk, prefetched by the room page
+  (`loadJoinPassword`) once the header says `hasPassword`; the focus waits for its field. The live region says the password's changes as kind
   `password` (`passwordEvents` in `announcements.ts`), in its place like a setting.
   **Worked example: the deck field (#26).** `room/deck-field.tsx` holds two `Control`s,
   plugged into `GROUPS` with `layout: "block"` and no change to the panel's internals:

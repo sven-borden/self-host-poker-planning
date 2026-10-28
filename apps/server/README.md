@@ -217,8 +217,10 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   client change. Cookie names come from `cookieNaming` (`__Host-pp.*` on https).
 - The room password (#31) lives in `room-password.ts` (the three routes),
   `password.ts` (NFC and bounds, argon2id PHC hashing with `crypto.argon2`, the
-  constant-time check, the gate of 4) and the access side of `db/rooms.ts`
-  (`AccessStore`, and `AccessWrite` in a commit). Change a password only through
+  constant-time check against its own parameters only, the hash gate: 2 at once, 32 in
+  line, 2 s each) and the access side of `db/rooms.ts` (`AccessStore`: the grant written
+  only under the hash checked, the per-room try reserved and released; `AccessWrite` in a
+  commit). `PASSWORD_LIMITS` in `room-password.ts` lists the limits. Change a password only through
   `RoomSync.changePassword`, which runs the `password` command in the room's queue and
   writes the hash and grants with the flag; never log a body of these routes.
 - Client address for a rate limit: `clientIp(request, config.trustProxy)`, where
