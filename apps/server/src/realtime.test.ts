@@ -11,6 +11,7 @@ import { io as connect, type Socket } from "socket.io-client";
 import { afterEach, describe, expect, it } from "vitest";
 import { MAX_PAYLOAD_BYTES, MAX_SOCKETS_PER_USER, type SocketMiddleware } from "./realtime.ts";
 import { createServer, type PokerServer, type ServerDeps } from "./server.ts";
+import { HISTORY_LIMIT, ROSTER_LIMIT } from "./sync/token-bucket.ts";
 import { collectLogs, type LogCollector, testConfig } from "./test-support.ts";
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -296,6 +297,66 @@ describe("limits per person", () => {
     // A burst of 20 for both together, and what refills meanwhile.
     expect(ok).toBeGreaterThanOrEqual(20);
     expect(ok).toBeLessThanOrEqual(22);
+  });
+
+  it(`limits roster commands to a burst of ${ROSTER_LIMIT.burst}, other commands unaffected`, async () => {
+    const { client } = await start({
+      socketMiddleware: [samePerson],
+      handlers: {
+        enter: () => ({ ok: false, code: "room_not_found" }),
+        cmd: () => ({ ok: true, version: 1 }),
+      },
+    });
+    const sockets = [client(), client()];
+    await Promise.all(sockets.map(connected));
+    const roster = [
+      { type: "join", payload: { name: "Ada", role: "voter" } },
+      { type: "rename", payload: { name: "Ada L." } },
+      { type: "setRole", payload: { role: "observer" } },
+      { type: "leave" },
+    ];
+    const acks = [];
+    for (let n = 0; n < 12; n++) {
+      const command = roster[n % roster.length];
+      const socket = sockets[n % 2] as Client;
+      acks.push(
+        cmdAckSchema.parse(await raw(socket).emitWithAck("cmd", { id: `r${n}`, ...command })),
+      );
+    }
+    expect(acks.slice(0, ROSTER_LIMIT.burst).every((ack) => ack.ok)).toBe(true);
+    expect(acks.slice(ROSTER_LIMIT.burst)).toEqual([
+      { ok: false, code: "rate_limited" },
+      { ok: false, code: "rate_limited" },
+    ]);
+    // A refused payload costs no roster token, and the round's commands still pass.
+    expect(await raw(sockets[0] as Client).emitWithAck("cmd", CMD)).toEqual({
+      ok: true,
+      version: 1,
+    });
+  });
+
+  it(`limits history requests to a burst of ${HISTORY_LIMIT.burst}`, async () => {
+    const { client } = await start({
+      socketMiddleware: [samePerson],
+      handlers: {
+        enter: () => ({ ok: false, code: "room_not_found" }),
+        cmd: () => ({ ok: true, version: 1 }),
+        history: () => ({ ok: true, rounds: [] }),
+      },
+    });
+    const socket = client();
+    await connected(socket);
+    // Malformed requests cost no history token.
+    expect(await raw(socket).emitWithAck("history", { before: 2 ** 31 })).toEqual({
+      ok: false,
+      code: "bad_payload",
+    });
+    const acks = await Promise.all(
+      Array.from({ length: 14 }, () => raw(socket).emitWithAck("history", {})),
+    );
+    const ok = acks.filter((ack) => (ack as { ok: boolean }).ok).length;
+    expect(ok).toBeGreaterThanOrEqual(HISTORY_LIMIT.burst);
+    expect(ok).toBeLessThanOrEqual(HISTORY_LIMIT.burst + 1);
   });
 });
 

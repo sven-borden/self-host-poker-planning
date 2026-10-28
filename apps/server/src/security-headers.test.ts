@@ -57,9 +57,7 @@ describe("contentSecurityPolicy", () => {
       },
     });
     expect(policy).toContain("script-src 'self' https://stats.example.com;");
-    expect(policy).toContain(
-      "connect-src 'self' ws://localhost:3000 https://stats.example.com;",
-    );
+    expect(policy).toContain("connect-src 'self' ws://localhost:3000 https://stats.example.com;");
     expect(policy).toContain("frame-src 'self' https://video.example.com;");
     expect(policy).toContain("img-src 'self' data:;");
     // The fixed directives never move.
@@ -222,9 +220,7 @@ describe("the headers on every kind of response", () => {
     const server = createServer(testConfig(env), { logger: collectLogs().logger });
     const { port } = await server.listen();
     try {
-      const response = await fetch(
-        `http://localhost:${port}/socket.io/?EIO=4&transport=polling`,
-      );
+      const response = await fetch(`http://localhost:${port}/socket.io/?EIO=4&transport=polling`);
       expect(response.status).toBe(200);
       await response.text();
       expectHeaders(response, "polling");

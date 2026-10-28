@@ -17,8 +17,11 @@ import { ackErrorCodeSchema, resultsSchema } from "./schemas.ts";
 /** Rounds per page: `size` when the request names none, at most `max`. */
 export const HISTORY_PAGE = { size: 20, max: 50 } as const;
 
-/** A round's number, as history counts it (rounds count from 1). */
-const roundNumberSchema = z.number().int().min(1);
+/**
+ * A round's number, as history counts it (rounds count from 1), at most Postgres's
+ * `integer`: a bigger cursor would reach the query and fail there.
+ */
+const roundNumberSchema = z.number().int().min(1).max(WIRE_LIMITS.roundNumber);
 
 /**
  * `history`: one page, newest first. `before` (a round number) asks for older rounds than

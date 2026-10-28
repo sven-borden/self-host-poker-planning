@@ -5,7 +5,9 @@
  * `parseHistoryRequest`, and only parsed values reach the
  * handlers (`sync/room-sync.ts` in the running server). Every message first takes a token
  * from its sender's bucket (`SOCKET_MESSAGE_LIMIT`, one bucket per person shared by all
- * their sockets): past it, the answer is `rate_limited` and the socket stays open. One
+ * their sockets): past it, the answer is `rate_limited` and the socket stays open. Roster
+ * commands (`ROSTER_LIMIT`) and history requests (`HISTORY_LIMIT`) take a token from a
+ * tighter bucket of the person's too. One
  * person holds at most `MAX_SOCKETS_PER_USER` sockets; the next handshake is refused with
  * `rate_limited`. `drainRealtime` stops taking messages and waits for the answers owed.
  */
@@ -29,6 +31,8 @@ import type { SocketUser } from "./auth.ts";
 import type { Logger } from "./logger.ts";
 import {
   createTokenBucket,
+  HISTORY_LIMIT,
+  ROSTER_LIMIT,
   SOCKET_MESSAGE_LIMIT,
   type TokenBucket,
   type TokenBucketOptions,
@@ -109,8 +113,12 @@ export interface RealtimeOptions {
   handlers?: RealtimeHandlers;
   /** Run in order on every handshake after the connection id is set (#10: session). */
   middleware?: readonly SocketMiddleware[];
-  /** Messages (`enter` and `cmd`) per person; `SOCKET_MESSAGE_LIMIT` by default. */
+  /** Messages (`enter`, `cmd`, `history`) per person; `SOCKET_MESSAGE_LIMIT` by default. */
   messageLimit?: TokenBucketOptions;
+  /** Roster commands per person; `ROSTER_LIMIT` by default. */
+  rosterLimit?: TokenBucketOptions;
+  /** History requests per person; `HISTORY_LIMIT` by default. */
+  historyLimit?: TokenBucketOptions;
   /** Sockets one person may hold at once; `MAX_SOCKETS_PER_USER` by default. */
   maxSocketsPerUser?: number;
   /** Added to every HTTP answer of Socket.IO's own (polling, the upgrade): the app's (#36). */
@@ -123,10 +131,12 @@ export interface RealtimeOptions {
  */
 export const MAX_SOCKETS_PER_USER = 8;
 
-/** One person's sockets and their shared message bucket. */
+/** One person's sockets and their shared buckets. */
 interface Holder {
   sockets: Set<string>;
   bucket: TokenBucket;
+  roster: TokenBucket;
+  history: TokenBucket;
   /** Set while the person holds no socket: forgets the holder once the bucket refilled. */
   idle?: ReturnType<typeof setTimeout> | undefined;
 }
@@ -162,6 +172,14 @@ export async function drainRealtime(io: RealtimeServer, timeoutMs: number): Prom
   return pending;
 }
 
+/** The commands that change who is in the room, or how they show (`ROSTER_LIMIT`). */
+const ROSTER_COMMANDS: ReadonlySet<Command["type"]> = new Set([
+  "join",
+  "leave",
+  "rename",
+  "setRole",
+]);
+
 /** Payload cap per message, both transports (architecture section 8). */
 export const MAX_PAYLOAD_BYTES = 16 * 1024;
 
@@ -172,6 +190,8 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     handlers = noRoomHandlers,
     middleware = [],
     messageLimit = SOCKET_MESSAGE_LIMIT,
+    rosterLimit = ROSTER_LIMIT,
+    historyLimit = HISTORY_LIMIT,
     maxSocketsPerUser = MAX_SOCKETS_PER_USER,
     responseHeaders = {},
   } = options;
@@ -199,12 +219,21 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
   // identity (tests), each socket counts as its own person.
   const holders = new Map<string, Holder>();
   const holderKey = (socket: RealtimeSocket) => socket.data.user?.id ?? `socket ${socket.id}`;
-  const refillMs = (messageLimit.burst / messageLimit.perSecond) * 1000;
+  const refillMs =
+    Math.max(
+      ...[messageLimit, rosterLimit, historyLimit].map((limit) => limit.burst / limit.perSecond),
+    ) * 1000;
+  const newHolder = (): Holder => ({
+    sockets: new Set(),
+    bucket: createTokenBucket(messageLimit),
+    roster: createTokenBucket(rosterLimit),
+    history: createTokenBucket(historyLimit),
+  });
   const release = (key: string, id: string) => {
     const holder = holders.get(key);
     if (!holder?.sockets.delete(id) || holder.sockets.size > 0) return;
-    // Kept until its bucket would be full again: closing every socket and opening new
-    // ones does not refill it sooner.
+    // Kept until its buckets would be full again: closing every socket and opening new
+    // ones does not refill them sooner.
     holder.idle = setTimeout(() => {
       if (holder.sockets.size === 0) holders.delete(key);
     }, refillMs);
@@ -224,7 +253,7 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
       return;
     }
     if (!holder) {
-      holder = { sockets: new Set(), bucket: createTokenBucket(messageLimit) };
+      holder = newHolder();
       holders.set(key, holder);
     }
     clearTimeout(holder.idle);
@@ -249,7 +278,7 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
       release(key, socket.id);
       handlers.disconnect?.(socket);
     });
-    const bucket = holders.get(key)?.bucket ?? createTokenBucket(messageLimit);
+    const { bucket, roster, history } = holders.get(key) ?? newHolder();
     const limited = { ok: false, code: "rate_limited" } as const;
 
     onRaw(socket, log, drain, "enter", async (payload) => {
@@ -260,14 +289,15 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     onRaw(socket, log, drain, "cmd", async (payload) => {
       if (!bucket.take()) return limited;
       const parsed = toDomainCommand(payload);
-      return parsed.ok
-        ? handlers.cmd(socket, parsed.id, parsed.command)
-        : { ok: false, code: parsed.code };
+      if (!parsed.ok) return { ok: false, code: parsed.code };
+      if (ROSTER_COMMANDS.has(parsed.command.type) && !roster.take()) return limited;
+      return handlers.cmd(socket, parsed.id, parsed.command);
     });
     onRaw(socket, log, drain, "history", async (payload) => {
       if (!bucket.take()) return limited;
       const parsed = parseHistoryRequest(payload);
       if (!parsed.ok) return { ok: false, code: parsed.code };
+      if (!history.take()) return limited;
       return handlers.history
         ? handlers.history(socket, parsed.request)
         : { ok: false, code: "room_not_found" };

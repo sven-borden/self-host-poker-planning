@@ -11,6 +11,7 @@ import {
   type PresetDeckId,
   type UserId,
 } from "@pp/domain";
+import { WIRE_LIMITS } from "@pp/protocol";
 import type { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "./app.ts";
@@ -39,7 +40,8 @@ export const CODE_ATTEMPTS = 5;
 
 /** The body of `POST /api/rooms`. Without a deck the room plays Fibonacci (ADR-011). */
 export const createRoomBodySchema = z.strictObject({
-  name: z.string().optional(),
+  // A coarse cap, well above the 60 characters `cleanRoomName` allows (`bad_room_name`).
+  name: z.string().max(WIRE_LIMITS.name).optional(),
   deck: z.enum(PRESET_DECK_IDS).optional(),
 });
 

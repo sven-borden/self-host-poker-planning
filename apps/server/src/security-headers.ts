@@ -44,8 +44,8 @@ export function parseCspSources(value: string): CspSources | null {
     const directive = name.toLowerCase();
     if (!(CSP_EXTENSIBLE_DIRECTIVES as readonly string[]).includes(directive)) return null;
     if (origins.length === 0 || !origins.every((o) => CSP_SOURCE_PATTERN.test(o))) return null;
-    const list = (sources[directive as CspDirective] ??= []);
-    for (const origin of origins) if (!list.includes(origin)) list.push(origin);
+    const key = directive as CspDirective;
+    sources[key] = [...new Set([...(sources[key] ?? []), ...origins])];
   }
   return sources;
 }

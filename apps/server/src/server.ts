@@ -12,6 +12,7 @@ import {
   createRealtime,
   drainRealtime,
   type RealtimeHandlers,
+  type RealtimeOptions,
   type RealtimeServer,
   type SocketMiddleware,
 } from "./realtime.ts";
@@ -23,6 +24,8 @@ export interface ServerDeps extends AppDeps {
   socketMiddleware?: readonly SocketMiddleware[];
   /** How long `close()` waits for the answers owed to sockets; `DRAIN_TIMEOUT_MS`. */
   drainTimeoutMs?: number;
+  /** The socket limits per person, for tests only (the fuzz test raises them). */
+  realtimeLimits?: Pick<RealtimeOptions, "messageLimit" | "rosterLimit" | "historyLimit">;
 }
 
 /**
@@ -54,6 +57,7 @@ export function createServer(config: Config, deps: ServerDeps): PokerServer {
     logger,
     allowedOrigin: config.baseUrl,
     responseHeaders: responseHeaders(config),
+    ...deps.realtimeLimits,
     ...(deps.handlers && { handlers: deps.handlers }),
     ...(deps.socketMiddleware && { middleware: deps.socketMiddleware }),
   });
