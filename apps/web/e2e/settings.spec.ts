@@ -54,14 +54,16 @@ async function openByKeyboard(page: Page, name: "Room settings" | "Room rules") 
   return { button, dialog };
 }
 
-/** Lets every finite animation on the page end (the sheet slides in again when it changes side). */
+/** Lets every finite animation on the page end or be cancelled (the sheet slides in again when it changes side). */
 async function settle(page: Page) {
   await page.evaluate(() =>
     Promise.all(
       document
         .getAnimations()
         .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
-        .map((animation) => animation.finished),
+        // A transition the next style change cancels (the password field's colours, #31)
+        // has ended too: its `finished` rejects, which must not fail the wait.
+        .map((animation) => animation.finished.catch(() => undefined)),
     ),
   );
 }
