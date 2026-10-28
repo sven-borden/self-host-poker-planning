@@ -53,6 +53,7 @@ interface Started {
 interface StartOptions {
   sessionAlive?: (id: string) => Promise<boolean>;
   now?: () => number;
+  touchRoom?: (roomId: string) => Promise<void>;
   /** Runs before every load of a room (enter, the runner, a reload): may wait or throw. */
   beforeLoad?: (code: string) => Promise<void> | void;
   history?: Pick<HistoryStore, "loadHistory">;
@@ -152,6 +153,39 @@ describe("enter", () => {
     expect((await bob.cmd("rename", { name: "Bobby" })).ok).toBe(true);
     await bob.waitFor((s) => s.version === 2);
     expect(ada.received.length).toBe(before);
+  });
+
+  it("records a visit for the retention purge, and a failed one only logs", async () => {
+    const touched: string[] = [];
+    let fail = false;
+    const { client, store, logs } = await start(lobby(), {
+      touchRoom: async (id) => {
+        touched.push(id);
+        if (fail) throw new DatabaseError("touch room", "57P01");
+      },
+    });
+    const ada = client("ua");
+    expect((await ada.enter(CODE)).ok).toBe(true);
+    expect(touched).toEqual([idOf(store)]);
+    expect((await ada.enter("NoSuchRoom")).ok).toBe(false);
+    expect(touched).toHaveLength(1);
+    fail = true;
+    expect((await client("ub").enter(CODE)).ok).toBe(true);
+    await vi.waitFor(() => expect(logs.messages()).toContain("visit not recorded"));
+    expect(logs.lines.find((line) => line.msg === "visit not recorded")).toMatchObject({
+      room: idOf(store),
+      err: "57P01",
+    });
+  });
+
+  it("names the rooms with a socket on this instance, and forgets a room left empty", async () => {
+    const { client, store, sync } = await start(lobby());
+    expect(sync.occupiedRooms()).toEqual([]);
+    const ada = client("ua");
+    await ada.enter(CODE);
+    expect(sync.occupiedRooms()).toEqual([idOf(store)]);
+    ada.close();
+    await vi.waitFor(() => expect(sync.occupiedRooms()).toEqual([]));
   });
 });
 

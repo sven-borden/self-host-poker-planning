@@ -200,6 +200,9 @@ describe("run with setup", () => {
           logger.info("migrated");
           return {
             deps: { checkDb: async () => "ok" },
+            beforeClose: async () => {
+              events.push(`before close, listening: ${server?.httpServer.listening}`);
+            },
             dispose: async () => {
               const open = server?.httpServer.listening;
               events.push(`dispose, listening: ${open}, exits: ${h.exits.length}`);
@@ -221,6 +224,7 @@ describe("run with setup", () => {
     expect(await h.exitCode).toBe(0);
     expect(events).toEqual([
       "setup http://localhost:3000, listening logged: false",
+      "before close, listening: true",
       "dispose, listening: false, exits: 0",
     ]);
     const shutdown = h.logs.messages().filter((msg) => msg.startsWith("shutdown:"));
@@ -240,6 +244,30 @@ describe("run with setup", () => {
     expect(fatal).toHaveLength(1);
     expect(fatal[0]).toMatchObject({ msg: "setup failed", err: { message: "migration failed" } });
     expect(h.logs.messages()).not.toContain("listening");
+  });
+
+  it("still closes and disposes when the background work fails to stop", async () => {
+    const h = hooks();
+    let disposed = 0;
+    const server = await run(
+      { ...VALID_ENV, PORT: "0" },
+      {
+        ...h.hooks,
+        setup: async () => ({
+          beforeClose: () => Promise.reject(new Error("stuck")),
+          dispose: async () => {
+            disposed += 1;
+          },
+        }),
+      },
+    );
+    if (!server) throw new Error("server did not start");
+    started.push(server);
+    h.send("SIGTERM");
+    expect(await h.exitCode).toBe(0);
+    expect(disposed).toBe(1);
+    expect(server.httpServer.listening).toBe(false);
+    expect(h.logs.messages()).toContain("shutdown: background work did not stop");
   });
 
   it("still exits within the shutdown limit when dispose hangs", async () => {

@@ -22,6 +22,13 @@
       "when": 1793172881238,
       "tag": "0002_add_room_password_access",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793188832707,
+      "tag": "0003_add_owner_and_grant_user_indexes",
+      "breakpoints": true
     }
   ]
 }
