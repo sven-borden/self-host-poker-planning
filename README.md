@@ -108,6 +108,23 @@ from the bundled database; to use your own Postgres, run the image alone with
 - **Checking the image**: `scripts/docker-check.sh` builds it and runs the checks CI runs
   (size, health, WebSocket, restarts, migrations, signals) as a separate compose project.
 
+## Privacy
+
+- **Stored**: rooms (name, settings, the people in them and the round on the table, the
+  password as an argon2id hash), the history of revealed rounds, and guests (a random
+  id, the display name, sessions without client address or user agent). No email, no
+  password of a person, no analytics.
+- **For how long**: a room idle for `ROOM_TTL_DAYS` days (default 90) is deleted with
+  its history and its password grants. Activity is any change in the room, and opening
+  it (counted at most once a day). A guest's session ends after the same number of days
+  without a visit; a guest with no session left and no room is deleted too. Rooms of
+  signed-in users (planned) stay until deleted.
+- **The purge** runs inside the server a few minutes after each start and then daily;
+  with several instances only one runs it. It logs counts only, never a room code, a
+  name or a vote. Set `ROOM_TTL_DAYS` (1 to 3650) to keep rooms shorter or longer.
+- **Nothing is tracked by default.** Error reporting (Sentry) and page analytics
+  (Umami) load only when you set their variables.
+
 ## Run locally
 
 Prerequisites: Node 24 (see `.nvmrc`; any other major is refused) and pnpm. The exact

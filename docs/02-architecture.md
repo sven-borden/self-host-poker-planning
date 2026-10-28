@@ -438,6 +438,29 @@ holding the step and the SQLSTATE or Node error code, without a message or a cau
 Driver errors can carry connection details, and drizzle's query errors carry the
 parameters (a room's state, vote values, a password hash); neither may reach a log.
 
+**Retention** (#35, ADR-014; `retention.ts` schedules, `db/retention.ts` deletes): a job
+in the server process runs 3 to 5 minutes after the start (a random jitter, so instances
+of one deploy do not all try at once), then 24 hours after each run ends; its timer is
+unref'd and `dispose` stops it before the pool ends, a run in progress at its next batch.
+Each run takes the session advisory lock `7000035` with `pg_try_advisory_lock` on one
+pooled connection; another instance holding it makes the run skip (one `debug` line). A
+room is idle when its `last_active_at` is older than `ROOM_TTL_DAYS` (1 to 3650, default
+90) at the job's clock (injectable, so tests use a fake one). `last_active_at` moves on
+every commit, and on every `enter` that finds it more than a day old (one `UPDATE … WHERE
+last_active_at < now() - 1 day`, not awaited): a team that only opens its room keeps it,
+as its guests keep their sessions. Never deleted: a room with a socket on this instance,
+a room whose owner is a signed-in user (`is_anonymous` not true; none before W5), and a
+room a commit holds at that moment. Rooms go in batches of 500, oldest first, each in
+one statement that locks its rows `for update skip locked` and deletes `where
+last_active_at < cutoff`, so a commit or a visit that lands during the run keeps the
+room; `round_history` and `room_access` go by cascade, the password counters are columns
+of the row. Then orphan guests, also by 500: anonymous users at least a day old (a
+sign-in writes the user before its session) with no session that has not expired and no
+room they own; their sessions, accounts and grants go by cascade, and a signed-in user is
+never one. Last, the ended windows of wrong passwords (#31) of the rooms that stay are
+cleared, without touching `last_active_at`. One `info` line per run: `rooms`, `history`,
+`guests`, `passwordWindows`, `interrupted`, `durationMs`; a failure logs its code alone.
+
 ## 7. Identity
 
 Better Auth with the Drizzle adapter on the app's `pg` pool and the anonymous plugin
@@ -638,7 +661,8 @@ password, no social provider before W5.
   the domain's `cleanSubject` accepts (no other scheme, no credentials), so even an odd
   stored subject never becomes a `javascript:` link (#21).
 - Retention: rooms, their history and orphan guests are deleted after
-  `ROOM_TTL_DAYS` (default 90) without activity. A guest's session expires after the
+  `ROOM_TTL_DAYS` (default 90) without activity (a commit, or a visit); rooms of
+  signed-in owners stay (section 6, "Retention"). A guest's session expires after the
   same number of days without a visit.
 
 ## 9. Timers and presence

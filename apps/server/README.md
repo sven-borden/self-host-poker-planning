@@ -13,8 +13,14 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   is for tests only: `presenceGraceMs`): `setupDatabase`,
   then `createAuth` on its pool; returns `deps` with `checkDb`, `registerApi` (auth
   routes, then the room API), `socketMiddleware` (the session) and `handlers` (the room
-  sync), plus `database` and `auth`. `dispose` clears the deadline and presence timers,
-  then ends the pool.
+  sync), plus `database` and `auth`, and starts the retention job. `dispose` clears the
+  deadline and presence timers, stops the retention job, then ends the pool.
+- `src/retention.ts`: `startRetention({ store, ttlDays, logger, occupied, now? })`, the
+  retention job (#35): first run 3 to 5 minutes after the start (`RETENTION_START_DELAY_MS`
+  plus up to `RETENTION_JITTER_MS`), then `RETENTION_PERIOD_MS` (24 h) after each run, on
+  an unref'd timer; one `info` line of counts per run, `debug` when another instance
+  holds the lock, the code alone on a failure, never a rejection. `stop()` clears the
+  timer, aborts a run at its next batch and waits for it; `runNow()` is for tests.
 - `src/auth.ts`: identity. `createAuth(config, db, logger)` builds Better Auth (Drizzle
   adapter, anonymous plugin, options in `authOptions`); `registerAuthApi` mounts
   `/api/auth/*` and `POST /api/me/name`; `sessionMiddleware(auth)` is the socket
@@ -63,8 +69,8 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   for Postgres (30 s in all), takes the migration lock with `pg_try_advisory_lock`
   (60 s at most, a log line every 5 s), migrates on that one session
   (`lock_timeout` 10 s), opens the `pg` pool and returns
-  `{ deps: { checkDb }, dispose, database }`. `database` holds `db` (Drizzle), `store`
-  and `runner` for the hooks that build on it. `openDatabase(url, logger, options)` and
+  `{ deps: { checkDb }, dispose, database }`. `database` holds `db` (Drizzle), `store`,
+  `runner` and `retention` for the hooks that build on it. `openDatabase(url, logger, options)` and
   `migrateDatabase(...)` are the same steps for tests.
 - `src/db/schema.ts`: the tables `room` and `round_history` (architecture section 6).
 - `src/db/auth-schema.ts`: Better Auth's tables `user` (with `is_anonymous`), `session`,
@@ -76,6 +82,12 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   the step returns the loaded state itself.
 - `src/db/history.ts`: `historyRow(roomId, ended)`, pure: named rounds keep who, name
   and card; anonymous rounds the cards alone, in display order.
+- `src/db/retention.ts`: `createRetentionStore(pool)`: `purge({ now, ttlDays, occupied,
+  batchSize?, signal? })` under the advisory lock `RETENTION_LOCK_KEY` (7000035, `null`
+  when another session holds it): idle rooms, then orphan guests, `PURGE_BATCH` (500)
+  rows per statement, then the ended windows of wrong passwords; and `touchRoom(id)`,
+  the visit an `enter` records (`last_active_at` moved only when more than a day old).
+  What counts as idle and what is never deleted: architecture section 6, "Retention".
 - `src/db/errors.ts`: `guard(step, call)` and `DatabaseError`: a database failure is
   reduced to its code, so no driver message, SQL parameter or connection detail reaches
   a log.
@@ -127,8 +139,10 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 
 ## Rooms over the socket
 
-`createRoomSync({ runner, store, logger, sessionAlive })` (`src/sync/room-sync.ts`) is the
-`handlers` of `createRealtime`.
+`createRoomSync({ runner, store, logger, sessionAlive, touchRoom })` (`src/sync/room-sync.ts`) is the
+`handlers` of `createRealtime`. A successful `enter` calls `touchRoom(id)` without waiting
+(a failure logs `visit not recorded` with the code), and `occupiedRooms()` names the rooms
+with a socket on this instance, which the retention purge keeps (#35).
 
 - `enter { code, protocol }`: checks the session again (`sessionChecker`: a socket outlives
   a sign-out), joins the Socket.IO room `room:<id>` (never the code) **before** loading
