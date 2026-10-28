@@ -49,8 +49,12 @@ export const room = pgTable(
     createdAt: instant("created_at").notNull().defaultNow(),
     lastActiveAt: instant("last_active_at").notNull().defaultNow(),
   },
-  // The retention purge (ROOM_TTL_DAYS) deletes by `last_active_at`.
-  (t) => [index("room_last_active_at_idx").on(t.lastActiveAt)],
+  // The retention purge (ROOM_TTL_DAYS) deletes by `last_active_at`, and keeps a room
+  // whose owner is signed in; "my rooms" (W5) reads by owner too.
+  (t) => [
+    index("room_last_active_at_idx").on(t.lastActiveAt),
+    index("room_owner_user_id_idx").on(t.ownerUserId),
+  ],
 );
 
 /**
@@ -71,7 +75,11 @@ export const roomAccess = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     grantedAt: instant("granted_at").notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.roomId, t.userId] })],
+  // Deleting a user (a purged guest) finds its grants by `user_id`.
+  (t) => [
+    primaryKey({ columns: [t.roomId, t.userId] }),
+    index("room_access_user_id_idx").on(t.userId),
+  ],
 );
 
 /** The deck a round was played with: its spec and the special cards it allowed. */
