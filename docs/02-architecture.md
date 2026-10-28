@@ -990,7 +990,7 @@ language, and an unknown code gets a generic one.
 | Integration | Vitest + Postgres (CI service) | write path with version conflicts, migrations, auth, sockets |
 | End-to-end | Playwright, several browser contexts | the built app served by the real server with its production headers; every page fails its test on a CSP or Permissions-Policy violation or an uncaught error (`e2e/fixtures.ts`); full rounds; secrecy asserted on WebSocket frames; `four-person.spec.ts` (#23) plays W1 end to end on every PR |
 | Fuzzing | fast-check + Postgres | `fuzz.db.test.ts` (#36): random and malformed socket messages from the room's PO and a voter (wrong types, huge strings, deep objects, prototype keys, unknown commands and events, binary, extra arguments, oversized and undecodable frames); each gets an ack with `ok` or a known code other than `internal`, or is dropped; the stored room keeps `apply`'s invariants, honest people keep playing, no error is logged. 40 cases in CI, `FUZZ_RUNS` for more. Also a flood against the default limits and fuzzed HTTP bodies (never a 500) |
-| Dependencies | `pnpm audit` in CI | a high or critical advisory in a production dependency fails the `check` job; the rest is listed |
+| Dependencies | `pnpm audit` in CI (`scripts/audit.mjs`) | a high or critical advisory in a production dependency fails the `check` job; an unreachable audit endpoint is a warning, not a failure; the rest is listed |
 | Visual | Playwright screenshots | table with 1–16 seats, both themes, 360 px to 1440 px |
 | Accessibility | axe in Playwright + manual screen reader passes | room, settings, history |
 
