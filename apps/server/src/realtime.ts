@@ -113,6 +113,8 @@ export interface RealtimeOptions {
   messageLimit?: TokenBucketOptions;
   /** Sockets one person may hold at once; `MAX_SOCKETS_PER_USER` by default. */
   maxSocketsPerUser?: number;
+  /** Added to every HTTP answer of Socket.IO's own (polling, the upgrade): the app's (#36). */
+  responseHeaders?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -171,6 +173,7 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     middleware = [],
     messageLimit = SOCKET_MESSAGE_LIMIT,
     maxSocketsPerUser = MAX_SOCKETS_PER_USER,
+    responseHeaders = {},
   } = options;
   const io: RealtimeServer = new Server(httpServer, {
     maxHttpBufferSize: MAX_PAYLOAD_BYTES,
@@ -179,6 +182,11 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
       const origin = request.headers.origin;
       callback(null, origin === undefined || origin === allowedOrigin);
     },
+  });
+
+  // Engine.IO answers the polling requests and the upgrade itself, outside Hono.
+  io.engine.on("headers", (headers: Record<string, string>) => {
+    Object.assign(headers, responseHeaders);
   });
 
   io.use((socket, next) => {

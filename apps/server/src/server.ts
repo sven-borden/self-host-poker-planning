@@ -6,7 +6,7 @@ import type { Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createAdaptorServer } from "@hono/node-server";
 import type { Hono } from "hono";
-import { type AppDeps, type AppEnv, createApp } from "./app.ts";
+import { type AppDeps, type AppEnv, createApp, responseHeaders } from "./app.ts";
 import type { Config } from "./config.ts";
 import {
   createRealtime,
@@ -53,6 +53,7 @@ export function createServer(config: Config, deps: ServerDeps): PokerServer {
   const io = createRealtime(httpServer, {
     logger,
     allowedOrigin: config.baseUrl,
+    responseHeaders: responseHeaders(config),
     ...(deps.handlers && { handlers: deps.handlers }),
     ...(deps.socketMiddleware && { middleware: deps.socketMiddleware }),
   });

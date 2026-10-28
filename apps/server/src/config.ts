@@ -5,6 +5,7 @@
  * password and `BETTER_AUTH_SECRET` signs the sessions.
  */
 import { z } from "zod";
+import { type CspSources, parseCspSources } from "./security-headers.ts";
 
 export const LOG_LEVELS = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];
@@ -32,6 +33,14 @@ export interface Config {
   readonly staticDir: string | undefined;
   /** Folder of the SQL migrations; `openDatabase` falls back to `apps/server/drizzle`. */
   readonly migrationsDir: string | undefined;
+  /**
+   * Sends the Content Security Policy as `Content-Security-Policy-Report-Only`
+   * (`CSP_REPORT_ONLY`): the browser reports violations in its console and blocks nothing,
+   * for a self-hoster who adds a script of their own and checks what the policy would stop.
+   */
+  readonly cspReportOnly: boolean;
+  /** Origins added to the policy (`CSP_EXTRA_SOURCES`, `security-headers.ts`). */
+  readonly cspExtraSources: CspSources;
 }
 
 /** Every variable `loadConfig` reads, with the reason shown when its value is invalid. */
@@ -47,6 +56,9 @@ const REASONS = {
   APP_VERSION: "must be 1 to 64 letters, digits, dots, plus signs, dashes or underscores",
   STATIC_DIR: "must be a folder path",
   MIGRATIONS_DIR: "must be a folder path",
+  CSP_REPORT_ONLY: "must be true, false, 1 or 0",
+  CSP_EXTRA_SOURCES:
+    "must be directives and origins such as script-src https://stats.example.com; connect-src https://stats.example.com",
   BETTER_AUTH_SECRET:
     "must be at least 32 random characters, such as the output of openssl rand -base64 32",
 } as const;
@@ -110,6 +122,19 @@ const schema = z.object({
     .optional(),
   STATIC_DIR: z.string().min(1).optional(),
   MIGRATIONS_DIR: z.string().min(1).optional(),
+  CSP_REPORT_ONLY: z
+    .enum(["true", "false", "1", "0"])
+    .transform((v) => v === "true" || v === "1")
+    .default(false),
+  CSP_EXTRA_SOURCES: z
+    .string()
+    .max(2000)
+    .transform((v, ctx) => {
+      const sources = parseCspSources(v);
+      if (sources === null) ctx.addIssue({ code: "custom", message: "invalid" });
+      return sources ?? {};
+    })
+    .default({}),
   BETTER_AUTH_SECRET: z.string().min(32).refine(isRealSecret),
 });
 
@@ -157,6 +182,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
     appVersion: v.APP_VERSION,
     staticDir: v.STATIC_DIR,
     migrationsDir: v.MIGRATIONS_DIR,
+    cspReportOnly: v.CSP_REPORT_ONLY,
+    cspExtraSources: v.CSP_EXTRA_SOURCES,
     betterAuthSecret: v.BETTER_AUTH_SECRET,
   });
 }

@@ -26,6 +26,8 @@ describe("loadConfig", () => {
       appVersion: undefined,
       staticDir: undefined,
       migrationsDir: undefined,
+      cspReportOnly: false,
+      cspExtraSources: {},
       betterAuthSecret: VALID_ENV.BETTER_AUTH_SECRET,
     });
     expect(Object.isFrozen(config)).toBe(true);
@@ -44,6 +46,8 @@ describe("loadConfig", () => {
       APP_VERSION: "1.2.0+build.7",
       STATIC_DIR: "/app/public",
       MIGRATIONS_DIR: "/app/drizzle",
+      CSP_REPORT_ONLY: "true",
+      CSP_EXTRA_SOURCES: "script-src https://stats.example.com",
       UNRELATED: "ignored",
     });
     expect(config).toEqual({
@@ -57,6 +61,8 @@ describe("loadConfig", () => {
       appVersion: "1.2.0+build.7",
       staticDir: "/app/public",
       migrationsDir: "/app/drizzle",
+      cspReportOnly: true,
+      cspExtraSources: { "script-src": ["https://stats.example.com"] },
       betterAuthSecret: VALID_ENV.BETTER_AUTH_SECRET,
     });
   });
@@ -179,5 +185,20 @@ describe("loadConfig", () => {
         "ROOM_TTL_DAYS",
       ]);
     }
+  });
+
+  it("refuses a CSP_REPORT_ONLY or CSP_EXTRA_SOURCES it cannot read, without echoing it", () => {
+    for (const [name, value] of [
+      ["CSP_REPORT_ONLY", "maybe-later"],
+      ["CSP_EXTRA_SOURCES", "script-src 'unsafe-inline'"],
+      ["CSP_EXTRA_SOURCES", "default-src https://stats.example.com"],
+      ["CSP_EXTRA_SOURCES", `script-src ${"https://a.example.com ".repeat(100)}`],
+    ] as const) {
+      const error = configError({ ...VALID_ENV, [name]: value });
+      expect(error.variables).toEqual([name]);
+      expect(error.message).not.toContain(value);
+    }
+    expect(loadConfig({ ...VALID_ENV, CSP_REPORT_ONLY: "0" }).cspReportOnly).toBe(false);
+    expect(loadConfig({ ...VALID_ENV, CSP_REPORT_ONLY: "1" }).cspReportOnly).toBe(true);
   });
 });
