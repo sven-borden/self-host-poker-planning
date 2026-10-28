@@ -63,13 +63,23 @@ async function startInstance(tuning: SetupTuning = {}): Promise<Instance> {
 beforeAll(async () => {
   t = await createTestDatabase();
   config = testConfig({ DATABASE_URL: t.url });
-  const first = await startInstance();
-  [ada, bob, cy] = await Promise.all([
-    signInGuest(first.base, ORIGIN),
-    signInGuest(first.base, ORIGIN),
-    signInGuest(first.base, ORIGIN),
-  ]);
+  await startInstance();
 });
+
+/**
+ * New guests for each `describe` block, in its own `beforeAll`. A person's message bucket
+ * (20, refilling at 10 a second) is shared by all their sockets, so a block that spends
+ * Bob's would leave the next block `rate_limited`; with its own guests no block depends
+ * on the buckets the blocks before it left, and none has to wait for a refill. Sign-ins
+ * stay under the 60 a minute an address may make (`ANONYMOUS_SIGN_IN_LIMIT`).
+ */
+async function freshGuests(): Promise<void> {
+  [ada, bob, cy] = await Promise.all([
+    signInGuest(main().base, ORIGIN),
+    signInGuest(main().base, ORIGIN),
+    signInGuest(main().base, ORIGIN),
+  ]);
+}
 
 afterEach(() => {
   for (const client of clients.splice(0)) client.close();
@@ -131,6 +141,8 @@ async function insert(state: RoomState): Promise<string> {
 }
 
 describe("join latency (AC 1)", () => {
+  beforeAll(freshGuests);
+
   it("shows a join to the other client in under 200 ms", async () => {
     const latencies: number[] = [];
     for (let i = 0; i < 10; i++) {
@@ -164,6 +176,8 @@ describe("join latency (AC 1)", () => {
 });
 
 describe("a burst past the message limit (AC 3)", () => {
+  beforeAll(freshGuests);
+
   it("refuses the excess with rate_limited, keeps the room consistent and serves the others", async () => {
     const code = await insert(votingRoom());
     const a = client(ada);
@@ -198,12 +212,12 @@ describe("a burst past the message limit (AC 3)", () => {
     // And the socket goes on working once the bucket refills.
     await sleep(300);
     expect((await b.cmd("retractVote", { round: 1, restart: 0 })).ok).toBe(true);
-    // Bob's bucket is shared by all his sockets, later tests' too: let it fill up again.
-    await sleep(2000);
   });
 });
 
 describe("secrecy on the real frames", () => {
+  beforeAll(freshGuests);
+
   it("while Voting, the observer and the other voter never receive a card", async () => {
     const code = await insert(votingRoom());
     const a = client(ada);
@@ -273,6 +287,8 @@ describe("secrecy on the real frames", () => {
 });
 
 describe("the reveal (#19)", () => {
+  beforeAll(freshGuests);
+
   it("refuses a reveal from someone who is not the PO, on the wire (AC 1)", async () => {
     const code = await insert(votingRoom());
     const b = client(bob);
@@ -357,6 +373,8 @@ describe("the reveal (#19)", () => {
 });
 
 describe("reveal modes (#28)", () => {
+  beforeAll(freshGuests);
+
   /** Ada (PO) and Bob vote, Cy observes; a voting round under `settings`. */
   function roundWith(settings: Partial<RoomState["settings"]>): RoomState {
     let s = createRoom({ ownerId: ada.id });
@@ -495,6 +513,8 @@ describe("reveal modes (#28)", () => {
 });
 
 describe("a change after the reveal (#29)", () => {
+  beforeAll(freshGuests);
+
   /** Ada (PO) and Bob voted 5 and 8, which revealed; Cy observes. */
   function revealedWith(settings: Partial<RoomState["settings"]>): RoomState {
     let s = createRoom({ ownerId: ada.id });
@@ -644,6 +664,8 @@ describe("a change after the reveal (#29)", () => {
 });
 
 describe("the room settings (#25)", () => {
+  beforeAll(freshGuests);
+
   /** Ada (PO) and Bob vote, Cy observes, in the lobby of a new room. */
   function lobby(): RoomState {
     let s = createRoom({ ownerId: ada.id });
@@ -705,6 +727,8 @@ describe("the room settings (#25)", () => {
 });
 
 describe("the deck (#26)", () => {
+  beforeAll(freshGuests);
+
   // These tests send Ada's commands in a burst; her session's bucket (20, 10 a second) is
   // shared with the tests after them, so let it refill.
   afterEach(() => sleep(2_000));
@@ -873,6 +897,8 @@ describe("the deck (#26)", () => {
 });
 
 describe("the next round (#21)", () => {
+  beforeAll(freshGuests);
+
   async function historyOf(code: string) {
     const stored = await main().database.store.loadRoom(code);
     const sql = dbClient(t.url);
@@ -956,6 +982,8 @@ describe("the next round (#21)", () => {
 });
 
 describe("commands", () => {
+  beforeAll(freshGuests);
+
   it("applies a command id once on Postgres too", async () => {
     const code = await insert(votingRoom());
     const b = client(bob);
@@ -986,6 +1014,8 @@ describe("commands", () => {
 });
 
 describe("one session flooding a room from many sockets", () => {
+  beforeAll(freshGuests);
+
   it("gets at most 8 sockets and one bucket, and honest commands keep their latency", async () => {
     const mallory = await signInGuest(main().base, ORIGIN);
     const code = await insert(votingRoom());
@@ -1074,6 +1104,8 @@ describe("one session flooding a room from many sockets", () => {
 });
 
 describe("the PO's powers (#30)", () => {
+  beforeAll(freshGuests);
+
   /** Ada (PO), away since `ms` ago; Bob votes and Cy observes, both here. */
   function ownerAway(ms: number): { state: RoomState; since: number } {
     const state = votingRoom();
@@ -1151,6 +1183,8 @@ describe("the PO's powers (#30)", () => {
 });
 
 describe("the deadline timeout", () => {
+  beforeAll(freshGuests);
+
   it("reveals at the deadline with no client action", async () => {
     let state = votingRoom();
     state = step(state, bob.id, { type: "castVote", card: "5" });
