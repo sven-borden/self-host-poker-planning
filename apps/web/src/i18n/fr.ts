@@ -159,6 +159,7 @@ export const fr: Catalog<"many"> = {
       "Les résultats montrent les cartes sans les noms. Un changement s’applique à partir du tour suivant.",
     roundStaysNamed: "Ce tour montre encore les noms.",
     roundStaysAnonymous: "Ce tour reste anonyme.",
+    revealWhenAllVotedNow: "Tout le monde a voté\u{202f}: l’activer révèle les cartes.",
     revealWhenAllVoted: "Révéler quand tout le monde a voté",
     revealWhenAllVotedHint:
       "Les cartes se retournent d’elles-mêmes dès que toutes les personnes présentes ont voté.",
@@ -270,6 +271,10 @@ export const fr: Catalog<"many"> = {
     revealed: "Cartes révélées",
     reveal: "Révéler les cartes",
     revealKey: "Touche R, quand le focus est sur la table ou sur vos cartes",
+    revealOwnerOnly:
+      "Cartes non révélées\u{202f}: seul le product owner peut désormais les révéler.",
+    revealWaits:
+      "Attendez deux cartes\u{202f}: dans un tour anonyme, une carte seule montre à qui elle appartient.",
     number: "Tour {{round, number}}",
     subjectLabel: "Sujet du prochain tour",
     subjectHint:
@@ -422,6 +427,7 @@ export const fr: Catalog<"many"> = {
     roundStarted: "Le vote a commencé\u{202f}: {{subject}}.",
     roundStartedAnonymous: "Le vote a commencé\u{202f}: {{subject}}, anonyme.",
     revealed: "Les cartes sont révélées.",
+    revealedBy: "{{name}} a révélé les cartes.",
     finalRecorded: "Le product owner a enregistré {{card}} comme estimation finale.",
     finalChanged: "Le product owner a changé l’estimation finale en {{card}}.",
     revote: "Le product owner a relancé le vote sur le même sujet.",
@@ -536,6 +542,8 @@ export const fr: Catalog<"many"> = {
       "Un nouveau tour a commencé avant l’arrivée de votre vote. Choisissez à nouveau votre carte.",
     not_voting: "Ce tour n’est pas ouvert au vote.",
     not_allowed: "Les réglages de cette salle ne vous permettent pas de faire cela.",
+    too_few_cards:
+      "Cartes non révélées\u{202f}: dans un tour anonyme, une carte seule montre à qui elle appartient. Attendez une deuxième carte.",
     not_revealed: "Retournez d’abord les cartes.",
     bad_seconds:
       "Cette durée de minuteur n’est pas autorisée : un minuteur dure de {{min, number}} secondes à {{max, number}} minutes. Choisissez-en une autre.",

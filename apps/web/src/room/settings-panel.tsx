@@ -29,6 +29,7 @@ import { commandSender } from "../realtime/room-connection.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { DeckControl, SpecialsControl } from "./deck-field.tsx";
 import { codeOf, failureMessage } from "./failure.ts";
+import { WhoCanRevealControl } from "./reveal-setting.tsx";
 import { deckName, type SettingKey } from "./settings-words.ts";
 import { TimerSetting } from "./timer-setting.tsx";
 import { durationWords } from "./timer-view.ts";
@@ -38,7 +39,7 @@ import { durationWords } from "./timer-view.ts";
 // setting whose control is not built yet, reads the value and what it means. A lazy
 // chunk of its own (`settings-button.tsx` loads it on the first open).
 //
-// Adding a control (#27 to #29; #26's deck and special cards are the worked example in
+// Adding a control (#29; #26's deck and special cards are the worked example in
 // `deck-field.tsx`): give the setting's field in `GROUPS` a `toggle` (an
 // on-off switch) or a `Control`, a component that renders the input with
 // `ControlProps.id` (or labels a group with `aria-labelledby={labelId}`) and calls
@@ -102,6 +103,21 @@ export interface SettingGroup {
   fields: readonly SettingField[];
 }
 
+/**
+ * Whether every voter who is present has voted in the voting round: what reveals it at
+ * once while "Reveal when everyone has voted" is on (the domain's `settle`). Here rather
+ * than in `table-data.ts`, which would pull the table's helpers into this chunk.
+ */
+function everyoneVoted(room: RoomView): boolean {
+  if (room.round?.phase !== "voting") return false;
+  const voted = new Set(room.round.voted);
+  const present = room.participants.filter(
+    (p) =>
+      p.role === "voter" && (p.id !== room.ownerId || room.settings.poVotes) && p.away !== true,
+  );
+  return present.length > 0 && present.every((p) => voted.has(p.id));
+}
+
 const onOff = (t: TFunction, on: boolean) => t(on ? "settings.on" : "settings.off");
 
 const SPOKEN = { "?": "cards.unsure", "☕": "cards.coffee", "∞": "cards.infinite" } as const;
@@ -148,7 +164,7 @@ function SettingSwitch({
 /**
  * The settings in the order the panel shows them (ADR-011's list). Editable now: the
  * settings whose behaviour the room already shows end to end, the deck and the special
- * cards (#26) and the timer (#27) among them. Who can reveal (#28) and changes after the
+ * cards (#26), the timer (#27) and who can reveal (#28) among them. Changes after the
  * reveal (#29) are read-only until their issue adds a control.
  */
 export const GROUPS: readonly SettingGroup[] = [
@@ -205,6 +221,11 @@ export const GROUPS: readonly SettingGroup[] = [
         hint: (t) => t("settings.revealWhenAllVotedHint"),
         value: (t, s) => onOff(t, s.revealWhenAllVoted),
         toggle: { read: (s) => s.revealWhenAllVoted, write: (on) => ({ revealWhenAllVoted: on }) },
+        // Said beforehand to the PO (#28): turning it on now reveals the round at once.
+        detail: (t, s, room) =>
+          !s.revealWhenAllVoted && room.you === room.ownerId && everyoneVoted(room)
+            ? t("settings.revealWhenAllVotedNow")
+            : null,
       },
       {
         key: "whoCanReveal",
@@ -212,6 +233,9 @@ export const GROUPS: readonly SettingGroup[] = [
         hint: (t) => t("settings.whoCanRevealHint"),
         value: (t, s) =>
           t(s.whoCanReveal === "anyone" ? "settings.revealByAnyone" : "settings.revealByOwner"),
+        // #28: applies at once, to the round on the table too.
+        layout: "block",
+        Control: WhoCanRevealControl,
       },
       {
         key: "revealNames",
@@ -595,7 +619,14 @@ function refusalMessage(t: TFunction, field: SettingField, code: string): string
 function FieldRow({ field, room, settings, editable, pending, failure, change }: FieldRowProps) {
   const t = useT();
   const format = useFormat();
-  const ids = { control: useId(), label: useId(), hint: useId(), lock: useId(), error: useId() };
+  const ids = {
+    control: useId(),
+    label: useId(),
+    hint: useId(),
+    detail: useId(),
+    lock: useId(),
+    error: useId(),
+  };
   const alert = useRef<HTMLParagraphElement>(null);
   const label = field.label(t);
   const detail = field.detail?.(t, settings, room) ?? null;
@@ -615,7 +646,14 @@ function FieldRow({ field, room, settings, editable, pending, failure, change }:
     pending,
     id: ids.control,
     labelId: ids.label,
-    describedBy: [ids.hint, lock !== null && ids.lock, message !== null && ids.error]
+    // The detail line too, while it shows: "Everyone has voted: turning this on reveals
+    // the cards." must reach a screen reader on the switch, not only the eye.
+    describedBy: [
+      ids.hint,
+      detail !== null && ids.detail,
+      lock !== null && ids.lock,
+      message !== null && ids.error,
+    ]
       .filter(Boolean)
       .join(" "),
   };
@@ -686,7 +724,7 @@ function FieldRow({ field, room, settings, editable, pending, failure, change }:
           {field.hint(t)}
         </p>
         {detail !== null ? (
-          <p data-setting-detail className="m-0 mt-1 text-ink">
+          <p id={ids.detail} data-setting-detail className="m-0 mt-1 text-ink">
             {detail}
           </p>
         ) : null}

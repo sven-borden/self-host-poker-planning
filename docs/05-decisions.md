@@ -117,6 +117,16 @@ optional: nothing, a title, or a link (Jira and Azure DevOps keys detected).
 Changing a vote after reveal, when allowed, applies to named rounds only: an anonymous
 round locks its votes at reveal (review of #68), and the W2 settings UI says so.
 
+**Amended 2026-10-28 (#28 review).** Switching anonymity never re-projects the round on
+the table: it applies from the next round, since names already seen cannot be hidden and
+an anonymous round must never gain names. This overrides #28's scope line "switching the
+mode after reveal re-projects for everyone". Anonymity hides who played which card, not
+who played: the seats say who voted, so one card, or cards that all agree, still tell
+whose they are. Under "anyone who votes" a voter may therefore reveal an anonymous round
+only once two cards are down (the domain refuses an earlier one with `too_few_cards`).
+The PO keeps the reveal at any count, as the facilitator, so a room with one voter still
+moves on; the timer's and the automatic reveal are unchanged.
+
 ## ADR-012: English, French and German at launch
 
 **Decision.** Every user-facing string exists in `en`, `fr` and `de` from the first

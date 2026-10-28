@@ -344,8 +344,13 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
   /** Round `number` was revealed once, by `by`, for everyone. Call it in the next round. */
   const expectRevealedOnce = (number: number, from: readonly number[], by: string) => {
     for (const [i, person] of everyone.entries()) {
+      // A reveal by hand names who revealed (#28): the PO here.
+      const reveal =
+        by === "manual"
+          ? { type: "revealed", by, who: expect.any(String) }
+          : { type: "revealed", by };
       expect(revealsOf(person, from[i] ?? 0, number), `${person.name}, round ${number}`).toEqual([
-        { type: "revealed", by },
+        reveal,
       ]);
     }
   };

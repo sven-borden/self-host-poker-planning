@@ -99,7 +99,20 @@ Positions are percentages of the stage, so one formula serves every width:
   10 px; the two still stand about 71 px tall in English and French and 84 px in German
   (the button wraps), so they overflow the 68 × 60 box onto the felt, centred, without
   reaching a card even with 16 seats.
-  Nobody else gets a button. After the reveal the PO's focus moves to "Record 8", the
+  Under "Who can reveal: Anyone who votes" (#28) every voter's centre holds the same
+  "Reveal cards" (and R, with the same scope), where the PO's sits: under the timer's chip
+  and the count, in the PO's 10 px phone size, ending above the docked hand on a phone.
+  Observers never get it; the PO always does. After a voter's reveal their focus moves to
+  the result in the centre, without scrolling: voters have no decision bar. When the PO
+  takes the reveal back mid-round the voter's button leaves with the next snapshot, and a
+  focus on it goes to the count, never to the page; a press that crossed the change says
+  "Not revealed: only the product owner can reveal the cards now." under the table. In an
+  anonymous round a voter's button waits for two cards (PO decision, #28 review): until
+  then it stays in place, `aria-disabled` (R does nothing either), and the line under the
+  table says why, "Wait for two cards: in an anonymous round, a lone card shows whose it
+  is.", which also describes the button. The PO's button never waits. The table's live
+  region names a voter who revealed ("Ben revealed the cards. Consensus on 8."); the PO's reveal and
+  the automatic ones keep "Cards revealed.". After the reveal the PO's focus moves to "Record 8", the
   final estimate's button under the table (#32), when it was on the button (or nowhere),
   without scrolling the page; to the picker when nothing is preselected. A named reveal turns the seats' cards face up; the
   seats then read "Ana, card 5". An anonymous reveal leaves each voter's seat with its
@@ -358,10 +371,18 @@ As built (#25):
 - **Editable now (PO decision).** Only settings whose behaviour the room already shows:
   reveal when everyone has voted, anonymous voting (from the next round, said under it),
   the PO votes too, observers count toward the 16 places, since #26 the deck and the
-  special cards (below), and since #27 the timer (see "The timer"). Who can reveal (#28) and changes after the reveal (#29) show
-  their value and explanation to the PO too until their issue adds the control in the
-  same row: a switch at the row's end, or a wider control (the deck picker, a choice of
-  who can reveal, the timer) across the row under its explanation. A setting that cannot
+  special cards (below), since #27 the timer (see "The timer"), and since #28 who can
+  reveal. Changes after the reveal (#29) shows its value and explanation to the PO too
+  until its issue adds the control in the same row: a switch at the row's end, or a wider
+  control (the deck picker, who can reveal, the timer) across the row under its
+  explanation.
+- **Who can reveal (#28).** Two 44 px segments across the row under the explanation,
+  "The product owner" and "Anyone who votes", a radio group. Unlike anonymity it applies
+  at once, to the round on the table too. A click, a tap or Space sends it; arrow keys
+  send the choice they rest on after 400 ms, as the timer's lengths do, so the room hears
+  one change. While "Reveal when everyone has voted" is off and every present voter has
+  voted, the PO reads under that switch "Everyone has voted: turning this on reveals the
+  cards.", since turning it on then reveals the round at once. A setting that cannot
   change now says why under it, with a lock (#29: never after the reveal in an
   anonymous round).
 - **A change.** The switch moves at once and the row says "Saving…" until the server's
@@ -383,6 +404,14 @@ As built (#25):
   small "Anonymous" chip with an eye-off icon follows "Round N" in the round line above
   the table, in every phase, its hint "Cards are shown without names." on hover and for
   screen readers; the round's start says "Voting started: Round 4, anonymous."
+  Switching anonymity never re-projects the round on the table (PO decision, #28): names
+  already seen cannot be hidden, and an anonymous round must never gain names, so the
+  change applies from the next round.
+  Anonymity hides who played which card, not who played (ADR-011, amended): the seats say
+  who voted, so one card, or cards that all agree, still tell whose they are. A voter may
+  therefore reveal an anonymous round only once two cards are down; the PO, who
+  facilitates, may reveal at any count, and the timer and the automatic reveal are
+  unchanged.
 
 - **The deck field (#26).** Across the row under the deck's explanation, for the PO:
   first a line saying when new cards apply ("New cards apply from round 4." in the lobby

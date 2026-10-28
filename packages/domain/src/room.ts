@@ -127,6 +127,11 @@ export const MIN_TIMER_SECONDS = 5;
 export const MAX_TIMER_SECONDS = 3600;
 /** Anyone in the room can claim the PO role once the PO has been away this long. */
 export const OWNER_CLAIM_AFTER_MS = 120_000;
+/**
+ * A voter (not the PO) may reveal an anonymous round by hand once this many cards are
+ * down (#28): a lone card would show whose it is.
+ */
+export const MIN_ANONYMOUS_REVEAL_CARDS = 2;
 
 /** The settings of a new room (ADR-011). Frozen: `createRoom` copies them. */
 export const DEFAULT_SETTINGS: Readonly<RoomSettings> = Object.freeze({

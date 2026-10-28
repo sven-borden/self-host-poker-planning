@@ -35,3 +35,15 @@ export const AFTER_REVEAL = [
 ] as const;
 
 export const focusAfterReveal = () => focusSoon(...AFTER_REVEAL);
+
+/**
+ * After a voter's reveal (#28): voters have no decision to make, so the focus goes to the
+ * result in the centre. While the round still votes (the PO took the reveal back, and
+ * the voter's button left with the focus on it), to the count.
+ */
+export const AFTER_VOTER_REVEAL = [
+  "[data-centre-status='revealed']",
+  "[data-centre-status='voting']",
+] as const;
+
+export const focusAfterVoterReveal = () => focusSoon(...AFTER_VOTER_REVEAL);

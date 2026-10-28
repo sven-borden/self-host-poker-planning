@@ -101,7 +101,7 @@ const hidden = (locator: Locator) =>
 
 /** Moves the focus forward with Tab until `target` has it. */
 async function tabTo(page: Page, target: Locator) {
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 20; i++) {
     if (await target.evaluate((element) => element === document.activeElement)) return;
     await page.keyboard.press("Tab");
   }

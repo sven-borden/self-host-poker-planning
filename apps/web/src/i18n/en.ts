@@ -26,6 +26,8 @@ const errors = {
   round_changed: "A new round started before your vote arrived. Pick your card again.",
   not_voting: "This round is not open for votes.",
   not_allowed: "This room’s settings do not let you do that.",
+  too_few_cards:
+    "Not revealed: in an anonymous round, a lone card shows whose it is. Wait for a second card.",
   not_revealed: "Reveal the cards first.",
   bad_seconds:
     "A timer runs from {{min, number}} seconds to {{max, number}} minutes. Pick another length.",
@@ -208,6 +210,7 @@ export const en = {
       "The results show the cards without names. A change applies from the next round.",
     roundStaysNamed: "This round still shows names.",
     roundStaysAnonymous: "This round stays anonymous.",
+    revealWhenAllVotedNow: "Everyone has voted: turning this on reveals the cards.",
     revealWhenAllVoted: "Reveal when everyone has voted",
     revealWhenAllVotedHint: "The cards turn over by themselves once everyone present has voted.",
     changeAfterReveal: "Change a vote after the reveal",
@@ -307,6 +310,8 @@ export const en = {
     revealed: "Cards revealed",
     reveal: "Reveal cards",
     revealKey: "Key R, while the focus is on the table or your cards",
+    revealOwnerOnly: "Not revealed: only the product owner can reveal the cards now.",
+    revealWaits: "Wait for two cards: in an anonymous round, a lone card shows whose it is.",
     number: "Round {{round, number}}",
     subjectLabel: "Subject of the next round",
     subjectHint:
@@ -449,6 +454,7 @@ export const en = {
     roundStarted: "Voting started: {{subject}}.",
     roundStartedAnonymous: "Voting started: {{subject}}, anonymous.",
     revealed: "Cards revealed.",
+    revealedBy: "{{name}} revealed the cards.",
     finalRecorded: "The product owner recorded {{card}} as the final estimate.",
     finalChanged: "The product owner changed the final estimate to {{card}}.",
     revote: "The product owner started a new vote on the same subject.",

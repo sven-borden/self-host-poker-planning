@@ -2,7 +2,8 @@
  * The room sync against Postgres with real guests (Better Auth sessions, the real
  * handshake): join latency (AC 1), a burst past the message limit (AC 3), secrecy on the
  * raw WebSocket frames, the reveal (#19: a non-PO is refused, the last two votes sent
- * together reveal once), the room settings (#25: the defaults, refusals on the wire, one
+ * together reveal once), reveal modes (#28: a voter reveals under "anyone", an observer
+ * never; the automatic reveal off and on again), the room settings (#25: the defaults, refusals on the wire, one
  * snapshot for everyone), idempotent ids, a revoked session, one session flooding a room
  * from many sockets, the PO's powers (#30: a claim refused before 120 s, two claims at
  * once, a removed person disconnected within 1 s), and the deadline timeout on one and on
@@ -289,7 +290,7 @@ describe("the reveal (#19)", () => {
     await a.enter(code);
     expect(await a.cmd("reveal")).toEqual({ ok: true, version: 2 });
     const seen = await c.waitFor((s) => s.room.round?.phase === "revealed");
-    expect(seen.snapshot.causes).toEqual([{ type: "revealed", by: "manual" }]);
+    expect(seen.snapshot.causes).toEqual([{ type: "revealed", by: "manual", who: ada.id }]);
   });
 
   /**
@@ -351,6 +352,144 @@ describe("the reveal (#19)", () => {
       expect(stored?.state.round?.phase).toBe("revealed");
     }
   }, 30_000);
+});
+
+describe("reveal modes (#28)", () => {
+  /** Ada (PO) and Bob vote, Cy observes; a voting round under `settings`. */
+  function roundWith(settings: Partial<RoomState["settings"]>): RoomState {
+    let s = createRoom({ ownerId: ada.id });
+    s = step(s, ada.id, { type: "join", name: "Ada", role: "voter" });
+    s = step(s, bob.id, { type: "join", name: "Bob", role: "voter" });
+    s = step(s, cy.id, { type: "join", name: "Cy", role: "observer" });
+    s = step(s, ada.id, { type: "updateSettings", patch: settings });
+    return step(s, ada.id, { type: "startRound", subject: { kind: "title", text: "Login" } });
+  }
+
+  it("under anyone who votes, refuses the observer and lets a voter reveal, named in the cause", async () => {
+    const code = await insert(roundWith({ whoCanReveal: "anyone" }));
+    const b = client(bob);
+    const c = client(cy);
+    await Promise.all([b.enter(code), c.enter(code)]);
+    expect(await c.cmd("reveal")).toEqual({ ok: false, code: "not_allowed" });
+    // Nothing was stored or broadcast: the round stays secret.
+    await sleep(100);
+    expect(b.received).toHaveLength(1);
+    expect(c.received).toHaveLength(1);
+    expect((await main().database.store.loadRoom(code))?.state.round?.phase).toBe("voting");
+    expect(await b.cmd("reveal")).toEqual({ ok: true, version: 2 });
+    const seen = await c.waitFor((s) => s.room.round?.phase === "revealed");
+    expect(seen.snapshot.causes).toEqual([{ type: "revealed", by: "manual", who: bob.id }]);
+  });
+
+  it("with the automatic reveal off, the last vote leaves the round voting until the PO reveals", async () => {
+    const code = await insert(roundWith({ revealWhenAllVoted: false }));
+    const a = client(ada);
+    const c = client(cy);
+    await Promise.all([a.enter(code), c.enter(code)]);
+    expect((await a.cmd("castVote", { card: "3", round: 1, restart: 0 })).ok).toBe(true);
+    const b = client(bob);
+    await b.enter(code);
+    expect(await b.cmd("castVote", { card: "8", round: 1, restart: 0 })).toEqual({
+      ok: true,
+      version: 3,
+    });
+    const last = await c.waitFor((s) => s.version === 3);
+    expect(last.snapshot.room.round).toMatchObject({ phase: "voting" });
+    expect(last.snapshot.causes).toEqual([{ type: "voteCast", who: bob.id }]);
+    expect(await a.cmd("reveal")).toEqual({ ok: true, version: 4 });
+    const seen = await c.waitFor((s) => s.room.round?.phase === "revealed");
+    expect(seen.snapshot.causes).toEqual([{ type: "revealed", by: "manual", who: ada.id }]);
+  });
+
+  it("turning the automatic reveal on once everyone voted reveals at once, in one snapshot", async () => {
+    let state = roundWith({ revealWhenAllVoted: false });
+    state = step(state, ada.id, { type: "castVote", card: "3" });
+    state = step(state, bob.id, { type: "castVote", card: "8" });
+    const code = await insert(state);
+    const a = client(ada);
+    const c = client(cy);
+    await Promise.all([a.enter(code), c.enter(code)]);
+    expect(c.latest()?.room.round?.phase).toBe("voting");
+    expect(await a.cmd("updateSettings", { patch: { revealWhenAllVoted: true } })).toEqual({
+      ok: true,
+      version: 2,
+    });
+    const seen = await c.waitFor((s) => s.version === 2);
+    expect(seen.snapshot.room.round?.phase).toBe("revealed");
+    expect(seen.snapshot.causes).toEqual([
+      { type: "settingsUpdated" },
+      { type: "revealed", by: "everyoneVoted" },
+    ]);
+  });
+
+  it("a voter's reveal of an anonymous round names the revealer and ties nobody to a card", async () => {
+    /** The observer's frames for a round where Ada and Bob vote `cards` and Bob reveals. */
+    async function observe(cards: [string, string]) {
+      let state = roundWith({
+        whoCanReveal: "anyone",
+        revealNames: false,
+        revealWhenAllVoted: false,
+      });
+      state = step(state, ada.id, { type: "castVote", card: cards[0] });
+      const code = await insert(state);
+      const b = client(bob);
+      const c = client(cy);
+      await Promise.all([b.enter(code), c.enter(code)]);
+      expect((await b.cmd("castVote", { card: cards[1], round: 1, restart: 0 })).ok).toBe(true);
+      expect((await b.cmd("reveal")).ok).toBe(true);
+      await c.waitFor((s) => s.room.round?.phase === "revealed");
+      for (const x of [b, c]) x.close();
+      return { code, frames: [...c.frames] };
+    }
+    const first = await observe(["13", "5"]);
+    const swapped = await observe(["5", "13"]);
+    const normalise = ({ code, frames }: { code: string; frames: string[] }) =>
+      snapshotsIn(frames).map((snapshot) =>
+        JSON.parse(
+          JSON.stringify(snapshot, (key, value: unknown) =>
+            key === "serverNow" || key === "startedAt" || key === "revealedAt"
+              ? 0
+              : value === code
+                ? "CODE"
+                : value,
+          ),
+        ),
+      );
+    // The same frames whoever voted what: nothing maps a person to a value.
+    expect(normalise(swapped)).toStrictEqual(normalise(first));
+    const revealed = snapshotsIn(first.frames).at(-1);
+    expect(revealed?.room.round).toMatchObject({ phase: "revealed", anonymous: true });
+    expect(revealed?.causes).toEqual([{ type: "revealed", by: "manual", who: bob.id }]);
+    for (const frame of first.frames) expect(frame).not.toContain('"votes"');
+  });
+
+  it("refuses a voter's reveal of an anonymous round at one card and sends nothing; at two it passes, and the PO's at one", async () => {
+    const anonymous = {
+      whoCanReveal: "anyone",
+      revealNames: false,
+      revealWhenAllVoted: false,
+    } as const;
+    const code = await insert(step(roundWith(anonymous), ada.id, { type: "castVote", card: "13" }));
+    const b = client(bob);
+    const c = client(cy);
+    await Promise.all([b.enter(code), c.enter(code)]);
+    expect(await b.cmd("reveal")).toEqual({ ok: false, code: "too_few_cards" });
+    // Nothing was stored or broadcast: Ada's lone card stays hers.
+    await sleep(100);
+    expect(b.received).toHaveLength(1);
+    expect(c.received).toHaveLength(1);
+    expect((await main().database.store.loadRoom(code))?.state.round?.phase).toBe("voting");
+    expect((await b.cmd("castVote", { card: "5", round: 1, restart: 0 })).ok).toBe(true);
+    expect(await b.cmd("reveal")).toEqual({ ok: true, version: 3 });
+    const seen = await c.waitFor((s) => s.room.round?.phase === "revealed");
+    expect(seen.snapshot.causes).toEqual([{ type: "revealed", by: "manual", who: bob.id }]);
+
+    // The PO reveals at one card: the PO facilitates, and a room with one voter moves on.
+    const lone = await insert(step(roundWith(anonymous), bob.id, { type: "castVote", card: "8" }));
+    const a = client(ada);
+    await a.enter(lone);
+    expect(await a.cmd("reveal")).toEqual({ ok: true, version: 2 });
+  });
 });
 
 describe("the room settings (#25)", () => {

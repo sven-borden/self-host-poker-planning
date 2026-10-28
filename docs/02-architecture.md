@@ -167,7 +167,7 @@ client that sends one gets `bad_payload`; the server's timers send it (section 9
 | `startRound {subject}` | PO | any phase; from Voting it abandons the round (the web offers it only in the lobby and after a reveal, #21); number + 1; captures deck, specials, anonymity; starts `timer.seconds` (`bad_subject`). A link's `key` is read here (`cleanSubject` → `linkKey`, in `apply-subject.ts`, so by the server; a client's own is dropped): a Jira key (`[A-Z][A-Z0-9_]{1,31}-[1-9][0-9]{0,9}`, read in any case, stored in capitals) from a path ending in `/browse/KEY` or Jira Cloud's `/projects/{project}/issues/KEY`, or a query's `selectedIssue=KEY`, on any host; an Azure DevOps work item id from a path ending in `/_workitems/edit/{id}` after one to three segments, on any host (Azure DevOps Server is self-hosted), or a query's `workitem={id}` on `dev.azure.com` and `*.visualstudio.com`, stored as the digits |
 | `castVote {card, round, restart?}` | voter | `no_round`; `round_changed` when `round` (the number of the round the press was made for) is not the current round's, or `restart`, when given, not its `restarts` (#26: a deck change restarts the round under the same number; the wire takes a vote without it, from a tab older than #26), so a vote in flight when the next round starts or the round restarts never lands in it; `not_voter` (observers; the PO when `poVotes` is off), `bad_card` (not in the round's cards); in Revealed only in a named round with `allowChangeAfterReveal` (a change or a first vote, marked `changedAfterReveal`); an anonymous round locks its votes at reveal, whatever the setting, decided by the round's own `anonymous` flag (`round_revealed`), because the people who could still change shrink as voters leave and a change would then point at someone; the `voteCast` cause always carries `who` |
 | `retractVote {round, restart?}` | self | `round_changed` as for `castVote`; Voting only (`not_voting`); no-op without a vote |
-| `reveal` | PO, or anyone if `whoCanReveal = "anyone"` | Voting only (`not_voting`, `not_allowed`); zero votes allowed; stops the timer |
+| `reveal` | PO (whether or not they vote), or, if `whoCanReveal = "anyone"`, every voter (`isVoter`); observers never (`not_allowed`, #28) | Voting only (`not_voting`); zero votes allowed; stops the timer; the cause `revealed { by: "manual", who }` names the revealer |
 | `setFinal {card}` | PO | Revealed only (`not_revealed`); a non-special card of the round (`bad_card`) |
 | `revote` | PO | Revealed only; a new round with the same subject; its `roundStarted` cause carries `revote: true` (#32) |
 | `startTimer {seconds}` | PO | Voting only; integer 5–3600 (`bad_seconds`); restarts a running timer; no change when the deadline stays the same; sets `timerStartedAt` and clears `timeUpAt` (#27), as `startRound` does with the room's timer |
@@ -239,6 +239,9 @@ sends it. So every tab open across that deploy kept its room instead of reloadin
   never carries a hidden value. `projectCauses` copies each cause field by field (an
   unknown cause is dropped); only `finalSet` carries a card; in an anonymous round after
   reveal no vote cause carries `who`, even one the domain sent with it (defence in depth).
+  A manual reveal's `who` (#28, optional) names the person who revealed; it maps nobody
+  to a value, so it travels in anonymous rounds too, and the page names a voter who
+  revealed in its live region.
 - **Projection rules** (the round view, built field by field from an allow-list):
   - Every phase: `number`, `subject`, `startedAt`, `deadlineAt?`, `timerStartedAt?` and
     `timeUpAt?` (#27; a reveal clears all three, so only a voting round carries them),
@@ -339,8 +342,9 @@ Server: `apps/server/src/sync/room-sync.ts` (the `handlers` of `createRealtime`)
 - **Revealing from the web** (#19, `apps/web/src/room/round-centre.tsx`): the PO's
   "Reveal cards" (or the key R, on the table or the hand) sends `reveal` and renders nothing of its own: the
   forced, automatic and timer reveals all reach the page as the same revealed snapshot,
-  and the page shows them alike. A non-PO's `reveal` is refused with `not_allowed` and
-  stores nothing; the last two votes sent together reveal once, one version each, on one
+  and the page shows them alike. Under `whoCanReveal: "anyone"` every voter's centre has
+  the same button (#28, `mayReveal` in `table-data.ts`). A `reveal` the rule refuses (an
+  observer's, or a voter's while only the PO may) gets `not_allowed` and stores nothing; the last two votes sent together reveal once, one version each, on one
   instance or two (`room-sync.db.test.ts`). The page animates only a change it saw (a
   slot it showed face down or empty); a reload or a late joiner gets the revealed room at
   rest. A named vote whose voter has no seat (gone, or an observer now) shows under the
