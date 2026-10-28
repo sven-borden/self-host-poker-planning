@@ -383,8 +383,80 @@ describe("the settings panel", () => {
     expect(both.state.round?.phase).toBe("voting");
     show(both.state, PO);
     expect(detail()).toBe("Everyone has voted: turning this on reveals the cards.");
+    // The switch is described by it too, so a screen reader hears it on the switch.
+    const switchOf = () => within(row(dialog, "revealWhenAllVoted")).getByRole("switch");
+    const line = row(dialog, "revealWhenAllVoted").querySelector("[data-setting-detail]");
+    const described = () => (switchOf().getAttribute("aria-describedby") ?? "").split(" ");
+    expect(line?.id).toBeTruthy();
+    expect(described()).toContain(line?.id);
+    expect(described()).toHaveLength(2);
+    // Once it is gone, the switch is described by its hint alone.
+    show(one.state, PO);
+    expect(detail()).toBeUndefined();
+    expect(described()).toHaveLength(1);
+    expect(document.getElementById(described()[0] ?? "")?.textContent).toBe(
+      "The cards turn over by themselves once everyone present has voted.",
+    );
     show(both.state, ANA);
     expect(detail()).toBeUndefined();
+  });
+
+  it("says turning the automatic reveal on reveals now exactly when the domain would reveal (#28)", async () => {
+    render(<RoomSettingsButton />);
+    const BEN = "ben";
+    const OLGA = "olga";
+    const must = (result: ReturnType<typeof apply>) => {
+      if (!result.ok) throw new Error(result.error);
+      return result.state;
+    };
+    const base: RoomState = {
+      ...newRoom(),
+      settings: { ...DEFAULT_SETTINGS, revealWhenAllVoted: false },
+    };
+    base.participants = {
+      ...base.participants,
+      [BEN]: { name: "Ben", role: "voter", joinedAt: 3, connected: true },
+      [OLGA]: { name: "Olga", role: "observer", joinedAt: 4, connected: true },
+    };
+    const subsets = <T,>(items: readonly T[]): T[][] => {
+      const all: T[][] = [[]];
+      for (const item of items) for (const some of all.slice()) all.push([...some, item]);
+      return all;
+    };
+    let dialog: HTMLElement | undefined;
+    const seen = { shown: 0, hidden: 0 };
+    for (const poVotes of [true, false]) {
+      for (const away of subsets([ANA, BEN])) {
+        for (const voted of subsets([PO, ANA, BEN])) {
+          let next = must(
+            apply(base, { type: "startRound", subject: { kind: "none" } }, { actor: PO, now: 1 }),
+          );
+          for (const who of voted) {
+            next = must(apply(next, { type: "castVote", card: "5" }, { actor: who, now: 2 }));
+          }
+          for (const who of away) {
+            next = must(
+              apply(next, { type: "presence", who, connected: false }, { actor: "server", now: 3 }),
+            );
+          }
+          if (!poVotes) {
+            next = must(
+              apply(next, { type: "updateSettings", patch: { poVotes } }, { actor: PO, now: 4 }),
+            );
+          }
+          const on = { type: "updateSettings", patch: { revealWhenAllVoted: true } } as const;
+          const reveals = must(apply(next, on, { actor: PO, now: 5 })).round?.phase === "revealed";
+          show(next, PO);
+          dialog ??= await openPanel("Room settings");
+          const line = row(dialog, "revealWhenAllVoted").querySelector("[data-setting-detail]");
+          expect(line !== null, JSON.stringify({ poVotes, away, voted })).toBe(reveals);
+          seen[reveals ? "shown" : "hidden"] += 1;
+        }
+      }
+    }
+    // Both answers come up, more than once each.
+    expect(seen.shown).toBeGreaterThan(4);
+    expect(seen.hidden).toBeGreaterThan(4);
   });
 
   it("shows a custom length as a custom choice, and the timer in words to everyone else (#27)", async () => {

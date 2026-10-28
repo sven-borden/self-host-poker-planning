@@ -939,4 +939,65 @@ describe("the reveal by anyone who votes (#28)", () => {
     // The focus goes to the count, never to the page's body.
     await waitFor(() => expect(document.activeElement).toBe(centreOf("voting")));
   });
+
+  it("makes a voter's button wait for a second card in an anonymous round, and says why under the table", async () => {
+    await renderRoom(round({ whoCanReveal: "anyone", revealNames: false }));
+    // Ana's lone card would tell whose it is.
+    const button = revealButton() as HTMLElement;
+    const reason = document.querySelector<HTMLElement>("[data-reveal-wait]");
+    expect(reason?.textContent).toBe(
+      "Wait for two cards: in an anonymous round, a lone card shows whose it is.",
+    );
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(button.getAttribute("aria-describedby")).toBe(reason?.id);
+    // Neither a press nor R sends anything.
+    fireEvent.click(button);
+    fireEvent.keyDown(card("5"), { key: "r" });
+    await act(async () => {});
+    expect(sent).toEqual([]);
+    expect(screen.queryByRole("alert")).toBeNull();
+    // A second card: the button is live again, the line gone.
+    run("po", { type: "castVote", card: "3" });
+    expect(revealButton()?.getAttribute("aria-disabled")).toBeNull();
+    expect(revealButton()?.getAttribute("aria-describedby")).toBeNull();
+    expect(document.querySelector("[data-reveal-wait]")).toBeNull();
+    fireEvent.click(revealButton() as HTMLElement);
+    await waitFor(() => expect(server.round?.phase).toBe("revealed"));
+    expect(sent).toEqual([{ type: "reveal" }]);
+  });
+
+  it("counts the viewer's own pick as the second card, and never makes a named round wait", async () => {
+    await renderRoom(round({ whoCanReveal: "anyone", revealNames: false }));
+    fireEvent.click(card("5"));
+    await waitFor(() => expect(revealButton()?.getAttribute("aria-disabled")).toBeNull());
+    expect(document.querySelector("[data-reveal-wait]")).toBeNull();
+    cleanup();
+    await renderRoom(round({ whoCanReveal: "anyone" }));
+    expect(revealButton()?.getAttribute("aria-disabled")).toBeNull();
+    expect(document.querySelector("[data-reveal-wait]")).toBeNull();
+  });
+
+  it("never makes the PO's button wait: the PO reveals an anonymous round at one card", async () => {
+    await renderRoom({ ...round({ revealNames: false }), ownerId: ME });
+    expect(document.querySelector("[data-reveal-wait]")).toBeNull();
+    expect(revealButton()?.getAttribute("aria-disabled")).toBeNull();
+    fireEvent.click(revealButton() as HTMLElement);
+    await waitFor(() => expect(server.round?.phase).toBe("revealed"));
+  });
+
+  it("says a reveal refused for too few cards under the table when no line says it yet", async () => {
+    await renderRoom(round({ whoCanReveal: "anyone", revealNames: false }));
+    fireEvent.click(card("5"));
+    await waitFor(() => expect(revealButton()?.getAttribute("aria-disabled")).toBeNull());
+    // Ana took her card back on the server before the reveal arrived.
+    mocks.commandSender.mockImplementation(() => async () => ({
+      ok: false,
+      code: "too_few_cards",
+    }));
+    fireEvent.click(revealButton() as HTMLElement);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(
+      "Not revealed: in an anonymous round, a lone card shows whose it is. Wait for a second card.",
+    );
+  });
 });
