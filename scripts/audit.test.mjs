@@ -10,6 +10,7 @@ const report = (counts, advisories = []) =>
     },
   });
 
+/** @param {string} severity */
 const advisory = (severity) => ({
   id: 1,
   module_name: "left-pad",

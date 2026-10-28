@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
-import { type BrowserContext, expect, type Locator, type Page, test } from "./fixtures.ts";
 import { parse } from "csv-parse/sync";
 import { marked } from "marked";
+import { type BrowserContext, expect, type Locator, type Page, test } from "./fixtures.ts";
 import { type Guest, guestsJoin, join, ownAddress, ROOM_PATH, SHOTS, sameUser } from "./support.ts";
 
 // The session summary and the exports (#34) in real browsers, against the real server and

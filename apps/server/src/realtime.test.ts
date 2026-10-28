@@ -70,7 +70,8 @@ function handshake(
   origin: string | undefined,
   extra: Record<string, string> = {},
 ): Promise<number> {
-  const headers: Record<string, string> = origin === undefined ? { ...extra } : { origin, ...extra };
+  const headers: Record<string, string> =
+    origin === undefined ? { ...extra } : { origin, ...extra };
   if (transport === "websocket") {
     Object.assign(headers, {
       connection: "Upgrade",

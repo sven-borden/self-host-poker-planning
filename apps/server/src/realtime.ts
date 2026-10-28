@@ -274,31 +274,33 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     }, refillMs);
     holder.idle.unref();
   };
-  io.use(closeOnRefusal((socket, next) => {
-    const conn = socket.client.conn;
-    if (conn.readyState === "closing" || conn.readyState === "closed") {
-      next(new Error("internal"));
-      return;
-    }
-    const key = holderKey(socket);
-    let holder = holders.get(key);
-    if (holder && holder.sockets.size >= maxSocketsPerUser) {
-      logger.debug({ conn: socket.data.conn }, "socket refused: too many sockets for one person");
-      next(new Error("rate_limited"));
-      return;
-    }
-    if (!holder) {
-      holder = newHolder();
-      holders.set(key, holder);
-    }
-    clearTimeout(holder.idle);
-    holder.idle = undefined;
-    holder.sockets.add(socket.id);
-    // Released when the socket disconnects, and when the connection closes before the
-    // socket ever connected.
-    conn.once("close", () => release(key, socket.id));
-    next();
-  }));
+  io.use(
+    closeOnRefusal((socket, next) => {
+      const conn = socket.client.conn;
+      if (conn.readyState === "closing" || conn.readyState === "closed") {
+        next(new Error("internal"));
+        return;
+      }
+      const key = holderKey(socket);
+      let holder = holders.get(key);
+      if (holder && holder.sockets.size >= maxSocketsPerUser) {
+        logger.debug({ conn: socket.data.conn }, "socket refused: too many sockets for one person");
+        next(new Error("rate_limited"));
+        return;
+      }
+      if (!holder) {
+        holder = newHolder();
+        holders.set(key, holder);
+      }
+      clearTimeout(holder.idle);
+      holder.idle = undefined;
+      holder.sockets.add(socket.id);
+      // Released when the socket disconnects, and when the connection closes before the
+      // socket ever connected.
+      conn.once("close", () => release(key, socket.id));
+      next();
+    }),
+  );
 
   const drain: Drain = { accepting: true, inFlight: new Set() };
   drains.set(io, drain);
