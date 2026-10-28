@@ -10,6 +10,11 @@
  * tighter bucket of the person's too. One
  * person holds at most `MAX_SOCKETS_PER_USER` sockets; the next handshake is refused with
  * `rate_limited`. `drainRealtime` stops taking messages and waits for the answers owed.
+ *
+ * A connection costs memory before it is anyone's (#36): a handshake without the session
+ * cookie is refused before the upgrade (`sessionCookie`), a refused handshake closes its
+ * transport at once, and a connection that never asks for a socket is closed after
+ * `CONNECT_TIMEOUT_MS`.
  */
 import { randomBytes } from "node:crypto";
 import type { Server as HttpServer } from "node:http";
@@ -123,6 +128,25 @@ export interface RealtimeOptions {
   maxSocketsPerUser?: number;
   /** Added to every HTTP answer of Socket.IO's own (polling, the upgrade): the app's (#36). */
   responseHeaders?: Readonly<Record<string, string>>;
+  /**
+   * The cookie every handshake must carry (`setup.ts`: the session cookie's name). Without
+   * it, Engine.IO refuses the request before any upgrade or session, with the message
+   * `unauthenticated` (403 over polling, 400 on the upgrade); its value is still checked
+   * by the session middleware. Left out (tests without identity), no cookie is needed.
+   */
+  sessionCookie?: string;
+}
+
+/**
+ * How long a connection may stay open without a socket: the handshake's CONNECT packet
+ * normally follows its upgrade within milliseconds. Socket.IO's default is 45 s, which let
+ * one address hold thousands of idle connections.
+ */
+export const CONNECT_TIMEOUT_MS = 5_000;
+
+/** True when the `Cookie` header names `name` (its value is the middleware's to check). */
+export function hasCookie(header: string | undefined, name: string): boolean {
+  return (header ?? "").split(";").some((part) => part.trimStart().startsWith(`${name}=`));
 }
 
 /**
@@ -194,13 +218,24 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     historyLimit = HISTORY_LIMIT,
     maxSocketsPerUser = MAX_SOCKETS_PER_USER,
     responseHeaders = {},
+    sessionCookie,
   } = options;
   const io: RealtimeServer = new Server(httpServer, {
     maxHttpBufferSize: MAX_PAYLOAD_BYTES,
     serveClient: false,
+    connectTimeout: CONNECT_TIMEOUT_MS,
+    // Engine.IO calls this for a new connection only, before the upgrade or the session.
     allowRequest: (request, callback) => {
       const origin = request.headers.origin;
-      callback(null, origin === undefined || origin === allowedOrigin);
+      if (origin !== undefined && origin !== allowedOrigin) {
+        callback(null, false);
+        return;
+      }
+      if (sessionCookie !== undefined && !hasCookie(request.headers.cookie, sessionCookie)) {
+        callback("unauthenticated", false);
+        return;
+      }
+      callback(null, true);
     },
   });
 
@@ -213,7 +248,7 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     socket.data.conn = randomBytes(6).toString("base64url");
     next();
   });
-  for (const fn of middleware) io.use(guard(fn, logger));
+  for (const fn of middleware) io.use(closeOnRefusal(guard(fn, logger)));
 
   // After the session: the sockets and the message bucket of each person. Without
   // identity (tests), each socket counts as its own person.
@@ -239,7 +274,7 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     }, refillMs);
     holder.idle.unref();
   };
-  io.use((socket, next) => {
+  io.use(closeOnRefusal((socket, next) => {
     const conn = socket.client.conn;
     if (conn.readyState === "closing" || conn.readyState === "closed") {
       next(new Error("internal"));
@@ -263,7 +298,7 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     // socket ever connected.
     conn.once("close", () => release(key, socket.id));
     next();
-  });
+  }));
 
   const drain: Drain = { accepting: true, inFlight: new Set() };
   drains.set(io, drain);
@@ -331,6 +366,21 @@ function guard(fn: SocketMiddleware, logger: Logger): SocketMiddleware {
       fail(error);
     }
   };
+}
+
+/**
+ * Closes the connection once a middleware refused its socket: Socket.IO sends the
+ * `connect_error` and would keep the connection open for another try. The client gives up
+ * on a refusal anyway (`connectWhenIdentified` connects again on a new connection), so an
+ * open one only holds memory. `setImmediate` runs after Socket.IO wrote the refusal
+ * (`process.nextTick`), and Engine.IO closes once that packet has left.
+ */
+function closeOnRefusal(fn: SocketMiddleware): SocketMiddleware {
+  return (socket, next) =>
+    fn(socket, (err) => {
+      next(err);
+      if (err) setImmediate(() => socket.client.conn.close());
+    });
 }
 
 /**

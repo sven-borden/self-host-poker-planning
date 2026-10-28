@@ -264,10 +264,15 @@ sends it. So every tab open across that deploy kept its room instead of reloadin
     `yourVote`, and changing the others' cards changes nothing; in an anonymous round,
     swapping votes between people or reordering how they were cast changes nothing.
 - **Handshake**: a browser handshake must come from `BASE_URL`'s origin (checked first,
-  on both transports), then carry the session cookie (section 7): the middleware
-  resolves it and sets `socket.data.user = { id, name, isAnonymous }`, or refuses the
-  socket with `connect_error` `unauthenticated`; a database failure refuses it with
-  `internal`. The web app connects only once it has a session (`connectWhenIdentified`),
+  on both transports), then carry the session cookie (section 7). Engine.IO's
+  `allowRequest` refuses a request without that cookie before any upgrade or connection
+  (403 with the message `unauthenticated` over polling, 400 on the upgrade); the
+  middleware then resolves the cookie and sets `socket.data.user = { id, name,
+  isAnonymous }`, or refuses the socket with `connect_error` `unauthenticated`; a
+  database failure refuses it with `internal`. Every refused handshake closes its
+  connection at once, and a connection that asks for no socket is closed after 5 s
+  (`connectTimeout`, #36). The web client reads `unauthenticated` from the polling 403
+  too (`refusalOf`). The web app connects only once it has a session (`connectWhenIdentified`),
   runs the identity bootstrap once more on `unauthenticated`, and shows
   `errors.unauthenticated` after a second refusal. After `internal` or `rate_limited` it
   connects again with backoff (1 s doubling to 30 s, jittered, at least a `retryAfter`
@@ -712,13 +717,15 @@ password, no social provider before W5.
   | argon2 runs at once | memory (19 MiB each) | instance | 2, 32 waiting at most 2 s, then 503 `busy` |
   | Socket messages (`enter`, `cmd`, `history`) | the server's work | person, all sockets | 10 a second, bursts of 20 |
   | Roster commands (`join`, `leave`, `rename`, `setRole`) | broadcast and announcement floods | person | 10 a minute, bursts of 10 |
-  | History requests | database reads | person | 2 a second, bursts of 10 |
+  | History requests | database reads | person | 2 a second, bursts of 10 (the web's `historyPace`, #34, sends at most 8 at once, then 2 a second) |
   | Sockets | multiplying the buckets | person | 8 at once |
+  | Connections before a socket | memory | connection | none without the session cookie; closed at a refusal, or after 5 s without a socket |
   | Payload | memory, parsing | request or message | 16 KB (identity routes 4 KB) |
   | People in a room | the table | room | 16 counted, 32 at most |
 
-  Not limited per address: socket handshakes (each needs a session, and sign-ins are
-  limited), and wrong passwords across rooms (room codes are 58-bit secrets; behind a
+  Not limited per address: socket handshakes (a request without the session cookie is
+  refused before the upgrade, a refused handshake closes at once, an idle connection
+  after 5 s, and sign-ins are limited), and wrong passwords across rooms (room codes are 58-bit secrets; behind a
   shared address such a limit would let one client lock every password room).
 
   **Behind proxies the app is not told about** (`TRUST_PROXY` lower than the proxies in
