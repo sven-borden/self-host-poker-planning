@@ -5,20 +5,33 @@ import {
   type Role,
   UNITS_PER_CHARACTER,
 } from "@pp/domain";
-import { LockIcon, OctagonXIcon } from "lucide-react";
-import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { OctagonXIcon } from "lucide-react";
+import {
+  type FormEvent,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { errorMessage } from "../i18n/errors.ts";
 import { useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
-import { commandSender, enterRoomAgain } from "../realtime/room-connection.ts";
+import { announceRoomAccess, commandSender, enterRoomAgain } from "../realtime/room-connection.ts";
 import { enterRoomPassword, RoomApiError } from "../rooms/api.ts";
 import { useIdentityStore } from "../stores/identity-store.ts";
 import type { LockReason } from "../stores/room-store.ts";
 import { codeOf, failureMessage } from "./failure.ts";
-import { PasswordInput } from "./password-input.tsx";
+import { loadJoinPassword } from "./load-join-password.ts";
 import { saveName } from "./save-name.ts";
+
+const JoinPassword = lazy(() =>
+  loadJoinPassword().then((module) => ({ default: module.JoinPassword })),
+);
 
 /**
  * The name input takes as many code units as the domain accepts for 32 characters, so
@@ -100,6 +113,9 @@ export function JoinForm({
   const nameInput = useRef<HTMLInputElement>(null);
   const passwordInput = useRef<HTMLInputElement>(null);
   const asked = password ?? null;
+  // The password block is a lazy chunk: the focus waits for its field.
+  const [passwordShown, setPasswordShown] = useState(false);
+  const passwordReady = useCallback(() => setPasswordShown(true), []);
 
   // The saved name can arrive after the form (the identity bootstrap runs beside the page).
   useEffect(() => {
@@ -107,10 +123,10 @@ export function JoinForm({
   }, [edited, savedName]);
 
   useEffect(() => {
-    if (!focusOnMount) return;
+    if (!focusOnMount || (asked && !passwordShown)) return;
     (passwordInput.current ?? nameInput.current)?.focus();
     onFocused?.();
-  }, [focusOnMount, onFocused]);
+  }, [focusOnMount, onFocused, asked, passwordShown]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -166,6 +182,9 @@ export function JoinForm({
       const failed = error instanceof RoomApiError ? error.code : codeOf(error);
       if (failed === "wrong_password") {
         show({ message: errorMessage(t, failed), field: "password" });
+      } else if (failed === "busy") {
+        // Many people checked a password at once: this one waited its turn, then gave up.
+        show({ message: t("password.busy"), field: "password" });
       } else if (failed === "rate_limited") {
         const wait = error instanceof RoomApiError ? error.retryAfter : undefined;
         show({ message: tooMany(t, wait), field: "password" });
@@ -174,6 +193,8 @@ export function JoinForm({
       }
       return false;
     }
+    // This browser's other tabs locked out of the room enter again: the grant is ours.
+    announceRoomAccess();
     const entered = await enterRoomAgain();
     if (entered === "ok") return true;
     // Changed again between the check and the enter: the field asks for the new one.
@@ -225,29 +246,17 @@ export function JoinForm({
       <p className="mt-2 text-ink-2">{t("seat.lede")}</p>
       <form className="mt-6 flex flex-col gap-6" onSubmit={submit} noValidate>
         {asked ? (
-          <div className="flex flex-col gap-2" data-join-password>
-            <label htmlFor={ids.password} className="font-medium">
-              {t("password.label")}
-            </label>
-            <PasswordInput
-              ref={passwordInput}
-              id={ids.password}
-              name="password"
-              autoComplete="current-password"
-              enterKeyHint="go"
+          <Suspense fallback={null}>
+            <JoinPassword
+              ids={ids}
+              inputRef={passwordInput}
               value={secret}
-              onChange={(event) => setSecret(event.target.value)}
-              aria-invalid={passwordRefused || undefined}
-              aria-describedby={passwordRefused ? `${ids.error} ${ids.lock}` : ids.lock}
+              onChange={setSecret}
+              reason={asked.reason}
+              alert={passwordRefused ? alert : null}
+              onReady={passwordReady}
             />
-            <p id={ids.lock} className="m-0 flex items-start gap-2 text-sm text-ink-2">
-              <LockIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
-              {asked.reason === "changed"
-                ? t("password.changed")
-                : errorMessage(t, "password_required")}
-            </p>
-            {passwordRefused ? alert : null}
-          </div>
+          </Suspense>
         ) : null}
         <div className="flex flex-col gap-2">
           <label htmlFor={ids.name} className="font-medium">

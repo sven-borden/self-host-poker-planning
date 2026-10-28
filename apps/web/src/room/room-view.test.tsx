@@ -172,7 +172,7 @@ describe("the join form", () => {
     mocks.setDisplayName.mockResolvedValue("Eve");
     mocks.sendCommand.mockResolvedValueOnce({ ok: false, code: "rate_limited" });
     fireEvent.click(submit);
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/Too many attempts/));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/Too many tries/));
     mocks.sendCommand.mockRejectedValueOnce(new IdentityError("network"));
     fireEvent.click(submit);
     await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/Could not reach/));

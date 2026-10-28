@@ -39,9 +39,11 @@ async function setPassword(page: Page, password: string) {
   await page.getByRole("button", { name: "Room settings" }).click();
   const row = passwordRow(page);
   const change = row.getByRole("button", { name: "Change password" });
-  if (await change.isVisible()) await change.click();
+  const changing = await change.isVisible();
+  if (changing) await change.click();
   await row.getByLabel("Password", { exact: true }).fill(password);
-  await row.getByRole("button", { name: "Set password" }).click();
+  // A change is saved, a first password set.
+  await row.getByRole("button", { name: changing ? "Save password" : "Set password" }).click();
   await expect(row.getByText("This room has a password.")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(panel(page)).toHaveCount(0);
@@ -71,8 +73,17 @@ async function shootRow(page: Page, name: string) {
     await page.emulateMedia({ colorScheme: scheme });
     for (const width of [360, 1440]) {
       await page.setViewportSize({ width, height: 900 });
-      await page.waitForTimeout(150);
       await passwordRow(page).scrollIntoViewIfNeeded();
+      // No shot mid-transition: every finite animation has ended (the sheet, the colours).
+      await page.waitForFunction(() =>
+        document
+          .getAnimations()
+          .every(
+            (animation) =>
+              animation.playState !== "running" ||
+              animation.effect?.getComputedTiming().endTime === Infinity,
+          ),
+      );
       await page.screenshot({ path: `${SHOTS}${name}-${width}-${scheme}.png` });
     }
   }
@@ -278,5 +289,28 @@ test("keyboard only: the PO sets it on a desktop, a newcomer joins with it on a 
     expect(mobile.errors).toEqual([]);
   } finally {
     await mobile.context.close();
+  }
+});
+
+test("one tab gets in with the password: the other tabs of that browser enter too (N5)", async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  await createRoom(page);
+  await join(page, "Ana");
+  await setPassword(page, "two tabs here");
+  const eve = await person(browser, page.url());
+  try {
+    const second = await eve.context.newPage();
+    await second.goto(page.url());
+    await expect(passwordField(second)).toBeVisible();
+    await expect(passwordField(eve.page)).toBeVisible();
+    await joinWithPassword(eve.page, "Eve", "two tabs here");
+    // The other tab was told: it entered again, and now sees Eve at the table.
+    await expect(passwordField(second)).toHaveCount(0);
+    await expect(seated(second)).toBeVisible();
+  } finally {
+    await eve.context.close();
   }
 });

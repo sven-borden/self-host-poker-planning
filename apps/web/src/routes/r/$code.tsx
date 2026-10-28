@@ -7,6 +7,7 @@ import { errorMessage } from "../../i18n/errors.ts";
 import { useT } from "../../i18n/hooks.ts";
 import { RiseIn } from "../../motion/motion.tsx";
 import { openRoom } from "../../realtime/room-connection.ts";
+import { loadJoinPassword } from "../../room/load-join-password.ts";
 import { RoomPresence } from "../../room/room-status.tsx";
 import { RoomView } from "../../room/room-view.tsx";
 import { RoomSettingsButton } from "../../room/settings-button.tsx";
@@ -122,6 +123,10 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
   );
   const locked = useRoomStore((state) => state.code === header.code && state.status === "locked");
   const hasPassword = live ?? (header.hasPassword || locked);
+  // The join form's password block is a lazy chunk: fetched now, it is there when asked.
+  useEffect(() => {
+    if (header.hasPassword) loadJoinPassword().catch(() => {});
+  }, [header.hasPassword]);
   if (gone) return <RoomNotFound />;
 
   async function copyLink() {

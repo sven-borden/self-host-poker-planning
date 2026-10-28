@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   sendCommand: vi.fn(),
   commandSender: vi.fn(),
   enterRoomAgain: vi.fn(),
+  announceRoomAccess: vi.fn(),
   setDisplayName: vi.fn(),
   fetch: vi.fn(),
 }));
@@ -23,6 +24,7 @@ vi.mock("../realtime/room-connection.ts", () => ({
   sendCommand: mocks.sendCommand,
   commandSender: mocks.commandSender,
   enterRoomAgain: mocks.enterRoomAgain,
+  announceRoomAccess: mocks.announceRoomAccess,
 }));
 vi.mock("../identity/identity.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../identity/identity.ts")>()),
@@ -134,6 +136,7 @@ describe("the join form in a room with a password", () => {
     expect([password.selectionStart, password.selectionEnd]).toEqual([0, 4]);
     expect(password.getAttribute("aria-invalid")).toBe("true");
     expect(mocks.enterRoomAgain).not.toHaveBeenCalled();
+    expect(mocks.announceRoomAccess).not.toHaveBeenCalled();
 
     mocks.fetch.mockResolvedValueOnce(
       answer(429, { code: "rate_limited" }, { "retry-after": "125" }),
@@ -142,6 +145,16 @@ describe("the join form in a room with a password", () => {
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toBe("Too many tries. Try again in 3 minutes."),
     );
+
+    // Too many checks at once on the server: its own line, the focus on the field again.
+    mocks.fetch.mockResolvedValueOnce(answer(503, { code: "busy" }));
+    fireEvent.click(screen.getByRole("button", { name: "Join the room" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toBe(
+        "Many people are joining at once. Try again in a moment.",
+      ),
+    );
+    expect(document.activeElement).toBe(password);
   });
 
   it("checks the right one, enters again, then joins: the form stays meanwhile", async () => {
@@ -162,6 +175,11 @@ describe("the join form in a room with a password", () => {
         type: "join",
         payload: { name: "Dan", role: "voter" },
       }),
+    );
+    // This browser's other tabs are told before this one enters again.
+    expect(mocks.announceRoomAccess).toHaveBeenCalledTimes(1);
+    expect(mocks.announceRoomAccess.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.enterRoomAgain.mock.invocationCallOrder[0] ?? 0,
     );
     // Entered: the same form, without its password field now.
     expect(screen.queryByLabelText("Password")).toBeNull();
@@ -243,7 +261,7 @@ describe("the password row in Room settings", () => {
     fireEvent.click(within(row).getByRole("button", { name: "Set password" }));
     await waitFor(() =>
       expect(within(row).getByRole("alert").textContent).toBe(
-        "A password needs 4 to 128 characters.",
+        "A password needs 6 to 128 characters.",
       ),
     );
     expect(document.activeElement).toBe(input);
@@ -272,6 +290,9 @@ describe("the password row in Room settings", () => {
     fireEvent.click(within(row).getByRole("button", { name: "Change password" }));
     const input = await within(row).findByLabelText("Password");
     await waitFor(() => expect(document.activeElement).toBe(input));
+    // A change is saved, not set.
+    expect(within(row).getByRole("button", { name: "Save password" })).toBeTruthy();
+    expect(within(row).queryByRole("button", { name: "Set password" })).toBeNull();
     fireEvent.click(within(row).getByRole("button", { name: "Cancel" }));
     const change = await within(row).findByRole("button", { name: "Change password" });
     await waitFor(() => expect(document.activeElement).toBe(change));

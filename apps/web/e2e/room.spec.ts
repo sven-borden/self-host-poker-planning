@@ -183,7 +183,7 @@ test("a limited header read shows the rate-limit message, and Try again recovers
       : route.continue(),
   );
   await page.reload();
-  await expect(page.getByRole("alert")).toHaveText(/Too many attempts/);
+  await expect(page.getByRole("alert")).toHaveText(/Too many tries/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
     /^Room [1-9A-HJ-NP-Za-km-z]{10}$/,
   );

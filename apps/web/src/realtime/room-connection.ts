@@ -29,7 +29,9 @@ import {
 // the store goes `locked` and the socket stays connected, so once the page has the
 // password checked over HTTP, `enterRoomAgain` enters on the same socket. The server's
 // `locked` (the PO set or changed the password while this viewer was not in the room)
-// sends `enter` again, which then answers `password_required`.
+// sends `enter` again, which then answers `password_required`. When one tab of this
+// browser gets in with the password, it says so on a `BroadcastChannel`, and the others
+// locked out of that room enter again: the grant is the session user's, so they pass too.
 //
 // Messages are checked by shape (`isSnapshot`, `isEnterAck`, `isCmdAck`), not with the
 // protocol's zod schemas: zod would add about 27 kB gzipped to the room route (200 kB
@@ -44,6 +46,9 @@ export const ACK_TIMEOUT_MS = 10_000;
 export const LIVE_WAIT_MS = 15_000;
 /** Sends of one command (same id) at most: after a lost ack, and after `busy`. */
 export const MAX_SENDS = 4;
+
+/** The channel on which a tab tells the others of this browser that it got in (#31). */
+export const ACCESS_CHANNEL = "pp-room-access";
 
 /** `enter` refusals that pass on their own: sent again after a backoff. */
 const RETRIED_ENTER: ReadonlySet<string> = new Set([...RETRIED_REFUSALS, "busy"]);
@@ -65,6 +70,8 @@ interface ActiveRoom {
   close: () => void;
   /** Sends `enter` again; resolves "ok" or the refusal's code once it is answered. */
   enterAgain: () => Promise<string>;
+  /** Tells this browser's other tabs that the room's password was accepted (#31). */
+  announceAccess: () => void;
 }
 
 let active: ActiveRoom | null = null;
@@ -92,6 +99,14 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
    */
   let removed = false;
   let retry: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * Why the room last asked for its password: "changed" stays "changed" through a
+   * reconnect, whose fresh page state no longer holds the snapshot that said so.
+   */
+  let lockedAs: "required" | "changed" | null = null;
+  /** Another tab of this browser got in: enter again if this one is locked out (#31). */
+  const others =
+    typeof BroadcastChannel === "function" ? new BroadcastChannel(ACCESS_CHANNEL) : null;
   /** Waiting for the answer to the next `enter` (`enterAgain`). */
   let waiting: Array<(outcome: string) => void> = [];
   const settle = (outcome: string) => {
@@ -116,6 +131,7 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
     if (ack.ok) {
       attempt = 0;
       reauthenticated = false;
+      lockedAs = null;
       store().receive(ack.snapshot);
       store().setStatus("live");
       settle("ok");
@@ -126,8 +142,10 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
       // was not removed (a removal says so itself).
       attempt = 0;
       const { snapshot, removed: wasRemoved } = store();
-      const changed = !wasRemoved && snapshot?.room.settings.hasPassword === true;
-      store().lock(changed ? "changed" : "required");
+      const changed =
+        lockedAs === "changed" || (!wasRemoved && snapshot?.room.settings.hasPassword === true);
+      lockedAs = changed ? "changed" : "required";
+      store().lock(lockedAs);
       settle(ack.code);
       return;
     }
@@ -210,6 +228,13 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
   socket.on("snapshot", onSnapshot);
   socket.on("kicked", onKicked);
   socket.on("locked", onLocked);
+  if (others) {
+    others.onmessage = (event: MessageEvent<unknown>) => {
+      const said = event.data as { code?: unknown } | null;
+      if (stopped || said?.code !== code || store().status !== "locked") return;
+      enter();
+    };
+  }
   const stopTracking = trackConnection(socket, (connection) => {
     if (stopped) return;
     // The disconnect before a fresh sign-in is ours, and the socket connects again after.
@@ -242,6 +267,7 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
     socket.off("snapshot", onSnapshot);
     socket.off("kicked", onKicked);
     socket.off("locked", onLocked);
+    others?.close();
     settle("offline");
     socket.disconnect();
     if (active === room) {
@@ -259,7 +285,10 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
       // Not connected: the next connect enters, and answers this.
       enter();
     });
-  const room: ActiveRoom = { code, socket, close, enterAgain };
+  const announceAccess = () => {
+    if (!stopped) others?.postMessage({ code });
+  };
+  const room: ActiveRoom = { code, socket, close, enterAgain, announceAccess };
   active = room;
   return close;
 }
@@ -271,6 +300,15 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
  */
 export function enterRoomAgain(): Promise<string> {
   return active ? active.enterAgain() : Promise.resolve("offline");
+}
+
+/**
+ * Tells this browser's other tabs that the open room's password was accepted (#31): those
+ * locked out of the same room enter again. A channel's own messages never reach it, so
+ * this tab does not enter twice.
+ */
+export function announceRoomAccess(): void {
+  active?.announceAccess();
 }
 
 /** A command as `sendCommand` takes it: the wire command without its id. */

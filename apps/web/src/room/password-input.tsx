@@ -33,7 +33,8 @@ export function PasswordInput({ className, ref, ...props }: PasswordInputProps) 
         spellCheck={false}
         autoCapitalize="off"
         autoCorrect="off"
-        className={`pr-12 ${className ?? ""}`}
+        // Edge draws a reveal eye (and a clear cross) of its own: ours is the one.
+        className={`pr-12 [&::-ms-clear]:hidden [&::-ms-reveal]:hidden ${className ?? ""}`}
         {...props}
       />
       <Button

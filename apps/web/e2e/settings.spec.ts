@@ -56,16 +56,23 @@ async function openByKeyboard(page: Page, name: "Room settings" | "Room rules") 
 
 /** Lets every finite animation on the page end or be cancelled (the sheet slides in again when it changes side). */
 async function settle(page: Page) {
-  await page.evaluate(() =>
-    Promise.all(
-      document
+  await page.evaluate(async () => {
+    // Sampled again until none runs: a transition that ends can start the next one (a
+    // sheet's slide, then a field's colours), and one the next style change cancels (the
+    // password field's colours, #31) rejects its `finished`, which must not fail the wait.
+    for (let round = 0; round < 50; round++) {
+      const running = document
         .getAnimations()
-        .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
-        // A transition the next style change cancels (the password field's colours, #31)
-        // has ended too: its `finished` rejects, which must not fail the wait.
-        .map((animation) => animation.finished.catch(() => undefined)),
-    ),
-  );
+        .filter(
+          (animation) =>
+            animation.playState === "running" &&
+            animation.effect?.getComputedTiming().endTime !== Infinity,
+        );
+      if (running.length === 0) return;
+      await Promise.all(running.map((animation) => animation.finished.catch(() => undefined)));
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    }
+  });
 }
 
 /**

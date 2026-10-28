@@ -113,7 +113,7 @@ export function PasswordSetting({ settings, id, describedBy }: ControlProps) {
               aria-disabled={busy || undefined}
               className="aria-disabled:opacity-60"
             >
-              {t("password.set")}
+              {t(has ? "password.save" : "password.set")}
             </Button>
             {has ? (
               <Button
