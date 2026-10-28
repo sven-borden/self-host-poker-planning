@@ -125,6 +125,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   (BOM, `;` where the decimal mark is a comma, formula guard), a GFM Markdown table and
   "KEY estimate" lines; round level only, never names or the room code. The room route
   loads 176.6 kB.
+- Hardening from #36: a strict CSP (no inline script or style, `frame-ancestors
+  'none'`), HSTS, `Referrer-Policy: same-origin`, `Permissions-Policy`, COOP/CORP on
+  every answer; every limit in one table (architecture §8); cookieless socket
+  handshakes refused before the upgrade; a fuzz test over real sockets; a dependency
+  audit in CI. Live at af6c1a0 with every header present.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -135,22 +140,20 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#36 (PP-036)** hardening: a strict CSP and security headers, every limit reviewed
-  in one table, server-side input bounds, a fuzz test, a dependency audit in CI. PR #98
-  in review (CI green); its fixer merges `main` (with #34) and runs the e2e under its
-  headers. After its merge, check securityheaders.com.
-- **Paused after #36** (Sven, 2026-10-28: "pause after those"). Nothing new starts
-  until Sven says so.
+- Nothing. **Paused after #36** (Sven, 2026-10-28: "pause after those"). Nothing new
+  starts until Sven says so. No worktree is open.
 
 ## Next
 
-- W3 (#33–#41): #33, #34 and #35 merged; #36 in flight. When Sven resumes: #37
-  (accessibility audit), #39 (scale-out; also: retention's `occupied` sees one
-  instance only), #40 (after #36); #38 and #41 need Sven's OQ-1 and OQ-2.
+- W3 (#33–#41): #33 to #36 merged. When Sven resumes: #37 (accessibility audit), #39
+  (scale-out; also: retention's `occupied` sees one instance only, and a kick closes
+  sockets on one instance only), #40 (opt-in Sentry and Umami through
+  `CSP_EXTRA_SOURCES`); #38 and #41 need Sven's OQ-1 and OQ-2.
 - Chores to fold into a later issue: a lazy catalog for the panels' copy (settings and
   history, a few kB off both pages); the burst test's one `room_not_found` under load;
   a higher anonymous sign-in limit for the db tests through `SetupTuning` (about 41 of
-  60 a minute used, 3 more per new block).
+  60 a minute used, 3 more per new block); `/dev/table` crashes in WebKit (React #185),
+  with or without the CSP; no per-address cap on socket handshakes yet.
   - Each later setting drops its control into #25's panel (see the web README).
 - Notes to carry into the briefs:
   - #29: change after reveal never applies to anonymous rounds. The panel's `locked`
@@ -193,6 +196,9 @@ issues are merged.
     for all his apps. Until then, per-address limits (room creation, header reads, the
     password guard) see one address for everyone: 300 requests lock newcomers out of
     every password room for 10 minutes.
+  - **After #36:** untick the Synology's "Enable HSTS" (every answer now carries two
+    HSTS headers; the app's comes first and wins), and confirm the grade on
+    securityheaders.com for poker.borden.ch (expected A+; it refuses automated scans).
 - **#38**: pick the Azure service (OQ-1).
 - **#41**: French and German tone (OQ-2).
 - **#56**: licence and pricing model for branding (OQ-3).
