@@ -158,7 +158,7 @@ describe("catalogs", () => {
       "history.tookHours",
       "history.hoursMinutes",
       "history.votes",
-      // The exports (#34): the product's kind in the heading, and "Votes" again.
+      // The exports (#34): the product's name in the heading, and "Votes" again.
       "exports.heading",
       "exports.colVotes",
     ],
@@ -184,9 +184,11 @@ describe("catalogs", () => {
       "history.tookHours",
       "history.hoursMinutes",
       "history.voteSpoken",
-      // The exports (#34): a label and its value, and "Median" again.
+      // The exports (#34): a label and its value, "Median" again, and the product's name.
       "exports.item",
       "exports.colMedian",
+      "exports.heading",
+      "exports.headingNamed",
     ],
   };
 

@@ -14,7 +14,7 @@ import { type ExportRound, type Range, type Summary, summarize, voteCount } from
 /** What every export needs besides the rounds, read when the person picks one. */
 export interface ExportContext {
   t: TFunction;
-  /** The interface language: the CSV's separator follows it. */
+  /** The interface language: French and German take a semicolon between CSV cells. */
   language: Language;
   /** The locale numbers and dates follow (`localeFor(language)`, the reader's region). */
   locale: string;
@@ -25,12 +25,21 @@ export interface ExportContext {
   now: number;
 }
 
+/** The decimal separator of `locale`'s numbers: "." in en-US and de-CH, "," in fr-FR. */
+function decimalOf(locale: string): string {
+  return (
+    new Intl.NumberFormat(locale).formatToParts(1.5).find((part) => part.type === "decimal")
+      ?.value ?? "."
+  );
+}
+
 /**
- * The CSV separator: a comma in English; a semicolon in French and German, whose numbers
- * use a decimal comma (and whose spreadsheets expect a semicolon).
+ * The CSV separator: a semicolon when the interface speaks French or German (their
+ * spreadsheets expect one, de-CH's too, with its "5.5") or when the reader's numbers take
+ * a decimal comma (an English interface in en-ZA, en-NL or en-SE); else a comma.
  */
-export function csvSeparator(language: Language): "," | ";" {
-  return language === "en" ? "," : ";";
+export function csvSeparator(language: Language, locale: string): "," | ";" {
+  return language !== "en" || decimalOf(locale) === "," ? ";" : ",";
 }
 
 /** A Jira key at the very start of a title, as a person types it: "PAY-482 Checkout". */
@@ -106,7 +115,10 @@ const COLUMNS = [
   "colEnded",
 ] as const;
 
-/** A cell a spreadsheet would run as a formula: it starts with = + - @, a tab or a CR. */
+/**
+ * A cell a spreadsheet would run as a formula: it starts with = + - @, a tab or a CR,
+ * tested after NFKC, which turns their full-width and small forms (＝ ＋ ﹦) into them.
+ */
 const FORMULA_START = /^[=+\-@\t\r]/;
 /** A cell RFC 4180 quotes, besides one holding the separator: a quote or a line break. */
 const NEEDS_QUOTES = /["\r\n]/;
@@ -117,7 +129,11 @@ type Cell = { text: string } | { number: string } | null;
 function csvField(cell: Cell, separator: string): string {
   if (cell === null) return "";
   const value =
-    "number" in cell ? cell.number : FORMULA_START.test(cell.text) ? `'${cell.text}` : cell.text;
+    "number" in cell
+      ? cell.number
+      : FORMULA_START.test(cell.text.normalize("NFKC"))
+        ? `'${cell.text}`
+        : cell.text;
   return NEEDS_QUOTES.test(value) || value.includes(separator)
     ? `"${value.replaceAll('"', '""')}"`
     : value;
@@ -125,14 +141,14 @@ function csvField(cell: Cell, separator: string): string {
 
 /**
  * The CSV: UTF-8 with a byte order mark (Excel then reads the accents and emoji), CRLF
- * line ends, RFC 4180 quoting. A comma between cells in English, a semicolon in French
- * and German, and numbers in the interface language without grouping ("5,5" in French).
+ * line ends, RFC 4180 quoting. The separator is `csvSeparator`'s, and numbers follow the
+ * reader's locale without grouping ("5,5" in French, "5.5" in de-CH).
  * A text cell that starts with = + - @, a tab or a carriage return gets a leading `'`, so
  * a subject never runs as a formula. The end time is ISO 8601 with its offset.
  */
 export function toCsv(rounds: readonly ExportRound[], context: ExportContext): string {
   const { t, language, locale } = context;
-  const separator = csvSeparator(language);
+  const separator = csvSeparator(language, locale);
   const number = (value: number, digits = 2): Cell => ({
     number: formatNumber(value, locale, { useGrouping: false, maximumFractionDigits: digits }),
   });
@@ -172,11 +188,12 @@ export function toCsv(rounds: readonly ExportRound[], context: ExportContext): s
 
 /**
  * Markdown text: backslash before every character Markdown or a GFM table would read
- * (`|` ends a cell, a backtick opens code, `<` opens HTML), line breaks as `<br>`.
+ * (`|` ends a cell, a backtick opens code, `<` opens HTML, `@` mentions someone on
+ * GitHub), line breaks as `<br>`.
  */
 export function markdownText(text: string): string {
   return text
-    .replace(/[\\`*_[\]<>~|&#!]/g, (character) => `\\${character}`)
+    .replace(/[\\`*_[\]<>~|&#!@]/g, (character) => `\\${character}`)
     .replace(/\r\n|\r|\n/g, "<br>");
 }
 
@@ -249,7 +266,10 @@ export function toMarkdown(rounds: readonly ExportRound[], context: ExportContex
     range === "all"
       ? t("summary.all")
       : t("exports.rangeToday", { date: formatDate(now, locale, { dateStyle: "long" }) });
-  const header = `| ${COLUMNS.map((column) => markdownText(t(`exports.${column}`))).join(" | ")} |`;
+  // The agreement cells carry their "%": the column is named without it.
+  const name = (column: (typeof COLUMNS)[number]) =>
+    column === "colAgreement" ? t("results.agreement") : t(`exports.${column}`);
+  const header = `| ${COLUMNS.map((column) => markdownText(name(column))).join(" | ")} |`;
   // Numbers to the right: round, agreement, average, median, votes, seconds.
   const right = new Set<string>([
     "colRound",
@@ -302,17 +322,35 @@ export interface KeyLines {
 }
 
 /**
- * One "KEY estimate" line per round that has a key and a final, in round order:
- * "PAY-482 5", "4521 8". The final is the card as played, whatever the language, since
- * the tools read it as typed.
+ * One "KEY estimate" line per key, from the key's latest round (a re-vote supersedes the
+ * rounds before it), in round order: "PAY-482 5", "4521 8". A numeric final is written as
+ * a number with a point ("½" as 0.5), since the tools' estimate field is numeric; any
+ * other final as played. A key whose latest round has no final gets no line and that
+ * round counts as skipped, as does a round without a key.
  */
 export function keyLines(rounds: readonly ExportRound[]): KeyLines {
-  const lines: string[] = [];
+  const latest = new Map<string, ExportRound>();
+  let skipped = 0;
   for (const round of rounds) {
     const key = roundKey(round);
-    if (key !== null && round.final !== null) lines.push(`${key} ${round.final}`);
+    if (key === null) {
+      skipped += 1;
+      continue;
+    }
+    // Deleted first, so the key takes the place of its latest round.
+    latest.delete(key);
+    latest.set(key, round);
   }
-  return { text: lines.join("\n"), lines: lines.length, skipped: rounds.length - lines.length };
+  const lines: string[] = [];
+  for (const [key, round] of latest) {
+    if (round.final === null) {
+      skipped += 1;
+      continue;
+    }
+    const value = cardValue(round.final);
+    lines.push(`${key} ${value === null ? round.final : String(value)}`);
+  }
+  return { text: lines.join("\n"), lines: lines.length, skipped };
 }
 
 /** Saves `text` as a file named `name`, through a link the page never shows. */

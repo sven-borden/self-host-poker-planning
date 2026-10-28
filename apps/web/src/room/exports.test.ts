@@ -15,7 +15,7 @@ import {
   toMarkdown,
 } from "./exports.ts";
 import { keyLabel } from "./subject.ts";
-import type { ExportRound } from "./summary.ts";
+import { type ExportRound, exportRounds } from "./summary.ts";
 
 const AT = new Date(2026, 9, 28, 14, 5, 9).getTime();
 
@@ -176,7 +176,6 @@ describe("the CSV", () => {
     "separates with a semicolon in %s and writes a decimal comma",
     (language, first, final) => {
       const csv = toCsv(ROUNDS, context(language));
-      expect(csvSeparator(language)).toBe(";");
       const rows = parsed(csv, ";");
       expect(rows[0]?.[0]).toBe(first);
       expect(rows[0]?.[3]).toBe(final);
@@ -190,7 +189,7 @@ describe("the CSV", () => {
 
   it("keeps quotes, commas, semicolons, pipes, backticks, emoji and line breaks in a subject", () => {
     for (const language of ["en", "fr"] as const) {
-      const rows = parsed(toCsv(ROUNDS, context(language)), csvSeparator(language));
+      const rows = parsed(toCsv(ROUNDS, context(language)), language === "en" ? "," : ";");
       expect(rows[2]?.[1]).toBe(TRICKY);
       expect(rows[2]?.[3]).toBe("M");
       // No number: no average, no median.
@@ -215,9 +214,94 @@ describe("the CSV", () => {
     expect(Date.parse(iso)).toBe(AT);
   });
 
+  it.each([
+    ["en", "en-US", ",", "4.33"],
+    ["en", "en-ZA", ";", "4,33"],
+    ["fr", "fr-FR", ";", "4,33"],
+    ["de", "de-DE", ";", "4,33"],
+    ["de", "de-CH", ";", "4.33"],
+  ] as const)(
+    "in %s with %s numbers, separates with %s and writes %s",
+    (language, locale, separator, average) => {
+      expect(csvSeparator(language, locale)).toBe(separator);
+      const csv = toCsv(ROUNDS, context(language, { locale }));
+      const rows = parsed(csv, separator);
+      for (const row of rows) expect(row).toHaveLength(11);
+      expect(rows[1]?.[6]).toBe(average);
+      expect(csv).toContain(`${separator}${average}${separator}`);
+    },
+  );
+
+  it("quotes a subject that holds the separator and nothing else to quote", () => {
+    const rounds = [
+      round(1, { kind: "title", text: "Login, logout" }, "3"),
+      round(2, { kind: "title", text: "Search; filters" }, "5"),
+    ];
+    const english = toCsv(rounds, context("en"));
+    expect(english).toContain('"Login, logout"');
+    expect(english).toContain(",Search; filters,");
+    expect(parsed(english, ",").map((row) => row[1])).toEqual([
+      "Subject",
+      "Login, logout",
+      "Search; filters",
+    ]);
+    const french = toCsv(rounds, context("fr"));
+    expect(french).toContain('"Search; filters"');
+    expect(french).toContain(";Login, logout;");
+    expect(parsed(french, ";").map((row) => row[1])).toEqual([
+      "Sujet",
+      "Login, logout",
+      "Search; filters",
+    ]);
+  });
+
+  it("defuses the full-width and small forms of = + - @ too", () => {
+    const rounds = [
+      round(1, { kind: "title", text: "\u{FF1D}1+1" }, null),
+      round(2, { kind: "title", text: "\u{FF0B}cmd" }, null),
+      round(3, { kind: "title", text: "\u{FE66}SUM(A1)" }, null),
+      round(4, { kind: "title", text: "\u{FF20}x" }, null),
+      round(5, { kind: "title", text: "\u{FF0D}2" }, null),
+      round(6, { kind: "title", text: "Plain \u{FF1D}" }, null),
+    ];
+    const subjects = parsed(toCsv(rounds, context("en")), ",")
+      .slice(1)
+      .map((row) => row[1]);
+    expect(subjects).toEqual([
+      "'\u{FF1D}1+1",
+      "'\u{FF0B}cmd",
+      "'\u{FE66}SUM(A1)",
+      "'\u{FF20}x",
+      "'\u{FF0D}2",
+      "Plain \u{FF1D}",
+    ]);
+  });
+
   it("has no names and no per-person cards: only round-level columns", () => {
-    const csv = toCsv(ROUNDS, context("en"));
-    expect(csv).not.toMatch(/Ana|Ben/);
+    // History rows with names and per-person cards, as the server sends them.
+    const named = ROUNDS.map((one, i) => ({
+      ...one,
+      votes: {
+        kind: "named" as const,
+        votes: [
+          { name: "Anastasia", card: "Kx" },
+          { name: "Benedikt", card: i % 2 === 0 ? "Qy" : "Jz" },
+        ],
+      },
+    }));
+    const rows = exportRounds(named, null);
+    expect(rows.every((one) => !("votes" in one))).toBe(true);
+    for (const text of [
+      toCsv(rows, context("en")),
+      toMarkdown(rows, context("en")),
+      keyLines(rows).text,
+      // Even rows that kept their votes never write them.
+      toCsv(named, context("en")),
+      toMarkdown(named, context("en")),
+      keyLines(named).text,
+    ]) {
+      expect(text).not.toMatch(/Anastasia|Benedikt|Kx|Qy|Jz/);
+    }
   });
 });
 
@@ -235,13 +319,15 @@ function tableOf(markdown: string): { html: string; rows: string[][] } {
 describe("the Markdown", () => {
   it("renders as a table with a heading and the summary", () => {
     const { html, rows } = tableOf(toMarkdown(ROUNDS, context("en")));
-    expect(html).toContain("<h1>Planning poker: Team Sky</h1>");
+    expect(html).toContain("<h1>Poker Planning: Team Sky</h1>");
     expect(html).toContain("<li>Rounds: 11</li>");
     expect(html).toContain("<li>Total of final estimates: 28.5</li>");
-    expect(html).toContain("<li>6 rounds without a number</li>");
+    expect(html).toContain("<li>6 rounds without a numeric estimate</li>");
     expect(rows).toHaveLength(ROUNDS.length + 1);
     for (const row of rows) expect(row).toHaveLength(11);
     expect(rows[0]?.[0]).toBe("Round");
+    // The agreement cells carry their "%", so the column is named without it.
+    expect(rows[0]?.[5]).toBe("Agreement");
     expect(rows[1]?.slice(2, 8)).toEqual(["PAY-482", "5", "5", "67%", "4.33", "5"]);
   });
 
@@ -264,18 +350,40 @@ describe("the Markdown", () => {
     const { html, rows } = tableOf(
       toMarkdown(ROUNDS, context("fr", { roomName: null, range: "today" })),
     );
-    expect(html).toContain("<h1>Planning poker</h1>");
+    expect(html).toContain("<h1>Poker Planning</h1>");
     expect(html).toContain("Tours terminés le 28 octobre 2026");
     expect(rows[0]?.[0]).toBe("Tour");
     expect(rows[1]?.[6]).toBe("4,33");
     const german = tableOf(toMarkdown(ROUNDS, context("de"))).html;
-    expect(german).toContain("<h1>Planning Poker: Team Sky</h1>");
-    expect(german).toContain("<li>Summe der endgültigen Schätzungen: 28,5</li>");
+    expect(german).toContain("<h1>Poker Planning: Team Sky</h1>");
+    expect(german).toContain("<li>Summe der Endschätzungen: 28,5</li>");
   });
 
   it("escapes a room name that looks like Markdown", () => {
     const { html } = tableOf(toMarkdown(ROUNDS, context("en", { roomName: "*Sky* | <b>" })));
-    expect(html).toContain("<h1>Planning poker: *Sky* | &lt;b&gt;</h1>");
+    expect(html).toContain("<h1>Poker Planning: *Sky* | &lt;b&gt;</h1>");
+  });
+
+  it("keeps an @ from mentioning anyone on GitHub", () => {
+    const rounds = [round(1, { kind: "title", text: "Ask @octocat about @team/web" }, "3")];
+    const markdown = toMarkdown(rounds, context("en", { roomName: "@channel" }));
+    expect(markdown).toContain("Ask \\@octocat about \\@team/web");
+    expect(markdown).toContain("# Poker Planning: \\@channel");
+    // Every @ in the text is escaped.
+    expect(markdown).not.toMatch(/(^|[^\\])@/);
+    // Rendered, the text reads as typed.
+    expect(tableOf(markdown).rows[1]?.[1]).toBe("Ask @octocat about @team/web");
+  });
+
+  it("writes a link it would not open as plain text, never as a link", () => {
+    const rounds = [
+      round(1, { kind: "link", url: "javascript:alert(1)" }, "3"),
+      round(2, { kind: "link", url: "data:text/html,<b>x</b>" }, "5"),
+    ];
+    const { html, rows } = tableOf(toMarkdown(rounds, context("en")));
+    expect(html).not.toContain("<a ");
+    expect(html).not.toMatch(/href="(javascript|data):/);
+    expect(rows[1]?.[1]).not.toBe("");
   });
 });
 
@@ -300,6 +408,30 @@ describe("the lines for Jira or Azure DevOps", () => {
       skipped: ROUNDS.length - 3,
     });
     expect(keyLines([])).toEqual({ text: "", lines: 0, skipped: 0 });
+  });
+
+  it("keeps the latest round of a key: a re-vote replaces the estimate", () => {
+    const pay = { kind: "title", text: "PAY-17 Checkout" } as const;
+    const lines = keyLines([
+      // "Record 5", "Vote again", "Record 8".
+      round(1, pay, "5"),
+      round(2, { kind: "link", url: JIRA, key: "PAY-482" }, "3"),
+      round(3, pay, "8"),
+      // A key whose latest round has no final gets no line.
+      round(4, { kind: "link", url: ADO, key: "4521" }, "13"),
+      round(5, { kind: "link", url: ADO, key: "4521" }, null),
+      round(6, { kind: "none" }, "2"),
+    ]);
+    expect(lines).toEqual({ text: "PAY-482 3\nPAY-17 8", lines: 2, skipped: 2 });
+  });
+
+  it("writes a numeric final as a number with a point, and any other as played", () => {
+    const lines = keyLines([
+      round(1, { kind: "title", text: "PAY-1 Half" }, "½"),
+      round(2, { kind: "title", text: "PAY-2 Size" }, "M"),
+      round(3, { kind: "title", text: "PAY-3 Point" }, "0.5"),
+    ]);
+    expect(lines.text).toBe("PAY-1 0.5\nPAY-2 M\nPAY-3 0.5");
   });
 });
 
