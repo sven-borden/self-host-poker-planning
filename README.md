@@ -97,7 +97,10 @@ from the bundled database; to use your own Postgres, run the image alone with
 - **Backups**: everything lives in the database (volume `poker-planning_pgdata`). Back it
   up before upgrading and on a schedule, for example
   `docker compose exec -T db pg_dump -U poker -Fc poker > poker-$(date +%F).dump`, and
-  restore with `pg_restore`. `docker compose down -v` deletes the volume.
+  restore with `pg_restore`. `docker compose down -v` deletes the volume. Before you
+  start the server on a restored database, raise `ROOM_TTL_DAYS` or run
+  `update room set last_active_at = now()` on it: the retention purge deletes every room
+  idle past the period 3 to 5 minutes after the start (see "Privacy").
 - **Base image updates**: the Dockerfile pins `node:24-slim` and `debian:bookworm-slim` by
   digest, so a rebuild never picks up Debian security fixes by itself. Every month or
   after a Debian security advisory, follow the steps in the Dockerfile header (pull both
@@ -111,19 +114,30 @@ from the bundled database; to use your own Postgres, run the image alone with
 ## Privacy
 
 - **Stored**: rooms (name, settings, the people in them and the round on the table, the
-  password as an argon2id hash), the history of revealed rounds, and guests (a random
-  id, the display name, sessions without client address or user agent). No email, no
-  password of a person, no analytics.
+  password as an argon2id hash); the round history of each room (every revealed round's
+  subject, deck, votes with the voter's display name in a named round or the cards alone
+  in an anonymous one, results and final estimate); the password grants (which guest may
+  enter a room with a password without typing it); and guests (a random id, the display
+  name, sessions without client address or user agent). No email, no password of a
+  person, no analytics.
 - **For how long**: a room idle for `ROOM_TTL_DAYS` days (default 90) is deleted with
   its history and its password grants. Activity is any change in the room, and opening
-  it (counted at most once a day). A guest's session ends after the same number of days
-  without a visit; a guest with no session left and no room is deleted too. Rooms of
-  signed-in users (planned) stay until deleted.
-- **The purge** runs inside the server a few minutes after each start and then daily;
+  it (counted at most once a day, or once a 24th of a shorter period). A guest's session
+  ends after the same number of days without a visit; a guest with no session left and
+  no room is deleted too. Rooms of signed-in users (planned) stay until deleted.
+- **The purge** runs inside the server 3 to 5 minutes after each start and then daily;
   with several instances only one runs it. It logs counts only, never a room code, a
   name or a vote. Set `ROOM_TTL_DAYS` (1 to 3650) to keep rooms shorter or longer.
+- **Rooms it deletes at once**: the first run after a start deletes every room idle past
+  the period. After a restore from a backup, after lowering `ROOM_TTL_DAYS`, or after a
+  downtime longer than the period, that can be all of them. Before you start the server,
+  raise `ROOM_TTL_DAYS`, or set `last_active_at = now()` on the rooms you restored
+  (`update room set last_active_at = now()`).
+- **Backups** keep purged rooms until the backups themselves expire: a deleted room
+  stays in every dump taken before its deletion.
 - **Nothing is tracked by default.** Error reporting (Sentry) and page analytics
-  (Umami) load only when you set their variables.
+  (Umami) are not built yet; they will be opt-in, loaded only when you set their
+  variables (#40).
 
 ## Run locally
 

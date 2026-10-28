@@ -382,8 +382,8 @@ and they are committed.
 
 | Table | Content |
 |---|---|
-| `room` | `id` uuid, `code` text unique, `name` text null, `owner_user_id` text (a copy of `live.ownerId`, written by every commit), `live` jsonb (`RoomState`: settings, people, the round), `version` int (starts at 1), `password_hash` text null (argon2id PHC string), `password_failures` int and `password_failures_since` null (the per-room count of wrong passwords, #31), `created_at`, `last_active_at` (indexed, for the retention purge) |
-| `room_access` | `room_id` (cascade delete), `user_id` (cascade delete with the user), `granted_at`; primary key `(room_id, user_id)`: who may enter a room with a password without typing it (#31) |
+| `room` | `id` uuid, `code` text unique, `name` text null, `owner_user_id` text (a copy of `live.ownerId`, written by every commit), `live` jsonb (`RoomState`: settings, people, the round), `version` int (starts at 1), `password_hash` text null (argon2id PHC string), `password_failures` int and `password_failures_since` null (the per-room count of wrong passwords, #31), `created_at`, `last_active_at` (indexed, for the retention purge); `owner_user_id` is indexed too |
+| `room_access` | `room_id` (cascade delete), `user_id` (cascade delete with the user), `granted_at`; primary key `(room_id, user_id)`, and an index on `user_id` for the cascade from a deleted user: who may enter a room with a password without typing it (#31) |
 | `round_history` | `id` identity, `room_id` (cascade delete), `number`, unique `(room_id, number)`, `subject` jsonb, `deck` jsonb (`{ spec, specials }`), `votes` jsonb, `stats` jsonb (`computeResults`), `final` text null, `started_at`, `revealed_at`, `finished_at` |
 | Better Auth (#10) | `user` (with `is_anonymous`), `session`, `account`, `verification`, added by a later migration |
 | later | `backlog_item` (W6), `connector_token` (W6, encrypted), `brand` (W7) |
@@ -459,25 +459,33 @@ parameters (a room's state, vote values, a password hash); neither may reach a l
 **Retention** (#35, ADR-014; `retention.ts` schedules, `db/retention.ts` deletes): a job
 in the server process runs 3 to 5 minutes after the start (a random jitter, so instances
 of one deploy do not all try at once), then 24 hours after each run ends; its timer is
-unref'd and `dispose` stops it before the pool ends, a run in progress at its next batch.
-Each run takes the session advisory lock `7000035` with `pg_try_advisory_lock` on one
-pooled connection; another instance holding it makes the run skip (one `debug` line). A
-room is idle when its `last_active_at` is older than `ROOM_TTL_DAYS` (1 to 3650, default
-90) at the job's clock (injectable, so tests use a fake one). `last_active_at` moves on
-every commit, and on every `enter` that finds it more than a day old (one `UPDATE … WHERE
-last_active_at < now() - 1 day`, not awaited): a team that only opens its room keeps it,
-as its guests keep their sessions. Never deleted: a room with a socket on this instance,
-a room whose owner is a signed-in user (`is_anonymous` not true; none before W5), and a
-room a commit holds at that moment. Rooms go in batches of 500, oldest first, each in
-one statement that locks its rows `for update skip locked` and deletes `where
-last_active_at < cutoff`, so a commit or a visit that lands during the run keeps the
-room; `round_history` and `room_access` go by cascade, the password counters are columns
-of the row. Then orphan guests, also by 500: anonymous users at least a day old (a
-sign-in writes the user before its session) with no session that has not expired and no
-room they own; their sessions, accounts and grants go by cascade, and a signed-in user is
-never one. Last, the ended windows of wrong passwords (#31) of the rooms that stay are
-cleared, without touching `last_active_at`. One `info` line per run: `rooms`, `history`,
-`guests`, `passwordWindows`, `interrupted`, `durationMs`; a failure logs its code alone.
+unref'd. At a shutdown `run()` awaits the setup's `beforeClose`, which stops the job (a
+run in progress at its next batch) before the server closes its sockets, so no run sees
+the sockets go; `dispose` stops it again before the pool ends. Each run takes the session
+advisory lock `7000035` with `pg_try_advisory_lock` on one pooled connection; another
+instance holding it makes the run skip with one `info` line, so a lock that never frees
+shows in the logs. A room is idle when its `last_active_at` is older than `ROOM_TTL_DAYS`
+(1 to 3650, default 90) at Postgres's `now()`, read on the locked session: the clock that
+writes `last_active_at`, so an app clock running ahead cannot delete early (tests inject
+a clock). `last_active_at` moves on every commit, and on every `enter` that finds it
+older than a day or a 24th of `ROOM_TTL_DAYS`, whichever is shorter (an hour at 1; one
+`UPDATE … WHERE last_active_at < now() - that`, not awaited): a team that only opens its
+room keeps it, whichever instance it reached, at least 23/24 of the period after the
+visit, as its guests keep their sessions. Never deleted: a room with a socket on this
+instance, a room whose owner is a signed-in user (`is_anonymous` not true; none before
+W5), and a room a commit holds at that moment. Rooms go in batches of 500, oldest first,
+each in one statement that locks its rows `for update skip locked` (which re-checks the
+idle condition on a row's latest version once locked) and deletes them, so a commit or a
+visit that lands during the run keeps the room; `round_history` and `room_access` go by
+cascade, the password counters are columns of the row. Then orphan guests, also by 500:
+anonymous users at least a day old (a sign-in writes the user before its session) with no
+session that has not expired and no room they own (`room_owner_user_id_idx`); their
+sessions, accounts and grants go by cascade (`room_access_user_id_idx`), and a signed-in
+user is never one. Last, the ended windows of wrong passwords (#31) of the rooms that
+stay are cleared, without touching `last_active_at`. One `info` line per run: `rooms`,
+`history`, `guests`, `passwordWindows`, `interrupted`, `durationMs`; a failure logs its
+code alone. A restored backup, a lowered `ROOM_TTL_DAYS` or a long downtime makes every
+room past the period go in the first run after the start (README, "Privacy").
 
 ## 7. Identity
 

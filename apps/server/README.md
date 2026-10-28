@@ -10,17 +10,19 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 - `src/main.ts`: the only start path. Calls
   `run(process.env, { ...processHooks(process), setup: setupServer })`.
 - `src/setup.ts`: `setupServer(config, logger, signal, tuning)`, the `setup` hook (`tuning`
-  is for tests only: `presenceGraceMs`): `setupDatabase`,
-  then `createAuth` on its pool; returns `deps` with `checkDb`, `registerApi` (auth
-  routes, then the room API), `socketMiddleware` (the session) and `handlers` (the room
-  sync), plus `database` and `auth`, and starts the retention job. `dispose` clears the
-  deadline and presence timers, stops the retention job, then ends the pool.
+  is for tests only: `presenceGraceMs`, `retentionStartDelayMs`, `retentionNow`):
+  `setupDatabase`, then `createAuth` on its pool; returns `deps` with `checkDb`,
+  `registerApi` (auth routes, then the room API), `socketMiddleware` (the session) and
+  `handlers` (the room sync), plus `database`, `auth` and `retention`, and starts the
+  retention job. `beforeClose` stops the job before the server closes its sockets;
+  `dispose` stops it again, clears the deadline and presence timers, then ends the pool.
 - `src/retention.ts`: `startRetention({ store, ttlDays, logger, occupied, now? })`, the
   retention job (#35): first run 3 to 5 minutes after the start (`RETENTION_START_DELAY_MS`
   plus up to `RETENTION_JITTER_MS`), then `RETENTION_PERIOD_MS` (24 h) after each run, on
-  an unref'd timer; one `info` line of counts per run, `debug` when another instance
-  holds the lock, the code alone on a failure, never a rejection. `stop()` clears the
-  timer, aborts a run at its next batch and waits for it; `runNow()` is for tests.
+  an unref'd timer; one `info` line of counts per run, one `info` line when another
+  instance holds the lock, the code alone on a failure, never a rejection. Without `now`
+  (production) the purge reads Postgres's clock. `stop()` clears the timer, aborts a run
+  at its next batch and waits for it; `runNow()` is for tests.
 - `src/auth.ts`: identity. `createAuth(config, db, logger)` builds Better Auth (Drizzle
   adapter, anonymous plugin, options in `authOptions`); `registerAuthApi` mounts
   `/api/auth/*` and `POST /api/me/name`; `sessionMiddleware(auth)` is the socket
@@ -40,9 +42,11 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   `AbortSignal` it receives, logs one line and exits 0. A bad config, a failed `setup` or a failed listen logs
   one fatal line and exits 1; so does an uncaught exception or unhandled rejection
   (`processHooks(process)` wires them). `setup(config, logger, signal)` resolves with
-  `{ deps, dispose? }`: `deps` reach `createServer` (#7 `checkDb`, #10 `registerApi` and
-  `socketMiddleware`, W1 `handlers`); `dispose` (#7: end the pool) runs after the server
-  has closed and before exit, inside the 10 s limit.
+  `{ deps, beforeClose?, dispose? }`: `deps` reach `createServer` (#7 `checkDb`, #10
+  `registerApi` and `socketMiddleware`, W1 `handlers`); `beforeClose` (#35: stop the
+  retention job) runs at a shutdown before the server closes, and a rejection only logs;
+  `dispose` (#7: end the pool) runs after the server has closed and before exit, inside
+  the 10 s limit.
 - `src/config.ts`: `loadConfig(env)`, zod-validated and frozen; `ConfigError` never
   carries a value.
 - `src/logger.ts`: `createLogger(level, destination?)`, pino JSON on stdout.
@@ -82,11 +86,13 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   the step returns the loaded state itself.
 - `src/db/history.ts`: `historyRow(roomId, ended)`, pure: named rounds keep who, name
   and card; anonymous rounds the cards alone, in display order.
-- `src/db/retention.ts`: `createRetentionStore(pool)`: `purge({ now, ttlDays, occupied,
+- `src/db/retention.ts`: `createRetentionStore(pool)`: `purge({ now?, ttlDays, occupied,
   batchSize?, signal? })` under the advisory lock `RETENTION_LOCK_KEY` (7000035, `null`
-  when another session holds it): idle rooms, then orphan guests, `PURGE_BATCH` (500)
-  rows per statement, then the ended windows of wrong passwords; and `touchRoom(id)`,
-  the visit an `enter` records (`last_active_at` moved only when more than a day old).
+  when another session holds it), on Postgres's `now()` unless `now` is given: idle
+  rooms, then orphan guests, `PURGE_BATCH` (500) rows per statement, then the ended
+  windows of wrong passwords; and `touchRoom(id, ttlDays)`, the visit an `enter` records
+  (`last_active_at` moved only when older than `touchAfterMs(ttlDays)`: a day, or a 24th
+  of a shorter period).
   What counts as idle and what is never deleted: architecture section 6, "Retention".
 - `src/db/errors.ts`: `guard(step, call)` and `DatabaseError`: a database failure is
   reduced to its code, so no driver message, SQL parameter or connection detail reaches
@@ -141,7 +147,8 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 
 `createRoomSync({ runner, store, logger, sessionAlive, touchRoom })` (`src/sync/room-sync.ts`) is the
 `handlers` of `createRealtime`. A successful `enter` calls `touchRoom(id)` without waiting
-(a failure logs `visit not recorded` with the code), and `occupiedRooms()` names the rooms
+(a failure logs `visit not recorded` with the code; `setupServer` passes the config's
+`ROOM_TTL_DAYS` on to the store), and `occupiedRooms()` names the rooms
 with a socket on this instance, which the retention purge keeps (#35).
 
 - `enter { code, protocol }`: checks the session again (`sessionChecker`: a socket outlives
