@@ -8,18 +8,22 @@ import {
   test,
 } from "@playwright/test";
 import { computeResults } from "../../../packages/domain/src/results.ts";
-import { isPublicCardPath, stringLeaves } from "../../../packages/protocol/src/leak-scan.ts";
 import {
-  dbQuery,
+  historyLeaks,
+  isPublicCardPath,
+  stringLeaves,
+} from "../../../packages/protocol/src/leak-scan.ts";
+import {
   hand,
   handCard,
-  historyOf,
   join,
   newPerson,
   packetsIn,
   phone,
   ROOM_PATH,
   recordFrames,
+  roomHistory,
+  roomName,
   seats,
   subjectField,
   subjectLine,
@@ -34,9 +38,11 @@ import {
 // own timeout reveals it while every page stays idle; in round 4 the PO starts, extends
 // and stops a timer from the table's centre, everyone sees the countdown, and the last
 // vote reveals the round. Every page shows both anonymous rounds' "Anonymous" chip.
-// Everyone sees the results `computeResults` gives for the votes, `round_history` holds
-// each finished round, and every frame each person receives is scanned: no card before
-// the reveal, and in the anonymous round no frame that ties a person to a card.
+// Everyone sees the results `computeResults` gives for the votes, the history request
+// (#33) gives each finished round, and every frame each person receives is scanned: no
+// card before the reveal, in the anonymous round no frame that ties a person to a card,
+// and once the observer opens the history panel no history frame with a user id, or a
+// name in an anonymous round.
 // No fixed sleeps: every wait is on the page's own text, a data-* hook or a frame.
 // Needs DATABASE_URL; skipped without it locally, failing without it in CI.
 
@@ -365,9 +371,7 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
     const link = ana.page.url();
     expect(link).toBe(`${base}/r/${code}`);
     await join(ana.page, "Ana");
-    expect(await dbQuery("select name from room where code = $1", [code])).toEqual([
-      { name: ROOM_NAME },
-    ]);
+    expect(await roomName(base, code)).toBe(ROOM_NAME);
 
     // The others open the shared link: two voters, Ben on his phone, and an observer.
     for (const [person, role] of [
@@ -429,7 +433,7 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
         Cleo: ["5"],
       });
     }
-    expect(await historyOf(code)).toEqual([]);
+    expect(await roomHistory(base, ana.context, code)).toEqual([]);
 
     // Round 2, with a title: votes clear, the number goes up, round 1 is history.
     const from2 = mark();
@@ -437,12 +441,11 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
     await ana.page.getByRole("button", { name: "Next round" }).click();
     await expectRoundStarted(everyone, `Round 2${TITLE}`);
     expectRevealedOnce(1, from1, "manual");
-    const [round1, ...later] = await historyOf(code);
+    const [round1, ...later] = await roomHistory(base, ana.context, code);
     expect(later).toEqual([]);
     expect(round1).toMatchObject({
       number: 1,
       subject: { kind: "link", url: JIRA, key: "PAY-482" },
-      deck: { spec: DECK },
       votes: {
         kind: "named",
         votes: [
@@ -489,7 +492,7 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
     await ana.page.getByRole("button", { name: "Next round" }).click();
     await expectRoundStarted(everyone, "Round 3", true);
     expectRevealedOnce(2, from2, "everyoneVoted");
-    expect((await historyOf(code)).map((row) => row.number)).toEqual([1, 2]);
+    expect((await roomHistory(base, ana.context, code)).map((row) => row.number)).toEqual([1, 2]);
     // Ana plays the higher card first, so the people's order is not the deck's.
     const own3 = { Ana: ["5"], Ben: ["2"] };
     // Every page counts the round's timer down, from 12 s; it never shows more.
@@ -538,7 +541,7 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
     expectRevealedOnce(3, from3, "timer");
     const ids = participantIds(ana);
     expect(ids).toHaveLength(everyone.length);
-    const rows = await historyOf(code);
+    const rows = await roomHistory(base, ana.context, code);
     expect(rows.map((row) => row.number)).toEqual([1, 2, 3]);
     expect(rows[1]).toMatchObject({
       subject: { kind: "title", text: TITLE },
@@ -599,13 +602,47 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
     await ana.page.getByRole("button", { name: "Next round" }).click();
     await expectRoundStarted(everyone, "Round 5", true);
     expectRevealedOnce(4, from4, "everyoneVoted");
-    const [, , , row4, ...rest] = await historyOf(code);
+    const [, , , row4, ...rest] = await roomHistory(base, ana.context, code);
     expect(rest).toEqual([]);
     expect(row4).toMatchObject({ number: 4, subject: { kind: "none" }, stats: fourth });
     expect(row4?.votes).toEqual({ kind: "anonymous", cards: ["2", "2", "3"] });
     for (const word of [...everyone.map(({ name }) => name), ...ids]) {
       expect(row4?.text).not.toContain(word);
     }
+    // Dee, the observer, opens the history (#33): four rounds, newest first, two of them
+    // anonymous. No history frame she receives carries a user id, nor a name in an
+    // anonymous round.
+    const fromHistory = dee.frames.length;
+    await dee.press(dee.page.getByRole("button", { name: "History" }));
+    const panel = dee.page.getByRole("dialog", { name: "History" });
+    const rounds = panel.locator("[data-history-round]");
+    await expect(rounds).toHaveCount(4);
+    expect(await rounds.evaluateAll((all) => all.map((r) => r.dataset.historyRound))).toEqual([
+      "4",
+      "3",
+      "2",
+      "1",
+    ]);
+    await expect(panel.locator("[data-history-kind=anonymous]")).toHaveCount(2);
+    await dee.press(panel.getByRole("button", { name: "Votes of round 3" }));
+    await expect(panel.locator("[data-history-round='3'] [data-history-votes]")).toContainText(
+      "Anonymous round",
+    );
+    await dee.press(panel.getByRole("button", { name: "Votes of round 2" }));
+    await expect(panel.locator("[data-history-round='2'] [data-history-vote]")).toHaveCount(3);
+    for (const number of ["3", "4"]) {
+      const row = (await panel.locator(`[data-history-round="${number}"]`).textContent()) ?? "";
+      for (const { name } of everyone) expect(row, `round ${number}`).not.toContain(name);
+    }
+    const answers = packetsIn(dee.frames.slice(fromHistory))
+      .flatMap((packet) => (Array.isArray(packet) ? packet : []))
+      .filter((arg) => typeof arg === "object" && arg !== null && "rounds" in arg);
+    expect(answers.length, "history frames").toBeGreaterThan(0);
+    const people = { ids, names: everyone.map(({ name }) => name) };
+    for (const answer of answers) expect(historyLeaks(answer, people)).toEqual([]);
+    await dee.page.keyboard.press("Escape");
+    await expect(panel).toBeHidden();
+
     for (const person of everyone) expect(person.errors, person.name).toEqual([]);
   } catch (error) {
     await attachFrames(everyone, ROOM_PATH.exec(ana.page.url())?.[1]);

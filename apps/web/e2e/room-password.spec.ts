@@ -314,3 +314,63 @@ test("one tab gets in with the password: the other tabs of that browser enter to
     await eve.context.close();
   }
 });
+
+test("the header keeps the room's code whole and the lock in sight from 320 to 390 px, in English, French and German", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const code = await createRoom(page);
+  await join(page, "Ana");
+  await setPassword(page, "blue harbour");
+  const title = page.locator("[data-room-page] h1");
+  for (const language of ["fr", "de", "en"] as const) {
+    await page.evaluate((chosen) => localStorage.setItem("pp-language", chosen), language);
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("lang", language);
+    await expect(page.getByTestId("room-connection")).not.toBeEmpty();
+    await expect(page.locator("[data-room-lock]")).toBeVisible();
+    for (const width of [320, 360, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.waitForTimeout(100);
+      const where = `${language}, ${width} px`;
+      const layout = await title.evaluate((h1, shown) => {
+        // The lines the code's letters sit on, in the title "Room <code>".
+        const walker = document.createTreeWalker(h1, NodeFilter.SHOW_TEXT);
+        let lines = 0;
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const at = node.textContent?.indexOf(shown) ?? -1;
+          if (at < 0) continue;
+          const range = document.createRange();
+          range.setStart(node, at);
+          range.setEnd(node, at + shown.length);
+          lines = new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size;
+        }
+        const header = h1.closest("header")?.getBoundingClientRect();
+        const lock = h1.querySelector("[data-room-lock]")?.getBoundingClientRect();
+        const buttons = [...(h1.closest("header")?.querySelectorAll("button") ?? [])].map((b) =>
+          b.getBoundingClientRect(),
+        );
+        const box = h1.getBoundingClientRect();
+        const overlaps = buttons.some(
+          (b) =>
+            b.left < box.right && b.right > box.left && b.top < box.bottom && b.bottom > box.top,
+        );
+        return {
+          lines,
+          lockInside: !!lock && !!header && lock.right <= header.right + 0.5 && lock.width > 0,
+          buttonsInside: buttons.every((b) => b.left >= 0 && b.right <= window.innerWidth + 0.5),
+          overlaps,
+          sideways: document.documentElement.scrollWidth - window.innerWidth,
+        };
+      }, code);
+      if (width === 320) {
+        await page.screenshot({ path: `${SHOTS}header-${language}-320.png` });
+      }
+      expect(layout.lines, where).toBe(1);
+      expect(layout.lockInside, where).toBe(true);
+      expect(layout.buttonsInside, where).toBe(true);
+      expect(layout.overlaps, where).toBe(false);
+      expect(layout.sideways, where).toBeLessThanOrEqual(0);
+    }
+  }
+});

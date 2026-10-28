@@ -6,6 +6,7 @@
  */
 import type { WireCommandInput } from "./commands.ts";
 import type { ProtocolErrorCode } from "./errors.ts";
+import type { HistoryAck, HistoryRequest } from "./history.ts";
 import {
   type CmdAck,
   type EnterAck,
@@ -20,6 +21,12 @@ export interface ClientToServerEvents {
   enter: (payload: EnterPayload, ack: (ack: EnterAck) => void) => void;
   /** One domain command; the ack carries the room's new version or an error code. */
   cmd: (command: WireCommandInput, ack: (ack: CmdAck) => void) => void;
+  /**
+   * One page of the entered room's finished rounds, newest first (#33); only for someone
+   * in the room. A new event, so an older server answers nothing (the client's ack times
+   * out); the version stays 4.
+   */
+  history: (request: HistoryRequest, ack: (ack: HistoryAck) => void) => void;
 }
 
 export interface ServerToClientEvents {

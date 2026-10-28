@@ -15,6 +15,7 @@
  * `hasPassword` with the `password` of `settingsUpdated` (#31). Nor is a new ack code
  * such as `too_few_cards` (#28): an older client words an unknown code generically. New
  * HTTP-only error codes (`bad_room_name`, `wrong_password`, `bad_password`) never reach a
- * socket.
+ * socket. Nor is a new client event with its own ack, such as `history` (#33): no message
+ * an older peer sends or reads changes, and a client and its server ship together.
  */
 export const PROTOCOL_VERSION = 4;

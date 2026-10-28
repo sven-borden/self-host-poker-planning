@@ -1,7 +1,8 @@
 /**
  * Socket.IO on the app's HTTP server. Every incoming payload is `unknown` (the event maps
  * describe a well-behaved client and check nothing at runtime): `enter` goes through
- * `parseEnter`, `cmd` through `toDomainCommand`, and only parsed values reach the
+ * `parseEnter`, `cmd` through `toDomainCommand`, `history` (#33) through
+ * `parseHistoryRequest`, and only parsed values reach the
  * handlers (`sync/room-sync.ts` in the running server). Every message first takes a token
  * from its sender's bucket (`SOCKET_MESSAGE_LIMIT`, one bucket per person shared by all
  * their sockets): past it, the answer is `rate_limited` and the socket stays open. One
@@ -16,7 +17,10 @@ import {
   type CmdAck,
   type EnterAck,
   type EnterPayload,
+  type HistoryAck,
+  type HistoryRequest,
   parseEnter,
+  parseHistoryRequest,
   type ServerToClientEvents,
   toDomainCommand,
 } from "@pp/protocol";
@@ -79,6 +83,8 @@ export type SocketMiddleware = (
 export interface RealtimeHandlers {
   enter(socket: RealtimeSocket, enter: EnterPayload): EnterAck | Promise<EnterAck>;
   cmd(socket: RealtimeSocket, id: string, command: Command): CmdAck | Promise<CmdAck>;
+  /** One page of the entered room's history (#33); left out, every request is refused. */
+  history?(socket: RealtimeSocket, request: HistoryRequest): HistoryAck | Promise<HistoryAck>;
   /** Called once with the Socket.IO server, before any connection (for broadcasts). */
   attach?(io: RealtimeServer): void;
   /** Called after a socket closed; it has already left its Socket.IO rooms. */
@@ -250,6 +256,14 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
         ? handlers.cmd(socket, parsed.id, parsed.command)
         : { ok: false, code: parsed.code };
     });
+    onRaw(socket, log, drain, "history", async (payload) => {
+      if (!bucket.take()) return limited;
+      const parsed = parseHistoryRequest(payload);
+      if (!parsed.ok) return { ok: false, code: parsed.code };
+      return handlers.history
+        ? handlers.history(socket, parsed.request)
+        : { ok: false, code: "room_not_found" };
+    });
   });
 
   return io;
@@ -288,11 +302,11 @@ function guard(fn: SocketMiddleware, logger: Logger): SocketMiddleware {
  * message is tracked until its answer is sent; while the server drains, a new one is
  * dropped unanswered.
  */
-function onRaw<A extends EnterAck | CmdAck>(
+function onRaw<A extends EnterAck | CmdAck | HistoryAck>(
   socket: RealtimeSocket,
   log: Logger,
   drain: Drain,
-  event: "enter" | "cmd",
+  event: "enter" | "cmd" | "history",
   handle: (payload: unknown) => Promise<A>,
 ): void {
   const untyped = socket as unknown as {

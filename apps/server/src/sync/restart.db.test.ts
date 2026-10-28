@@ -8,6 +8,8 @@
  * Nothing arms the deadline at start-up: the first socket that enters the room arms it
  * again (`armDeadline` on enter), and `apply` stamps the reveal with the deadline itself,
  * so the stored round is the same whoever resolves it.
+ *
+ * #33 (AC 1): the history of finished rounds reads the same after the restart.
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -217,4 +219,44 @@ it("reveals at the deadline, once, when the server restarts mid-countdown (#27)"
     ).length;
     expect(count).toBe(1);
   }
+}, 60_000);
+
+it("keeps every history row through a hard kill and a restart (#33, AC 1)", async () => {
+  const [ada, bob] = await Promise.all([signInGuest(base, base), signInGuest(base, base)]);
+  let state = createRoom({ ownerId: ada.id });
+  state = step(state, ada.id, { type: "join", name: "Ada", role: "voter" });
+  state = step(state, bob.id, { type: "join", name: "Bob", role: "voter" });
+  state = step(state, ada.id, { type: "startRound", subject: { kind: "title", text: "Story 1" } });
+  const code = roomCode();
+  expect(await database.store.insertRoom({ code, name: null, state })).not.toBeNull();
+
+  const a = roomClient(ada, code);
+  const b = roomClient(bob, code);
+  await a.waitFor((s) => s.version === 1);
+  await b.waitFor((s) => s.version === 1);
+  // Three rounds voted; the fourth is on the table.
+  for (const round of [1, 2, 3]) {
+    expect((await a.cmd("castVote", { card: "5", round })).ok).toBe(true);
+    expect((await b.cmd("castVote", { card: "8", round })).ok).toBe(true);
+    const subject = { kind: "title", text: `Story ${round + 1}` };
+    expect((await a.cmd("startRound", { subject })).ok).toBe(true);
+  }
+  const before = await b.history();
+  expect(before.ok && before.rounds.map((row) => row.number)).toEqual([3, 2, 1]);
+  const version = a.latest()?.version ?? 0;
+
+  const fromA = a.received.length;
+  const fromB = b.received.length;
+  const dropped = new Promise((done) => b.socket.once("disconnect", done));
+  await killServer();
+  await dropped;
+  await startServer();
+  await a.waitFor((s) => s.version === version, 10_000, fromA);
+  await b.waitFor((s) => s.version === version, 10_000, fromB);
+  expect(await a.history()).toEqual(before);
+  expect(await b.history({ limit: 2 })).toEqual({
+    ok: true,
+    rounds: before.ok ? before.rounds.slice(0, 2) : [],
+    next: 2,
+  });
 }, 60_000);

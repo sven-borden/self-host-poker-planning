@@ -12,6 +12,8 @@ import {
   cmdAckSchema,
   type EnterAck,
   enterAckSchema,
+  type HistoryAck,
+  historyAckSchema,
   PROTOCOL_VERSION,
   type ServerToClientEvents,
   type Snapshot,
@@ -105,6 +107,8 @@ export interface TestClient {
   enter(code: string, protocol?: number): Promise<EnterAck>;
   /** Sends a command; the id is fresh unless given. */
   cmd(type: string, payload?: object, id?: string): Promise<CmdAck>;
+  /** Asks for a page of the room's history (#33), any payload; the answer is parsed strictly. */
+  history(request?: unknown): Promise<HistoryAck>;
   /** The first snapshot received from `from` on (an index into `received`) that matches. */
   waitFor(match: (s: Snapshot) => boolean, timeoutMs?: number, from?: number): Promise<Received>;
   latest(): Snapshot | undefined;
@@ -173,6 +177,12 @@ export function testClient(url: string, options: ClientOptions = {}): TestClient
       };
       const message = payload === undefined ? { id, type } : { id, type, payload };
       return cmdAckSchema.parse(await raw.timeout(5000).emitWithAck("cmd", message));
+    },
+    history: async (request = {}) => {
+      const raw = socket as unknown as {
+        timeout(ms: number): { emitWithAck(event: string, ...args: unknown[]): Promise<unknown> };
+      };
+      return historyAckSchema.parse(await raw.timeout(5000).emitWithAck("history", request));
     },
     waitFor: (match, timeoutMs = 3000, from = 0) =>
       new Promise((resolve, reject) => {

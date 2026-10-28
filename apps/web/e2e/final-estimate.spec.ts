@@ -25,7 +25,8 @@ import {
 // The final estimate and "Vote again" (#32) in real browsers, against the real server and
 // Postgres: the PO records the preselected suggestion with one press and changes it, by
 // keyboard on a desktop and on a phone; picks on a tie; everyone (a voter, an observer, a
-// phone) sees the final in the centre and hears it once; the history row holds it at once;
+// phone) sees the final in the centre and hears it once; the history request leaves the
+// round on the table out, and shows it with its final once the next round starts (#33);
 // "Vote again" keeps the subject, clears the votes and raises the number; the frames of an
 // anonymous round with a final and a re-vote leak nothing; and the PO's picker and the
 // centre stay clear of every card at 4, 8, 10 and 16 seats, in English, French and German,
@@ -76,16 +77,6 @@ async function saidOnce(page: Page, sentence: string) {
   await expect(tableLive(page)).toContainText(sentence);
   const text = (await tableLive(page).textContent()) ?? "";
   expect(text.split(sentence).length - 1, `"${sentence}" in "${text}"`).toBe(1);
-}
-
-/** The history row of round `number`, polled until it holds `final`. */
-async function rowWithFinal(code: string, number: number, final: string) {
-  const finalOf = async () => {
-    const row = (await historyOf(code)).find((r) => r.number === number);
-    return row ? JSON.parse(row.text).final : undefined;
-  };
-  await expect.poll(finalOf).toBe(final);
-  return (await historyOf(code)).find((row) => row.number === number);
 }
 
 /**
@@ -158,7 +149,7 @@ test("the PO records the suggestion with one press and changes it by keyboard; a
     await expect(record5).toBeFocused();
     await expect(centreSentence(ben.page)).toHaveText("Suggested 5. Agreement 33%.");
     await expect(pick(page, "5, suggested")).toBeChecked();
-    expect((await historyOf(code)).length).toBe(0);
+    expect((await historyOf(po)).length).toBe(0);
     await expect(centreFinal(ben.page)).toHaveCount(0);
     // Only the PO decides.
     for (const viewer of [ben.page, olga.page, cleo.page]) {
@@ -169,7 +160,8 @@ test("the PO records the suggestion with one press and changes it by keyboard; a
     await shoot(page, "final-po-suggested");
     await shoot(ben.page, "final-voter-suggested");
 
-    // One press records the suggestion; the row holds it at once, before any next round.
+    // One press records the suggestion. Its row is written at once (the server's tests read
+    // it), but the history request leaves the round on the table out until the next one.
     await record5.focus();
     await page.keyboard.press("Enter");
     await expect(recordButton(page)).toHaveText("Recorded");
@@ -178,8 +170,7 @@ test("the PO records the suggestion with one press and changes it by keyboard; a
       await expect(centreFinal(viewer).locator(".sr-only")).toHaveText("Final estimate: 5.");
       await saidOnce(viewer, "The product owner recorded 5 as the final estimate.");
     }
-    const decided = await rowWithFinal(code, 1, "5");
-    expect(decided?.votes).toMatchObject({ kind: "named" });
+    expect(await historyOf(po)).toEqual([]);
     await page.waitForTimeout(600);
     await shoot(page, "final-po-recorded");
     await shoot(ben.page, "final-voter-recorded");
@@ -199,7 +190,6 @@ test("the PO records the suggestion with one press and changes it by keyboard; a
       await expect(centreFinal(viewer)).toHaveAttribute("data-centre-final", "8");
       await saidOnce(viewer, "The product owner changed the final estimate to 8.");
     }
-    await rowWithFinal(code, 1, "8");
     // Then the next steps, in order.
     await page.keyboard.press("Tab");
     await expect(page.getByRole("button", { name: "Next round" })).toBeFocused();
@@ -209,8 +199,9 @@ test("the PO records the suggestion with one press and changes it by keyboard; a
     // The next round writes the row again and keeps the final.
     await page.getByRole("button", { name: "Next round" }).click();
     await expect(centreStatus(page)).toHaveText("0/3 voted so far");
-    const rows = await historyOf(code);
-    expect(rows.map((row) => [row.number, JSON.parse(row.text).final])).toEqual([[1, "8"]]);
+    const rows = await historyOf(po);
+    expect(rows.map((row) => [row.number, row.final])).toEqual([[1, "8"]]);
+    expect(rows[0]?.votes).toMatchObject({ kind: "named" });
     expect(cleo.errors).toEqual([]);
   } finally {
     po.close();
@@ -277,7 +268,8 @@ test("with a tie the PO picks: nothing preselected, the tied cards marked", asyn
     await page.getByRole("button", { name: "Record L" }).click();
     await expect(centreFinal(ben.page)).toHaveAttribute("data-centre-final", "L");
     await saidOnce(ben.page, "The product owner recorded L as the final estimate.");
-    await rowWithFinal(code, 1, "L");
+    expect(await po.cmd("startRound", { subject: { kind: "none" } })).toMatchObject({ ok: true });
+    expect((await historyOf(po)).map((row) => [row.number, row.final])).toEqual([[1, "L"]]);
   } finally {
     po.close();
     for (const guest of guests) guest.close();
@@ -294,6 +286,8 @@ test("Vote again keeps the subject, a title or a link with its key, clears the v
   const code = await createRoom(page);
   await join(page, "Ana");
   const guests = await guestsJoin(base, code, ["Cleo", "Dan"]);
+  const [cleo] = guests;
+  if (!cleo) throw new Error("no guest");
   try {
     await expect(seats(page).locator("[data-seat]")).toHaveCount(3);
     await subjectField(page).fill("Login page");
@@ -311,7 +305,7 @@ test("Vote again keeps the subject, a title or a link with its key, clears the v
     // A vote again needs no confirmation and focuses the hand, like "Next round".
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(hand(page).locator("[tabindex='0']")).toBeFocused();
-    let rows = await historyOf(code);
+    let rows = await historyOf(cleo);
     expect(rows.map((row) => row.number)).toEqual([1]);
     expect(rows[0]?.subject).toEqual({ kind: "title", text: "Login page" });
     expect(rows[0]?.votes).toMatchObject({ kind: "named" });
@@ -331,12 +325,12 @@ test("Vote again keeps the subject, a title or a link with its key, clears the v
     await expect(subjectLine(page)).toContainText("Round 4");
     await expect(subjectLine(page).locator("[data-subject-key]")).toHaveText("PAY-482");
     await expect(centreStatus(page)).toHaveText("0/3 voted so far");
-    rows = await historyOf(code);
+    rows = await historyOf(cleo);
     expect(rows.map((row) => row.number)).toEqual([1, 2, 3]);
     const third = rows[2];
     expect(third?.subject).toEqual({ kind: "link", url: JIRA, key: "PAY-482" });
     expect((third?.votes as { votes?: unknown[] } | undefined)?.votes).toHaveLength(3);
-    expect(JSON.parse(third?.text ?? "{}").final).toBe("13");
+    expect(third?.final).toBe("13");
   } finally {
     for (const guest of guests) guest.close();
   }
@@ -443,9 +437,9 @@ test("an anonymous round with a final and a re-vote: the frames never tie a pers
     expect(voting).toBeGreaterThan(2);
     expect(revealed).toBeGreaterThan(1);
     // The history keeps the first round's cards and final, and no person at all.
-    const [first] = await historyOf(code);
+    const [first] = await historyOf(po);
     expect(first?.votes).toEqual({ kind: "anonymous", cards: ["3", "5", "5", "8"] });
-    expect(JSON.parse(first?.text ?? "{}").final).toBe("5");
+    expect(first?.final).toBe("5");
     for (const leak of [...ids, "Ana", "Ben", "Cleo", "Dan"]) {
       expect(first?.text.includes(leak), "a person in the anonymous row").toBe(false);
     }
@@ -535,7 +529,6 @@ test("a double Enter on Reveal cards records nothing, at 40, 120 and 250 ms; a d
       await page.waitForTimeout(500);
       await expect(recordButton(page), `a second Enter after ${gap} ms`).toHaveText("Record 5");
       await expect(centreFinal(page)).toHaveCount(0);
-      expect((await historyOf(code)).filter((row) => row.number === round)).toEqual([]);
     }
 
     // A double Enter on "Record 5" records once; "Next round" right after it starts the
@@ -553,8 +546,8 @@ test("a double Enter on Reveal cards records nothing, at 40, 120 and 250 ms; a d
     await expect(page.getByRole("button", { name: "Next round" })).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(centreStatus(page)).toHaveText("0/3 voted so far");
-    const rows = await historyOf(code);
-    expect(rows.map((row) => [row.number, JSON.parse(row.text).final ?? null])).toEqual([
+    const rows = await historyOf(po);
+    expect(rows.map((row) => [row.number, row.final])).toEqual([
       [1, null],
       [2, null],
       [3, null],

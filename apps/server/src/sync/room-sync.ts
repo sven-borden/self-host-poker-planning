@@ -25,17 +25,25 @@
  * a socket that has not passed that gate never gets a snapshot of it. When the PO sets or
  * changes the password (`changePassword`, from the HTTP API), the sockets of everyone else
  * hear `locked` and leave the room; a kick drops the removed person's grant.
+ *
+ * History (#33): `history` answers one page of the entered room's finished rounds to
+ * someone in it (a voter, an observer or the PO), checked on a fresh load at every
+ * request; the round on the table is left out.
  */
 import { type ApplyResult, apply, type Cause, type Command, type RoomState } from "@pp/domain";
 import {
   type CmdAck,
   type EnterAck,
   type EnterPayload,
+  HISTORY_PAGE,
+  type HistoryAck,
+  type HistoryRequest,
   type Snapshot,
   toSnapshot,
 } from "@pp/protocol";
 import { DatabaseError } from "../db/errors.ts";
-import type { AccessStore, AccessWrite, RoomStore } from "../db/rooms.ts";
+import { historyView } from "../db/history.ts";
+import type { AccessStore, AccessWrite, HistoryStore, RoomStore } from "../db/rooms.ts";
 import type { CommandRunner, RunOutcome } from "../db/runner.ts";
 import type { Logger } from "../logger.ts";
 import type { RealtimeHandlers, RealtimeServer, RealtimeSocket } from "../realtime.ts";
@@ -69,6 +77,11 @@ export interface RoomSyncOptions {
    * a database): only participants and the PO enter such a room.
    */
   access?: Pick<AccessStore, "hasAccess">;
+  /**
+   * The room's finished rounds (#33). Left out (tests without a database), every room's
+   * history is empty.
+   */
+  history?: Pick<HistoryStore, "loadHistory">;
   logger: Logger;
   /**
    * Whether the socket's session still exists (`sessionChecker` in `auth.ts`). Asked on
@@ -97,6 +110,7 @@ export interface RoomSyncOptions {
 }
 
 export interface RoomSync extends RealtimeHandlers {
+  history(socket: RealtimeSocket, request: HistoryRequest): Promise<HistoryAck>;
   attach(io: RealtimeServer): void;
   disconnect(socket: RealtimeSocket): void;
   /** Clears every deadline timeout; the server is shutting down. */
@@ -167,6 +181,8 @@ const GONE = refuse("internal");
 export function createRoomSync(options: RoomSyncOptions): RoomSync {
   const { runner, store, logger, sessionAlive, now = Date.now } = options;
   const hasAccess = options.access?.hasAccess ?? (async () => false);
+  const loadHistory =
+    options.history?.loadHistory ?? (async () => ({ rounds: [], more: false }) as const);
   const log = logger.child({ part: "rooms" });
   // A `busy` answer stored nothing: the same command id may run again.
   const acks = createRecentAcks({
@@ -662,6 +678,44 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     return ack;
   }
 
+  /**
+   * One page of the entered room's history (#33), for someone in it: a voter, an observer
+   * or the PO, read from a fresh load, so a removed person or someone still on the join
+   * form gets `not_participant` (a socket that never got past the password has no room:
+   * `room_not_found`). The round on the table is left out, even with a row of its own.
+   */
+  async function historyNow(socket: RealtimeSocket, request: HistoryRequest): Promise<HistoryAck> {
+    const user = socket.data.user;
+    if (!user) return refuse("unauthenticated");
+    if (socket.data.room === undefined) return refuse("room_not_found");
+    if (!(await sessionStillAlive(socket))) {
+      leaveRoom(socket);
+      setImmediate(() => socket.conn.close());
+      return refuse("unauthenticated");
+    }
+    const room = socket.data.room;
+    if (room === undefined) return refuse("room_not_found");
+    try {
+      const loaded = await store.loadRoom(room.code);
+      if (!loaded || loaded.id !== room.id) return refuse("room_not_found");
+      if (!isMember(loaded.state, user.id)) return refuse("not_participant");
+      const page = await loadHistory(room.id, {
+        before: request.before,
+        limit: request.limit ?? HISTORY_PAGE.size,
+        exclude: loaded.state.round?.number,
+      });
+      const rounds = page.rounds.map(historyView);
+      const last = rounds.at(-1);
+      // The room's id and a count: never a subject, a name or a card.
+      log.debug({ room: room.id, rounds: rounds.length }, "history read");
+      return page.more && last ? { ok: true, rounds, next: last.number } : { ok: true, rounds };
+    } catch (error) {
+      if (!(error instanceof DatabaseError)) throw error;
+      log.warn({ room: room.id, err: error.code }, "history read failed in the database");
+      return refuse("internal");
+    }
+  }
+
   /** Whether `who` may join the room now: no password, a member, or a grant (#31). */
   async function mayJoin(room: RoomRef, who: string): Promise<boolean> {
     const loaded = await store.loadRoom(room.code);
@@ -734,6 +788,14 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       return pending
         ? pending.then(() => cmdNow(socket, id, command))
         : cmdNow(socket, id, command);
+    },
+
+    history(socket, request) {
+      // Like a command: a request sent while an `enter` runs reads the room it entered.
+      const pending = entering.get(socket);
+      return pending
+        ? pending.then(() => historyNow(socket, request))
+        : historyNow(socket, request);
     },
 
     disconnect(socket) {

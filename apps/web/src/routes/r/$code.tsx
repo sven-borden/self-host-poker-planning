@@ -7,6 +7,7 @@ import { errorMessage } from "../../i18n/errors.ts";
 import { useT } from "../../i18n/hooks.ts";
 import { RiseIn } from "../../motion/motion.tsx";
 import { openRoom } from "../../realtime/room-connection.ts";
+import { RoomHistoryButton } from "../../room/history-button.tsx";
 import { loadJoinPassword } from "../../room/load-join-password.ts";
 import { RoomPresence } from "../../room/room-status.tsx";
 import { RoomView } from "../../room/room-view.tsx";
@@ -163,13 +164,14 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
     // on one line (`RoomPresence`). On a phone (#22) it is compact: the name one size
     // smaller, the copy-link button an icon beside it (its name stays "Copy the link"), and
     // the code's label for screen readers only, so the code, the connection and the
-    // count share the line under them.
+    // count share the line under them. Below 360 px three buttons beside the name would
+    // leave it too narrow for the room's code, so they take a row of their own, last.
     <RiseIn data-room-page className="flex flex-col gap-10 phone:gap-2 squat:gap-3">
       <header className="flex items-start justify-between gap-3 sm:items-end sm:gap-5 phone:grid phone:grid-cols-[minmax(0,1fr)_auto] phone:items-center phone:gap-y-1">
         {/* On a phone its two lines join the grid: the name beside the button, then the line under both. */}
         <div className="min-w-0 phone:contents">
           {/* overflow-hidden: whatever the name stacks above or below its letters stays inside. */}
-          <h1 className="overflow-hidden py-1 text-3xl font-[760] break-words [font-stretch:110%] sm:text-4xl squat:text-2xl phone:col-start-1 phone:row-start-1 phone:py-0.5 phone:text-xl">
+          <h1 className="overflow-hidden py-1 text-3xl font-[760] break-words [font-stretch:110%] sm:text-4xl squat:text-2xl phone:col-start-1 phone:row-start-1 phone:py-0.5 phone:text-xl narrow:col-span-2">
             {header.name !== null ? (
               <bdi>{header.name}</bdi>
             ) : (
@@ -203,8 +205,9 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
             <RoomPresence />
           </div>
         </div>
-        {/* The header's actions: the link to share, and the room's settings or rules (#25). */}
-        <div className="flex shrink-0 flex-wrap justify-end gap-2 phone:col-start-2 phone:row-start-1 phone:flex-nowrap">
+        {/* The header's actions: the link to share, the history (#33) and the room's settings or
+            rules (#25). Below 360 px, a row of their own under the code. */}
+        <div className="flex shrink-0 flex-wrap justify-end gap-2 phone:col-start-2 phone:row-start-1 phone:flex-nowrap narrow:col-span-2 narrow:col-start-1 narrow:row-start-3 narrow:mt-1 narrow:justify-start">
           <Button
             variant="outline"
             className="shrink-0 phone:size-11 phone:has-[>svg]:px-0"
@@ -213,6 +216,7 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
             <LinkIcon aria-hidden />
             <span className="phone:sr-only">{t("room.copyLink")}</span>
           </Button>
+          <RoomHistoryButton />
           <RoomSettingsButton />
         </div>
       </header>

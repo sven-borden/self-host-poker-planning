@@ -4,12 +4,12 @@ import {
   createRoom,
   handCard,
   hand as handOf,
-  historyOf,
   join,
   newPerson,
   ownAddress,
   phone,
   recordAnimations,
+  roomHistory,
   seats,
   shoot,
 } from "./support.ts";
@@ -17,7 +17,7 @@ import {
 // A change after the reveal (#29) in real browsers, against the real server and Postgres:
 // the PO allows it after a reveal, a voter changes their card, and everyone sees the
 // "changed" chip and the new results while the PO's recorded final stays, with the bar's
-// note; the history row follows. An anonymous round's hand stays disabled, the switch
+// note; the history row follows once the next round starts. An anonymous round's hand stays disabled, the switch
 // locked. A change by keyboard alone, on a phone too, and no turn under reduced motion.
 // Needs DATABASE_URL; skipped without it locally, failing without it in CI.
 
@@ -83,7 +83,9 @@ async function person(browser: Browser, url: string, name: string) {
 
 test("the PO allows changes after a reveal: Ben changes his card, everyone sees the chip and the new results, the final stays", async ({
   page,
+  context,
   browser,
+  baseURL,
 }) => {
   test.setTimeout(150_000);
   const code = await createRoom(page);
@@ -159,15 +161,6 @@ test("the PO allows changes after a reveal: Ben changes his card, everyone sees 
     await expect(page.getByRole("button", { name: "Record 8" })).toHaveAccessibleDescription(
       "Votes changed since you recorded 5.",
     );
-    // The history row follows the change, the final kept (AC 2).
-    await expect
-      .poll(async () => (await historyOf(code))[0]?.votes)
-      .toMatchObject({
-        kind: "named",
-        votes: expect.arrayContaining([
-          expect.objectContaining({ name: "Ben", card: "13", changedAfterReveal: true }),
-        ]),
-      });
     await shoot(page, "change-after-reveal-po");
     await shoot(ben.page, "change-after-reveal-voter");
 
@@ -190,6 +183,20 @@ test("the PO allows changes after a reveal: Ben changes his card, everyone sees 
     await closeSettings(page);
     await expect(hint(ben.page)).toHaveText(REVEALED_HINT);
     await expect(chips(ben.page)).toHaveText(["changed"]);
+
+    // The history row follows the change with the final recorded last (AC 2). The history
+    // (#33) leaves out the round on the table, so it shows once the next round starts.
+    await page.getByRole("button", { name: "Next round" }).click();
+    await expect(status(page)).toHaveAttribute("data-centre-status", "voting");
+    const rows = await roomHistory(baseURL ?? "", context, code);
+    expect(rows.map((row) => [row.number, row.final])).toEqual([[1, "8"]]);
+    expect(rows[0]?.votes).toMatchObject({
+      kind: "named",
+      votes: expect.arrayContaining([
+        expect.objectContaining({ name: "Ben", card: "13", changedAfterReveal: true }),
+        expect.objectContaining({ name: "Pia", card: "5" }),
+      ]),
+    });
   } finally {
     await ben.context.close();
   }

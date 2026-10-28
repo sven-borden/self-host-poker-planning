@@ -46,6 +46,7 @@ export async function setupServer(
     runner,
     store,
     access: store,
+    history: store,
     logger,
     sessionAlive: sessionChecker(db),
     ...(tuning.presenceGraceMs !== undefined && { presenceGraceMs: tuning.presenceGraceMs }),
