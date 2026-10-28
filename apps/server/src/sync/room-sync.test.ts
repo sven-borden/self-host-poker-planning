@@ -10,6 +10,8 @@ import { PROTOCOL_VERSION } from "@pp/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DatabaseError } from "../db/errors.ts";
 import { play } from "../db/fixtures.ts";
+import type { StoredHistoryRound } from "../db/history.ts";
+import type { HistoryQuery, HistoryStore } from "../db/rooms.ts";
 import { createCommandRunner } from "../db/runner.ts";
 import { createServer, type PokerServer } from "../server.ts";
 import { collectLogs, type LogCollector, testConfig } from "../test-support.ts";
@@ -54,6 +56,7 @@ interface StartOptions {
   touchRoom?: (roomId: string) => Promise<void>;
   /** Runs before every load of a room (enter, the runner, a reload): may wait or throw. */
   beforeLoad?: (code: string) => Promise<void> | void;
+  history?: Pick<HistoryStore, "loadHistory">;
 }
 
 async function start(
@@ -439,6 +442,108 @@ describe("a session that ends while the socket stays open", () => {
     expect(checks).toBe(2);
     // A transport close: the client reconnects, and the handshake refuses the old session.
     expect(await closed).toBe("transport close");
+  });
+});
+
+describe("history (#33)", () => {
+  const row = (number: number): StoredHistoryRound => ({
+    number,
+    subject: { kind: "none" },
+    votes: { kind: "named", votes: [{ who: "ub", name: "Bob", card: "5" }] },
+    stats: {
+      distribution: [{ card: "5", count: 1 }],
+      core: ["5"],
+      mode: "5",
+      agreement: 1,
+      spread: ["5", "5"],
+      consensus: false,
+      average: 5,
+      median: 5,
+      suggested: "5",
+    },
+    final: null,
+    startedAt: new Date(1_000),
+    revealedAt: new Date(2_000),
+    finishedAt: new Date(3_000),
+  });
+
+  it("refuses a socket outside the room and someone on the join form; a member reads an empty one", async () => {
+    const { client } = await start(voting());
+    const stranger = client("uz");
+    expect(await stranger.history()).toEqual({ ok: false, code: "room_not_found" });
+    await stranger.enter(CODE);
+    expect(await stranger.history()).toEqual({ ok: false, code: "not_participant" });
+    const cy = client("uc");
+    await cy.enter(CODE);
+    expect(await cy.history()).toEqual({ ok: true, rounds: [] });
+  });
+
+  it("asks for 20 rounds below the cursor without the table's round, sends no id, and gives the next cursor", async () => {
+    const queries: HistoryQuery[] = [];
+    const { client } = await start(voting(), {
+      history: {
+        loadHistory: async (_id, query) => {
+          queries.push(query);
+          return { rounds: [row(9), row(8)], more: query.before === undefined };
+        },
+      },
+    });
+    const ada = client("ua");
+    await ada.enter(CODE);
+    const first = await ada.history();
+    expect(first).toEqual({
+      ok: true,
+      rounds: [
+        expect.objectContaining({
+          number: 9,
+          votes: { kind: "named", votes: [{ name: "Bob", card: "5" }] },
+        }),
+        expect.objectContaining({
+          number: 8,
+          startedAt: 1_000,
+          revealedAt: 2_000,
+          finishedAt: 3_000,
+        }),
+      ],
+      next: 8,
+    });
+    expect(await ada.history({ before: 8, limit: 2 })).toEqual({
+      ok: true,
+      rounds: [expect.objectContaining({ number: 9 }), expect.objectContaining({ number: 8 })],
+    });
+    expect(queries).toEqual([
+      { before: undefined, limit: 20, exclude: 1 },
+      { before: 8, limit: 2, exclude: 1 },
+    ]);
+  });
+
+  it("answers internal when the database fails, and logs the room by its id", async () => {
+    const { client, store, logs } = await start(voting(), {
+      history: {
+        loadHistory: async () => {
+          throw new DatabaseError("load history", "57P01");
+        },
+      },
+    });
+    const ada = client("ua");
+    await ada.enter(CODE);
+    expect(await ada.history()).toEqual({ ok: false, code: "internal" });
+    const line = logs.lines.find((l) => l.msg === "history read failed in the database");
+    expect(line).toMatchObject({ room: idOf(store), err: "57P01" });
+  });
+
+  it("waits for an enter in progress, and refuses once the session is gone", async () => {
+    let alive = true;
+    let clock = Date.now();
+    const { client } = await start(voting(), { now: () => clock, sessionAlive: async () => alive });
+    const bob = client("ub");
+    await new Promise<void>((resolve) => bob.socket.once("connect", () => resolve()));
+    const [entered, read] = await Promise.all([bob.enter(CODE), bob.history()]);
+    expect(entered.ok).toBe(true);
+    expect(read).toEqual({ ok: true, rounds: [] });
+    alive = false;
+    clock += SESSION_RECHECK_MS + 1;
+    expect(await bob.history()).toEqual({ ok: false, code: "unauthenticated" });
   });
 });
 

@@ -1,7 +1,14 @@
 import { computeResults } from "@pp/domain";
 import { describe, expect, it } from "vitest";
 import { nextRound, play, revealedRoom, T0, votingRoom } from "./fixtures.ts";
-import { type EndedRound, historyRound, historyRow, isHistory } from "./history.ts";
+import {
+  type EndedRound,
+  historyRound,
+  historyRow,
+  historyView,
+  isHistory,
+  type StoredHistoryRound,
+} from "./history.ts";
 
 function ended(state = revealedRoom(), finishedAt = T0 + 20): EndedRound {
   const { ended: round } = nextRound(state, finishedAt);
@@ -140,5 +147,42 @@ describe("isHistory", () => {
     const { ended: voting } = nextRound(votingRoom());
     expect(isHistory({ round: voting, participants: {}, finishedAt: T0 })).toBe(false);
     expect(isHistory(undefined)).toBe(false);
+  });
+});
+
+describe("historyView", () => {
+  it("sends a named round without its voters' ids, times in milliseconds", () => {
+    let s = play(votingRoom(), "u1", {
+      type: "updateSettings",
+      patch: { allowChangeAfterReveal: true },
+    });
+    s = play(s, "u1", { type: "reveal" }, T0 + 10);
+    s = play(s, "u2", { type: "castVote", card: "8" }, T0 + 11);
+    const row = historyRow("room-1", ended(s));
+    const view = historyView({ ...row, final: "8" } as StoredHistoryRound);
+    expect(view).toEqual({
+      number: 1,
+      subject: { kind: "title", text: "Login page" },
+      final: "8",
+      stats: row.stats,
+      startedAt: T0 + 4,
+      revealedAt: T0 + 10,
+      finishedAt: T0 + 20,
+      votes: {
+        kind: "named",
+        votes: [
+          { name: "Bob", card: "8", changedAfterReveal: true },
+          { name: "Cy", card: "8" },
+        ],
+      },
+    });
+    expect(JSON.stringify(view)).not.toMatch(/"u[0-9]"|"who"|room-1|deck/);
+  });
+
+  it("sends an anonymous round's cards as stored, and nothing else about its voters", () => {
+    const row = historyRow("room-1", ended(revealedRoom({ anonymous: true })));
+    const view = historyView(row as StoredHistoryRound);
+    expect(view.votes).toEqual({ kind: "anonymous", cards: ["5", "8"] });
+    expect(JSON.stringify(view)).not.toMatch(/Bob|Cy|"u[0-9]"/);
   });
 });

@@ -2,7 +2,6 @@ import { expect, type Page, test } from "@playwright/test";
 import { computeResults } from "../../../packages/domain/src/results.ts";
 import {
   createRoom,
-  dbQuery,
   type Guest,
   hand,
   handCard,
@@ -11,6 +10,7 @@ import {
   newGuest,
   newPerson,
   ownAddress,
+  roomHistory,
   sameUser,
   seats,
   shoot,
@@ -46,6 +46,7 @@ const centreStatus = (page: Page) => page.locator("[data-centre-status='voting']
 test("three people, a titled round then a Jira round: votes clear, the number rises, history is written (AC 1, AC 2)", async ({
   page,
   browser,
+  baseURL,
 }) => {
   test.setTimeout(150_000);
   const code = await createRoom(page);
@@ -85,7 +86,7 @@ test("three people, a titled round then a Jira round: votes clear, the number ri
     await page.waitForTimeout(1_500);
     await shoot(page, "next-round-title-po");
     await shoot(ben.page, "next-round-title");
-    expect(await historyOf(code)).toEqual([]);
+    expect(await roomHistory(baseURL ?? "", page.context(), code)).toEqual([]);
 
     // Round 2, with a Jira link, started with Enter in the field.
     const url = "https://acme.atlassian.net/browse/PAY-482";
@@ -108,7 +109,7 @@ test("three people, a titled round then a Jira round: votes clear, the number ri
     ).toBeVisible();
 
     // AC 2: the finished round 1, with its subject, its votes and its stats.
-    const [first, ...others] = await historyOf(code);
+    const [first, ...others] = await roomHistory(baseURL ?? "", page.context(), code);
     expect(others).toEqual([]);
     expect(first).toMatchObject({
       number: 1,
@@ -139,7 +140,7 @@ test("three people, a titled round then a Jira round: votes clear, the number ri
       await expect(viewer.locator("[data-subject-link]")).toHaveCount(0);
     }
     await expect(tableLive(ben.page)).toContainText("Voting started: Round 3.");
-    const rows = await historyOf(code);
+    const rows = await roomHistory(baseURL ?? "", page.context(), code);
     expect(rows.map((row) => row.number)).toEqual([1, 2]);
     expect(rows[1]?.subject).toEqual({ kind: "link", url, key: "PAY-482" });
     await shoot(page, "next-round-none-po");
@@ -231,7 +232,7 @@ test("an anonymous round leaves only its cards in history (AC 2)", async ({
     // Round 2 is anonymous too, and its line says so.
     await expect(subjectLine(page).locator("span").first()).toHaveText("Round 2");
     await expect(subjectLine(page).locator("[data-round-anonymous]")).toBeVisible();
-    const [row] = await historyOf(code);
+    const [row] = await historyOf(po);
     expect(row).toMatchObject({
       number: 1,
       subject: { kind: "link", key: "12345" },
@@ -244,21 +245,28 @@ test("an anonymous round leaves only its cards in history (AC 2)", async ({
   }
 });
 
-/** The round's number and how many votes it holds, as the server stored them in Postgres. */
-async function roomOf(code: string): Promise<{ round: number; votes: number }> {
-  const [row] = await dbQuery<{ round: number; votes: number }>(
-    `select (live->'round'->>'number')::int as round,
-    (select count(*) from jsonb_object_keys(coalesce(live->'round'->'votes', '{}'::jsonb)))::int
-      as votes
-    from room where code = $1`,
-    [code],
-  );
-  if (!row) throw new Error("no such room");
-  return row;
+/**
+ * The round's number and how many people have a card on it, as the server holds them: the
+ * snapshot a socket of the page's own person gets when it enters.
+ */
+async function roomOf(page: Page, base: string, code: string) {
+  const guest = await sameUser(base, page.context());
+  try {
+    const ack = await guest.enter(code);
+    const snapshot = (ack.ok ? ack.snapshot : null) as {
+      room: { round: { number: number; voted: string[] } | null };
+    } | null;
+    const round = snapshot?.room.round;
+    if (!round) throw new Error("no round");
+    return { round: round.number, votes: round.voted.length };
+  } finally {
+    guest.close();
+  }
 }
 
 test("a double Enter in the subject field starts one round and casts no vote, in the lobby and after a reveal", async ({
   page,
+  baseURL,
 }) => {
   test.setTimeout(60_000);
   const code = await createRoom(page);
@@ -278,7 +286,7 @@ test("a double Enter in the subject field starts one round and casts no vote, in
     await expect(pressedCards(page)).toHaveCount(0);
     await expect(subjectField(page)).toBeFocused();
     // One round started (a second start would have made it the next one), and no vote.
-    expect(await roomOf(code)).toEqual({ round, votes: 0 });
+    expect(await roomOf(page, baseURL ?? "", code)).toEqual({ round, votes: 0 });
     // Vote and reveal for the next pass.
     await handCard(page, "5").click();
     await expect(page.getByRole("button", { name: "Next round" })).toBeVisible();
@@ -287,6 +295,7 @@ test("a double Enter in the subject field starts one round and casts no vote, in
 
 test("a double Enter on the centre's button starts one round and casts no vote; the hand then answers Enter again", async ({
   page,
+  baseURL,
 }) => {
   test.setTimeout(60_000);
   const code = await createRoom(page);
@@ -305,12 +314,12 @@ test("a double Enter on the centre's button starts one round and casts no vote; 
     await expect(centreStatus(page)).toHaveText("0/1 voted so far");
     await page.waitForTimeout(600);
     await expect(pressedCards(page)).toHaveCount(0);
-    expect(await roomOf(code)).toEqual({ round, votes: 0 });
+    expect(await roomOf(page, baseURL ?? "", code)).toEqual({ round, votes: 0 });
     // A moment later Enter on a card votes, which reveals this one-person round.
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("Enter");
     await expect(page.getByRole("button", { name: "Next round" })).toBeVisible();
-    expect(await roomOf(code)).toEqual({ round, votes: 1 });
+    expect(await roomOf(page, baseURL ?? "", code)).toEqual({ round, votes: 1 });
   }
 });
 

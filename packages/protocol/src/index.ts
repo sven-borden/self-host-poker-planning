@@ -26,6 +26,19 @@ export {
   parseEnter,
   type ServerToClientEvents,
 } from "./events.ts";
+export {
+  HISTORY_PAGE,
+  type HistoryAck,
+  type HistoryRequest,
+  type HistoryRoundView,
+  type HistoryVotesView,
+  historyAckSchema,
+  historyRequestSchema,
+  historyRoundSchema,
+  type NamedHistoryVoteView,
+  type ParsedHistoryRequest,
+  parseHistoryRequest,
+} from "./history.ts";
 export { projectCauses, type SnapshotMeta, toSnapshot } from "./project.ts";
 export {
   type AnonymousRoundView,

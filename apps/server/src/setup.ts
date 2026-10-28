@@ -54,6 +54,7 @@ export async function setupServer(
     runner,
     store,
     access: store,
+    history: store,
     logger,
     sessionAlive: sessionChecker(db),
     touchRoom: (roomId) => retentionStore.touchRoom(roomId, config.roomTtlDays),

@@ -11,6 +11,7 @@ import {
   type Round,
   type UserId,
 } from "@pp/domain";
+import type { HistoryRoundView } from "@pp/protocol";
 import type { HistoryVotes, NamedHistoryVote, roundHistory } from "./schema.ts";
 
 /**
@@ -29,6 +30,39 @@ export interface EndedRound {
 }
 
 export type HistoryRow = typeof roundHistory.$inferInsert;
+
+/** A `round_history` row as the history panel reads it (#33): no id, room or deck. */
+export type StoredHistoryRound = Pick<
+  typeof roundHistory.$inferSelect,
+  "number" | "subject" | "votes" | "stats" | "final" | "startedAt" | "revealedAt" | "finishedAt"
+>;
+
+/**
+ * A stored round as the `history` answer sends it (#33): times in epoch milliseconds, and
+ * a named round's votes without the voters' ids (`who`), so nothing on the wire maps a
+ * history row to a user. An anonymous round's cards go out as stored.
+ */
+export function historyView(row: StoredHistoryRound): HistoryRoundView {
+  const { votes } = row;
+  return {
+    number: row.number,
+    subject: row.subject,
+    final: row.final,
+    stats: row.stats,
+    startedAt: row.startedAt.getTime(),
+    revealedAt: row.revealedAt.getTime(),
+    finishedAt: row.finishedAt.getTime(),
+    votes:
+      votes.kind === "anonymous"
+        ? { kind: "anonymous", cards: [...votes.cards] }
+        : {
+            kind: "named",
+            votes: votes.votes.map(({ name, card, changedAfterReveal }) =>
+              changedAfterReveal ? { name, card, changedAfterReveal } : { name, card },
+            ),
+          },
+  };
+}
 
 /**
  * The round a command leaves to write to history, if any: the round it ended (a next

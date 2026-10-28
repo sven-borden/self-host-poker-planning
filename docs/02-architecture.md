@@ -311,6 +311,24 @@ Server: `apps/server/src/sync/room-sync.ts` (the `handlers` of `createRealtime`)
 - **Session**: a command checks the session again once the last check is a minute old;
   when it is gone it answers `unauthenticated` and closes the connection, and the
   client's reconnect meets the handshake's check.
+- **History** (#33): `history { before?, limit? }` with an ack, beside `enter` and
+  `cmd` (same bucket; `parseHistoryRequest`, strict, `bad_payload` otherwise). Only
+  someone in the room reads it: the socket must have entered (else `room_not_found`, so
+  a password keeps out whoever it keeps out of the room), and the reader must be a
+  participant or the PO in a fresh load of the room (else `not_participant`: someone
+  still on the join form, a grant holder who has not joined, a removed person), checked
+  on every request after the session check. It answers `{ ok, rounds, next? }`, newest
+  first, paged by round number: `before` asks for the rounds numbered below it, 20 a page
+  by default and 50 at most (`HISTORY_PAGE`), `next` is the `before` of the next page
+  while older rounds remain. The round on the table (any phase) is left out even when it
+  has a row (#32's final), so it shows once the next round starts. A row is `{ number,
+  subject, final, stats, startedAt, revealedAt, finishedAt, votes }`, times in epoch ms;
+  named votes are `{ name, card, changedAfterReveal? }` without the voter's id, an
+  anonymous round's are the stored cards. The answer's schemas are strict, and
+  `historyLeaks` (`@pp/protocol/leak-scan`) checks real frames for a user id in any
+  string or key (inside a longer one too), a `who` key, or an anonymous name. The web panel fetches the first page on open and again when the table's
+  round number or final changes; nothing is pushed. A new client event with its own ack:
+  `PROTOCOL_VERSION` stays 4. Logs name the room by id and the count of rows.
 - **Database failure**: a `DatabaseError` may hide a commit that landed. The server
   reloads the room, broadcasts it, acks `internal`, and never runs the command again.
 - **Versions**: each socket remembers the version it holds and never gets the same or an
@@ -412,8 +430,8 @@ is stored when it is made, even if nobody starts another round. `finished_at` is
 end of the round (the next round or a re-vote writes the row again); while the round is
 still on the table it is the time of the row's last write, which a vote changed or a
 voter leaving after the final also moves, so it is not the decision's time. The round
-still on the table may already have a history row: the history panel (#33) must not show
-it twice, beside the live round. Writing the same round again
+still on the table may already have a history row: the history request (#33) leaves the
+round on the table out, so it shows once, after the next round starts (section 5). Writing the same round again
 (`room_id`, `number`) updates its row, so a retry or a later rewrite (for example by an
 idle job) never duplicates it. `votes` is `{ kind: "named", votes: [{ who, name, card,
 changedAfterReveal? }] }`, people still in the room by joining order, then those who
@@ -660,6 +678,10 @@ password, no social provider before W5.
   `target="_blank"` and only `http(s)` schemes: the web makes an `<a>` only of a link
   the domain's `cleanSubject` accepts (no other scheme, no credentials), so even an odd
   stored subject never becomes a `javascript:` link (#21).
+- History (#33): a room's finished rounds go only to someone in it (a voter, an
+  observer or the PO), checked on a fresh load at every `history` request (section 5).
+  Holding the code, or a password grant without joining, is not enough. No row carries a
+  user id; an anonymous round's carries no name either.
 - Retention: rooms, their history and orphan guests are deleted after
   `ROOM_TTL_DAYS` (default 90) without activity (a commit, or a visit); rooms of
   signed-in owners stay (section 6, "Retention"). A guest's session expires after the

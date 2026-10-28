@@ -44,6 +44,13 @@
 @custom-variant squat (@media (max-height: 480px));
 
 /*
+ * The narrowest phones, under 360 px (an iPhone SE at 320): the room header's buttons
+ * take a row of their own under its name. Registered after `phone` so that its rules win
+ * where both match.
+ */
+@custom-variant narrow (@media (max-width: 359.98px));
+
+/*
  * Tailwind's palette is switched off: only the design tokens exist as colours, so
  * `bg-red-500` or `text-white` generate nothing. `transparent`, `current` and `inherit`
  * are built in and stay available.
