@@ -1,13 +1,15 @@
 /**
  * The `setup` hook `main.ts` hands to `run()`: the database (#7), then identity (#10) on
- * its pool, then the room API (#14) and the room sync (#15) on its runner. Opens nothing
- * at import time.
+ * its pool, then the room API (#14) and the room sync (#15) on its runner, and the
+ * retention job (#35), whose first run comes a few minutes later. Opens nothing at import
+ * time.
  */
 import { createAuth, registerAuthApi, sessionChecker, sessionMiddleware } from "./auth.ts";
 import type { Config } from "./config.ts";
 import { type Database, setupDatabase } from "./database.ts";
 import type { Logger } from "./logger.ts";
 import { memoryRateLimit } from "./rate-limit.ts";
+import { type Retention, startRetention } from "./retention.ts";
 import { registerPasswordApi } from "./room-password.ts";
 import { registerRoomApi } from "./rooms.ts";
 import type { Setup } from "./run.ts";
@@ -21,6 +23,10 @@ export interface SetupTuning {
   presenceRestartGraceMs?: number;
   /** False: no deadline timeout, only the clients' `timeUp` pings and commands (#27). */
   deadlineTimeouts?: boolean;
+  /** The retention job's first run, without jitter (3 to 5 minutes by default). */
+  retentionStartDelayMs?: number;
+  /** The retention job's clock (Postgres's `now()` by default). */
+  retentionNow?: () => number;
 }
 
 export async function setupServer(
@@ -28,7 +34,9 @@ export async function setupServer(
   logger: Logger,
   signal?: AbortSignal,
   tuning: SetupTuning = {},
-): Promise<Setup & { database: Database; auth: ReturnType<typeof createAuth> }> {
+): Promise<
+  Setup & { database: Database; auth: ReturnType<typeof createAuth>; retention: Retention }
+> {
   const opened = await setupDatabase(config, logger, signal);
   const { database } = opened;
   // Building the auth instance queries nothing; if it throws, release the pool first.
@@ -41,7 +49,7 @@ export async function setupServer(
     await database.close();
     throw error;
   }
-  const { runner, store, db } = database;
+  const { runner, store, db, retention: retentionStore } = database;
   const sync = createRoomSync({
     runner,
     store,
@@ -49,15 +57,28 @@ export async function setupServer(
     history: store,
     logger,
     sessionAlive: sessionChecker(db),
+    touchRoom: (roomId) => retentionStore.touchRoom(roomId, config.roomTtlDays),
     ...(tuning.presenceGraceMs !== undefined && { presenceGraceMs: tuning.presenceGraceMs }),
     ...(tuning.presenceRestartGraceMs !== undefined && {
       presenceRestartGraceMs: tuning.presenceRestartGraceMs,
     }),
     ...(tuning.deadlineTimeouts !== undefined && { deadlineTimeouts: tuning.deadlineTimeouts }),
   });
+  const retention = startRetention({
+    store: retentionStore,
+    ttlDays: config.roomTtlDays,
+    logger,
+    occupied: () => sync.occupiedRooms(),
+    ...(tuning.retentionStartDelayMs !== undefined && {
+      startDelayMs: tuning.retentionStartDelayMs,
+      jitterMs: 0,
+    }),
+    ...(tuning.retentionNow !== undefined && { now: tuning.retentionNow }),
+  });
   return {
     database,
     auth,
+    retention,
     deps: {
       ...opened.deps,
       registerApi: (app) => {
@@ -68,7 +89,12 @@ export async function setupServer(
       socketMiddleware: [sessionMiddleware(auth)],
       handlers: sync,
     },
+    // Before the server closes its sockets: a run that started during the close would see
+    // no socket and take the occupied rooms for idle ones.
+    beforeClose: () => retention.stop(),
     dispose: async () => {
+      // Again here, for a failed listen and for tests: `stop` is idempotent.
+      await retention.stop();
       sync.close();
       await database.close();
     },

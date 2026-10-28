@@ -16,6 +16,7 @@ import pg from "pg";
 import type { DbStatus } from "./app.ts";
 import type { Config } from "./config.ts";
 import { DatabaseError, errorCode, guard } from "./db/errors.ts";
+import { createRetentionStore, type RetentionStore } from "./db/retention.ts";
 import {
   type AccessStore,
   createRoomStore,
@@ -267,6 +268,8 @@ export interface Database {
   readonly db: Db;
   readonly store: RoomStore & AccessStore & HistoryStore;
   readonly runner: CommandRunner;
+  /** The retention purge and the visit touch (#35), on the pool. */
+  readonly retention: RetentionStore;
   /** `select 1`: `ok`, or `error` on any failure. `/api/health` gives it 2 s. */
   checkDb(): Promise<DbStatus>;
   /** Ends the pool once the running queries are done; calling it again changes nothing. */
@@ -310,6 +313,7 @@ export async function openDatabase(
     db,
     store,
     runner: createCommandRunner(store),
+    retention: createRetentionStore(pool),
     checkDb: async () => {
       try {
         await pool.query("select 1");
