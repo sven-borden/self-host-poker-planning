@@ -9,7 +9,7 @@ import type { Config } from "./config.ts";
 import { type Database, setupDatabase } from "./database.ts";
 import type { Logger } from "./logger.ts";
 import { memoryRateLimit } from "./rate-limit.ts";
-import { startRetention } from "./retention.ts";
+import { type Retention, startRetention } from "./retention.ts";
 import { registerPasswordApi } from "./room-password.ts";
 import { registerRoomApi } from "./rooms.ts";
 import type { Setup } from "./run.ts";
@@ -23,6 +23,10 @@ export interface SetupTuning {
   presenceRestartGraceMs?: number;
   /** False: no deadline timeout, only the clients' `timeUp` pings and commands (#27). */
   deadlineTimeouts?: boolean;
+  /** The retention job's first run, without jitter (3 to 5 minutes by default). */
+  retentionStartDelayMs?: number;
+  /** The retention job's clock (Postgres's `now()` by default). */
+  retentionNow?: () => number;
 }
 
 export async function setupServer(
@@ -30,7 +34,9 @@ export async function setupServer(
   logger: Logger,
   signal?: AbortSignal,
   tuning: SetupTuning = {},
-): Promise<Setup & { database: Database; auth: ReturnType<typeof createAuth> }> {
+): Promise<
+  Setup & { database: Database; auth: ReturnType<typeof createAuth>; retention: Retention }
+> {
   const opened = await setupDatabase(config, logger, signal);
   const { database } = opened;
   // Building the auth instance queries nothing; if it throws, release the pool first.
@@ -50,7 +56,7 @@ export async function setupServer(
     access: store,
     logger,
     sessionAlive: sessionChecker(db),
-    touchRoom: retentionStore.touchRoom,
+    touchRoom: (roomId) => retentionStore.touchRoom(roomId, config.roomTtlDays),
     ...(tuning.presenceGraceMs !== undefined && { presenceGraceMs: tuning.presenceGraceMs }),
     ...(tuning.presenceRestartGraceMs !== undefined && {
       presenceRestartGraceMs: tuning.presenceRestartGraceMs,
@@ -62,10 +68,16 @@ export async function setupServer(
     ttlDays: config.roomTtlDays,
     logger,
     occupied: () => sync.occupiedRooms(),
+    ...(tuning.retentionStartDelayMs !== undefined && {
+      startDelayMs: tuning.retentionStartDelayMs,
+      jitterMs: 0,
+    }),
+    ...(tuning.retentionNow !== undefined && { now: tuning.retentionNow }),
   });
   return {
     database,
     auth,
+    retention,
     deps: {
       ...opened.deps,
       registerApi: (app) => {
@@ -76,9 +88,13 @@ export async function setupServer(
       socketMiddleware: [sessionMiddleware(auth)],
       handlers: sync,
     },
+    // Before the server closes its sockets: a run that started during the close would see
+    // no socket and take the occupied rooms for idle ones.
+    beforeClose: () => retention.stop(),
     dispose: async () => {
-      sync.close();
+      // Again here, for a failed listen and for tests: `stop` is idempotent.
       await retention.stop();
+      sync.close();
       await database.close();
     },
   };

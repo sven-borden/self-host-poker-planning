@@ -22,7 +22,10 @@ export interface RetentionOptions {
   logger: Logger;
   /** The rooms (by id) with a socket on this instance, asked at each run. */
   occupied?: () => readonly string[];
-  /** The run's clock, epoch milliseconds; `Date.now` by default. Tests pass a fake one. */
+  /**
+   * The run's clock, epoch milliseconds, for tests. Left out (production), each run reads
+   * Postgres's `now()`, the clock that writes `last_active_at`.
+   */
   now?: () => number;
   /** In [0, 1): the share of the jitter. `Math.random` by default. */
   random?: () => number;
@@ -48,7 +51,7 @@ export function startRetention(options: RetentionOptions): Retention {
     store,
     ttlDays,
     occupied = () => [],
-    now = Date.now,
+    now,
     random = Math.random,
     startDelayMs = RETENTION_START_DELAY_MS,
     jitterMs = RETENTION_JITTER_MS,
@@ -82,14 +85,16 @@ export function startRetention(options: RetentionOptions): Retention {
     const durationMs = () => Math.round(performance.now() - started);
     try {
       const counts = await store.purge({
-        now: new Date(now()),
+        ...(now && { now: new Date(now()) }),
         ttlDays,
         occupied: occupied(),
         signal: aborter.signal,
         ...(batchSize !== undefined && { batchSize }),
       });
       if (counts === null) {
-        log.debug("retention: another instance runs the purge");
+        // At info: a lock that never frees (a transaction-mode pooler, a stuck session)
+        // must not stop the purge without a trace.
+        log.info("retention: another instance runs the purge");
         return "busy";
       }
       const { rooms, history, guests, passwordWindows, interrupted } = counts;

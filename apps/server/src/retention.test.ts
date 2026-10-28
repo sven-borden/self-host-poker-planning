@@ -6,7 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DatabaseError } from "./db/errors.ts";
-import { cutoffOf, type PurgeCounts, type PurgeOptions } from "./db/retention.ts";
+import { cutoffOf, type PurgeCounts, type PurgeOptions, touchAfterMs } from "./db/retention.ts";
 import {
   RETENTION_JITTER_MS,
   RETENTION_PERIOD_MS,
@@ -202,12 +202,30 @@ describe("a run", () => {
     await retention.stop();
   });
 
-  it("logs a run another instance holds once, at debug", async () => {
+  it("leaves the clock to Postgres when none is injected (production)", async () => {
+    const calls: PurgeOptions[] = [];
+    const retention = startRetention({
+      store: {
+        purge: async (o) => {
+          calls.push(o);
+          return COUNTS;
+        },
+      },
+      ttlDays: 90,
+      logger: collectLogs().logger,
+    });
+    await retention.runNow();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).not.toHaveProperty("now");
+    await retention.stop();
+  });
+
+  it("logs a run another instance holds once, at info: a lock that never frees shows", async () => {
     const { retention, logs } = job(async () => null);
     expect(await retention.runNow()).toBe("busy");
     const lines = logs.lines.filter((line) => line.part === "retention");
     expect(lines).toEqual([
-      expect.objectContaining({ level: 20, msg: "retention: another instance runs the purge" }),
+      expect.objectContaining({ level: 30, msg: "retention: another instance runs the purge" }),
     ]);
     await retention.stop();
   });
@@ -239,5 +257,14 @@ describe("cutoffOf", () => {
     expect(cutoffOf(now, 90).toISOString()).toBe("2026-10-17T12:00:00.000Z");
     expect(cutoffOf(now, 1).toISOString()).toBe("2027-01-14T12:00:00.000Z");
     expect(cutoffOf(now, 3650).getTime()).toBe(NOW - 3650 * 24 * 60 * MINUTE);
+  });
+});
+
+describe("touchAfterMs", () => {
+  it("is a day, or a 24th of a shorter period", () => {
+    expect(touchAfterMs(90)).toBe(24 * 60 * MINUTE);
+    expect(touchAfterMs(24)).toBe(24 * 60 * MINUTE);
+    expect(touchAfterMs(1)).toBe(60 * MINUTE);
+    expect(touchAfterMs(12)).toBe(12 * 60 * MINUTE);
   });
 });

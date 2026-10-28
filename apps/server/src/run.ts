@@ -25,6 +25,12 @@ export interface Setup {
    * and before exit 0, inside the shutdown limit; also awaited when listen fails.
    */
   dispose?: () => Promise<void>;
+  /**
+   * Stops background work that reads the open sockets (#35: the retention job, which
+   * keeps the rooms someone is in). Awaited at a shutdown before the server closes, so
+   * that work never sees the sockets go; `dispose` still follows.
+   */
+  beforeClose?: () => Promise<void>;
 }
 
 export interface ProcessHooks {
@@ -56,8 +62,8 @@ export const DEFAULT_STATIC_DIR = resolve(import.meta.dirname, "../../web/dist")
  * Validates the config, installs the signal handlers, runs `setup` and listens. A bad
  * config logs one line naming the variables (never their values) and exits 1; so does a
  * failed setup or listen. Resolves with the running server, or `undefined` when it did
- * not start. On a signal: close the server, then `dispose`, then exit 0; during `setup`,
- * abort it and exit 0.
+ * not start. On a signal: `beforeClose`, close the server, `dispose`, then exit 0; during
+ * `setup`, abort it and exit 0.
  */
 export async function run(
   env: Readonly<Record<string, string | undefined>>,
@@ -177,9 +183,18 @@ export async function run(
     }, timeoutMs);
     cut.unref();
     fail.unref();
-    const dispose = setup.dispose;
-    server
-      .close()
+    const { beforeClose, dispose } = setup;
+    // Without background work the server stops accepting connections at once.
+    const closed = beforeClose
+      ? beforeClose()
+          .catch((error: unknown) => {
+            // The server still closes: background work that failed to stop is no reason
+            // to keep the sockets open.
+            logger.error({ err: error }, "shutdown: background work did not stop");
+          })
+          .then(() => server.close())
+      : server.close();
+    closed
       .then(async () => {
         if (!dispose) return;
         await dispose();

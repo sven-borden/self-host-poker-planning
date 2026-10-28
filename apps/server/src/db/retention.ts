@@ -26,8 +26,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  */
 export const GUEST_MIN_AGE_MS = DAY_MS;
 
-/** A visit moves `last_active_at` only when it is older than this: one write a day at most. */
-export const TOUCH_AFTER_MS = DAY_MS;
+/**
+ * A visit moves `last_active_at` only when it is older than this: a day, or a 24th of the
+ * period when that is shorter (an hour at `ROOM_TTL_DAYS=1`). So one write a day at most,
+ * and a room visited at any moment stays at least 23/24 of the period after that visit,
+ * whichever instance the visit reached.
+ */
+export function touchAfterMs(ttlDays: number): number {
+  return Math.min(DAY_MS, (ttlDays * DAY_MS) / 24);
+}
 
 /** Rooms idle since before this instant are purged. */
 export function cutoffOf(now: Date, ttlDays: number): Date {
@@ -35,8 +42,12 @@ export function cutoffOf(now: Date, ttlDays: number): Date {
 }
 
 export interface PurgeOptions {
-  /** The run's clock: idle and expired are measured from it, never from Postgres's. */
-  now: Date;
+  /**
+   * The run's clock, for tests. Left out (production), the run reads Postgres's `now()`
+   * on its locked session: `last_active_at` is written by that clock too, so an app clock
+   * running ahead cannot make a room look idle sooner.
+   */
+  now?: Date;
   ttlDays: number;
   /** Rooms (by id) with a socket on this instance: kept this run, however idle. */
   occupied?: readonly string[];
@@ -65,18 +76,21 @@ export interface RetentionStore {
    */
   purge(options: PurgeOptions): Promise<PurgeCounts | null>;
   /**
-   * A visit to the room (by id): moves `last_active_at` to now when it is more than a day
-   * old, so a team that only opens its room keeps it. One `UPDATE`, usually of no row.
+   * A visit to the room (by id): moves `last_active_at` to now when it is older than
+   * `touchAfterMs(ttlDays)`, so a team that only opens its room keeps it. One `UPDATE`,
+   * usually of no row.
    */
-  touchRoom(id: string): Promise<void>;
+  touchRoom(id: string, ttlDays: number): Promise<void>;
 }
 
 /**
  * Idle rooms, oldest first, locked and deleted in one statement. A room is idle when its
  * `last_active_at` is before the cutoff, it has no socket on this instance, and its owner
  * is not a signed-in user (ADR-014: those rooms stay until deleted; a guest owner, or one
- * deleted already, does not keep a room). `history` counts the rows the cascade deletes:
- * the statement still sees them.
+ * deleted already, does not keep a room). Once `for update` holds a row it re-checks the
+ * `WHERE` on the row's latest version, so a commit or a visit that landed after the
+ * statement began keeps its room, and nothing can move a locked row before `gone` deletes
+ * it. `history` counts the rows the cascade deletes: the statement still sees them.
  */
 const DELETE_ROOMS = `
   with doomed as (
@@ -92,7 +106,7 @@ const DELETE_ROOMS = `
   ),
   gone as (
     delete from room r using doomed d
-    where r.id = d.id and r.last_active_at < $1::timestamptz
+    where r.id = d.id
     returning r.id
   )
   select
@@ -152,18 +166,22 @@ export function createRetentionStore(pool: pg.Pool): RetentionStore {
   }
 
   return {
-    purge: async ({ now, ttlDays, occupied = [], batchSize = PURGE_BATCH, signal }) => {
+    purge: async (options) => {
+      const { ttlDays, occupied = [], batchSize = PURGE_BATCH, signal } = options;
       const client = await guard("purge", () => pool.connect());
       let locked = false;
       let failed = false;
       try {
         const { rows } = await guard("lock purge", () =>
-          client.query<{ locked: boolean }>("select pg_try_advisory_lock($1::bigint) as locked", [
-            RETENTION_LOCK_KEY,
-          ]),
+          client.query<{ locked: boolean; now: Date }>(
+            "select pg_try_advisory_lock($1::bigint) as locked, now() as now",
+            [RETENTION_LOCK_KEY],
+          ),
         );
-        if (!rows[0]?.locked) return null;
+        const [lock] = rows;
+        if (!lock?.locked) return null;
         locked = true;
+        const now = options.now ?? lock.now;
         const counts: PurgeCounts = {
           rooms: 0,
           history: 0,
@@ -225,8 +243,8 @@ export function createRetentionStore(pool: pg.Pool): RetentionStore {
       }
     },
 
-    touchRoom: async (id) => {
-      await guard("touch room", () => pool.query(TOUCH_ROOM, [id, TOUCH_AFTER_MS / 1000]));
+    touchRoom: async (id, ttlDays) => {
+      await guard("touch room", () => pool.query(TOUCH_ROOM, [id, touchAfterMs(ttlDays) / 1000]));
     },
   };
 }

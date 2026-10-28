@@ -176,7 +176,7 @@ describe("never an active room", () => {
     const now = new Date();
     const visited = await room(ago(100 * DAY, now));
     const untouched = await room(ago(100 * DAY, now));
-    await a.retention.touchRoom(visited.id);
+    await a.retention.touchRoom(visited.id, 90);
     expect(await purge({ now })).toMatchObject({ rooms: 1 });
     expect(await exists(visited.id)).toBe(true);
     expect(await exists(untouched.id)).toBe(false);
@@ -184,8 +184,55 @@ describe("never an active room", () => {
     const touched = await lastActiveOf(visited.id);
     expect(touched?.getTime()).toBeGreaterThan(now.getTime() - MINUTE);
     await setLastActive(visited.id, ago(23 * 60 * MINUTE, now));
-    await a.retention.touchRoom(visited.id);
+    await a.retention.touchRoom(visited.id, 90);
     expect((await lastActiveOf(visited.id))?.getTime()).toBe(ago(23 * 60 * MINUTE, now).getTime());
+  });
+
+  describe("at ROOM_TTL_DAYS=1, a visit touches a room idle for more than an hour", () => {
+    // On the real clock: `touchRoom` writes Postgres's now().
+    it("keeps a room opened 4.5 minutes before the run, 23 h 58 min after its last commit", async () => {
+      const opened = new Date();
+      const visited = await room(ago(23 * 60 * MINUTE + 58 * MINUTE, opened));
+      const untouched = await room(ago(23 * 60 * MINUTE + 58 * MINUTE, opened));
+      await a.retention.touchRoom(visited.id, 1);
+      const run = new Date(opened.getTime() + 4.5 * MINUTE);
+      expect(await purge({ now: run, ttlDays: 1 })).toMatchObject({ rooms: 1 });
+      expect(await exists(visited.id)).toBe(true);
+      expect(await exists(untouched.id)).toBe(false);
+    });
+
+    it("keeps a room Cy opened on instance B when A runs 110 s later without her socket", async () => {
+      const opened = new Date();
+      const visited = await room(ago(23 * 60 * MINUTE + 59 * MINUTE, opened));
+      await b.retention.touchRoom(visited.id, 1);
+      const run = new Date(opened.getTime() + 110_000);
+      expect(await purge({ now: run, ttlDays: 1, occupied: [] }, a)).toMatchObject({ rooms: 0 });
+      expect(await exists(visited.id)).toBe(true);
+    });
+
+    it("writes nothing for a room active within the hour", async () => {
+      const now = new Date();
+      const recent = await room(ago(59 * MINUTE, now));
+      await a.retention.touchRoom(recent.id, 1);
+      expect((await lastActiveOf(recent.id))?.getTime()).toBe(ago(59 * MINUTE, now).getTime());
+    });
+  });
+
+  it("measures idle on Postgres's clock when no clock is injected (production)", async () => {
+    const gone = await room(NOW);
+    const kept = await room(NOW);
+    await sql.query(
+      "update room set last_active_at = now() - interval '90 days' - interval '1 minute' where id = $1",
+      [gone.id],
+    );
+    await sql.query(
+      "update room set last_active_at = now() - interval '90 days' + interval '1 minute' where id = $1",
+      [kept.id],
+    );
+    // NOW lies years ahead of the real clock: a run on it would delete both.
+    expect(await a.retention.purge({ ttlDays: 90 })).toMatchObject({ rooms: 1 });
+    expect(await exists(gone.id)).toBe(false);
+    expect(await exists(kept.id)).toBe(true);
   });
 
   it("keeps a room with a socket on this instance", async () => {
