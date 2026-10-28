@@ -116,6 +116,10 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   votes, names only for named rounds. A `history` socket request, for people in the
   room only, pages newest first; the round on the table shows once the next starts.
   The room route loads 175.9 kB.
+- Retention from #35: a daily in-process purge (advisory lock, Postgres's clock) of
+  rooms idle longer than `ROOM_TTL_DAYS`, with their history, grants and counters, and
+  of orphan guests; a visit counts as activity; never a room in use or owned by a
+  signed-in user. The README has a Privacy section, with a warning about restores.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -126,18 +130,17 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#35 (PP-035)** retention: a daily purge of rooms idle for `ROOM_TTL_DAYS`, their
-  history and orphan guests, under an advisory lock; a visit counts as activity. PR
-  #96 reviewed (no blocker); the fixer in `../pp-wt-35` adds the small-TTL touch, the
-  Postgres clock, two indexes and the README's restore warning.
 - **#34 (PP-034)** session summary and exports (CSV, Markdown, "KEY estimate" lines)
-  in the history sheet. Building in `../pp-wt-34`.
+  in the history sheet. PR #97 in review; its fixer merges `main` (with #35).
+- **#36 (PP-036)** hardening: a strict CSP and security headers, every limit reviewed
+  in one table, server-side input bounds, a fuzz test, a dependency audit in CI.
+  Building in `../pp-wt-36`. After its merge, check securityheaders.com.
 
 ## Next
 
-- W3 (#33–#41): #33 merged; #34 and #35 in flight. Next as slots free: #36
-  (hardening), #37 (accessibility audit), #39 (scale-out); #38 and #41 need Sven's OQ-1
-  and OQ-2; #40 needs #36.
+- W3 (#33–#41): #33 and #35 merged; #34 and #36 in flight. Next as slots free: #37
+  (accessibility audit), #39 (scale-out; also: retention's `occupied` sees one
+  instance only); #40 needs #36; #38 and #41 need Sven's OQ-1 and OQ-2.
 - Chores to fold into a later issue: a lazy catalog for the panels' copy (settings and
   history, a few kB off both pages); the burst test's one `room_not_found` under load;
   a higher anonymous sign-in limit for the db tests through `SetupTuning` (about 41 of
