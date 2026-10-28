@@ -56,6 +56,35 @@ describe("withFirstPage", () => {
     expect(next.next).toBe(8);
   });
 
+  it("drops the rounds held when the page does not reach them, so none goes missing", () => {
+    // Rounds 60 to 21 held; 25 rounds ended since, and the new first page holds 85 to 66.
+    const held = { rounds: rounds(...Array.from({ length: 40 }, (_, i) => 60 - i)), next: 21 };
+    const page = { rounds: rounds(...Array.from({ length: 20 }, (_, i) => 85 - i)), next: 66 };
+    const merged = withFirstPage(held, page);
+    expect(numbersOf(merged)).toEqual(numbersOf(page));
+    // "Show earlier rounds" goes on at 65, not at 21.
+    expect(merged.next).toBe(66);
+  });
+
+  it("keeps the rounds held when they overlap the page or touch it", () => {
+    const page = { rounds: rounds(12, 11, 10), next: 10 };
+    // Overlap: 11 and 10 come from the page.
+    const overlap = withFirstPage({ rounds: rounds(11, 10, 9, 8), next: 8 }, page);
+    expect(numbersOf(overlap)).toEqual([12, 11, 10, 9, 8]);
+    expect(overlap.next).toBe(8);
+    // The held top is the page's oldest round.
+    const same = withFirstPage({ rounds: rounds(10, 9, 8), next: 8 }, page);
+    expect(numbersOf(same)).toEqual([12, 11, 10, 9, 8]);
+    // The held top is the round just below the page: no round lies between.
+    const touch = withFirstPage({ rounds: rounds(9, 8), next: 8 }, page);
+    expect(numbersOf(touch)).toEqual([12, 11, 10, 9, 8]);
+    expect(touch.next).toBe(8);
+    // One round number between them: it may hold a round, so the page replaces them.
+    const gap = withFirstPage({ rounds: rounds(8, 7), next: 7 }, page);
+    expect(numbersOf(gap)).toEqual([12, 11, 10]);
+    expect(gap.next).toBe(10);
+  });
+
   it("replaces everything with a first page that holds every round", () => {
     const shown = { rounds: rounds(2, 1), next: undefined };
     expect(numbersOf(withFirstPage(shown, { rounds: rounds(3, 2, 1) }))).toEqual([3, 2, 1]);

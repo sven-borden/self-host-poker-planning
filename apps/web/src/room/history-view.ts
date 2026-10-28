@@ -19,11 +19,17 @@ export interface HistoryPageView {
  * The first page fetched again (a new round started, or the table's round got its final):
  * it replaces the rounds it covers and keeps the older ones already loaded, so a panel
  * scrolled through earlier pages keeps them and its "Show earlier rounds" goes on where
- * it was.
+ * it was. When the page does not reach the rounds held (more rounds ended since than a
+ * page holds), keeping them would hide the rounds between: the page then replaces them,
+ * and "Show earlier rounds" goes on from the page's own end.
  */
 export function withFirstPage(current: HistoryList, page: HistoryPageView): HistoryList {
   const { next } = page;
   if (next === undefined) return { rounds: page.rounds, next: undefined };
+  // The page's oldest round is `next`. Round numbers are whole, so rounds held from
+  // `next − 1` on join it without a gap.
+  const top = current.rounds[0]?.number;
+  if (top === undefined || top < next - 1) return { rounds: page.rounds, next };
   const older = current.rounds.filter((round) => round.number < next);
   return { rounds: [...page.rounds, ...older], next: older.length > 0 ? current.next : next };
 }
