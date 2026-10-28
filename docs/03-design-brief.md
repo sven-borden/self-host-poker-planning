@@ -521,32 +521,45 @@ As built (#34):
   default when a round ended today, else "All rounds". The figures and every export
   follow the range.
 - **The figures.** Each a small mono caption over a 20 px value: "ROUNDS" 3; "TOTAL OF
-  FINAL ESTIMATES" 10, with "1 round without a number" under it when finals are `?`,
-  ☕, T-shirt sizes or missing; "AVERAGE AGREEMENT" 67 % (only rounds where a vote
-  counted; "no value" otherwise); "AVERAGE VOTING TIME" "1 min 5 s", said in words.
-  Numbers follow the interface language ("1,5" in French and German). The round on the
-  table counts once it has a final, since the history adds it only when the next round
-  starts. Past 1,000 rounds: "Only the latest 1,000 rounds are counted."
+  FINAL ESTIMATES" 10, with "1 round without a numeric estimate" under it when finals
+  are `?`, ☕, T-shirt sizes or missing; "AVERAGE AGREEMENT" 67 % (only rounds where a
+  vote counted; "no value" otherwise); "AVERAGE VOTING TIME" "1 min 5 s", said in words.
+  The four share one grid (each figure spans its caption, value and note rows), so the
+  values of a row line up when a caption wraps at 360 px. A story counts once in the
+  total and in the rounds without a number: of consecutive rounds with the same subject
+  (a re-vote keeps it), only the last; rounds without a subject never merge. Numbers
+  follow the reader's locale ("1,5" in France and Germany, "1.5" in de-CH). The round
+  on the table counts once it has a final, since the history adds it only when the next
+  round starts. Until the rounds the range needs are read: "Counting the rounds…" in
+  place of the figures, and "Export" waits. Past 1,000 rounds: "Only the latest 1,000
+  rounds are counted."
 - **Export.** An outline button with a download icon and a chevron opens a menu of four,
   each 44 px high with an icon: "Download CSV", "Download Markdown", "Copy Markdown",
   "Copy for Jira or Azure DevOps". By keyboard: Enter opens it on the first item, the
   arrows move, Enter picks, the focus returns to "Export".
-- **CSV.** UTF-8 with a byte order mark, CRLF, RFC 4180 quoting; a comma between cells in
-  English, a semicolon in French and German (their decimal comma); one row per round,
+- **CSV.** UTF-8 with a byte order mark, CRLF, RFC 4180 quoting; a semicolon between cells
+  when the interface speaks French or German (their spreadsheets expect one, de-CH's too,
+  with its "5.5") or when the reader's numbers take a decimal comma (English in en-ZA,
+  en-NL, en-SE), else a comma; numbers in the reader's locale; one row per round, every
+  re-vote included,
   oldest first: round, subject (the title or the link), key, final, suggested card,
   agreement (%), average, median, votes, voting time (s), end (ISO 8601 with offset).
-  Round level only: no names, no per-person cards. A subject starting with = + - @ gets
-  a leading `'`. File: `planning-poker-<room name or "room">-<yyyy-mm-dd>.csv`.
+  Round level only: no names, no per-person cards. A subject starting with = + - @, a
+  tab or a CR, or their full-width forms (＝ ＋ ﹦), gets a leading `'`. File: `planning-poker-<room name or "room">-<yyyy-mm-dd>.csv`.
 - **Markdown.** A heading with the room's name, the range and the summary, then a GitHub
-  table with the same columns (end time in the reader's format), pipes, backticks and
-  line breaks escaped, links kept. Downloaded as `.md` or copied.
-- **Copy for Jira or Azure DevOps.** One "KEY estimate" line per round with a key (the
-  link's, or a Jira key at the very start of a title) and a final: "PAY-482 5",
-  "4521 8".
+  table with the same columns (end time in the reader's format; the agreement column
+  named "Agreement", its cells carrying the "%"), pipes, backticks, `@` (no GitHub
+  mention) and line breaks escaped, links kept. The heading names the product, "Poker
+  Planning", in every language. Downloaded as `.md` or copied.
+- **Copy for Jira or Azure DevOps.** One "KEY estimate" line per key (the link's, or a
+  Jira key at the very start of a title), from its latest round, so a re-vote replaces
+  the estimate: "PAY-482 5", "4521 8". A numeric final is written with a point ("½" as
+  0.5): the tools' estimate field is numeric.
 - **Feedback.** One line under the menu, a polite live region, says what happened once:
   "CSV downloaded.", "Markdown copied.", "2 lines copied for Jira or Azure DevOps. 1 round
   skipped: no key or no final estimate." When the browser refuses the clipboard, it says
-  so and a read-only field labelled "Text to copy" shows the text, focused and selected.
+  so and a read-only field labelled "Text to copy" shows the text, focused and selected
+  (the menu does not hand the focus back to "Export" then).
 
 ## The PO's powers
 

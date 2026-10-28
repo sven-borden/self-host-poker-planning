@@ -160,7 +160,7 @@ test("the summary counts three rounds; CSV, Markdown and key lines in en, fr and
     await expect(figure(panel, "rounds")).toHaveText("3");
     await expect(figure(panel, "total")).toHaveText("10");
     await expect(summaryOf(panel).locator("[data-summary-stat=total]")).toContainText(
-      "1 round without a number",
+      "1 round without a numeric estimate",
     );
     // 100 %, 50 % and 50 %.
     await expect(figure(panel, "agreement")).toHaveText("67%");
@@ -215,7 +215,7 @@ test("the summary counts three rounds; CSV, Markdown and key lines in en, fr and
     await expect(statusOf(panel)).toHaveText("Markdown copied.");
     const markdown = await readClipboard(page);
     const html = marked.parse(markdown, { gfm: true, async: false });
-    expect(html).toContain("<h1>Planning poker: Team Sky: Q4</h1>");
+    expect(html).toContain("<h1>Poker Planning: Team Sky: Q4</h1>");
     expect(html.match(/<tr>/g)).toHaveLength(4);
     expect(html).toContain(`<a href="${JIRA}">PAY-482</a>`);
     for (const text of [code, "Ana", "Ben"]) expect(markdown).not.toContain(text);
