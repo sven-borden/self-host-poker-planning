@@ -14,6 +14,24 @@ const src = (path: string) => fileURLToPath(new URL(`./src/${path}`, import.meta
 // E2E_API_PORT moves the server for an end-to-end run beside another (playwright.config.ts).
 const api = `http://localhost:${process.env.E2E_API_PORT ?? 3000}`;
 
+/**
+ * The eager vendor modules, by their folder under `node_modules/.pnpm`: React, then the
+ * Radix modules under the menus and the sheet. pnpm spells a scope's slash "+" and cuts
+ * long folder names short, hence the prefixes. The dialog itself (`react-dialog`) stays in
+ * the lazy sheet chunk.
+ */
+const VENDOR = new RegExp(
+  [
+    String.raw`node_modules[\\/]\.pnpm[\\/](`,
+    "(react|react-dom|scheduler)@",
+    String.raw`|@radix-ui\+(primitive@|react-(primitive|context|presence|id|portal)@`,
+    "|react-(use-layout-|use-effect-|use-control|use-callbac|dismissable|focus-scope|focus-guard))",
+    "|(react-remove-scroll|react-remove-scroll-bar|use-callback-ref|use-sidecar)@",
+    "|(get-nonce|react-style-singleton|aria-hidden|tslib)@",
+    ")",
+  ].join(""),
+);
+
 export default defineConfig({
   base: "/",
   plugins: [
@@ -41,11 +59,14 @@ export default defineConfig({
         // the lazy settings panel (#25) shared them with the entry, Rolldown split them
         // into several small common chunks that the landing page and the room route loaded
         // too, about 1 kB more gzipped. One vendor chunk also stays cached across deploys.
+        // The Radix modules every page already loads (the menus' layer, focus and scroll
+        // lock) go with them: once two lazy chunks used the sheet (#25, #33), Rolldown put
+        // them in an eager chunk of their own, compressed apart, about 0.8 kB more.
         codeSplitting: {
           groups: [
             {
               name: "vendor",
-              test: /node_modules[\\/]\.pnpm[\\/](react|react-dom|scheduler)@/,
+              test: VENDOR,
               priority: 10,
             },
           ],
