@@ -120,6 +120,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   rooms idle longer than `ROOM_TTL_DAYS`, with their history, grants and counters, and
   of orphan guests; a visit counts as activity; never a room in use or owned by a
   signed-in user. The README has a Privacy section, with a warning about restores.
+- Summary and exports from #34, at the top of the history sheet: rounds, total of
+  numeric finals, average agreement and voting time ("Today" or "All rounds"); CSV
+  (BOM, `;` where the decimal mark is a comma, formula guard), a GFM Markdown table and
+  "KEY estimate" lines; round level only, never names or the room code. The room route
+  loads 176.6 kB.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -130,17 +135,18 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **#34 (PP-034)** session summary and exports (CSV, Markdown, "KEY estimate" lines)
-  in the history sheet. PR #97 in review; its fixer merges `main` (with #35).
 - **#36 (PP-036)** hardening: a strict CSP and security headers, every limit reviewed
-  in one table, server-side input bounds, a fuzz test, a dependency audit in CI.
-  Building in `../pp-wt-36`. After its merge, check securityheaders.com.
+  in one table, server-side input bounds, a fuzz test, a dependency audit in CI. PR #98
+  in review (CI green); its fixer merges `main` (with #34) and runs the e2e under its
+  headers. After its merge, check securityheaders.com.
+- **Paused after #36** (Sven, 2026-10-28: "pause after those"). Nothing new starts
+  until Sven says so.
 
 ## Next
 
-- W3 (#33–#41): #33 and #35 merged; #34 and #36 in flight. Next as slots free: #37
+- W3 (#33–#41): #33, #34 and #35 merged; #36 in flight. When Sven resumes: #37
   (accessibility audit), #39 (scale-out; also: retention's `occupied` sees one
-  instance only); #40 needs #36; #38 and #41 need Sven's OQ-1 and OQ-2.
+  instance only), #40 (after #36); #38 and #41 need Sven's OQ-1 and OQ-2.
 - Chores to fold into a later issue: a lazy catalog for the panels' copy (settings and
   history, a few kB off both pages); the burst test's one `room_not_found` under load;
   a higher anonymous sign-in limit for the db tests through `SetupTuning` (about 41 of

@@ -158,6 +158,9 @@ describe("catalogs", () => {
       "history.tookHours",
       "history.hoursMinutes",
       "history.votes",
+      // The exports (#34): the product's name in the heading, and "Votes" again.
+      "exports.heading",
+      "exports.colVotes",
     ],
     de: [
       "app.name",
@@ -181,6 +184,11 @@ describe("catalogs", () => {
       "history.tookHours",
       "history.hoursMinutes",
       "history.voteSpoken",
+      // The exports (#34): a label and its value, "Median" again, and the product's name.
+      "exports.item",
+      "exports.colMedian",
+      "exports.heading",
+      "exports.headingNamed",
     ],
   };
 

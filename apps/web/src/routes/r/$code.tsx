@@ -216,7 +216,7 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
             <LinkIcon aria-hidden />
             <span className="phone:sr-only">{t("room.copyLink")}</span>
           </Button>
-          <RoomHistoryButton />
+          <RoomHistoryButton roomName={header.name} />
           <RoomSettingsButton />
         </div>
       </header>

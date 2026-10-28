@@ -16,7 +16,8 @@ const loadPanel = () => import("./history-panel.tsx");
  * stays mounted (closed) so the sheet can animate out and in again; a failed load says so
  * in a toast and leaves the page as it was, as the settings button does.
  */
-export function RoomHistoryButton() {
+/** `roomName`: the room's name for the export files (#34), null without one. */
+export function RoomHistoryButton({ roomName }: { roomName: string | null }) {
   const t = useT();
   const inRoom = useRoomStore(
     (state) => state.status !== "error" && (state.snapshot?.room.you ?? null) !== null,
@@ -59,7 +60,9 @@ export function RoomHistoryButton() {
         <HistoryIcon aria-hidden />
         <span className="max-[900px]:sr-only">{t("history.open")}</span>
       </Button>
-      {Panel ? <Panel open={open} onOpenChange={setOpen} returnFocus={button} /> : null}
+      {Panel ? (
+        <Panel open={open} onOpenChange={setOpen} returnFocus={button} roomName={roomName} />
+      ) : null}
     </>
   );
 }
