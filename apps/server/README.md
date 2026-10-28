@@ -313,9 +313,12 @@ and HSTS when `BASE_URL` is https. `createApp` sets them after every handler, er
 - `CSP_EXTRA_SOURCES`: adds origins, such as
   `script-src https://stats.example.com; connect-src https://stats.example.com`. Only
   `script-src`, `style-src`, `img-src`, `font-src`, `connect-src`, `frame-src` and
-  `media-src`; only plain `http(s)://` or `ws(s)://` origins (a `*.` left-most label and a
-  port allowed); no keyword, path or bare scheme. Anything else stops the server at
-  start with `ConfigError`.
+  `media-src`; only plain `http(s)://` or `ws(s)://` origins with an optional port from 1
+  to 65535; no keyword, path or bare scheme. A `*.` left-most label must cover at least
+  two labels (`*.example.com`, never `*.com`) and none of the suffixes anyone can get a
+  name under, listed in `CSP_WILDCARD_REFUSED` (`github.io`, `vercel.app`, `co.uk` …; an
+  explicit list, not the Public Suffix List: add one there when you meet it). Anything
+  else stops the server at start with `ConfigError`.
 - Code that needs an origin (#40's Sentry and Umami) passes it as `extra` to
   `securityHeaders` in `responseHeaders` (`app.ts`), merged with the config's.
 - Tests: `security-headers.test.ts` (the builder over http and https, report-only, extra

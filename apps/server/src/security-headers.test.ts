@@ -1,11 +1,14 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { API_BODY_LIMIT_BYTES, createApp } from "./app.ts";
 import {
   CSP_SOURCE_PATTERN,
+  CSP_WILDCARD_REFUSED,
   contentSecurityPolicy,
+  isCspSource,
   HSTS,
   PERMISSIONS_POLICY,
   parseCspSources,
@@ -103,6 +106,38 @@ describe("parseCspSources", () => {
     expect(CSP_SOURCE_PATTERN.test("https://*.example.com")).toBe(true);
     expect(CSP_SOURCE_PATTERN.test("https://a.*.example.com")).toBe(false);
     expect(CSP_SOURCE_PATTERN.test("https://-a.example.com")).toBe(false);
+  });
+
+  it.each([
+    "https://*.example.com",
+    "https://*.EXAMPLE.co.uk",
+    "https://*.me.github.io",
+    "https://a.github.io",
+    "http://10.0.0.5:1",
+    "https://stats.example.com:65535",
+  ])("accepts %s", (value) => {
+    expect(isCspSource(value)).toBe(true);
+    expect(parseCspSources(`connect-src ${value}`)).not.toBeNull();
+  });
+
+  it.each([
+    ["a wildcard over one label", "https://*.com"],
+    ["a wildcard over one label, with a port", "https://*.localhost:8080"],
+    ["a wildcard on a hosting platform", "https://*.github.io"],
+    ["a wildcard on a hosting platform, any case", "https://*.Vercel.App"],
+    ["a wildcard on a country suffix", "https://*.co.uk"],
+    ["a port above 65535", "https://stats.example.com:99999"],
+    ["a port above 65535, just", "https://stats.example.com:65536"],
+    ["port 0", "https://stats.example.com:0"],
+  ])("refuses %s", (_what, value) => {
+    expect(isCspSource(value)).toBe(false);
+    expect(parseCspSources(`connect-src ${value}`)).toBeNull();
+  });
+
+  it("lists suffixes, not whole hosts or keywords", () => {
+    for (const suffix of CSP_WILDCARD_REFUSED) {
+      expect(suffix).toMatch(/^[a-z0-9-]+(\.[a-z0-9-]+)+$/);
+    }
   });
 });
 
@@ -228,4 +263,56 @@ describe("the headers on every kind of response", () => {
       await server.close();
     }
   });
+
+  /** A GET with any header (fetch would not send another Origin), as a Response. */
+  const get = (port: number, path: string, headers: Record<string, string> = {}) =>
+    new Promise<Response>((resolve, reject) => {
+      const request = httpRequest({ host: "localhost", port, path, headers, agent: false });
+      request.once("response", (incoming) => {
+        const chunks: Buffer[] = [];
+        incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+        incoming.once("end", () => {
+          const out = new Headers();
+          for (const [name, value] of Object.entries(incoming.headers)) {
+            for (const one of [value ?? []].flat()) out.append(name, one);
+          }
+          resolve(
+            new Response(Buffer.concat(chunks), { status: incoming.statusCode ?? 0, headers: out }),
+          );
+        });
+      });
+      request.once("error", reject);
+      request.end();
+    });
+
+  it.each([
+    ["a bad query", "/socket.io/?EIO=4&transport=carrier-pigeon", {}, 400, "Transport unknown"],
+    [
+      "a foreign Origin",
+      "/socket.io/?EIO=4&transport=polling",
+      { origin: "https://evil.example" },
+      403,
+      "Forbidden",
+    ],
+    ["no session cookie", "/socket.io/?EIO=4&transport=polling", {}, 403, "unauthenticated"],
+  ] as const)(
+    "Engine.IO's own refusal of %s carries them, once each",
+    async (what, path, headers, status, message) => {
+      const server = createServer(testConfig(env), {
+        logger: collectLogs().logger,
+        sessionCookie: "__Host-pp.session_token",
+      });
+      const { port } = await server.listen();
+      try {
+        const response = await get(port, path, headers);
+        expect(response.status).toBe(status);
+        expect(await response.json()).toMatchObject({ message });
+        expectHeaders(response, what);
+        // Set once: a header given twice would read "a, a".
+        expect(response.headers.get("content-type")).toBe("application/json");
+      } finally {
+        await server.close();
+      }
+    },
+  );
 });

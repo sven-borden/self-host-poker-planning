@@ -749,7 +749,9 @@ password, no social provider before W5.
     `CSP_REPORT_ONLY=true` sends the same policy as `Content-Security-Policy-Report-Only`
     (without the upgrade, which browsers ignore there); `CSP_EXTRA_SOURCES` adds origins to
     `script-src`, `style-src`, `img-src`, `font-src`, `connect-src`, `frame-src` or
-    `media-src` (plain `http(s)`/`ws(s)` origins only, no keyword, no path), and #40's
+    `media-src` (plain `http(s)`/`ws(s)` origins only, no keyword, no path, a port up to
+    65535, a `*.` wildcard only over two labels or more and never over a suffix in
+    `CSP_WILDCARD_REFUSED`, such as `github.io` or `co.uk`), and #40's
     Sentry and Umami add theirs the same way.
   - `Strict-Transport-Security: max-age=31536000; includeSubDomains` when `BASE_URL` is
     https; no `preload`, which is the domain owner's choice.

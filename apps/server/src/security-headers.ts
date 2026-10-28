@@ -22,19 +22,99 @@ export type CspDirective = (typeof CSP_EXTENSIBLE_DIRECTIVES)[number];
 export type CspSources = Readonly<Partial<Record<CspDirective, readonly string[]>>>;
 
 /**
- * One origin a self-hoster may add: a scheme (`https`, `http`, `wss`, `ws`), a host (its
- * left-most label may be `*`) and an optional port. No path, no keyword (`'unsafe-inline'`
- * and its kin), no bare scheme such as `https:`: each would open the policy wide.
+ * The shape of an origin a self-hoster may add: a scheme (`https`, `http`, `wss`, `ws`), a
+ * host (its left-most label may be `*`) and an optional port. No path, no keyword
+ * (`'unsafe-inline'` and its kin), no bare scheme such as `https:`: each would open the
+ * policy wide. `isCspSource` adds the rules a pattern cannot say.
  */
 export const CSP_SOURCE_PATTERN =
   /^(?:https?|wss?):\/\/(?:\*\.)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*(?::\d{1,5})?$/i;
+
+/**
+ * Suffixes under which anyone can get a host name: a wildcard on one of them
+ * (`https://*.github.io`) would let every stranger's site in. An explicit list, not a
+ * heuristic and not the whole Public Suffix List: the hosting platforms and the
+ * second-level country domains a self-hoster is likely to type. A wildcard must also
+ * name at least two labels after `*.` (`*.example.com`, never `*.com`), so every
+ * single-label suffix is refused without a list.
+ */
+export const CSP_WILDCARD_REFUSED = new Set([
+  // Hosting platforms (sites of strangers side by side).
+  "github.io",
+  "githubusercontent.com",
+  "gitlab.io",
+  "netlify.app",
+  "vercel.app",
+  "pages.dev",
+  "workers.dev",
+  "web.app",
+  "firebaseapp.com",
+  "appspot.com",
+  "herokuapp.com",
+  "azurewebsites.net",
+  "azurestaticapps.net",
+  "blob.core.windows.net",
+  "cloudfront.net",
+  "amazonaws.com",
+  "s3.amazonaws.com",
+  "onrender.com",
+  "fly.dev",
+  "glitch.me",
+  "ngrok.io",
+  "ngrok-free.app",
+  "trycloudflare.com",
+  "blogspot.com",
+  "wordpress.com",
+  "duckdns.org",
+  "synology.me",
+  "jsdelivr.net",
+  "unpkg.com",
+  // Second-level country domains.
+  "co.uk",
+  "org.uk",
+  "ac.uk",
+  "gov.uk",
+  "com.au",
+  "net.au",
+  "org.au",
+  "co.nz",
+  "co.jp",
+  "ne.jp",
+  "or.jp",
+  "co.za",
+  "co.in",
+  "com.br",
+  "com.cn",
+  "com.mx",
+  "com.tr",
+  "com.sg",
+  "com.hk",
+  "com.tw",
+]);
+
+/** The highest TCP port. */
+const MAX_PORT = 65_535;
+
+/**
+ * True for an origin `CSP_EXTRA_SOURCES` accepts: `CSP_SOURCE_PATTERN`, a port from 1 to
+ * 65535, and a wildcard only over at least two labels that are not a suffix in
+ * `CSP_WILDCARD_REFUSED`.
+ */
+export function isCspSource(value: string): boolean {
+  if (!CSP_SOURCE_PATTERN.test(value)) return false;
+  const [, host = "", port] = /^[a-z]+:\/\/([^:]+)(?::(\d+))?$/i.exec(value) ?? [];
+  if (port !== undefined && (Number(port) < 1 || Number(port) > MAX_PORT)) return false;
+  if (!host.startsWith("*.")) return true;
+  const suffix = host.slice(2).toLowerCase();
+  return suffix.includes(".") && !CSP_WILDCARD_REFUSED.has(suffix);
+}
 
 /**
  * Parses `CSP_EXTRA_SOURCES`: directives separated by `;`, each a directive name followed
  * by origins separated by spaces, such as
  * `script-src https://stats.example.com; connect-src https://stats.example.com`. Returns
  * null when a directive is not one of `CSP_EXTENSIBLE_DIRECTIVES`, names no origin, or an
- * origin does not match `CSP_SOURCE_PATTERN`.
+ * origin fails `isCspSource`.
  */
 export function parseCspSources(value: string): CspSources | null {
   const sources: Partial<Record<CspDirective, string[]>> = {};
@@ -43,7 +123,7 @@ export function parseCspSources(value: string): CspSources | null {
     if (!name) continue;
     const directive = name.toLowerCase();
     if (!(CSP_EXTENSIBLE_DIRECTIVES as readonly string[]).includes(directive)) return null;
-    if (origins.length === 0 || !origins.every((o) => CSP_SOURCE_PATTERN.test(o))) return null;
+    if (origins.length === 0 || !origins.every(isCspSource)) return null;
     const key = directive as CspDirective;
     sources[key] = [...new Set([...(sources[key] ?? []), ...origins])];
   }

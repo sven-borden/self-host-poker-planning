@@ -62,12 +62,6 @@ export function createServer(config: Config, deps: ServerDeps): PokerServer {
   const app = createApp(config, deps);
   const httpServer = createAdaptorServer({ fetch: app.fetch }) as HttpServer;
   const headers = responseHeaders(config);
-  // Engine.IO's own refusals (a foreign Origin, no session cookie, a bad query) answer
-  // without its "headers" event; set ours first, and its writeHead adds its own.
-  httpServer.prependListener("request", (request, response) => {
-    if (!request.url?.startsWith(SOCKET_PATH)) return;
-    for (const [name, value] of Object.entries(headers)) response.setHeader(name, value);
-  });
   const io = createRealtime(httpServer, {
     logger,
     allowedOrigin: config.baseUrl,
@@ -76,6 +70,13 @@ export function createServer(config: Config, deps: ServerDeps): PokerServer {
     ...deps.realtimeLimits,
     ...(deps.handlers && { handlers: deps.handlers }),
     ...(deps.socketMiddleware && { middleware: deps.socketMiddleware }),
+  });
+  // Engine.IO's own refusals (a foreign Origin, no session cookie, a bad query) answer
+  // without its "headers" event; set ours first, and its writeHead adds its own.
+  // After `createRealtime`: Engine.IO's attach moves the listeners it finds behind its own.
+  httpServer.prependListener("request", (request, response) => {
+    if (!request.url?.startsWith(SOCKET_PATH)) return;
+    for (const [name, value] of Object.entries(headers)) response.setHeader(name, value);
   });
   let closing: Promise<void> | undefined;
 

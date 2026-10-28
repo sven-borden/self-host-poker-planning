@@ -158,7 +158,9 @@ from the bundled database; to use your own Postgres, run the image alone with
   directives separated by `;`, such as
   `CSP_EXTRA_SOURCES="script-src https://stats.example.com; connect-src https://stats.example.com"`
   (`script-src`, `style-src`, `img-src`, `font-src`, `connect-src`, `frame-src`,
-  `media-src`; plain origins only, no `'unsafe-inline'`), and turn report-only off.
+  `media-src`; plain origins only, no `'unsafe-inline'`; a wildcard such as
+  `https://*.example.com` only over your own domain, never `*.github.io` or `*.co.uk`),
+  and turn report-only off.
 - **Your proxy**: let the app's headers through unchanged. A proxy that adds headers of
   its own (Synology's "HSTS" checkbox, a Traefik `headers` middleware, nginx
   `add_header`) duplicates them: two policies both apply, so the stricter one wins and
