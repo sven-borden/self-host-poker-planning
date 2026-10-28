@@ -19,22 +19,24 @@ import {
   SheetTitle,
 } from "../components/ui/sheet.tsx";
 import { useFormat, useT } from "../i18n/hooks.ts";
-import type { TFunction } from "../i18n/i18n.ts";
 import { cn } from "../lib/utils.ts";
 import { type HistoryResult, requestHistory } from "../realtime/room-connection.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { cardLabel, MiniCard } from "../table/cards.tsx";
+import { HistorySummary } from "./history-summary.tsx";
 import {
+  CAPTION,
+  durationSpoken,
   type HistoryList,
   historyKey,
   NO_ROUNDS,
   sameDay,
+  shortDuration,
   votingTime,
   withEarlierPage,
   withFirstPage,
 } from "./history-view.ts";
 import { keyLabel, safeHref, shortUrl } from "./subject.ts";
-import { durationWords } from "./timer-view.ts";
 
 /** A phone: the `phone:` variant in styles.css. The panel is a bottom sheet there. */
 const PHONE_QUERY = "(max-width: 640px)";
@@ -47,9 +49,6 @@ function subscribePhone(onChange: () => void) {
 
 const isPhone = () => window.matchMedia(PHONE_QUERY).matches;
 
-/** 11 px at the default text size, in rem so that it grows with the reader's text size. */
-const CAPTION = "m-0 font-mono text-[0.6875rem] tracking-[0.08em] text-ink-2 uppercase";
-
 /** The highest bar of a row's distribution. */
 const BAR_MAX_PX = 20;
 const BAR_MIN_PX = 3;
@@ -59,6 +58,8 @@ interface HistoryPanelProps {
   onOpenChange: (open: boolean) => void;
   /** Where the focus returns when the panel closes: the button that opened it. */
   returnFocus: RefObject<HTMLElement | null>;
+  /** The room's name for the export files; null for a room without one (never its code). */
+  roomName: string | null;
 }
 
 type Loading = "loading" | "ready" | "failed";
@@ -73,7 +74,7 @@ type Loading = "loading" | "ready" | "failed";
  * final, so a new row arrives without a reload; "Show earlier rounds" adds the next page
  * and moves the focus to its first round.
  */
-export function HistoryPanel({ open, onOpenChange, returnFocus }: HistoryPanelProps) {
+export function HistoryPanel({ open, onOpenChange, returnFocus, roomName }: HistoryPanelProps) {
   const phone = useSyncExternalStore(subscribePhone, isPhone);
   const content = useRef<HTMLDivElement>(null);
   return (
@@ -102,13 +103,13 @@ export function HistoryPanel({ open, onOpenChange, returnFocus }: HistoryPanelPr
           returnFocus.current?.focus();
         }}
       >
-        <HistoryBody side={!phone} />
+        <HistoryBody side={!phone} roomName={roomName} />
       </SheetContent>
     </Sheet>
   );
 }
 
-function HistoryBody({ side }: { side: boolean }) {
+function HistoryBody({ side, roomName }: { side: boolean; roomName: string | null }) {
   const t = useT();
   const head = useRef<HTMLDivElement>(null);
   const key = useRoomStore((state) => historyKey(state.snapshot?.room));
@@ -212,6 +213,7 @@ function HistoryBody({ side }: { side: boolean }) {
         </SheetClose>
       </div>
       <PanelLive />
+      <HistorySummary roomName={roomName} />
       {loading === "loading" && list.rounds.length === 0 ? (
         <p role="status" data-history-loading className="m-0 px-4 py-6 text-ink-2">
           {t("history.loading")}
@@ -486,37 +488,19 @@ function Distribution({ round }: { round: HistoryRoundView }) {
   );
 }
 
-/**
- * How long the voting took, said in words: "2 minutes 13 seconds", and from an hour on
- * the hours and minutes ("1 hour 2 minutes").
- */
-function tookWords(t: TFunction, time: ReturnType<typeof votingTime>): string {
-  const { total, hours, minutes } = time;
-  if (hours === 0) return durationWords(t, total);
-  const inHours = t("history.hours", { count: hours });
-  if (minutes === 0) return inHours;
-  return t("history.hoursMinutes", {
-    hours: inHours,
-    minutes: t("timer.minutes", { count: minutes }),
-  });
-}
-
 /** How long the voting took: "42 s", "2 min 13 s", or from an hour on "1 h 2 min". */
 function Duration({ round }: { round: HistoryRoundView }) {
   const t = useT();
   const time = votingTime(round);
-  const { total, hours, minutes, seconds } = time;
   return (
-    <p data-history-duration={total} className="m-0 ml-auto flex items-center gap-1 text-sm">
+    <p data-history-duration={time.total} className="m-0 ml-auto flex items-center gap-1 text-sm">
       <TimerIcon aria-hidden className="size-3.5 text-ink-2" />
       <span aria-hidden="true" className="tabular-nums whitespace-nowrap">
-        {hours > 0
-          ? t("history.tookHours", { hours, minutes })
-          : minutes > 0
-            ? t("history.took", { minutes, seconds })
-            : t("history.tookSeconds", { seconds })}
+        {shortDuration(t, time)}
       </span>
-      <span className="sr-only">{t("history.tookSpoken", { duration: tookWords(t, time) })}</span>
+      <span className="sr-only">
+        {t("history.tookSpoken", { duration: durationSpoken(t, time) })}
+      </span>
     </p>
   );
 }

@@ -95,6 +95,14 @@ const anonymous: HistoryRoundView = {
 const page = (rounds: HistoryRoundView[], next?: number) =>
   next === undefined ? { ok: true, rounds } : { ok: true, rounds, next };
 
+/** The list's requests (no `limit`) and the summary's (50 a page), counted apart. */
+const callsWith = (summary: boolean) =>
+  mocks.requestHistory.mock.calls.filter(
+    ([request]) => ((request as { limit?: number } | undefined)?.limit !== undefined) === summary,
+  ).length;
+const listCalls = () => callsWith(false);
+const summaryCalls = () => callsWith(true);
+
 async function openPanel() {
   fireEvent.click(screen.getByRole("button", { name: "History" }));
   return screen.findByRole("dialog", { name: "History" });
@@ -124,7 +132,7 @@ afterEach(async () => {
 
 describe("the History button", () => {
   it("shows for everyone in the room, never on the join form", () => {
-    render(<RoomHistoryButton />);
+    render(<RoomHistoryButton roomName="Team Sky" />);
     show(newRoom(), "stranger");
     expect(screen.queryByRole("button", { name: "History" })).toBeNull();
     show(newRoom(), ANA);
@@ -135,7 +143,7 @@ describe("the History button", () => {
 describe("the history panel", () => {
   it("lists the rounds newest first: number, subject, final, distribution, voting time and end", async () => {
     mocks.requestHistory.mockResolvedValue(page([named, anonymous]));
-    render(<RoomHistoryButton />);
+    render(<RoomHistoryButton roomName="Team Sky" />);
     show(step(newRoom(), PO, { type: "startRound", subject: { kind: "none" } }), ANA);
     const dialog = await openPanel();
     await waitFor(() =>
@@ -178,7 +186,7 @@ describe("the history panel", () => {
 
   it("opens a named round's votes with names and cards, and an anonymous one's cards alone", async () => {
     mocks.requestHistory.mockResolvedValue(page([named, anonymous]));
-    render(<RoomHistoryButton />);
+    render(<RoomHistoryButton roomName="Team Sky" />);
     show(newRoom(), PO);
     const dialog = await openPanel();
     await within(dialog).findByRole("list", { name: "Finished rounds" });
@@ -216,7 +224,7 @@ describe("the history panel", () => {
 
   it("says so when no round is finished yet", async () => {
     mocks.requestHistory.mockResolvedValue(page([]));
-    render(<RoomHistoryButton />);
+    render(<RoomHistoryButton roomName="Team Sky" />);
     show(newRoom(), ANA);
     const dialog = await openPanel();
     expect(await within(dialog).findByText(/^No rounds yet\./)).toBeTruthy();
@@ -238,7 +246,7 @@ describe("the history panel", () => {
       votes: { kind: "anonymous", cards: [] },
     };
     mocks.requestHistory.mockResolvedValue(page([silentAnonymous, silent, named]));
-    render(<RoomHistoryButton />);
+    render(<RoomHistoryButton roomName="Team Sky" />);
     show(newRoom(), ANA);
     const dialog = await openPanel();
     await within(dialog).findByRole("list", { name: "Finished rounds" });
@@ -260,7 +268,7 @@ describe("the history panel", () => {
       revealedAt: NOW - 10_000_000 + seconds * 1000,
     });
     mocks.requestHistory.mockResolvedValue(page([long(3, 3725), long(2, 7200)]));
-    render(<RoomHistoryButton />);
+    render(<RoomHistoryButton roomName="Team Sky" />);
     show(newRoom(), ANA);
     const dialog = await openPanel();
     await within(dialog).findByRole("list", { name: "Finished rounds" });
@@ -272,26 +280,31 @@ describe("the history panel", () => {
 
   it("fetches the first page again when a round starts or the table's round gets its final", async () => {
     mocks.requestHistory.mockResolvedValue(page([anonymous]));
-    render(<RoomHistoryButton />);
+    render(<RoomHistoryButton roomName="Team Sky" />);
     let room = step(newRoom(), PO, { type: "startRound", subject: { kind: "none" } });
     show(room, ANA);
     const dialog = await openPanel();
     await within(dialog).findByRole("list", { name: "Finished rounds" });
-    expect(mocks.requestHistory).toHaveBeenCalledTimes(1);
+    expect(listCalls()).toBe(1);
+    await waitFor(() => expect(summaryCalls()).toBe(1));
 
     // A vote changes nothing here.
     room = step(room, ANA, { type: "castVote", card: "5", round: 1 });
     show(room, ANA);
     room = step(room, PO, { type: "castVote", card: "8", round: 1 });
     show(room, ANA);
-    expect(mocks.requestHistory).toHaveBeenCalledTimes(1);
-    // The final, then the next round: each asks again, and the new row shows.
+    expect(listCalls()).toBe(1);
+    expect(summaryCalls()).toBe(1);
+    // The final, then the next round: each asks again (the list and the summary), and the
+    // new row shows.
     room = step(room, PO, { type: "setFinal", card: "8" });
     show(room, ANA);
-    await waitFor(() => expect(mocks.requestHistory).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(listCalls()).toBe(2));
+    await waitFor(() => expect(summaryCalls()).toBe(2));
     mocks.requestHistory.mockResolvedValue(page([named, anonymous]));
     show(step(room, PO, { type: "startRound", subject: { kind: "none" } }), ANA);
-    await waitFor(() => expect(mocks.requestHistory).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(listCalls()).toBe(3));
+    await waitFor(() => expect(summaryCalls()).toBe(3));
     await waitFor(() => expect(rowOf(dialog, 2)).toBeTruthy());
   });
 
@@ -299,7 +312,7 @@ describe("the history panel", () => {
     mocks.requestHistory.mockImplementation(async (request?: { before?: number }) =>
       request?.before === 2 ? page([anonymous]) : page([named], 2),
     );
-    render(<RoomHistoryButton />);
+    render(<RoomHistoryButton roomName="Team Sky" />);
     show(newRoom(), ANA);
     const dialog = await openPanel();
     const more = await within(dialog).findByRole("button", { name: "Show earlier rounds" });
@@ -314,9 +327,16 @@ describe("the history panel", () => {
   });
 
   it("says when the rounds could not load, and tries again", async () => {
-    mocks.requestHistory.mockResolvedValueOnce({ ok: false, code: "offline" });
-    mocks.requestHistory.mockResolvedValueOnce(page([named]));
-    render(<RoomHistoryButton />);
+    // The list's first request fails; the summary's (50 a page) does not.
+    let failed = false;
+    mocks.requestHistory.mockImplementation(async (request?: { limit?: number }) => {
+      if (request?.limit === undefined && !failed) {
+        failed = true;
+        return { ok: false, code: "offline" };
+      }
+      return page([named]);
+    });
+    render(<RoomHistoryButton roomName="Team Sky" />);
     show(newRoom(), ANA);
     const dialog = await openPanel();
     expect(await within(dialog).findByRole("alert")).toHaveProperty(
@@ -329,7 +349,7 @@ describe("the history panel", () => {
 
   it("closes on Escape and gives the focus back to History", async () => {
     mocks.requestHistory.mockResolvedValue(page([named]));
-    render(<RoomHistoryButton />);
+    render(<RoomHistoryButton roomName="Team Sky" />);
     show(newRoom(), ANA);
     const dialog = await openPanel();
     await within(dialog).findByRole("list", { name: "Finished rounds" });
@@ -341,7 +361,7 @@ describe("the history panel", () => {
   it("speaks French and German", async () => {
     mocks.requestHistory.mockResolvedValue(page([named]));
     await act(() => changeLanguage("fr"));
-    render(<RoomHistoryButton />);
+    render(<RoomHistoryButton roomName="Team Sky" />);
     show(newRoom(), ANA);
     fireEvent.click(screen.getByRole("button", { name: "Historique" }));
     const dialog = await screen.findByRole("dialog", { name: "Historique" });
@@ -351,7 +371,7 @@ describe("the history panel", () => {
     expect(row.querySelector("[data-history-final]")?.textContent).toContain("Finale");
     cleanup();
     await act(() => changeLanguage("de"));
-    render(<RoomHistoryButton />);
+    render(<RoomHistoryButton roomName="Team Sky" />);
     fireEvent.click(screen.getByRole("button", { name: "Verlauf" }));
     const german = await screen.findByRole("dialog", { name: "Verlauf" });
     const germanRow = await waitFor(() => rowOf(german, 2));
