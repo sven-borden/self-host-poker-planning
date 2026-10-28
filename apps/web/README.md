@@ -139,8 +139,10 @@ server sends and never decides the outcome of a round.
   slot turns over to the new value with the snapshot (`SlotCard`, no turn under reduced
   motion). The hand docks on a phone after the reveal as while voting, except for the
   PO, whose decision's action row docks there. A changed vote is `changed` on its seat
-  status: a "changed" chip on the slot card's foot (`[data-changed-chip]`, also under
-  "Not at the table"), "changed after the reveal" in the seat's name and "Changed after
+  status: a "changed" chip on the slot card's foot (`[data-changed-chip="word"]`, also
+  under "Not at the table"), a corner dot on a dense phone table
+  (`[data-changed-chip="mark"]`, `ChangedMark` in `table-stage.tsx`; `/dev/table`'s
+  `changed=1` shows it), "changed after the reveal" in the seat's name and "Changed after
   the reveal" in its popover. The viewer hears "You changed your card: 8."
   (`hand.youChanged`) and, in the room's region, the result when it moved; everyone else
   "Ben changed their card: 8." (`live.changed`) with that result (`changedEvent` in
@@ -160,6 +162,11 @@ server sends and never decides the outcome of a round.
   in `decision-dock.ts`, `[data-decision-dock]`, `--decision-dock` for the scroll
   padding): the whole bar on a desktop, the action row alone on a phone, where the bar
   is `display: contents`; only when the result in the centre stays in sight above it.
+  The #29 note ("Votes changed since you recorded 5.") has two copies:
+  `[data-decision-note="bar"]` under the bar (its id describes the picker and "Record";
+  hidden on a phone, `sr-only` while the desktop bar docks, and taken off the height by
+  `dockHeight` as the hint is), and `[data-decision-note="dock"]`, the phone's action
+  row's first line.
   The centre's final is `CentreFinal` in `results.tsx` (`[data-centre-final]`), and the
   fallback's sentence says it too; the live region's `final` events and the re-vote's
   sentences are in `announcements.ts`. Copy: `final.*`, `round.revote`, `live.final*`,
@@ -570,7 +577,8 @@ server sends and never decides the outcome of a round.
   collapsed on blur moved "Start voting" from under the tap). `Seated` marks the hand
   `[data-hand-dock]` while it is playable (Voting) and `useHandDock`
   (`room/hand-dock.ts`) finds the screen tall enough: at the top of the page the table
-  and the viewer's seat and slot (`[data-stage]`, `[data-you]`) must end above the dock,
+  and the viewer's seat and slot (`[data-stage]`, `[data-you]`), and after a reveal the
+  results' first statistic (`[data-stats] > :first-child`, #29), must end above the dock,
   measured again on every resize of the page or the panel. `thumb:` makes it a sticky
   sheet on the bottom edge, its hint `sr-only`; the panel's bottom padding is the same
   docked or not, so the measure does not depend on the state. While docked the root's

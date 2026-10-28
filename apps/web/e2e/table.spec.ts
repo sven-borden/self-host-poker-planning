@@ -400,3 +400,106 @@ test("the bench is not indexed", async ({ page }) => {
   await open(page, "n=4");
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex");
 });
+
+// #29: a card changed after the reveal carries a "changed" word on its foot, or a corner
+// dot on a dense phone table, where the word would cover the next cards. With 16 seats,
+// in each language, no mark covers another mark or another person's card.
+interface MarkBox {
+  kind: string;
+  mark: Rect;
+  card: Rect;
+}
+
+async function changedMarks(page: Page): Promise<MarkBox[]> {
+  return page.locator("[data-slot-card] [data-changed-chip]").evaluateAll((marks) =>
+    marks.map((mark) => {
+      const box = (element: Element) => {
+        const r = element.getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      };
+      const slot = mark.closest("[data-slot-card]");
+      const card = slot?.firstElementChild ?? slot;
+      return {
+        kind: mark.getAttribute("data-changed-chip") ?? "",
+        mark: box(mark),
+        card: card ? box(card) : box(mark),
+      };
+    }),
+  );
+}
+
+const overlaps = (a: Rect, b: Rect) =>
+  Math.min(a.right, b.right) - Math.max(a.left, b.left) > ROUNDING &&
+  Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > ROUNDING;
+
+test.describe("changed marks with 16 people", () => {
+  for (const locale of ["en-GB", "de-DE", "fr-FR"]) {
+    test.describe(locale, () => {
+      test.use({ locale });
+      for (const width of [360, 390, 1024, 1440]) {
+        test(`cover no other mark and no other card at ${width} px`, async ({ page }) => {
+          await page.setViewportSize({ width, height: 900 });
+          await open(page, "n=16&state=revealed&changed=1");
+          const marks = await changedMarks(page);
+          // Every third person did not vote: 11 cards face up, each changed.
+          expect(marks).toHaveLength(11);
+          expect(new Set(marks.map((m) => m.kind))).toEqual(
+            new Set([width < 641 ? "mark" : "word"]),
+          );
+          const found: string[] = [];
+          marks.forEach((a, i) => {
+            marks.forEach((b, j) => {
+              if (i === j) return;
+              if (j > i && overlaps(a.mark, b.mark)) found.push(`marks ${i} and ${j}`);
+              if (overlaps(a.mark, b.card)) found.push(`mark ${i} on card ${j}`);
+            });
+          });
+          expect(found).toEqual([]);
+          await page.screenshot({ path: `${SHOTS}changed-n16-${width}-${locale}.png` });
+        });
+      }
+    });
+  }
+
+  test.describe("forced colours", () => {
+    test.use({ forcedColors: "active" });
+    for (const width of [360, 1440]) {
+      test(`keep a visible edge and stay off the card's edge at ${width} px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await open(page, "n=16&state=revealed&changed=1");
+        const marks = await changedMarks(page);
+        expect(marks.length).toBeGreaterThan(0);
+        const style = await page
+          .locator("[data-slot-card] [data-changed-chip]")
+          .first()
+          .evaluate((mark) => {
+            const s = getComputedStyle(mark);
+            const card = mark.closest("[data-slot-card]")?.firstElementChild;
+            return {
+              border: s.borderTopWidth,
+              background: s.backgroundColor,
+              card: card ? getComputedStyle(card).backgroundColor : "",
+            };
+          });
+        for (const { kind, mark, card } of marks) {
+          if (kind === "word") {
+            // Under the card, not across its edge.
+            expect(mark.top).toBeGreaterThanOrEqual(card.bottom);
+          } else {
+            // Inside the card, clear of its edge.
+            expect(mark.top - card.top).toBeGreaterThanOrEqual(2);
+            expect(card.right - mark.right).toBeGreaterThanOrEqual(2);
+          }
+        }
+        if (width < 641) {
+          // The dot is drawn in the text colour, on the card's own background.
+          expect(style.background).not.toBe("rgba(0, 0, 0, 0)");
+          expect(style.background).not.toBe(style.card);
+        } else {
+          expect(Number.parseFloat(style.border)).toBeGreaterThanOrEqual(1);
+        }
+        await page.screenshot({ path: `${SHOTS}changed-n16-${width}-forced.png` });
+      });
+    }
+  });
+});

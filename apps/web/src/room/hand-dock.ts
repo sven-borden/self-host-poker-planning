@@ -3,13 +3,19 @@ import { type RefObject, useLayoutEffect, useState } from "react";
 // The hand docked at the bottom of an upright phone while the team votes (#22). It docks
 // only when the screen is tall enough: at the top of the page, the table (the PO's "Reveal
 // cards" in its centre, the viewer's seat and slot at its bottom) must end above the docked
-// hand. Otherwise the hand stays in the page, under the table, and covers nothing.
+// hand. Otherwise the hand stays in the page, under the table, and covers nothing. After a
+// reveal, while votes may still change (#29), the first row of the results under the table
+// must end above it too.
 
 /** An upright phone: the `thumb:` variant in styles.css. */
 export const THUMB_QUERY = "(max-width: 640px) and (min-height: 520px)";
 
-/** What must never lie under the docked hand: the table, and the viewer's seat and slot. */
-const KEPT_CLEAR = "[data-room-table] [data-stage], [data-room-table] [data-you]";
+/**
+ * What must never lie under the docked hand: the table, the viewer's seat and slot, and
+ * after a reveal the first row of the results (their first statistic's row).
+ */
+const KEPT_CLEAR =
+  "[data-room-table] [data-stage], [data-room-table] [data-you], [data-results-panel] [data-stats] > :first-child";
 
 /**
  * Whether the docked hand leaves room for what lies above it at the top of the page:

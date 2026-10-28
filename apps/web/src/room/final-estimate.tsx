@@ -72,6 +72,11 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
     basis.final === round.final &&
     outcome !== basis.outcome &&
     choice.suggested !== round.final;
+  /** "Votes changed since you recorded 5.", while the result moved away from the final. */
+  const note =
+    moved && round.final !== undefined
+      ? t("final.changedSince", { card: cardLabel(t, round.final) })
+      : null;
   const selected = picked ?? (moved ? choice.suggested : choice.preselected);
   const recorded = selected !== null && selected === round.final;
   const [recording, setRecording] = useState(false);
@@ -169,15 +174,21 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
         }
         onPick={setPicked}
       />
-      {moved && round.final !== undefined ? (
+      {note === null ? null : (
+        // On a desktop, under the bar; docked, for screen readers only, as the hint is, so
+        // the docked bar stays one row and the result above it stays in sight (#29). On a
+        // phone this copy is hidden: the action row carries its own, as its first line.
         <p
           id={ids.note}
-          data-decision-note
-          className="order-last m-0 w-full text-center text-sm text-ink phone:mt-2"
+          data-decision-note="bar"
+          className={cn(
+            "order-last m-0 w-full text-center text-sm text-ink phone:hidden",
+            docked && "min-[641px]:sr-only",
+          )}
         >
-          {t("final.changedSince", { card: cardLabel(t, round.final) })}
+          {note}
         </p>
-      ) : null}
+      )}
       {selected === null ? (
         <p
           id={ids.hint}
@@ -202,6 +213,16 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
             "phone:sticky phone:bottom-0 phone:z-20 phone:rounded-b-none phone:border-line phone:border-b-transparent phone:bg-surface phone:shadow-panel",
         )}
       >
+        {note === null ? null : (
+          // A phone docks only this row: the note is its first line, read without scrolling.
+          // The bar's copy, hidden here, still describes the picker and "Record".
+          <p
+            data-decision-note="dock"
+            className="col-span-3 m-0 mb-1 hidden text-center text-sm text-ink phone:block"
+          >
+            {note}
+          </p>
+        )}
         <Button
           data-record-final
           aria-describedby={moved ? ids.note : undefined}

@@ -38,7 +38,11 @@ const status = (page: Page) => page.locator("[data-centre] [data-centre-status]"
 const tableLive = (page: Page) => page.locator("[data-table-live]");
 const handLive = (page: Page) => page.locator("[data-hand-live]");
 const hint = (page: Page) => page.locator("[data-hand-hint]");
+/** The PO's note, both copies: under the bar, and as the phone's docked row's first line. */
 const note = (page: Page) => page.locator("[data-decision-note]");
+const barNote = (page: Page) => page.locator("[data-decision-note='bar']");
+const dockNote = (page: Page) => page.locator("[data-decision-note='dock']");
+const decision = (page: Page) => page.locator("[data-decision]");
 const chips = (page: Page) => page.locator("[data-slot-card] [data-changed-chip]");
 const settingsPanel = (page: Page) => page.getByRole("dialog", { name: "Room settings" });
 const changeSwitch = (page: Page) =>
@@ -104,6 +108,10 @@ test("the PO allows changes after a reveal: Ben changes his card, everyone sees 
     await expect(changeSwitch(page)).toHaveAttribute("aria-checked", "false");
     await flip(page, "Change a vote after the reveal", "allowChangeAfterReveal", true);
     await closeSettings(page);
+    // At 1024 x 768 her decision bar docks under the result.
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(decision(page)).toHaveAttribute("data-decision-dock", "true");
     await expect(tableLive(ben.page)).toHaveText("Votes can now change after the reveal.");
     await expect(hint(ben.page)).toHaveText("You can still change your card.");
     await expect(handCard(ben.page, "13")).not.toHaveAttribute("aria-disabled", "true");
@@ -133,7 +141,21 @@ test("the PO allows changes after a reveal: Ben changes his card, everyone sees 
 
     // The final is the PO's: it stays, and her bar says the votes moved.
     await expect(page.locator("[data-centre-final]")).toContainText("Final estimate: 5.");
-    await expect(note(page)).toHaveText("Votes changed since you recorded 5.");
+    await expect(barNote(page)).toHaveText("Votes changed since you recorded 5.");
+    await expect(page.getByRole("button", { name: "Record 8" })).toHaveAccessibleDescription(
+      "Votes changed since you recorded 5.",
+    );
+    // The note keeps the docked bar one row: it stays docked, "Record 8" in sight.
+    await expect(decision(page)).toHaveAttribute("data-decision-dock", "true");
+    await expect(page.getByRole("button", { name: "Record 8" })).toBeInViewport();
+    // On a phone the docked action row reads the note as its first line, without scrolling.
+    await page.setViewportSize({ width: 412, height: 915 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(decision(page)).toHaveAttribute("data-decision-dock", "true");
+    await expect(dockNote(page)).toHaveText("Votes changed since you recorded 5.");
+    await expect(dockNote(page)).toBeInViewport();
+    await expect(barNote(page)).toBeHidden();
+    await expect(page.getByRole("button", { name: "Record 8" })).toBeInViewport();
     await expect(page.getByRole("button", { name: "Record 8" })).toHaveAccessibleDescription(
       "Votes changed since you recorded 5.",
     );
@@ -173,7 +195,7 @@ test("the PO allows changes after a reveal: Ben changes his card, everyone sees 
   }
 });
 
-test("an anonymous round's votes stay put: the switch is locked and the hand disabled", async ({
+test("an anonymous round's votes stay put: the switch locks off, never on, and the hand is disabled", async ({
   page,
   browser,
 }) => {
@@ -183,13 +205,20 @@ test("an anonymous round's votes stay put: the switch is locked and the hand dis
   const ben = await person(browser, page.url(), "Ben");
   try {
     await openSettings(page);
-    await flip(page, "Change a vote after the reveal", "allowChangeAfterReveal", true);
+    // Anonymity on while changes are off: the switch cannot turn them on.
     await flip(page, "Anonymous voting", "revealNames", true);
     const lock = settingRow(page, "allowChangeAfterReveal").locator("[data-setting-locked]");
     await expect(lock).toHaveText("Anonymous rounds lock their votes at the reveal.");
     await expect(changeSwitch(page)).toHaveAttribute("aria-disabled", "true");
     await changeSwitch(page).click({ force: true });
-    await expect(changeSwitch(page)).toHaveAttribute("aria-checked", "true");
+    await page.waitForTimeout(400);
+    await expect(changeSwitch(page)).toHaveAttribute("aria-checked", "false");
+    // Changes on, then anonymity: the switch stays free, so the PO can always stop changes.
+    await flip(page, "Anonymous voting", "revealNames", false);
+    await flip(page, "Change a vote after the reveal", "allowChangeAfterReveal", true);
+    await flip(page, "Anonymous voting", "revealNames", true);
+    await expect(lock).toHaveCount(0);
+    await expect(changeSwitch(page)).not.toHaveAttribute("aria-disabled", "true");
     await closeSettings(page);
 
     await page.getByRole("button", { name: "Start voting" }).click();
@@ -233,6 +262,16 @@ test("a change by keyboard alone, on a phone too, with no turn under reduced mot
     // Her hand docks on the phone after the reveal while she may change, as while voting.
     await ana.page.evaluate(() => window.scrollTo(0, 0));
     await expect(ana.page.locator("[data-room-hand]")).toHaveAttribute("data-hand-dock", "true");
+    // Docked, it leaves the first row of the results in sight above it, as #22's rule
+    // keeps the table in sight while voting.
+    const statsBottom = await ana.page
+      .locator("[data-results-panel] [data-stats] > *")
+      .first()
+      .evaluate((stat) => stat.getBoundingClientRect().bottom);
+    const handTop = await ana.page
+      .locator("[data-room-hand]")
+      .evaluate((hand) => hand.getBoundingClientRect().top);
+    expect(statsBottom).toBeLessThanOrEqual(handTop);
 
     // Keyboard only, Ana on her phone: to her card, an arrow, Enter.
     await recordAnimations(ana.page);

@@ -382,6 +382,27 @@ describe("presence, the PO and the viewer (#17)", () => {
     );
   });
 
+  it("marks a changed card with a corner dot on a dense phone table, the word elsewhere (#29)", () => {
+    const crowd = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        person(`p${i}`, `P${i}`, { kind: "revealed", card: "5", changed: true }),
+      );
+    const marks = () =>
+      [...document.querySelectorAll("[data-slot-card] [data-changed-chip]")].map((mark) => [
+        mark.getAttribute("data-changed-chip"),
+        mark.textContent,
+      ]);
+    // 10 on a phone is not dense yet: the word.
+    const { unmount } = render(<TableStage people={crowd(10)} variant="phone" />);
+    expect(new Set(marks().map(String))).toEqual(new Set(["word,changed"]));
+    unmount();
+    render(<TableStage people={crowd(11)} variant="phone" />);
+    expect(marks()).toHaveLength(11);
+    expect(new Set(marks().map(String))).toEqual(new Set(["mark,"]));
+    // The seat still says it in words.
+    screen.getByRole("button", { name: /^P3, card 5, changed after the reveal$/ });
+  });
+
   it("puts the PO and away in the popover of a seat that shows initials only", async () => {
     const crowd = Array.from({ length: 11 }, (_, i) => ({
       ...person(`p${i}`, `Person ${i}`, { kind: "thinking" as const }),

@@ -129,7 +129,7 @@ function OffTableVotes({ votes }: { votes: readonly OffTableVote[] }) {
                   <span
                     aria-hidden="true"
                     data-changed-chip
-                    className="absolute top-full left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brass-soft px-1 text-[9px]/[12px] font-semibold whitespace-nowrap text-brass-ink ring-1 ring-surface"
+                    className="absolute top-full left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brass-soft px-1 text-[9px]/[12px] font-semibold whitespace-nowrap text-brass-ink ring-1 ring-surface forced-colors:translate-y-px forced-colors:border forced-colors:border-[CanvasText]"
                   >
                     {t("table.changedChip")}
                   </span>

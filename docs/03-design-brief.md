@@ -296,7 +296,8 @@ As built (#22), for 640 px and below (the `phone:` variant) unless stated:
   the slot is on screen and above the dock; otherwise the card just lifts. It docks only
   while Voting, or after a named reveal while votes may change (#29): otherwise the
   results come with the reveal and sit above the hand, and the hand returns to the page
-  under them. At 390 × 844 with 8 people the PO
+  under them. After the reveal the first row of the results (the first statistics)
+  must end above the docked hand too. At 390 × 844 with 8 people the PO
   (field included) and a guest see the subject, the whole table and the docked hand at
   the top of the page without scrolling, in English, French and German and with a
   two-line title; at 150 % text, at 390 × 664 (an iPhone 13 in Safari) and on an iPhone
@@ -708,16 +709,25 @@ to an anonymous round: an anonymous round's votes are final at its reveal, so th
   this round." Turned off mid-way, the hand stops at once.
 - **The mark.** A changed card carries a small "changed" chip on its foot, on the table
   and in the "Not at the table" row: 9 px semibold `--brass-ink` text on `--brass-soft`,
-  a word, never a colour alone. The seat says "Ben, card 8, changed after the reveal",
-  its popover "Changed after the reveal". Marks stay once changes are turned off.
+  a word, never a colour alone. On a dense phone table (more than 10 seats, 20 × 28 px
+  slots) the word would cover the next cards, so the slot card carries a 6 px
+  `--brass` dot in its top-right corner instead, 3 px in from its edges, clear of the
+  value; 16 seats at 360 and 390 px, in every language, show no mark on another mark or
+  on another card. In forced colours the word keeps a border and hangs under the card,
+  not across its edge, and the dot is drawn in the text colour. The seat says "Ben, card
+  8, changed after the reveal", its popover "Changed after the reveal", on every table.
+  Marks stay once changes are turned off.
 - **The results** recompute with each change: the suggested card, agreement, average,
   median, spread, distribution and the lowest and highest voters, as the cards now stand.
 - **The PO's decision.** A recorded final stays: the final is the PO's. When a change
   moves the suggestion (a card, or a tie) away from what it was when the PO recorded,
   the bar says "Votes changed since you recorded 5." (`--ink`, under the picker, in the
   description of the picker and of "Record 8") and preselects the new suggestion, none
-  on a tie. Nothing is recorded until the PO acts. The note goes once the PO records
-  again or the suggestion comes back.
+  on a tie. Docked on a desktop, the note is for screen readers only, as the hint is, so
+  the bar stays one row and keeps docking at 1024 × 768. On a phone, where only the
+  action row docks, the note is that row's first line, read without scrolling. Nothing
+  is recorded until the PO acts. The note goes once the PO records again or the
+  suggestion comes back.
 - **The live region**, once per change, to everyone but the person who changed: "Ben
   changed their card: 8." (a special card in words: "Ben changed their card: needs a
   break."), followed by the new result when the suggested card or the consensus moved

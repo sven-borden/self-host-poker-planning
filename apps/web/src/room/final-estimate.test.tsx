@@ -284,6 +284,10 @@ describe("the final estimate after a change (#29)", () => {
     expect(server.round?.final).toBe("5");
     expect(centreFinal()?.textContent).toContain("Final estimate: 5.");
     expect(note()?.textContent).toBe("Votes changed since you recorded 5.");
+    // A phone's docked action row carries its own copy, as its first line.
+    const dock = document.querySelector("[data-decision-actions] [data-decision-note='dock']");
+    expect(dock?.textContent).toBe("Votes changed since you recorded 5.");
+    expect(dock?.parentElement?.firstElementChild).toBe(dock);
     expect(checked()).toEqual(["8, suggested"]);
     expect(recordButton()?.textContent).toBe("Record 8");
     expect(recordButton()?.getAttribute("aria-describedby")).toBe(note()?.id);

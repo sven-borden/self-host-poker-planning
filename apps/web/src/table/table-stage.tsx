@@ -61,11 +61,37 @@ function slotFace(status: SeatStatus): { face: SlotFace; value: string | null; c
 }
 
 /**
+ * A card changed after the reveal (#29), decorative like the slot (the seat's name and
+ * its popover say "changed after the reveal"). A word on the card's foot, never a colour
+ * alone; on a dense phone table, where the word would cover the next cards, a dot in the
+ * card's top corner, clear of its edge and its value. In forced colours the word keeps a
+ * border and hangs under the card instead of across its edge, and the dot is drawn in
+ * the text colour.
+ */
+function ChangedMark({ corner }: { corner: boolean }) {
+  const t = useT();
+  return corner ? (
+    <span
+      data-changed-chip="mark"
+      className="absolute top-[3px] right-[3px] z-10 size-1.5 rounded-full bg-brass ring-1 ring-surface forced-colors:forced-color-adjust-none forced-colors:bg-[CanvasText] forced-colors:ring-0"
+    />
+  ) : (
+    <span
+      data-changed-chip="word"
+      className="absolute top-full left-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brass-soft px-1 text-[9px]/[12px] font-semibold whitespace-nowrap text-brass-ink ring-1 ring-surface forced-colors:translate-y-px forced-colors:border forced-colors:border-[CanvasText]"
+    >
+      {t("table.changedChip")}
+    </span>
+  );
+}
+
+/**
  * The boardroom table (ADR-005): a stage with the stadium table, a card slot per person,
  * the seats around it, and a status area in the middle. Presentational only: it renders
  * the people it is given and decides nothing. At a reveal the face-up cards turn over one
  * after the other in seat order, from the viewer at the bottom (`FLIP_STAGGER_MS`). A
- * card changed after the reveal carries a "changed" chip on its foot (#29).
+ * card changed after the reveal carries a "changed" chip on its foot, or a corner mark on
+ * a dense phone table (#29).
  */
 export function TableStage({
   people,
@@ -83,6 +109,8 @@ export function TableStage({
     variant ?? (room === null ? "desktop" : variantFor(room)),
   );
   const seated = people.slice(0, layout.count);
+  // A dense phone table's slots (20 × 28) sit too close for the word: a corner mark.
+  const corner = layout.variant === "phone" && layout.dense;
   const observersId = useId();
   // The nth face-up card in seat order turns n × 90 ms after the first (#19).
   let turned = 0;
@@ -106,16 +134,7 @@ export function TableStage({
         }}
       >
         <SlotCard face={face} value={value} size={layout.slot} turnDelay={turnDelay} />
-        {changed ? (
-          // A card changed after the reveal (#29): a word on the card's foot, never a
-          // colour alone. Decorative like the slot: the seat's label says it.
-          <span
-            data-changed-chip
-            className="absolute top-full left-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brass-soft px-1 text-[9px]/[12px] font-semibold whitespace-nowrap text-brass-ink ring-1 ring-surface"
-          >
-            {t("table.changedChip")}
-          </span>
-        ) : null}
+        {changed ? <ChangedMark corner={corner} /> : null}
       </div>
     );
   });
