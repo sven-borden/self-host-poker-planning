@@ -152,6 +152,10 @@ describe("catalogs", () => {
       "timer.shortSeconds",
       "timer.shortMinutes",
       "timer.add",
+      // The history (#33): the same units, and "Votes" is French too.
+      "history.took",
+      "history.tookSeconds",
+      "history.votes",
     ],
     de: [
       "app.name",
@@ -169,6 +173,11 @@ describe("catalogs", () => {
       "timer.shortSeconds",
       "timer.shortMinutes",
       "timer.add",
+      // The history (#33): the same units, "Final" as in the final estimate, a name and its card.
+      "history.final",
+      "history.took",
+      "history.tookSeconds",
+      "history.voteSpoken",
     ],
   };
 

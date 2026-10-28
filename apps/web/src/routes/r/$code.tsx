@@ -7,6 +7,7 @@ import { errorMessage } from "../../i18n/errors.ts";
 import { useT } from "../../i18n/hooks.ts";
 import { RiseIn } from "../../motion/motion.tsx";
 import { openRoom } from "../../realtime/room-connection.ts";
+import { RoomHistoryButton } from "../../room/history-button.tsx";
 import { loadJoinPassword } from "../../room/load-join-password.ts";
 import { RoomPresence } from "../../room/room-status.tsx";
 import { RoomView } from "../../room/room-view.tsx";
@@ -203,7 +204,8 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
             <RoomPresence />
           </div>
         </div>
-        {/* The header's actions: the link to share, and the room's settings or rules (#25). */}
+        {/* The header's actions: the link to share, the history (#33) and the room's settings or
+            rules (#25). */}
         <div className="flex shrink-0 flex-wrap justify-end gap-2 phone:col-start-2 phone:row-start-1 phone:flex-nowrap">
           <Button
             variant="outline"
@@ -213,6 +215,7 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
             <LinkIcon aria-hidden />
             <span className="phone:sr-only">{t("room.copyLink")}</span>
           </Button>
+          <RoomHistoryButton />
           <RoomSettingsButton />
         </div>
       </header>

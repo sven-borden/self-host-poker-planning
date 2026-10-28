@@ -2,6 +2,8 @@ import {
   type ClientToServerEvents,
   type CmdAck,
   type EnterAck,
+  type HistoryAck,
+  type HistoryRequest,
   PROTOCOL_VERSION,
   type ServerToClientEvents,
   type Snapshot,
@@ -385,6 +387,31 @@ async function send(
   return { ok: false, code: "offline" };
 }
 
+/** The answer to `requestHistory`: the server's, or `offline`. */
+export type HistoryResult = HistoryAck | { ok: false; code: "offline" };
+
+/**
+ * Asks the open room for one page of its finished rounds (#33), newest first: `before` a
+ * round number, `limit` at most 50. It waits for the room to be live; a lost answer (the
+ * connection dropped) asks again, at most `MAX_SENDS` times, since a read changes
+ * nothing. `offline` when the room was not live in time or the page left it.
+ */
+export async function requestHistory(request: HistoryRequest = {}): Promise<HistoryResult> {
+  const target = active;
+  for (let send = 0; target && send < MAX_SENDS; send++) {
+    const room = await whenLive(target);
+    if (!room) break;
+    let raw: unknown;
+    try {
+      raw = await room.socket.timeout(ACK_TIMEOUT_MS).emitWithAck("history", request);
+    } catch {
+      continue;
+    }
+    return isHistoryAck(raw) ? raw : { ok: false, code: "bad_payload" };
+  }
+  return { ok: false, code: "offline" };
+}
+
 /**
  * `target` once it is live; null on `error`, once `target` is no longer the open room,
  * after the wait, or once `signal` aborts.
@@ -457,5 +484,31 @@ export function isEnterAck(value: unknown): value is EnterAck {
 export function isCmdAck(value: unknown): value is CmdAck {
   return (
     isObject(value) && ((value.ok === true && Number.isInteger(value.version)) || isRefusal(value))
+  );
+}
+
+/** One finished round, as far as the history panel reads it. */
+const isHistoryRound = (value: unknown) =>
+  isObject(value) &&
+  Number.isSafeInteger(value.number) &&
+  isObject(value.subject) &&
+  isObject(value.stats) &&
+  Array.isArray(value.stats.distribution) &&
+  (value.final === null || typeof value.final === "string") &&
+  typeof value.startedAt === "number" &&
+  typeof value.revealedAt === "number" &&
+  typeof value.finishedAt === "number" &&
+  isObject(value.votes) &&
+  (value.votes.kind === "named"
+    ? Array.isArray(value.votes.votes)
+    : value.votes.kind === "anonymous" && Array.isArray(value.votes.cards));
+
+export function isHistoryAck(value: unknown): value is HistoryAck {
+  if (!isObject(value)) return false;
+  if (value.ok !== true) return isRefusal(value);
+  return (
+    Array.isArray(value.rounds) &&
+    value.rounds.every(isHistoryRound) &&
+    (value.next === undefined || Number.isSafeInteger(value.next))
   );
 }

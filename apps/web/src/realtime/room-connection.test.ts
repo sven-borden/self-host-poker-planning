@@ -9,9 +9,11 @@ import {
   enterRoomAgain,
   isCmdAck,
   isEnterAck,
+  isHistoryAck,
   isSnapshot,
   openRoom,
   type RoomSocket,
+  requestHistory,
   sendCommand,
 } from "./room-connection.ts";
 import { createSocket } from "./socket.ts";
@@ -490,7 +492,74 @@ describe("commandSender", () => {
   });
 });
 
+const ROUND = {
+  number: 3,
+  subject: { kind: "title", text: "Login" },
+  final: null,
+  stats: { distribution: [{ card: "5", count: 2 }], suggested: "5" },
+  startedAt: 1,
+  revealedAt: 2,
+  finishedAt: 3,
+  votes: { kind: "anonymous", cards: ["5", "5"] },
+};
+
+describe("requestHistory (#33)", () => {
+  it("answers offline when no room is open", async () => {
+    expect(await requestHistory()).toEqual({ ok: false, code: "offline" });
+  });
+
+  it("asks the live room for a page and resolves with the answer", async () => {
+    const page = { ok: true, rounds: [ROUND], next: 3 };
+    const fake = fakeSocket(({ event }) =>
+      event === "enter" ? { ok: true, snapshot: snapshot(1) } : page,
+    );
+    open(fake);
+    fake.up();
+    expect(await requestHistory({ before: 10, limit: 5 })).toEqual(page);
+    expect(fake.sent.find((s) => s.event === "history")?.payload).toEqual({ before: 10, limit: 5 });
+  });
+
+  it("asks again after a lost answer, and turns an unreadable one into bad_payload", async () => {
+    let asks = 0;
+    const fake = fakeSocket(({ event }) => {
+      if (event === "enter") return { ok: true, snapshot: snapshot(1) };
+      asks += 1;
+      if (asks === 1) {
+        fake.drop();
+        throw new Error("socket has been disconnected");
+      }
+      return { ok: true, rounds: [{ number: "3" }] };
+    });
+    open(fake);
+    fake.up();
+    const pending = requestHistory();
+    await vi.waitFor(() => expect(asks).toBe(1));
+    fake.up();
+    expect(await pending).toEqual({ ok: false, code: "bad_payload" });
+    expect(asks).toBe(2);
+  });
+});
+
 describe("message guards", () => {
+  it("read a history answer by its shape", () => {
+    expect(isHistoryAck({ ok: true, rounds: [] })).toBe(true);
+    expect(isHistoryAck({ ok: true, rounds: [ROUND], next: 2 })).toBe(true);
+    expect(isHistoryAck({ ok: false, code: "not_participant" })).toBe(true);
+    const named = { ...ROUND, final: "5", votes: { kind: "named", votes: [] } };
+    expect(isHistoryAck({ ok: true, rounds: [named] })).toBe(true);
+    for (const wrong of [
+      null,
+      { ok: true },
+      { ok: true, rounds: [], next: "2" },
+      { ok: true, rounds: [{ ...ROUND, votes: { kind: "secret" } }] },
+      { ok: true, rounds: [{ ...ROUND, final: 5 }] },
+      { ok: true, rounds: [{ ...ROUND, stats: {} }] },
+      { ok: false },
+    ]) {
+      expect(isHistoryAck(wrong)).toBe(false);
+    }
+  });
+
   it("accept the server's messages and refuse other shapes", () => {
     expect(isSnapshot(snapshot(1))).toBe(true);
     expect(isSnapshot({ ...snapshot(1), protocol: PROTOCOL_VERSION + 1 })).toBe(false);
