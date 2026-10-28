@@ -3,7 +3,9 @@
  * handshake): join latency (AC 1), a burst past the message limit (AC 3), secrecy on the
  * raw WebSocket frames, the reveal (#19: a non-PO is refused, the last two votes sent
  * together reveal once), reveal modes (#28: a voter reveals under "anyone", an observer
- * never; the automatic reveal off and on again), the room settings (#25: the defaults, refusals on the wire, one
+ * never; the automatic reveal off and on again), a change after the reveal (#29: refused
+ * with the setting off and in an anonymous round, never a take-back, the mark and the
+ * history row), the room settings (#25: the defaults, refusals on the wire, one
  * snapshot for everyone), idempotent ids, a revoked session, one session flooding a room
  * from many sockets, the PO's powers (#30: a claim refused before 120 s, two claims at
  * once, a removed person disconnected within 1 s), and the deadline timeout on one and on
@@ -489,6 +491,155 @@ describe("reveal modes (#28)", () => {
     const a = client(ada);
     await a.enter(lone);
     expect(await a.cmd("reveal")).toEqual({ ok: true, version: 2 });
+  });
+});
+
+describe("a change after the reveal (#29)", () => {
+  /** Ada (PO) and Bob voted 5 and 8, which revealed; Cy observes. */
+  function revealedWith(settings: Partial<RoomState["settings"]>): RoomState {
+    let s = createRoom({ ownerId: ada.id });
+    s = step(s, ada.id, { type: "join", name: "Ada", role: "voter" });
+    s = step(s, bob.id, { type: "join", name: "Bob", role: "voter" });
+    s = step(s, cy.id, { type: "join", name: "Cy", role: "observer" });
+    s = step(s, ada.id, { type: "updateSettings", patch: settings });
+    s = step(s, ada.id, { type: "startRound", subject: { kind: "title", text: "Login" } });
+    s = step(s, ada.id, { type: "castVote", card: "5" });
+    s = step(s, bob.id, { type: "castVote", card: "8" });
+    if (s.round?.phase !== "revealed") throw new Error("fixture not revealed");
+    return s;
+  }
+
+  async function historyOf(code: string) {
+    const stored = await main().database.store.loadRoom(code);
+    const sql = dbClient(t.url);
+    try {
+      const { rows } = await sql.query(
+        "select number, votes, stats, final from round_history where room_id = $1 order by number",
+        [stored?.id],
+      );
+      return rows;
+    } finally {
+      await sql.end();
+    }
+  }
+
+  it("refuses a change with the setting off, and in an anonymous round with it on (AC 1)", async () => {
+    for (const settings of [
+      { allowChangeAfterReveal: false },
+      { allowChangeAfterReveal: true, revealNames: false },
+    ]) {
+      const code = await insert(revealedWith(settings));
+      const b = client(bob);
+      const c = client(cy);
+      await Promise.all([b.enter(code), c.enter(code)]);
+      expect(await b.cmd("castVote", { card: "3", round: 1, restart: 0 })).toEqual({
+        ok: false,
+        code: "round_revealed",
+      });
+      // Nothing was stored or broadcast.
+      await sleep(100);
+      expect(c.received).toHaveLength(1);
+      const stored = await main().database.store.loadRoom(code);
+      expect(stored?.state.round?.votes[bob.id]).toEqual({ card: "8" });
+    }
+  });
+
+  it("never takes a card back after the reveal, even when changes are allowed", async () => {
+    const code = await insert(revealedWith({ allowChangeAfterReveal: true }));
+    const b = client(bob);
+    await b.enter(code);
+    expect(await b.cmd("retractVote", { round: 1, restart: 0 })).toEqual({
+      ok: false,
+      code: "not_voting",
+    });
+    expect((await main().database.store.loadRoom(code))?.state.round?.votes[bob.id]).toEqual({
+      card: "8",
+    });
+  });
+
+  it("sends a change to everyone with its mark and the new results; turned off, the marks stay", async () => {
+    const code = await insert(revealedWith({ allowChangeAfterReveal: true }));
+    const a = client(ada);
+    const b = client(bob);
+    const c = client(cy);
+    await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
+    expect(await b.cmd("castVote", { card: "13", round: 1, restart: 0 })).toEqual({
+      ok: true,
+      version: 2,
+    });
+    const seen = await c.waitFor((s) => s.version === 2);
+    expect(seen.snapshot.causes).toEqual([{ type: "voteCast", who: bob.id }]);
+    const round = seen.snapshot.room.round;
+    if (round?.phase !== "revealed" || round.anonymous) throw new Error("named reveal expected");
+    expect(round.votes).toEqual([
+      { who: ada.id, card: "5", changedAfterReveal: false },
+      { who: bob.id, card: "13", changedAfterReveal: true },
+    ]);
+    expect(round.results).toEqual(computeResults(["5", "13"], { kind: "preset", id: "fib" }));
+
+    // The PO turns it off: the next change is refused, the mark stays.
+    expect(
+      await a.cmd("updateSettings", { patch: { allowChangeAfterReveal: false } }),
+    ).toMatchObject({ ok: true });
+    expect(await b.cmd("castVote", { card: "3", round: 1, restart: 0 })).toEqual({
+      ok: false,
+      code: "round_revealed",
+    });
+    const last = await c.waitFor((s) => s.version === 3);
+    expect(last.snapshot.room.settings.allowChangeAfterReveal).toBe(false);
+    const after = last.snapshot.room.round;
+    if (after?.phase !== "revealed" || after.anonymous) throw new Error("named reveal expected");
+    expect(after.votes.find((v) => v.who === bob.id)).toEqual({
+      who: bob.id,
+      card: "13",
+      changedAfterReveal: true,
+    });
+  });
+
+  it("updates the history row of a recorded final when a vote changes, final kept (AC 2)", async () => {
+    const code = await insert(revealedWith({ allowChangeAfterReveal: true }));
+    const a = client(ada);
+    const b = client(bob);
+    await Promise.all([a.enter(code), b.enter(code)]);
+    // 5 and 8 suggest 5; Ada records it.
+    expect((await a.cmd("setFinal", { card: "5" })).ok).toBe(true);
+    expect(await historyOf(code)).toMatchObject([
+      {
+        number: 1,
+        final: "5",
+        votes: {
+          kind: "named",
+          votes: [
+            { who: ada.id, name: "Ada", card: "5" },
+            { who: bob.id, name: "Bob", card: "8" },
+          ],
+        },
+      },
+    ]);
+    expect((await b.cmd("castVote", { card: "13", round: 1, restart: 0 })).ok).toBe(true);
+    const [row] = await historyOf(code);
+    expect(row).toEqual({
+      number: 1,
+      final: "5",
+      votes: {
+        kind: "named",
+        votes: [
+          { who: ada.id, name: "Ada", card: "5" },
+          { who: bob.id, name: "Bob", card: "13", changedAfterReveal: true },
+        ],
+      },
+      stats: computeResults(["5", "13"], { kind: "preset", id: "fib" }),
+    });
+    // The round's end writes the same row again, the mark with it.
+    expect((await a.cmd("startRound", { subject: { kind: "none" } })).ok).toBe(true);
+    const rows = await historyOf(code);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.votes.votes[1]).toEqual({
+      who: bob.id,
+      name: "Bob",
+      card: "13",
+      changedAfterReveal: true,
+    });
   });
 });
 
