@@ -46,6 +46,13 @@ export interface RoomHeader {
  * writes its users; `revoke` drops those users' grants (a kick).
  */
 export interface AccessWrite {
+  /**
+   * The commit needs this user's grant (#31): a join by someone neither in the room nor
+   * its PO, while it has a password. Checked in the commit's transaction, after the
+   * compare-and-set took the room's row, so a kick or a new password that dropped the
+   * grant has committed first; without the grant nothing is written (`password_required`).
+   */
+  requireGrant?: UserId;
   passwordHash?: string | null;
   revokeAll?: boolean;
   revoke?: readonly UserId[];
@@ -82,7 +89,8 @@ export interface RoomStore {
    * another write came first (nothing is written). When `ended` holds a revealed round,
    * its history row is written in the same transaction; writing the same round again
    * updates that row, so a retry never duplicates it. `access` (#31) is written in that
-   * transaction too.
+   * transaction too; when it requires a grant the user lacks, nothing is written and it
+   * resolves `password_required`.
    */
   commitRoom(
     id: string,
@@ -90,7 +98,7 @@ export interface RoomStore {
     next: RoomState,
     ended?: EndedRound,
     access?: AccessWrite,
-  ): Promise<boolean>;
+  ): Promise<boolean | "password_required">;
 }
 
 /** Grants and wrong tries (#31): what the access check reads and writes beside a commit. */
@@ -119,6 +127,9 @@ export interface AccessStore {
 }
 
 const hasHash = sql<boolean>`${room.passwordHash} is not null`;
+
+/** Thrown inside a commit's transaction to roll it back: the grant it needs is gone. */
+const NO_GRANT = Symbol("no grant");
 
 export function createRoomStore(db: Db): RoomStore & AccessStore {
   /** Whether the window of wrong tries that started at `password_failures_since` still runs. */
@@ -216,6 +227,15 @@ export function createRoomStore(db: Db): RoomStore & AccessStore {
           .transaction(async (tx) => {
             try {
               if (!(await write(tx))) return false;
+              if (access?.requireGrant !== undefined) {
+                const held = await tx
+                  .select({ userId: roomAccess.userId })
+                  .from(roomAccess)
+                  .where(
+                    and(eq(roomAccess.roomId, id), eq(roomAccess.userId, access.requireGrant)),
+                  );
+                if (held.length === 0) throw NO_GRANT;
+              }
               if (history) {
                 const row = historyRow(id, ended);
                 await tx
@@ -242,7 +262,8 @@ export function createRoomStore(db: Db): RoomStore & AccessStore {
               throw error;
             }
           })
-          .catch((error: unknown) => {
+          .catch((error: unknown): "password_required" => {
+            if ((first ?? error) === NO_GRANT) return "password_required";
             throw first ?? error;
           });
       }),

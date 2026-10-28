@@ -416,6 +416,34 @@ describe("a brute force hits the limits (AC 1), counted exactly", () => {
     expect((await tryPassword(code, max, "per person", ip)).status).toBe(204);
   }, 60_000);
 
+  it("25 wrong tries per address and room, whatever the sessions: the room keeps the rest", async () => {
+    const [ana, ...burners] = (await Promise.all(Array.from({ length: 5 }, () => guest()))) as [
+      Person,
+      ...Person[],
+    ];
+    const { code } = await roomWith(ana, [], "per address");
+    const ip = freshIp();
+    // Three sessions on one address, ten each at once: 25 are checked, never more.
+    const tries = await Promise.all(
+      burners
+        .slice(0, 3)
+        .flatMap((who, n) =>
+          Array.from({ length: 10 }, (_, i) => tryPassword(code, who, `burn ${n}.${i} wrong`, ip)),
+        ),
+    );
+    expect(statuses(tries)).toEqual({ 403: 25, 429: 5 });
+    const limited = await tryPassword(code, burners[3] as Person, "per address", ip);
+    expect(limited).toMatchObject({ status: 429, json: { code: "rate_limited" } });
+    expect(retryAfterOf(limited)).toBeGreaterThan(500);
+    // A newcomer elsewhere still gets in: the room spent 25 of its 50.
+    expect((await tryPassword(code, burners[3] as Person, "per address")).status).toBe(204);
+    const { rows } = await admin.query<{ password_failures: number }>(
+      "select password_failures from room where code = $1",
+      [code],
+    );
+    expect(rows[0]?.password_failures).toBe(25);
+  }, 60_000);
+
   it("50 wrong tries per room from anyone, across two instances, sent at once", async () => {
     const [ana, ...people] = (await Promise.all(Array.from({ length: 10 }, () => guest()))) as [
       Person,
@@ -611,6 +639,73 @@ describe("a grant never outlives the password it was given for (B1)", () => {
     expect((await tryPassword(code, dan, "socket after")).status).toBe(204);
     expect((await d.enter(code)).ok).toBe(true);
   });
+});
+
+describe("a join commits only with the grant it needs (B1, the kick race)", () => {
+  it("the commit itself refuses a join without a grant, and writes nothing", async () => {
+    const [ana, eve] = await Promise.all([guest(), guest()]);
+    const { code, id } = await roomWith(ana, [], "commit check");
+    const store = instances[0]?.database.store;
+    if (!store) throw new Error("not started");
+    const loaded = await store.loadRoom(code);
+    if (!loaded) throw new Error("no room");
+    const joined = apply(
+      loaded.state,
+      { type: "join", name: "Eve", role: "voter" },
+      { actor: eve.id, now: Date.now() },
+    );
+    if (!joined.ok) throw new Error(joined.error);
+    const needs = { requireGrant: eve.id };
+    expect(await store.commitRoom(id, loaded.version, joined.state, undefined, needs)).toBe(
+      "password_required",
+    );
+    expect((await store.loadRoom(code))?.version).toBe(loaded.version);
+    expect((await tryPassword(code, eve, "commit check")).status).toBe(204);
+    expect(await store.commitRoom(id, loaded.version, joined.state, undefined, needs)).toBe(true);
+  });
+
+  /**
+   * Eve's sockets send `join` every 105 ms (the socket limit is 10 a second) while the PO
+   * removes her, then changes the password: a join that passed the check before the kick
+   * waits behind it, and must not seat her again. On one instance, and with her sockets on
+   * another instance than the PO's, where nothing but the database orders them.
+   */
+  it("a removed person's joins in flight never bring them back, on one or two instances", async () => {
+    const second = instances[1]?.server ?? (await startInstance()).server;
+    for (const [trial, eveOn] of [undefined, undefined, second, second, second].entries()) {
+      const [ana, eve] = await Promise.all([guest(), guest()]);
+      const { code } = await roomWith(ana, [], `kick race ${trial}`);
+      expect((await tryPassword(code, eve, `kick race ${trial}`)).status).toBe(204);
+      const a = client(ana);
+      expect((await a.enter(code)).ok).toBe(true);
+      const eves = [0, 1, 2, 3].map(() => client(eve, eveOn));
+      for (const e of eves) expect((await e.enter(code)).ok).toBe(true);
+      expect((await eves[0]?.cmd("join", { name: "Eve", role: "voter" }))?.ok).toBe(true);
+      let stop = false;
+      const loop = async (e: TestClient, offset: number) => {
+        await sleep(offset);
+        while (!stop && e.socket.connected) {
+          void e.cmd("join", { name: "Eve", role: "voter" }).catch(() => undefined);
+          await sleep(105);
+        }
+      };
+      const loops = eves.map((e, i) => loop(e, (i * 105) / eves.length));
+      await sleep(300 + trial * 20);
+      expect((await a.cmd("kick", { who: eve.id })).ok).toBe(true);
+      expect((await setPassword(code, ana, `kick race new ${trial}`)).status).toBe(204);
+      await sleep(500);
+      stop = true;
+      await Promise.all(loops);
+      await sleep(200);
+      const view = await client(ana).enter(code);
+      expect(view.ok && view.snapshot.room.participants.some((p) => p.id === eve.id)).toBe(false);
+      expect(await client(eve, eveOn).enter(code)).toEqual({
+        ok: false,
+        code: "password_required",
+      });
+      for (const e of eves) e.close();
+    }
+  }, 60_000);
 });
 
 describe("a request body never reaches a log line", () => {

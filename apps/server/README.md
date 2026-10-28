@@ -220,7 +220,8 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   constant-time check against its own parameters only, the hash gate: 2 at once, 32 in
   line, 2 s each) and the access side of `db/rooms.ts` (`AccessStore`: the grant written
   only under the hash checked, the per-room try reserved and released; `AccessWrite` in a
-  commit). `PASSWORD_LIMITS` in `room-password.ts` lists the limits. Change a password only through
+  commit, with `requireGrant` for a join that needs a grant, checked in the commit's
+  transaction). `PASSWORD_LIMITS` in `room-password.ts` lists the limits. Change a password only through
   `RoomSync.changePassword`, which runs the `password` command in the room's queue and
   writes the hash and grants with the flag; never log a body of these routes.
 - Client address for a rate limit: `clientIp(request, config.trustProxy)`, where

@@ -145,6 +145,22 @@ function kickRevokes(result: ApplyResult): ApplyResult & { access?: AccessWrite 
   return kicked.length === 0 ? result : { ...result, access: { revoke: kicked } };
 }
 
+/**
+ * A join by someone the password gate must let in (#31: neither in the room nor its PO,
+ * while it has a password) commits only with their grant: the check runs in the commit's
+ * transaction, after any kick or new password that dropped it, on every instance.
+ */
+function joinNeedsGrant(
+  state: RoomState,
+  actor: string,
+  command: Command,
+  result: ApplyResult & { access?: AccessWrite },
+): ApplyResult & { access?: AccessWrite } {
+  if (command.type !== "join" || !result.ok || result.state === state) return result;
+  if (!state.hasPassword || isMember(state, actor)) return result;
+  return { ...result, access: { ...result.access, requireGrant: actor } };
+}
+
 /** The answer to a socket that disconnected mid-`enter`: it never reaches anyone. */
 const GONE = refuse("internal");
 
@@ -440,11 +456,16 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   async function execute(room: RoomRef, actor: string, command: Command): Promise<CmdAck> {
     try {
       const outcome = await runner.run(room.code, (state) =>
-        kickRevokes(apply(state, command, { actor, now: now() })),
+        joinNeedsGrant(
+          state,
+          actor,
+          command,
+          kickRevokes(apply(state, command, { actor, now: now() })),
+        ),
       );
       if (!outcome.ok) {
         log.debug({ room: room.id, cmd: command.type, code: outcome.error }, "command not run");
-        return refuse(outcome.error === "conflict" ? "busy" : "room_not_found");
+        return refuse(outcome.error === "conflict" ? "busy" : outcome.error);
       }
       publish(room, outcome);
       const { result } = outcome;
@@ -630,7 +651,15 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     }
     // Locked out by a new password while the grant was read: the grant was the old one's.
     if (command.type === "join" && socket.data.room !== room) return refuse("password_required");
-    return acks.remember(user.id, ackKey(room.id, id), () => execute(room, user.id, command));
+    const ack = await acks.remember(user.id, ackKey(room.id, id), () =>
+      execute(room, user.id, command),
+    );
+    // The grant was gone when the join committed (a kick, a new password): the socket
+    // leaves the room, and the person enters the password first.
+    if (!ack.ok && ack.code === "password_required" && socket.data.room === room) {
+      leaveRoom(socket);
+    }
+    return ack;
   }
 
   /** Whether `who` may join the room now: no password, a member, or a grant (#31). */

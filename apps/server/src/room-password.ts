@@ -33,6 +33,8 @@ import type { RoomSync } from "./sync/room-sync.ts";
  *
  * - `user`: 10 wrong passwords per person (session user) and room, so one person's typos
  *   never lock out a team that shares an address;
+ * - `addressRoom`: 25 wrong passwords per client address and room, so one address with a
+ *   handful of guest sessions cannot spend the room's 50 alone;
  * - `room`: 50 wrong passwords per room whatever the people or addresses, in the database
  *   so every instance shares it: the cap on a brute force;
  * - `address`: 300 checks per client address, right, wrong or for a room that does not
@@ -43,6 +45,7 @@ import type { RoomSync } from "./sync/room-sync.ts";
  */
 export const PASSWORD_LIMITS = {
   user: { window: 600, max: 10 },
+  addressRoom: { window: 600, max: 25 },
   room: { window: 600, max: 50 },
   address: { window: 600, max: 300 },
 } as const satisfies Record<string, RateLimitRule>;
@@ -127,7 +130,8 @@ export function registerPasswordApi(
     if (!isJsonBody(c)) return c.json({ code: "bad_payload" }, 415);
     // Every check counts here before it costs a query, whatever its answer: a 204 or a 404
     // tells whether a room exists, so this also caps the codes one address can test.
-    const checks = await limiter.consume(`password|ip|${ipOf(c)}`, PASSWORD_LIMITS.address);
+    const ip = ipOf(c);
+    const checks = await limiter.consume(`password|ip|${ip}`, PASSWORD_LIMITS.address);
     if (!checks.allowed) return rateLimited(c, checks.retryAfter);
     const me = await sessionUser(auth, c.req.raw.headers);
     if (!me) return c.json({ code: "unauthenticated" }, 401);
@@ -146,10 +150,19 @@ export function registerPasswordApi(
     if (password === null) return c.json({ code: "wrong_password" }, 403);
     const mine = await limiter.reserve(`password|user|${stored.id}|${me.id}`, PASSWORD_LIMITS.user);
     if (!mine.allowed) return rateLimited(c, mine.retryAfter);
+    const here = await limiter.reserve(
+      `password|ip-room|${stored.id}|${ip}`,
+      PASSWORD_LIMITS.addressRoom,
+    );
+    if (!here.allowed) {
+      mine.release();
+      return rateLimited(c, here.retryAfter);
+    }
     const { window, max } = PASSWORD_LIMITS.room;
     const reserved = await rooms.reserveTry(stored.id, window, max);
     if (!reserved) {
       mine.release();
+      here.release();
       return rateLimited(c, stored.retryAfter || null);
     }
     const hash = stored.hash;
@@ -177,6 +190,7 @@ export function registerPasswordApi(
       // Only a wrong password keeps its try.
       if (!wrong) {
         mine.release();
+        here.release();
         await rooms.releaseTry(stored.id, reserved);
       }
     }

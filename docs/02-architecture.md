@@ -571,10 +571,16 @@ password, no social provider before W5.
     progress commits first); a change that won the race answers `wrong_password`, not
     counted, so a grant never outlives the password it was given for. On the socket, an
     `enter` that read a grant before a lockout of that room ran on this instance is
-    refused with `password_required`.
+    refused with `password_required`. A `join` by someone neither in the room nor its PO,
+    while it has a password, commits only with their grant: the commit's transaction
+    checks `room_access` after its compare-and-set took the room's row, so a kick or a new
+    password that dropped the grant has committed first, on any instance; a miss writes
+    nothing, answers `password_required`, and the socket leaves the room.
   - **Limits** (`PASSWORD_LIMITS`, each in 10 minutes): 10 wrong passwords per person
     (session user) and room, in the process, so one person's typos never lock out a team
-    that shares an address; 50 wrong passwords per room whatever the people or addresses,
+    that shares an address; 25 wrong passwords per address and room, in the process, so
+    one address with a handful of guest sessions cannot spend the room's 50 alone; 50
+    wrong passwords per room whatever the people or addresses,
     in the database (`room.password_failures`, a fixed window updated atomically), so
     every instance shares it: the cap on a brute force (about 7,200 tries a day per room,
     hence 6 characters at least); and 300 checks per address, right, wrong or for a room
@@ -587,8 +593,10 @@ password, no social provider before W5.
     client lock every password room on the instance.
   - **Behind proxies the app is not told about** (`TRUST_PROXY` too low; Sven's instance
     needs `TRUST_PROXY=2`, an owner item in STATUS), every client shares one address, so
-    every per-address limit applies to everyone at once: here the 300 checks in 10
-    minutes are the whole instance's, and the identity limits below too. The per-person
+    every per-address limit applies to everyone at once: the 300 checks in 10 minutes
+    are the whole instance's (300 requests, even without a session, lock everyone out of
+    password checks for 10 minutes), the 25 wrong tries per room are every client's
+    together, and the identity limits below too. The per-person
     and per-room limits are as meant whatever the proxies.
   - Logs name the room by its id ("room password changed", "room access granted",
     "wrong room password"); never the password, the hash, the code or the address.
