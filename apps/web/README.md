@@ -299,6 +299,31 @@ server sends and never decides the outcome of a round.
   (`ExtremeMark`, an arrow in a spruce disc, bottom right of the avatar) pops in then.
   Under reduced motion each is a 120 ms cross-fade at once. Copy: `results.*`,
   `table.lowest`, `table.highest`, `table.lowestTag`, `table.highestTag`.
+  The history (#33): `history-button.tsx` (`RoomHistoryButton`, `[data-history-open]`)
+  sits in the room header between "Copy the link" and the settings, for everyone in the
+  room (`room.you !== null`; the server refuses anyone else too), an icon below 900 px
+  like the settings button. Its first press imports `history-panel.tsx`, a chunk of its
+  own (`history.loadFailed` in a toast when it cannot load), the same Radix sheet as the
+  settings (side from 641 px, bottom on a phone, focus trapped, Esc back to the button,
+  the table's announcements said again inside). The body mounts with the sheet, so every
+  open fetches the first page (`requestHistory` in `realtime/room-connection.ts`, which
+  waits for `live`, asks again after a lost answer or `rate_limited`, and checks the
+  answer by shape); while open it fetches it again whenever `historyKey` (the table's
+  round number and final) changes, and `withFirstPage` (`history-view.ts`) puts the new
+  rows on top of the earlier pages already loaded. "Show earlier rounds" asks for
+  `before: next` and moves the focus to the first new round's disclosure. Each row
+  (`[data-history-round]`, `[data-history-kind=named|anonymous]`) is a list item with an
+  `h3` ("Round 3"), the subject, the final (`[data-history-final]`), the distribution as
+  small columns, the voting time (`[data-history-duration]`, whole seconds; "2 min 13 s",
+  said in words) and the end time (a `<time>`, the date too on another day), then a
+  disclosure button ("Votes", named "Votes of round 3", `aria-expanded`) over the votes:
+  names and cards with "changed" (`[data-history-vote]`), or "Anonymous round" once and
+  the cards alone. Copy: `history.*`, with `results.cardVotes`, `results.someone` and
+  `round.number`. Budgets after #33: the room route 176.5 kB (174.9 before), the landing
+  page 157.1 kB (156.0), the lazy `history-panel` chunk 3.9 kB. About 1.1 kB is the
+  button, `requestHistory` and the English copy; the rest is rolldown moving the Radix
+  dialog's shared modules (react-remove-scroll and friends) into a chunk of their own now
+  that two lazy chunks use the sheet.
   The settings (#25): `settings-button.tsx` (`RoomSettingsButton`, in the room header
   beside "Copy the link", `[data-settings-open=owner|rules]`) shows once a snapshot is
   there: "Room settings" for the PO (`room.you === room.ownerId`), "Room rules" for
@@ -593,9 +618,15 @@ server sends and never decides the outcome of a round.
   `handCard` live in `e2e/support.ts` for #23: Playwright refuses a test file that
   imports another test file. The dock's matrix (sizes, languages, a two-line title,
   150 % text) checks with `dockAtTop` and `expectClearOfDock`. Not part of `pnpm gate`. `e2e/next-round.spec.ts`
-  reads `round_history` and the room's stored round straight from Postgres through `pg`,
-  a dev dependency pinned to the server's version; #33's history API should replace that
-  direct read (`dbQuery` and `historyOf` in `e2e/support.ts`). `e2e/settings.spec.ts` (#25) plays the PO's settings by keyboard alone on a
+  reads the room's round from a snapshot (a socket of the page's own person enters), and
+  every spec reads history through the history request (#33): `historyOf(guest)` pages
+  through it on a socket of someone in the room, `roomHistory(base, context, code)` opens
+  one for the page's person, both oldest first, each row with its JSON as `text`; the
+  round on the table is never among them. `pg` (a dev dependency pinned to the server's
+  version, `dbQuery`) stays for `e2e/po-powers.spec.ts`, which ages the PO's absence in
+  the stored room, a write no request can make. `e2e/history.spec.ts` (#33) plays three
+  rounds into the panel, a reload, a round arriving in the open panel, and the panel by
+  keyboard on a desktop and on a Pixel 7; its shots are `history-*`. `e2e/settings.spec.ts` (#25) plays the PO's settings by keyboard alone on a
   desktop and an iPhone 13, a voter's "Room rules" with a new room's defaults, one
   snapshot per change, the `room_full` rollback, the panel's own live region while the
   table's is hidden, switches in forced colours, the "Anonymous" chip for the PO, a voter
