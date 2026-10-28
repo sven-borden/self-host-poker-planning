@@ -15,6 +15,13 @@
       "when": 1793062570875,
       "tag": "0001_add_better_auth_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793172881238,
+      "tag": "0002_add_room_password_access",
+      "breakpoints": true
     }
   ]
 }

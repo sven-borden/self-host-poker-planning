@@ -19,6 +19,12 @@
  * the runner. A socket that enters again cancels the grace, and brings back a person the
  * room shows as away. Both decide in the room's queue, from the state stored then; a new
  * state is stored only when presence changes.
+ *
+ * A room with a password (#31) lets in its participants, its PO and the users holding a
+ * grant (`room_access`); anyone else's `enter` is refused with `password_required`, and
+ * a socket that has not passed that gate never gets a snapshot of it. When the PO sets or
+ * changes the password (`changePassword`, from the HTTP API), the sockets of everyone else
+ * hear `locked` and leave the room; a kick drops the removed person's grant.
  */
 import { type ApplyResult, apply, type Cause, type Command, type RoomState } from "@pp/domain";
 import {
@@ -29,7 +35,7 @@ import {
   toSnapshot,
 } from "@pp/protocol";
 import { DatabaseError } from "../db/errors.ts";
-import type { RoomStore } from "../db/rooms.ts";
+import type { AccessStore, AccessWrite, RoomStore } from "../db/rooms.ts";
 import type { CommandRunner, RunOutcome } from "../db/runner.ts";
 import type { Logger } from "../logger.ts";
 import type { RealtimeHandlers, RealtimeServer, RealtimeSocket } from "../realtime.ts";
@@ -58,6 +64,11 @@ export const SESSION_RECHECK_MS = 60_000;
 export interface RoomSyncOptions {
   runner: CommandRunner;
   store: Pick<RoomStore, "loadRoom">;
+  /**
+   * The grants of rooms with a password (#31). Left out, nobody holds one (tests without
+   * a database): only participants and the PO enter such a room.
+   */
+  access?: Pick<AccessStore, "hasAccess">;
   logger: Logger;
   /**
    * Whether the socket's session still exists (`sessionChecker` in `auth.ts`). Asked on
@@ -94,6 +105,13 @@ export interface RoomSync extends RealtimeHandlers {
   deadlines: Pick<DeadlineTimers, "armed">;
   /** For tests: whether a person's presence grace runs in a room (by id) on this instance. */
   presence: Pick<GraceTimers, "pending">;
+  /**
+   * The PO (`actor`) sets or changes the room's password to `hash`, or removes it (null),
+   * through the room's queue like any command (#31): the flag, the hash and the grants
+   * land in one transaction, everyone in the room then is granted, and the sockets of
+   * anyone else on this instance hear `locked` and leave. `not_owner` for anyone else.
+   */
+  changePassword(code: string, actor: string, hash: string | null): Promise<CmdAck>;
 }
 
 /** The Socket.IO room of a room, by its id (never its code). */
@@ -113,11 +131,26 @@ type ServerRun = "changed" | "unchanged" | "failed";
 const refuse = <C extends Extract<CmdAck, { ok: false }>["code"]>(code: C) =>
   ({ ok: false, code }) as const;
 
+/** In the room, or its PO: lets in whatever the password (#31). */
+const isMember = (state: RoomState, who: string) =>
+  who === state.ownerId || Object.hasOwn(state.participants, who);
+
+/**
+ * The grants a step's result writes (#31): a kick drops the removed person's grant, so
+ * they must type the password again (AC 3). None when nobody was kicked.
+ */
+function kickRevokes(result: ApplyResult): ApplyResult & { access?: AccessWrite } {
+  if (!result.ok) return result;
+  const kicked = result.causes.flatMap((cause) => (cause.type === "kicked" ? [cause.who] : []));
+  return kicked.length === 0 ? result : { ...result, access: { revoke: kicked } };
+}
+
 /** The answer to a socket that disconnected mid-`enter`: it never reaches anyone. */
 const GONE = refuse("internal");
 
 export function createRoomSync(options: RoomSyncOptions): RoomSync {
   const { runner, store, logger, sessionAlive, now = Date.now } = options;
+  const hasAccess = options.access?.hasAccess ?? (async () => false);
   const log = logger.child({ part: "rooms" });
   // A `busy` answer stored nothing: the same command id may run again.
   const acks = createRecentAcks({
@@ -136,6 +169,12 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   /** When each socket's session was last found alive, and a check under way. */
   const sessionChecked = new WeakMap<RealtimeSocket, number>();
   const pendingChecks = new WeakMap<RealtimeSocket, Promise<boolean>>();
+  /**
+   * The room (by id) each socket passed the password gate of (#31). A socket still
+   * entering sits in the room's channel before that: a room with a password sends it
+   * nothing until it passed, unless it belongs to a participant or the PO.
+   */
+  const admitted = new WeakMap<RealtimeSocket, string>();
   const deadlines = createDeadlineTimers(
     options.deadlineTimeouts === false
       ? () => {}
@@ -196,6 +235,9 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     for (const socket of sockets) {
       const viewer = socket.data.user?.id;
       if (viewer === undefined || (held.get(socket) ?? 0) >= version) continue;
+      if (state.hasPassword && !isMember(state, viewer) && admitted.get(socket) !== room.id) {
+        continue;
+      }
       let view = views.get(viewer);
       if (!view) {
         view = toSnapshot(state, viewer, meta);
@@ -392,7 +434,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   async function execute(room: RoomRef, actor: string, command: Command): Promise<CmdAck> {
     try {
       const outcome = await runner.run(room.code, (state) =>
-        apply(state, command, { actor, now: now() }),
+        kickRevokes(apply(state, command, { actor, now: now() })),
       );
       if (!outcome.ok) {
         log.debug({ room: room.id, cmd: command.type, code: outcome.error }, "command not run");
@@ -418,6 +460,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     if (room === undefined) return;
     socket.data.room = undefined;
     held.delete(socket);
+    admitted.delete(socket);
     leaveChannel(socket, room.id);
     presenceOnLeave(room.id, socket.data.user?.id);
   }
@@ -514,6 +557,24 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
         undo();
         return refuse("room_not_found");
       }
+      // The password gate (#31): a member passes on the state; anyone else needs a grant.
+      if (loaded.state.hasPassword && !isMember(loaded.state, user.id)) {
+        const granted = await hasAccess(loaded.id, user.id);
+        if (!socket.connected) return gone();
+        if (!granted) {
+          undo();
+          return refuse("password_required");
+        }
+        admitted.set(socket, loaded.id);
+        // Snapshots skipped this socket until now: load again, so none is missed.
+        loaded = await store.loadRoom(code);
+        if (!socket.connected) return gone();
+        if (!loaded || loaded.id !== joined) {
+          undo();
+          return refuse("room_not_found");
+        }
+      }
+      admitted.set(socket, loaded.id);
       const room = { id: loaded.id, code };
       socket.data.room = room;
       idOf.set(code, room.id);
@@ -546,7 +607,59 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     }
     const room = socket.data.room;
     if (room === undefined) return refuse("room_not_found");
+    if (command.type === "join" && !(await mayJoin(room, user.id))) {
+      // The room got a password since this socket entered (on another instance, or in
+      // between): the person enters it first.
+      if (socket.data.room?.id === room.id) leaveRoom(socket);
+      return refuse("password_required");
+    }
     return acks.remember(user.id, ackKey(room.id, id), () => execute(room, user.id, command));
+  }
+
+  /** Whether `who` may join the room now: no password, a member, or a grant (#31). */
+  async function mayJoin(room: RoomRef, who: string): Promise<boolean> {
+    const loaded = await store.loadRoom(room.code);
+    if (!loaded?.state.hasPassword || isMember(loaded.state, who)) return true;
+    return hasAccess(loaded.id, who);
+  }
+
+  /** The sockets of anyone but a member leave a room that just got a new password (#31). */
+  function lockOut(id: string, state: RoomState) {
+    for (const socket of socketsOf(id)) {
+      const viewer = socket.data.user?.id;
+      if (viewer !== undefined && isMember(state, viewer)) continue;
+      admitted.delete(socket);
+      if (socket.data.room?.id !== id) continue;
+      leaveRoom(socket);
+      socket.emit("locked");
+    }
+  }
+
+  async function changePassword(code: string, actor: string, hash: string | null): Promise<CmdAck> {
+    const on = hash !== null;
+    try {
+      const outcome = await runner.run(code, (state) => {
+        const result = apply(state, { type: "password", on }, { actor, now: now() });
+        if (!result.ok || result.state === state) return result;
+        const people = [...Object.keys(result.state.participants), result.state.ownerId];
+        const access: AccessWrite = on
+          ? { passwordHash: hash, revokeAll: true, grant: [...new Set(people)] }
+          : { passwordHash: null, revokeAll: true };
+        return { ...result, access };
+      });
+      if (!outcome.ok) return refuse(outcome.error === "conflict" ? "busy" : "room_not_found");
+      const room = { id: outcome.id, code };
+      if (outcome.changed && on) lockOut(room.id, outcome.result.state);
+      publish(room, outcome);
+      const { result } = outcome;
+      if (!result.ok) return refuse(result.error);
+      if (outcome.changed) log.info({ room: room.id, on }, "room password changed");
+      return { ok: true, version: outcome.version };
+    } catch (error) {
+      if (!(error instanceof DatabaseError)) throw error;
+      log.warn({ err: error.code }, "password change failed in the database");
+      return refuse("internal");
+    }
   }
 
   return {
@@ -591,6 +704,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
 
     deadlines,
     presence: graces,
+    changePassword,
   };
 }
 

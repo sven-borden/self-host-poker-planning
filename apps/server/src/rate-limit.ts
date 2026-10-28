@@ -21,6 +21,11 @@ export interface RateLimitResult {
 /** Counts one call under `key`; Better Auth's `customStorage` has the same shape. */
 export interface RateLimiter {
   consume(key: string, rule: RateLimitRule): Promise<RateLimitResult>;
+  /**
+   * Whether a call under `key` would pass now, without counting one: the password limits
+   * (#31) count failed tries only, so they look first and count after a wrong one.
+   */
+  peek(key: string, rule: RateLimitRule): Promise<RateLimitResult>;
 }
 
 /** At most this many counters live at once; the oldest tenth goes when it is reached. */
@@ -44,6 +49,14 @@ export function memoryRateLimit(
   const windows = new Map<string, { count: number; resetAt: number }>();
   let nextSweep = 0;
   return {
+    peek: async (key, { max }) => {
+      const at = now();
+      const entry = windows.get(key);
+      if (!entry || entry.resetAt <= at || entry.count < max) {
+        return { allowed: true, retryAfter: null };
+      }
+      return { allowed: false, retryAfter: Math.ceil((entry.resetAt - at) / 1000) };
+    },
     consume: async (key, { window, max }) => {
       const at = now();
       if (at >= nextSweep) {

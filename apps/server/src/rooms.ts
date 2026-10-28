@@ -1,6 +1,7 @@
 /**
  * The room API over HTTP (#14): `POST /api/rooms` creates a room whose product owner is
- * the caller, `GET /api/rooms/:code` returns a room's public header (code and name). The
+ * the caller, `GET /api/rooms/:code` returns a room's public header (code, name, and whether
+ * it has a password). The
  * room itself (people, the round) travels over the socket (#15), never here.
  */
 import {
@@ -124,6 +125,7 @@ export function registerRoomApi(
     if (!header) {
       return c.json({ code: "room_not_found", retentionDays: config.roomTtlDays }, 404);
     }
-    return c.json({ code: header.code, name: header.name });
+    // Whether the room asks for a password (#31): the join screen shows its field.
+    return c.json({ code: header.code, name: header.name, hasPassword: header.hasPassword });
   });
 }

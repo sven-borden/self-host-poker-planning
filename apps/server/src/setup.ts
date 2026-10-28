@@ -8,6 +8,7 @@ import type { Config } from "./config.ts";
 import { type Database, setupDatabase } from "./database.ts";
 import type { Logger } from "./logger.ts";
 import { memoryRateLimit } from "./rate-limit.ts";
+import { registerPasswordApi } from "./room-password.ts";
 import { registerRoomApi } from "./rooms.ts";
 import type { Setup } from "./run.ts";
 import { createRoomSync } from "./sync/room-sync.ts";
@@ -44,6 +45,7 @@ export async function setupServer(
   const sync = createRoomSync({
     runner,
     store,
+    access: store,
     logger,
     sessionAlive: sessionChecker(db),
     ...(tuning.presenceGraceMs !== undefined && { presenceGraceMs: tuning.presenceGraceMs }),
@@ -60,6 +62,7 @@ export async function setupServer(
       registerApi: (app) => {
         registerAuthApi(app, { auth, db: database.db, config, limiter });
         registerRoomApi(app, { auth, rooms: store, config, limiter });
+        registerPasswordApi(app, { auth, rooms: store, sync, config, limiter });
       },
       socketMiddleware: [sessionMiddleware(auth)],
       handlers: sync,

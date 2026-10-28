@@ -6,7 +6,7 @@
  */
 import type { RoomState, Round, UserId } from "@pp/domain";
 import { historyRound } from "./history.ts";
-import type { RoomStore } from "./rooms.ts";
+import type { AccessWrite, RoomStore } from "./rooms.ts";
 
 /** What a step returns; `ApplyResult` fits (both of its branches). */
 export interface StepResult {
@@ -17,6 +17,12 @@ export interface StepResult {
    * (`historyRound`).
    */
   ended?: Round;
+  /**
+   * The room's password and grants to write with this commit, in its transaction (#31): a
+   * kick drops the removed person's grant, a new password writes the hash and the grants.
+   * Ignored when the step changed nothing.
+   */
+  access?: AccessWrite;
 }
 
 /**
@@ -107,7 +113,7 @@ export function createCommandRunner(store: RoomStore, options: RunnerOptions = {
         participants: names(loaded.state, result.state),
         finishedAt: now(),
       };
-      if (await store.commitRoom(loaded.id, loaded.version, result.state, ended)) {
+      if (await store.commitRoom(loaded.id, loaded.version, result.state, ended, result.access)) {
         return { ...base, version: loaded.version + 1, changed: true, result };
       }
     }

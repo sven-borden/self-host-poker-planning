@@ -564,6 +564,8 @@ export const fr: Catalog<"many"> = {
     room_not_found:
       "Cette salle n’existe pas, ou elle a été supprimée après une longue période sans activité. Vérifiez le lien.",
     password_required: "Cette salle est protégée par un mot de passe. Saisissez-le pour entrer.",
+    wrong_password: "Ce mot de passe n’est pas le bon.",
+    bad_password: "Un mot de passe compte de {{min, number}} à {{max, number}} caractères.",
     unauthenticated: "Votre session a expiré. Rechargez la page pour continuer.",
     rate_limited: "Trop de tentatives. Patientez un instant, puis réessayez.",
     busy: "La salle était occupée un instant. Réessayez.",

@@ -551,6 +551,8 @@ export const de: Catalog = {
     room_not_found:
       "Diesen Raum gibt es nicht, oder er wurde nach langer Zeit ohne Nutzung gelöscht. Prüfen Sie den Link.",
     password_required: "Dieser Raum hat ein Passwort. Geben Sie es ein, um beizutreten.",
+    wrong_password: "Dieses Passwort ist nicht richtig.",
+    bad_password: "Ein Passwort braucht {{min, number}} bis {{max, number}} Zeichen.",
     unauthenticated: "Ihre Sitzung ist abgelaufen. Laden Sie die Seite neu, um fortzufahren.",
     rate_limited: "Zu viele Versuche. Warten Sie einen Moment und versuchen Sie es dann erneut.",
     busy: "Der Raum war kurz beschäftigt. Versuchen Sie es erneut.",
