@@ -327,7 +327,8 @@ test("the header keeps the room's code whole and the lock in sight from 320 to 3
     await page.evaluate((chosen) => localStorage.setItem("pp-language", chosen), language);
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("lang", language);
-    await expect(seated(page)).toBeVisible();
+    await expect(page.getByTestId("room-connection")).not.toBeEmpty();
+    await expect(page.locator("[data-room-lock]")).toBeVisible();
     for (const width of [320, 360, 390]) {
       await page.setViewportSize({ width, height: 800 });
       await page.waitForTimeout(100);
@@ -362,14 +363,14 @@ test("the header keeps the room's code whole and the lock in sight from 320 to 3
           sideways: document.documentElement.scrollWidth - window.innerWidth,
         };
       }, code);
+      if (width === 320) {
+        await page.screenshot({ path: `${SHOTS}header-${language}-320.png` });
+      }
       expect(layout.lines, where).toBe(1);
       expect(layout.lockInside, where).toBe(true);
       expect(layout.buttonsInside, where).toBe(true);
       expect(layout.overlaps, where).toBe(false);
       expect(layout.sideways, where).toBeLessThanOrEqual(0);
-      if (width === 320) {
-        await page.screenshot({ path: `${SHOTS}header-${language}-320.png` });
-      }
     }
   }
 });

@@ -171,7 +171,7 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
         {/* On a phone its two lines join the grid: the name beside the button, then the line under both. */}
         <div className="min-w-0 phone:contents">
           {/* overflow-hidden: whatever the name stacks above or below its letters stays inside. */}
-          <h1 className="overflow-hidden py-1 text-3xl font-[760] break-words [font-stretch:110%] sm:text-4xl squat:text-2xl phone:col-start-1 phone:row-start-1 phone:py-0.5 phone:text-xl max-[360px]:col-span-2">
+          <h1 className="overflow-hidden py-1 text-3xl font-[760] break-words [font-stretch:110%] sm:text-4xl squat:text-2xl phone:col-start-1 phone:row-start-1 phone:py-0.5 phone:text-xl narrow:col-span-2">
             {header.name !== null ? (
               <bdi>{header.name}</bdi>
             ) : (
@@ -207,7 +207,7 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
         </div>
         {/* The header's actions: the link to share, the history (#33) and the room's settings or
             rules (#25). Below 360 px, a row of their own under the code. */}
-        <div className="flex shrink-0 flex-wrap justify-end gap-2 phone:col-start-2 phone:row-start-1 phone:flex-nowrap max-[360px]:col-span-2 max-[360px]:col-start-1 max-[360px]:row-start-3 max-[360px]:mt-1 max-[360px]:justify-start">
+        <div className="flex shrink-0 flex-wrap justify-end gap-2 phone:col-start-2 phone:row-start-1 phone:flex-nowrap narrow:col-span-2 narrow:col-start-1 narrow:row-start-3 narrow:mt-1 narrow:justify-start">
           <Button
             variant="outline"
             className="shrink-0 phone:size-11 phone:has-[>svg]:px-0"
