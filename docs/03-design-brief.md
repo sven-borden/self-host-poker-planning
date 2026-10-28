@@ -294,8 +294,9 @@ As built (#22), for 640 px and below (the `phone:` variant) unless stated:
   `scroll-padding-bottom` is the dock's height while it is docked, so a seat or "Reveal
   cards" that takes the focus stops above it. A vote's card flies to the seat only when
   the slot is on screen and above the dock; otherwise the card just lifts. It docks only
-  while Voting: the results come with the reveal and sit above the hand, so after a
-  reveal the hand returns to the page under them. At 390 × 844 with 8 people the PO
+  while Voting, or after a named reveal while votes may change (#29): otherwise the
+  results come with the reveal and sit above the hand, and the hand returns to the page
+  under them. At 390 × 844 with 8 people the PO
   (field included) and a guest see the subject, the whole table and the docked hand at
   the top of the page without scrolling, in English, French and German and with a
   two-line title; at 150 % text, at 390 × 664 (an iPhone 13 in Safari) and on an iPhone
@@ -303,6 +304,9 @@ As built (#22), for 640 px and below (the `phone:` variant) unless stated:
 - **The PO's decision** (#32) docks its action row at the bottom edge after a reveal, the
   way the hand docks while voting, when the result in the centre stays in sight above it;
   the picker stays under the table (see "The table").
+- **The hand after the reveal** (#29): while the room lets votes change in a named
+  round, the hand stays playable and docks as it does while voting, by the same rule;
+  the PO's never does then, since the decision's action row docks there.
 - **Results** stack under the table, then the hand, then the "You" panel.
 - **Seats.** Initials only above 10 people, in 44 px targets (#13). Initials and colours
   are unique at the table (#17); two people with the same name share initials in two
@@ -371,11 +375,11 @@ As built (#25):
 - **Editable now (PO decision).** Only settings whose behaviour the room already shows:
   reveal when everyone has voted, anonymous voting (from the next round, said under it),
   the PO votes too, observers count toward the 16 places, since #26 the deck and the
-  special cards (below), since #27 the timer (see "The timer"), and since #28 who can
-  reveal. Changes after the reveal (#29) shows its value and explanation to the PO too
-  until its issue adds the control in the same row: a switch at the row's end, or a wider
-  control (the deck picker, who can reveal, the timer) across the row under its
-  explanation.
+  special cards (below), since #27 the timer (see "The timer"), since #28 who can
+  reveal, and since #29 changes after the reveal: a switch at the row's end, off by
+  default, that applies at once, to a named round already revealed too (see "Changing a
+  card after the reveal"). A wider control (the deck picker, who can reveal, the timer)
+  sits across the row under its explanation.
 - **Who can reveal (#28).** Two 44 px segments across the row under the explanation,
   "The product owner" and "Anyone who votes", a radio group. Unlike anonymity it applies
   at once, to the round on the table too. A click, a tap or Space sends it; arrow keys
@@ -383,8 +387,9 @@ As built (#25):
   one change. While "Reveal when everyone has voted" is off and every present voter has
   voted, the PO reads under that switch "Everyone has voted: turning this on reveals the
   cards.", since turning it on then reveals the round at once. A setting that cannot
-  change now says why under it, with a lock (#29: never after the reveal in an
-  anonymous round).
+  change now says why under it, with a lock: while "Anonymous voting" is on, "Change a
+  vote after the reveal" reads "Anonymous rounds lock their votes at the reveal." (#29;
+  an anonymous round never changes after its reveal, ADR-011).
 - **A change.** The switch moves at once and the row says "Saving…" until the server's
   snapshot confirms it; the switch looks unavailable meanwhile and another press of it
   does nothing. If the connection drops, the change moves back at once and the row says
@@ -644,6 +649,40 @@ tries again. In anonymous
 rounds these columns replace #19's "Cards played" row: the row and the columns said the
 same twice, and the columns say it once, in deck order, with nothing tied to a person.
 
+## Changing a card after the reveal
+
+As built (#29, PO decisions). Off by default (ADR-011); the PO turns "Change a vote after
+the reveal" on in the settings panel, also once the round is revealed. It never applies
+to an anonymous round: an anonymous round's votes are final at its reveal, so the issue's
+"a count" of changes for anonymous rounds is dropped.
+
+- **The hand** stays playable after a named reveal while the setting is on. Its line
+  says "You can still change your card."; the keyboard and the docked hand work as while
+  voting. A pick changes the vote; the card already chosen pressed again does nothing,
+  since taking a vote back after the reveal would drop the voter from the results (the
+  server refuses it). No card flies: the seat's card turns over to its new value when the
+  server confirms it, for everyone alike (a 650 ms turn; under reduced motion the new
+  value replaces the old without one). With the setting off, or in an anonymous round,
+  the hand stays disabled with "The cards are revealed. Votes can no longer change in
+  this round." Turned off mid-way, the hand stops at once.
+- **The mark.** A changed card carries a small "changed" chip on its foot, on the table
+  and in the "Not at the table" row: 9 px semibold `--brass-ink` text on `--brass-soft`,
+  a word, never a colour alone. The seat says "Ben, card 8, changed after the reveal",
+  its popover "Changed after the reveal". Marks stay once changes are turned off.
+- **The results** recompute with each change: the suggested card, agreement, average,
+  median, spread, distribution and the lowest and highest voters, as the cards now stand.
+- **The PO's decision.** A recorded final stays: the final is the PO's. When a change
+  moves the suggestion (a card, or a tie) away from what it was when the PO recorded,
+  the bar says "Votes changed since you recorded 5." (`--ink`, under the picker, in the
+  description of the picker and of "Record 8") and preselects the new suggestion, none
+  on a tie. Nothing is recorded until the PO acts. The note goes once the PO records
+  again or the suggestion comes back.
+- **The live region**, once per change, to everyone but the person who changed: "Ben
+  changed their card to 8." (or "Cy played 3 after the reveal." for a first card),
+  followed by the new result when the suggested card or the consensus moved ("Suggested
+  8. Agreement 50%."). Values are said only after a named reveal, where everyone sees
+  them; the person hears "You changed your card to 8." in their own region.
+
 ## Motion spec
 
 Easing everywhere: `cubic-bezier(.2, .8, .2, 1)` unless stated. All of it is
@@ -659,6 +698,7 @@ interruptible and disabled under `prefers-reduced-motion` (120 ms cross-fades in
 | Reveal flip | `rotateY(180deg)` 650 ms, 90 ms stagger in seat order from the viewer (#19: only the face-up cards count, so an empty seat adds no pause; the last vote, which arrives with the reveal, turns from its empty slot in its place, its back showing while it waits; built as a turn to the edge with the back on, then back bare, so nothing keeps a transform at rest) |
 | Anonymous reveal | slot cards shrink to 0.6 and fade (350 ms); mini cards deal into the results row, 70 ms stagger (#19: the row starts as the seats' cards are gone, at 350 ms; each card drops 12 px and fades in over 320 ms; a card whose vote came with the reveal never lay on its seat, so only the row shows it) |
 | Results | columns rise 500 ms, 60 ms stagger, starting after the last flip (#20: or 350 ms after an anonymous reveal, once the seats' cards are gone; the centre's result fades in 300 ms then, and the lowest and highest seats' arrows pop in 300 ms; the panel's numbers show at once, so no empty panel waits for the flips) |
+| A card changed after the reveal (#29) | the seat's card turns over to its new value, 650 ms, at once; under reduced motion the value is replaced without a turn |
 | Consensus | pill pops (400 ms) and one soft ring pulse; no confetti storm |
 | Timer | ring drains linearly, in steps of about a device pixel (at most 20 a second); last 10 s turns `--warn` and pulses at 1 Hz (#27: the chip scales to 1.08 and back each second; under reduced motion no pulse, and the ring steps once a second) |
 | Seat join / leave | fade and scale from 0.9, 220 ms |

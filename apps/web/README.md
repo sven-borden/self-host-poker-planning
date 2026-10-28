@@ -129,6 +129,22 @@ server sends and never decides the outcome of a round.
   default, #21). A refused start, reveal, final or re-vote shows under the table, above
   the results, and clears when the round or its phase changes. Copy: `round.*` and
   `hand.*`.
+  A change after the reveal (#29): `handView` (`table-data.ts`) keeps the hand playable
+  after a named reveal while `allowChangeAfterReveal` is on (`reason: "change"`, the line
+  `hand.hintChange`; `mayChange` mirrors the domain: the round's own `anonymous` flag
+  decides). `hand-state.ts` keys a wish by round and phase (`roundKey` ends in
+  `:revealed` after the reveal), so a pick made while voting never carries over the
+  reveal, and after it `press` only changes the vote: the card shown pressed again does
+  nothing (`retractVote` would answer `not_voting`). No card flies after the reveal; the
+  slot turns over to the new value with the snapshot (`SlotCard`, no turn under reduced
+  motion). The hand docks on a phone after the reveal as while voting, except for the
+  PO, whose decision's action row docks there. A changed vote is `changed` on its seat
+  status: a "changed" chip on the slot card's foot (`[data-changed-chip]`, also under
+  "Not at the table"), "changed after the reveal" in the seat's name and "Changed after
+  the reveal" in its popover. The viewer hears "You changed your card to 8."
+  (`hand.youChanged`); everyone else "Ben changed their card to 8." (`live.changed`, or
+  `live.votedAfterReveal` for a first card), with the result when the suggestion or the
+  consensus moved (`changedEvent` in `announcements.ts`).
   The final estimate (#32): `final-estimate.tsx` (`Decision`, `[data-decision]`, in the
   `seated` chunk) is the PO's bar under the table after a reveal: a native radio group
   (`[data-final-picker]`, "Final estimate"; `finalChoice` in `results-view.ts` gives
@@ -339,9 +355,11 @@ server sends and never decides the outcome of a round.
   keys send the choice they rest on after `ARROW_SETTLE_MS`, flushed if the panel closes
   first). The `revealWhenAllVoted` row's `detail` tells the PO, while it is off and every
   present voter has voted, that turning it on reveals at once (`everyoneVoted`, kept in
-  the panel so the table's helpers stay out of its chunk). Changes after the reveal (#29,
-  whose hint says it never applies to an anonymous round) is read-only for the PO too
-  until its issue adds a control.
+  the panel so the table's helpers stay out of its chunk). Changes after the reveal (#29)
+  is a switch that applies at once, to a named round already revealed too; it is
+  `locked` ("Anonymous rounds lock their votes at the reveal.",
+  `settings.changeAfterRevealLocked`) while "Anonymous voting" is on, since an anonymous
+  round never changes after its reveal (ADR-011).
   **Adding a control (#26 to #29).** Give the setting's field in `GROUPS` either
   `toggle: { read, write, locked? }` for an on-off setting, or a `Control` component. A
   `Control` gets `ControlProps`: `room` (the round's phase and anonymity, the people),
@@ -354,7 +372,7 @@ server sends and never decides the outcome of a round.
   keeps it at the row's end, at most 11 rem wide. `refusals` maps a server code to the
   field's own words (observers' `room_full` says `settings.observersCountRefused`);
   other codes say `errorMessage`'s. `toggle.locked(room, t)` returns why the switch
-  cannot move now (#29: no change after the reveal in an anonymous round), shown under
+  cannot move now (#29: locked while anonymity is on), shown under
   the setting with a lock and in the switch's description. `key` stays a setting key:
   #30's actions (hand the PO role over, remove someone, claim it) belong to the seats
   and the table, not to this panel; only its "The PO votes too" setting is here. The

@@ -166,7 +166,7 @@ client that sends one gets `bad_payload`; the server's timers send it (section 9
 | `kick {who}` | PO | `cannot_kick_self`, `unknown_participant`; the vote as for `leave` |
 | `startRound {subject}` | PO | any phase; from Voting it abandons the round (the web offers it only in the lobby and after a reveal, #21); number + 1; captures deck, specials, anonymity; starts `timer.seconds` (`bad_subject`). A link's `key` is read here (`cleanSubject` → `linkKey`, in `apply-subject.ts`, so by the server; a client's own is dropped): a Jira key (`[A-Z][A-Z0-9_]{1,31}-[1-9][0-9]{0,9}`, read in any case, stored in capitals) from a path ending in `/browse/KEY` or Jira Cloud's `/projects/{project}/issues/KEY`, or a query's `selectedIssue=KEY`, on any host; an Azure DevOps work item id from a path ending in `/_workitems/edit/{id}` after one to three segments, on any host (Azure DevOps Server is self-hosted), or a query's `workitem={id}` on `dev.azure.com` and `*.visualstudio.com`, stored as the digits |
 | `castVote {card, round, restart?}` | voter | `no_round`; `round_changed` when `round` (the number of the round the press was made for) is not the current round's, or `restart`, when given, not its `restarts` (#26: a deck change restarts the round under the same number; the wire takes a vote without it, from a tab older than #26), so a vote in flight when the next round starts or the round restarts never lands in it; `not_voter` (observers; the PO when `poVotes` is off), `bad_card` (not in the round's cards); in Revealed only in a named round with `allowChangeAfterReveal` (a change or a first vote, marked `changedAfterReveal`); an anonymous round locks its votes at reveal, whatever the setting, decided by the round's own `anonymous` flag (`round_revealed`), because the people who could still change shrink as voters leave and a change would then point at someone; the `voteCast` cause always carries `who` |
-| `retractVote {round, restart?}` | self | `round_changed` as for `castVote`; Voting only (`not_voting`); no-op without a vote |
+| `retractVote {round, restart?}` | self | `round_changed` as for `castVote`; Voting only (`not_voting`), also while `allowChangeAfterReveal` is on: after the reveal a voter changes, never withdraws, which would drop them from the results (#29); no-op without a vote |
 | `reveal` | PO (whether or not they vote), or, if `whoCanReveal = "anyone"`, every voter (`isVoter`); observers never (`not_allowed`, #28) | Voting only (`not_voting`); zero votes allowed; stops the timer; the cause `revealed { by: "manual", who }` names the revealer |
 | `setFinal {card}` | PO | Revealed only (`not_revealed`); a non-special card of the round (`bad_card`) |
 | `revote` | PO | Revealed only; a new round with the same subject; its `roundStarted` cause carries `revote: true` (#32) |
@@ -333,8 +333,10 @@ Server: `apps/server/src/sync/room-sync.ts` (the `handlers` of `createRealtime`)
   next command goes out only if the latest pick still differs (fast clicks collapse, and
   the same command is never sent twice in a row). A refusal (`round_revealed`,
   `not_voting`, `offline`, a `busy` that gave up) drops the pick: the hand rolls back to
-  the snapshot. A pick belongs to its round (number and `startedAt`), so a new round or
-  the reveal drops it. Each command carries the round number it was made for, and its
+  the snapshot. A pick belongs to its round (number and `startedAt`) and its phase, so a
+  new round or the reveal drops it. After a named reveal, while `allowChangeAfterReveal`
+  is on (#29), the hand stays playable: a press sends `castVote` (a change), and the card
+  shown pressed again sends nothing, since `retractVote` is refused after the reveal. Each command carries the round number it was made for, and its
   `restarts` (#26): one still in flight when the PO starts the next round, or restarts
   this one with a new deck, is refused with `round_changed`, and the
   hand rolls back without a message (the new round's hand is empty anyway). The pick changes only the viewer's own screen; the others learn
