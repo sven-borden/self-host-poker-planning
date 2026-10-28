@@ -353,6 +353,50 @@ server sends and never decides the outcome of a round.
   lazy chunks used the sheet, rolldown moved the Radix modules the menus already load
   (react-remove-scroll and friends) into an eager chunk of their own, 0.8 kB worse
   compressed; `vite.config.ts` puts them in the `vendor` group by their pnpm folder names.
+  The summary and the exports (#34): `history-summary.tsx` (`HistorySummary`,
+  `[data-history-summary]`) sits at the top of the history panel, under its sticky head.
+  It reads the history itself, 50 a page (`limit: 50`), as far as the range needs
+  (`covers`: the oldest round, or 1,000 rounds, `MAX_EXPORT_ROUNDS`, "Only the latest
+  1,000 rounds are counted." when the cap cut rounds the range counts, or for "Today" a
+  round that ended before local midnight). Requests wait their turn on `historyPace`
+  (`history-pace.ts`: 8 at once, then 2 a second, under #36's history bucket of 10 and 2
+  a second); the list's own requests `spend` from the same budget without waiting. The
+  rounds read stay held per room across opens (module state, `forgetSummaryRounds` for
+  tests), so a reopen, a new round or a new final asks for the first page alone and joins
+  it with `withFirstPage`; closing the panel stops the reading. Until the range is
+  covered, "Counting the rounds…" (`[data-summary-counting]`) stands in for the figures
+  and "Export" is disabled. The figures span three rows each of one grid (subgrid). It adds
+  the round on the table once it is revealed with a final (`tableRound` in `summary.ts`,
+  its reveal standing in for its end), since history leaves it out. `summary.ts` is pure:
+  `ExportRound` is a history row without its votes, so no name or person's card reaches a
+  file; `inRange` ("Today": rounds that ended on the reader's day; `defaultRange` picks it
+  when a round ended today, else "All rounds"), `summarize` (rounds, the numeric finals
+  summed with `cardValue`, "½" as 0.5, the rounds whose final is not a number or missing,
+  both counting a story once: of consecutive rounds with the same subject, `sameSubject`,
+  only the last; the mean agreement of rounds where a vote counted, the mean
+  `revealedAt − startedAt`).
+  Figures: `[data-summary-stat=rounds|total|agreement|time]`, the range a fieldset of two
+  radios (`[data-summary-range]`). "Export" (`[data-export-menu]`, a Radix dropdown, items
+  `[data-export=csv|markdown|copyMarkdown|copyKeys]`) imports `exports.ts`, a chunk of its
+  own, when the menu opens, so a pick runs at once and the clipboard still sees the
+  person's gesture. A copy picked keeps Radix from handing the focus back to "Export" on
+  close (`onCloseAutoFocus`): the outcome places it, on the field when refused, else on
+  "Export". `exports.ts`: `toCsv` (UTF-8 with a BOM, CRLF, RFC 4180 quoting;
+  `csvSeparator`: `;` when the interface speaks French or German or the reader's locale
+  takes a decimal comma, else `,`; numbers in the reader's locale without grouping; a
+  text cell starting with = + - @, a tab or a CR after NFKC gets a leading `'`;
+  the end time ISO 8601 with offset), `toMarkdown` (a heading with the room's name, the
+  range and the summary, then a GFM table; `markdownText` backslash-escapes Markdown's
+  punctuation, `|`, backticks and `@` included, and turns line breaks into `<br>`; links stay
+  links, their address percent-encoded where it would end the link or the cell),
+  `keyLines` ("KEY final" per key from its latest round, a numeric final as a number:
+  the link's key, or a Jira key at the very start of a title, `roundKey`), `exportFileName`
+  (`planning-poker-<room name or "room">-<yyyy-mm-dd>.csv|md`, never the code). What a
+  pick did is said once in `[data-export-status]` (role `status`); a refused clipboard
+  shows the text in a read-only, selected `[data-export-manual]`. The room's name comes
+  from the header (`RoomHistoryButton roomName`). Copy: `summary.*`, `exports.*`. Budgets
+  after #34: the room route 176.6 kB, the landing page 157.0 kB (the English catalog's
+  new strings), the lazy `history-panel` chunk 7.1 kB, the `exports` chunk 2.1 kB.
   The settings (#25): `settings-button.tsx` (`RoomSettingsButton`, in the room header
   beside "Copy the link", `[data-settings-open=owner|rules]`) shows once a snapshot is
   there: "Room settings" for the PO (`room.you === room.ownerId`), "Room rules" for
@@ -660,7 +704,18 @@ server sends and never decides the outcome of a round.
   version, `dbQuery`) stays for `e2e/po-powers.spec.ts`, which ages the PO's absence in
   the stored room, a write no request can make. `e2e/history.spec.ts` (#33) plays three
   rounds into the panel, a reload, a round arriving in the open panel, and the panel by
-  keyboard on a desktop and on a Pixel 7; its shots are `history-*`. `e2e/settings.spec.ts` (#25) plays the PO's settings by keyboard alone on a
+  keyboard on a desktop and on a Pixel 7; its shots are `history-*`.
+  `e2e/exports.spec.ts` (#34) plays three rounds (a Jira link, a T-shirt round whose
+  title starts with "=", a title with a Jira key left on the table with its final),
+  checks the summary, downloads and parses the CSV in en, fr and de (csv-parse, a dev
+  dependency, as is marked for the Markdown), copies the Markdown and the key lines with
+  clipboard permissions granted, reaches the key lines and the range by keyboard, and
+  shoots `exports-summary-*` and `exports-menu-*`. `e2e/summary-load.spec.ts` (#34)
+  copies one played round into 1,050 in Postgres, opens and closes the panel three
+  times, opens it again and votes every 100 ms from the same person's second socket
+  while the summary reads: every vote counts, no request is refused, at most 30 history
+  answers; then a page without a clipboard focuses and selects the text to copy.
+  `e2e/settings.spec.ts` (#25) plays the PO's settings by keyboard alone on a
   desktop and an iPhone 13, a voter's "Room rules" with a new room's defaults, one
   snapshot per change, the `room_full` rollback, the panel's own live region while the
   table's is hidden, switches in forced colours, the "Anonymous" chip for the PO, a voter
