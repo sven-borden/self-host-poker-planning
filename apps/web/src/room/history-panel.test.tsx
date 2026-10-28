@@ -380,3 +380,71 @@ describe("the history panel", () => {
     expect(within(german).getByRole("button", { name: "Stimmen der Runde 2" })).toBeTruthy();
   });
 });
+
+describe("the summary and the exports", () => {
+  const summaryOf = (dialog: HTMLElement) =>
+    waitFor(() => {
+      const found = dialog.querySelector<HTMLElement>("[data-history-summary]");
+      if (!found) throw new Error("no summary");
+      return found;
+    });
+  const figure = (summary: HTMLElement, name: string) =>
+    summary.querySelector(`[data-summary-stat=${name}]`)?.textContent;
+  const TWO_DAYS = 2 * 24 * 3600 * 1000;
+
+  it("sums today's rounds by default, and every round on demand", async () => {
+    const old: HistoryRoundView = { ...anonymous, finishedAt: NOW - TWO_DAYS };
+    mocks.requestHistory.mockResolvedValue(page([named, old]));
+    render(<RoomHistoryButton roomName="Team Sky" />);
+    show(newRoom(), ANA);
+    const dialog = await openPanel();
+    const summary = await summaryOf(dialog);
+    expect(within(summary).getByRole("radio", { name: "Today" })).toHaveProperty("checked", true);
+    expect(figure(summary, "rounds")).toBe("Rounds1");
+    expect(figure(summary, "total")).toBe("Total of final estimates5");
+    expect(figure(summary, "agreement")).toBe("Average agreementno value");
+    expect(figure(summary, "time")).toBe(
+      "Average voting time2\u{a0}min 13\u{a0}s2 minutes 13 seconds",
+    );
+    fireEvent.click(within(summary).getByRole("radio", { name: "All rounds" }));
+    expect(figure(summary, "rounds")).toBe("Rounds2");
+    expect(figure(summary, "total")).toBe("Total of final estimates51 round without a number");
+    // The summary read every round, 50 a page.
+    expect(mocks.requestHistory).toHaveBeenCalledWith({ limit: 50 });
+  });
+
+  it("copies the lines for Jira or Azure DevOps, and shows them when the clipboard is refused", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const keyed: HistoryRoundView = { ...anonymous, final: "3" };
+    mocks.requestHistory.mockResolvedValue(page([named, keyed]));
+    render(<RoomHistoryButton roomName="Team Sky" />);
+    show(newRoom(), ANA);
+    const dialog = await openPanel();
+    const summary = await summaryOf(dialog);
+    const exportButton = within(summary).getByRole("button", { name: "Export" });
+    const pick = async (name: string) => {
+      await waitFor(() => expect(exportButton).toHaveProperty("disabled", false));
+      fireEvent.keyDown(exportButton, { key: "Enter" });
+      fireEvent.click(await screen.findByRole("menuitem", { name }));
+    };
+    const status = () => summary.querySelector("[data-export-status]")?.textContent;
+
+    await pick("Copy for Jira or Azure DevOps");
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("PAY-482 3"));
+    await waitFor(() =>
+      expect(status()).toBe(
+        "1 line copied for Jira or Azure DevOps. 1 round skipped: no key or no final estimate.",
+      ),
+    );
+
+    writeText.mockRejectedValue(new Error("refused"));
+    await pick("Copy for Jira or Azure DevOps");
+    const field = await within(summary).findByRole("textbox", { name: "Text to copy" });
+    expect(field).toHaveProperty("value", "PAY-482 3");
+    expect(field).toHaveProperty("readOnly", true);
+    await waitFor(() => expect(document.activeElement).toBe(field));
+    expect(status()).toMatch(/^The browser did not allow copying\./);
+    Reflect.deleteProperty(navigator, "clipboard");
+  });
+});
