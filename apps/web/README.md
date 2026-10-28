@@ -353,6 +353,37 @@ server sends and never decides the outcome of a round.
   lazy chunks used the sheet, rolldown moved the Radix modules the menus already load
   (react-remove-scroll and friends) into an eager chunk of their own, 0.8 kB worse
   compressed; `vite.config.ts` puts them in the `vendor` group by their pnpm folder names.
+  The summary and the exports (#34): `history-summary.tsx` (`HistorySummary`,
+  `[data-history-summary]`) sits at the top of the history panel, under its sticky head.
+  It fetches every history page itself, 50 a page (`limit: 50`) and at most 1,000 rounds
+  (`MAX_EXPORT_ROUNDS`, "Only the latest 1,000 rounds are counted." past that), on each
+  open and again when `historyKey` changes (`withFirstPage` keeps what it holds), and adds
+  the round on the table once it is revealed with a final (`tableRound` in `summary.ts`,
+  its reveal standing in for its end), since history leaves it out. `summary.ts` is pure:
+  `ExportRound` is a history row without its votes, so no name or person's card reaches a
+  file; `inRange` ("Today": rounds that ended on the reader's day; `defaultRange` picks it
+  when a round ended today, else "All rounds"), `summarize` (rounds, the numeric finals
+  summed with `cardValue`, "½" as 0.5, the rounds whose final is not a number or missing,
+  the mean agreement of rounds where a vote counted, the mean `revealedAt − startedAt`).
+  Figures: `[data-summary-stat=rounds|total|agreement|time]`, the range a fieldset of two
+  radios (`[data-summary-range]`). "Export" (`[data-export-menu]`, a Radix dropdown, items
+  `[data-export=csv|markdown|copyMarkdown|copyKeys]`) imports `exports.ts`, a chunk of its
+  own, when the menu opens, so a pick runs at once and the clipboard still sees the
+  person's gesture. `exports.ts`: `toCsv` (UTF-8 with a BOM, CRLF, RFC 4180 quoting; `,`
+  in English and `;` in French and German, numbers in the interface language's locale
+  without grouping; a text cell starting with = + - @, a tab or a CR gets a leading `'`;
+  the end time ISO 8601 with offset), `toMarkdown` (a heading with the room's name, the
+  range and the summary, then a GFM table; `markdownText` backslash-escapes Markdown's
+  punctuation, `|` and backticks included, and turns line breaks into `<br>`; links stay
+  links, their address percent-encoded where it would end the link or the cell),
+  `keyLines` ("KEY final" per round with a key and a final: the link's key, or a Jira key
+  at the very start of a title, `roundKey`), `exportFileName`
+  (`planning-poker-<room name or "room">-<yyyy-mm-dd>.csv|md`, never the code). What a
+  pick did is said once in `[data-export-status]` (role `status`); a refused clipboard
+  shows the text in a read-only, selected `[data-export-manual]`. The room's name comes
+  from the header (`RoomHistoryButton roomName`). Copy: `summary.*`, `exports.*`. Budgets
+  after #34: the room route 176.6 kB, the landing page 157.0 kB (the English catalog's
+  new strings), the lazy `history-panel` chunk 7.1 kB, the `exports` chunk 2.1 kB.
   The settings (#25): `settings-button.tsx` (`RoomSettingsButton`, in the room header
   beside "Copy the link", `[data-settings-open=owner|rules]`) shows once a snapshot is
   there: "Room settings" for the PO (`room.you === room.ownerId`), "Room rules" for
@@ -660,7 +691,14 @@ server sends and never decides the outcome of a round.
   version, `dbQuery`) stays for `e2e/po-powers.spec.ts`, which ages the PO's absence in
   the stored room, a write no request can make. `e2e/history.spec.ts` (#33) plays three
   rounds into the panel, a reload, a round arriving in the open panel, and the panel by
-  keyboard on a desktop and on a Pixel 7; its shots are `history-*`. `e2e/settings.spec.ts` (#25) plays the PO's settings by keyboard alone on a
+  keyboard on a desktop and on a Pixel 7; its shots are `history-*`.
+  `e2e/exports.spec.ts` (#34) plays three rounds (a Jira link, a T-shirt round whose
+  title starts with "=", a title with a Jira key left on the table with its final),
+  checks the summary, downloads and parses the CSV in en, fr and de (csv-parse, a dev
+  dependency, as is marked for the Markdown), copies the Markdown and the key lines with
+  clipboard permissions granted, reaches the key lines and the range by keyboard, and
+  shoots `exports-summary-*` and `exports-menu-*`.
+  `e2e/settings.spec.ts` (#25) plays the PO's settings by keyboard alone on a
   desktop and an iPhone 13, a voter's "Room rules" with a new room's defaults, one
   snapshot per change, the `room_full` rollback, the panel's own live region while the
   table's is hidden, switches in forced colours, the "Anonymous" chip for the PO, a voter
