@@ -625,11 +625,11 @@ test("four people play four rounds: create, join, vote, reveal, results, next ro
     ]);
     await expect(panel.locator("[data-history-kind=anonymous]")).toHaveCount(2);
     await dee.press(panel.getByRole("button", { name: "Votes of round 3" }));
-    await expect(panel.locator("[data-history-round=3] [data-history-votes]")).toContainText(
+    await expect(panel.locator("[data-history-round='3'] [data-history-votes]")).toContainText(
       "Anonymous round",
     );
     await dee.press(panel.getByRole("button", { name: "Votes of round 2" }));
-    await expect(panel.locator("[data-history-round=2] [data-history-vote]")).toHaveCount(3);
+    await expect(panel.locator("[data-history-round='2'] [data-history-vote]")).toHaveCount(3);
     for (const number of ["3", "4"]) {
       const row = (await panel.locator(`[data-history-round="${number}"]`).textContent()) ?? "";
       for (const { name } of everyone) expect(row, `round ${number}`).not.toContain(name);
