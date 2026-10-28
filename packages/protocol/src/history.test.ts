@@ -124,7 +124,22 @@ describe("historyLeaks", () => {
     };
     expect(historyLeaks({ rounds: [row] }, people)).toEqual([
       { path: "rounds.0.subject.text", value: "u-ben" },
-      { path: "rounds.0.votes.votes.0.who", value: "x" },
+      { path: "rounds.0.votes.votes.0.who", value: "who" },
+    ]);
+  });
+
+  it("finds a user id inside a longer string", () => {
+    const row = { ...named, subject: { kind: "title", text: "Estimate for u-ana tomorrow" } };
+    expect(historyLeaks({ rounds: [row] }, people)).toEqual([
+      { path: "rounds.0.subject.text", value: "Estimate for u-ana tomorrow" },
+    ]);
+  });
+
+  it("finds a user id, or a `who`, used as a key, whatever its value", () => {
+    const row = { ...named, stats: { ...stats, byPerson: { "u-ben": 3 } }, votes: { who: 7 } };
+    expect(historyLeaks({ rounds: [row] }, people)).toEqual([
+      { path: "rounds.0.stats.byPerson.u-ben", value: "u-ben" },
+      { path: "rounds.0.votes.who", value: "who" },
     ]);
   });
 
@@ -136,7 +151,14 @@ describe("historyLeaks", () => {
     };
     expect(historyLeaks({ rounds: [named, row] }, people)).toEqual([
       { path: "rounds.1.subject.text", value: "Ben" },
-      { path: "rounds.1.votes.name", value: "Someone" },
+      { path: "rounds.1.votes.name", value: "name" },
+    ]);
+  });
+
+  it("finds a name used as a key in an anonymous row", () => {
+    const row = { ...anonymous, votes: { kind: "anonymous", cards: ["5"], byName: { Ana: 1 } } };
+    expect(historyLeaks({ rounds: [row] }, people)).toEqual([
+      { path: "rounds.0.votes.byName.Ana", value: "Ana" },
     ]);
   });
 });

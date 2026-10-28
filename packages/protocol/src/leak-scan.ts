@@ -46,25 +46,44 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
 /**
+ * Every key and every string in a value, each with its path: a key's path ends in the key
+ * (`rounds.0.votes.who`, value `who`), a string's is where it sits.
+ */
+function keysAndStrings(
+  value: unknown,
+  path: string,
+): Array<{ path: string; value: string; key: boolean }> {
+  if (typeof value === "string") return [{ path, value, key: false }];
+  if (!isRecord(value)) return [];
+  return Object.entries(value).flatMap(([key, child]) => {
+    const at = `${path}.${key}`;
+    return [{ path: at, value: key, key: true }, ...keysAndStrings(child, at)];
+  });
+}
+
+/**
  * The leaks in a `history` answer (#33), each with its path (`rounds.2.votes.cards.0`): a
- * user id or a `who` anywhere (no row names its voters by id), and in an anonymous round's
- * row a person's name or a `name` field at all. The server's socket tests scan real
+ * user id anywhere in a row, in any string or key, alone or inside a longer one, and a
+ * `who` key (no row names its voters by id); in an anonymous round's row also a person's
+ * name, as a string or a key, or a `name` key at all. The server's socket tests scan real
  * frames with it, and the four-person e2e every history answer a page receives.
  */
 export function historyLeaks(
   answer: unknown,
   people: HistoryPeople,
 ): Array<{ path: string; value: string }> {
-  const ids = new Set(people.ids);
+  const ids = [...people.ids].filter((id) => id !== "");
   const names = new Set(people.names);
   const rounds = isRecord(answer) && Array.isArray(answer.rounds) ? answer.rounds : [];
   return rounds.flatMap((row: unknown, i) => {
     const anonymous = isRecord(row) && isRecord(row.votes) && row.votes.kind === "anonymous";
-    return stringLeaves(row, `rounds.${i}`).filter(
-      ({ path, value }) =>
-        ids.has(value) ||
-        /(^|\.)who$/.test(path) ||
-        (anonymous && (names.has(value) || /(^|\.)name$/.test(path))),
-    );
+    return keysAndStrings(row, `rounds.${i}`)
+      .filter(
+        ({ value, key }) =>
+          ids.some((id) => value.includes(id)) ||
+          (key && value === "who") ||
+          (anonymous && (names.has(value) || (key && value === "name"))),
+      )
+      .map(({ path, value }) => ({ path, value }));
   });
 }
