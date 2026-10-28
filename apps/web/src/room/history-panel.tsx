@@ -19,6 +19,7 @@ import {
   SheetTitle,
 } from "../components/ui/sheet.tsx";
 import { useFormat, useT } from "../i18n/hooks.ts";
+import type { TFunction } from "../i18n/i18n.ts";
 import { cn } from "../lib/utils.ts";
 import { type HistoryResult, requestHistory } from "../realtime/room-connection.ts";
 import { useRoomStore } from "../stores/room-store.ts";
@@ -46,7 +47,8 @@ function subscribePhone(onChange: () => void) {
 
 const isPhone = () => window.matchMedia(PHONE_QUERY).matches;
 
-const CAPTION = "m-0 font-mono text-[11px] tracking-[0.08em] text-ink-2 uppercase";
+/** 11 px at the default text size, in rem so that it grows with the reader's text size. */
+const CAPTION = "m-0 font-mono text-[0.6875rem] tracking-[0.08em] text-ink-2 uppercase";
 
 /** The highest bar of a row's distribution. */
 const BAR_MAX_PX = 20;
@@ -318,30 +320,43 @@ function HistoryRow({
         <Distribution round={round} />
         <Duration round={round} />
       </div>
-      <button
-        type="button"
-        data-history-toggle
-        aria-expanded={expanded}
-        aria-controls={votesId}
-        aria-label={t("history.votesOf", { round: round.number })}
-        onClick={onToggle}
-        className="-mx-2 inline-flex min-h-11 items-center gap-1.5 self-start rounded-md px-2 text-sm font-semibold text-ink hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-brass"
-      >
-        <ChevronDownIcon
-          aria-hidden
-          className={cn(
-            "size-4 text-ink-2 transition-transform motion-reduce:transition-none",
-            expanded && "rotate-180",
-          )}
-        />
-        {t("history.votes")}
-      </button>
-      <div id={votesId} hidden={!expanded} data-history-votes>
-        {expanded ? <Votes round={round} /> : null}
-      </div>
+      {hasVotes(round) ? (
+        <>
+          <button
+            type="button"
+            data-history-toggle
+            aria-expanded={expanded}
+            aria-controls={votesId}
+            aria-label={t("history.votesOf", { round: round.number })}
+            onClick={onToggle}
+            className="-mx-2 inline-flex min-h-11 items-center gap-1.5 self-start rounded-md px-2 text-sm font-semibold text-ink hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-brass"
+          >
+            <ChevronDownIcon
+              aria-hidden
+              className={cn(
+                "size-4 text-ink-2 transition-transform motion-reduce:transition-none",
+                expanded && "rotate-180",
+              )}
+            />
+            {t("history.votes")}
+          </button>
+          <div id={votesId} hidden={!expanded} data-history-votes>
+            {expanded ? <Votes round={round} /> : null}
+          </div>
+        </>
+      ) : (
+        // Nobody voted: nothing to open.
+        <p data-history-no-votes className="m-0 text-sm text-ink-2">
+          {t("history.noVotes")}
+        </p>
+      )}
     </li>
   );
 }
+
+/** Whether anyone voted in the round. */
+const hasVotes = ({ votes }: HistoryRoundView) =>
+  (votes.kind === "anonymous" ? votes.cards.length : votes.votes.length) > 0;
 
 /** When the round ended: the time, or the date and time on another day. */
 function Ended({ at }: { at: number }) {
@@ -418,7 +433,7 @@ function Final({ card }: { card: string | null }) {
     return (
       <p data-history-final="" className="m-0 flex flex-col items-start gap-1">
         <span aria-hidden="true" className={CAPTION}>
-          {t("history.final")}
+          {t("final.short")}
         </span>
         <span aria-hidden="true" className="text-sm text-ink-2">
           {t("history.noFinal")}
@@ -430,7 +445,7 @@ function Final({ card }: { card: string | null }) {
   return (
     <p data-history-final={card} className="m-0 flex flex-col items-start gap-1">
       <span aria-hidden="true" className={CAPTION}>
-        {t("history.final")}
+        {t("final.short")}
       </span>
       <MiniCard value={card} />
       <span className="sr-only">{t("history.finalSpoken", { card: cardLabel(t, card) })}</span>
@@ -453,7 +468,7 @@ function Distribution({ round }: { round: HistoryRoundView }) {
     >
       {columns.map((column) => (
         <li key={column.card} className="flex w-6 flex-col items-center gap-0.5">
-          <span aria-hidden="true" className="text-[11px]/none font-semibold tabular-nums">
+          <span aria-hidden="true" className="text-[0.6875rem]/none font-semibold tabular-nums">
             {format.number(column.count)}
           </span>
           <span
@@ -471,21 +486,37 @@ function Distribution({ round }: { round: HistoryRoundView }) {
   );
 }
 
-/** How long the voting took, "2 min 13 s" (said in words). */
+/**
+ * How long the voting took, said in words: "2 minutes 13 seconds", and from an hour on
+ * the hours and minutes ("1 hour 2 minutes").
+ */
+function tookWords(t: TFunction, time: ReturnType<typeof votingTime>): string {
+  const { total, hours, minutes } = time;
+  if (hours === 0) return durationWords(t, total);
+  const inHours = t("history.hours", { count: hours });
+  if (minutes === 0) return inHours;
+  return t("history.hoursMinutes", {
+    hours: inHours,
+    minutes: t("timer.minutes", { count: minutes }),
+  });
+}
+
+/** How long the voting took: "42 s", "2 min 13 s", or from an hour on "1 h 2 min". */
 function Duration({ round }: { round: HistoryRoundView }) {
   const t = useT();
-  const { total, minutes, seconds } = votingTime(round);
+  const time = votingTime(round);
+  const { total, hours, minutes, seconds } = time;
   return (
     <p data-history-duration={total} className="m-0 ml-auto flex items-center gap-1 text-sm">
       <TimerIcon aria-hidden className="size-3.5 text-ink-2" />
       <span aria-hidden="true" className="tabular-nums whitespace-nowrap">
-        {minutes > 0
-          ? t("history.took", { minutes, seconds })
-          : t("history.tookSeconds", { seconds })}
+        {hours > 0
+          ? t("history.tookHours", { hours, minutes })
+          : minutes > 0
+            ? t("history.took", { minutes, seconds })
+            : t("history.tookSeconds", { seconds })}
       </span>
-      <span className="sr-only">
-        {t("history.tookSpoken", { duration: durationWords(t, total) })}
-      </span>
+      <span className="sr-only">{t("history.tookSpoken", { duration: tookWords(t, time) })}</span>
     </p>
   );
 }

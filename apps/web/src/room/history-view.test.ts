@@ -123,16 +123,25 @@ describe("historyKey", () => {
 });
 
 describe("votingTime", () => {
-  it("splits the time from the start to the reveal into minutes and seconds", () => {
+  it("splits the time from the start to the reveal into hours, minutes and seconds", () => {
     expect(votingTime({ startedAt: 1_000, revealedAt: 134_000 })).toEqual({
       total: 133,
+      hours: 0,
       minutes: 2,
       seconds: 13,
     });
     expect(votingTime({ startedAt: 0, revealedAt: 41_600 })).toEqual({
       total: 42,
+      hours: 0,
       minutes: 0,
       seconds: 42,
+    });
+    // From an hour on: 62 min 5 s is 1 h, 2 min and 5 s.
+    expect(votingTime({ startedAt: 0, revealedAt: 3_725_000 })).toEqual({
+      total: 3725,
+      hours: 1,
+      minutes: 2,
+      seconds: 5,
     });
     // A clock that went back never shows a negative time.
     expect(votingTime({ startedAt: 5_000, revealedAt: 1_000 }).total).toBe(0);

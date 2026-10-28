@@ -163,12 +163,13 @@ describe("the history panel", () => {
     expect(duration?.textContent).toContain("Voting took 2 minutes 13 seconds.");
     const time = second.querySelector("time");
     expect(time?.getAttribute("datetime")).toBe(new Date(named.finishedAt).toISOString());
-    expect(second.textContent).toContain(`Ended ${time?.textContent}.`);
+    expect(second.textContent).toContain(`Ended at ${time?.textContent}.`);
 
     const first = rowOf(dialog, 1);
     const link = within(first).getByRole("link", { name: "PAY-482 (opens in a new tab)" });
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
-    expect(first.querySelector("[data-history-final]")?.textContent).toContain("No final");
+    const noFinal = first.querySelector("[data-history-final]");
+    expect(noFinal?.textContent).toBe("FinalNoneNo final estimate.");
     expect(first.querySelector("[data-history-duration]")?.textContent).toContain("42\u{a0}s");
     expect(within(first).getByRole("list", { name: "Votes per card" }).textContent).toContain(
       "needs a break: 1 vote",
@@ -220,8 +221,53 @@ describe("the history panel", () => {
     const dialog = await openPanel();
     expect(await within(dialog).findByText(/^No rounds yet\./)).toBeTruthy();
     expect(dialog.querySelector("[data-history-empty]")?.textContent).toBe(
-      "No rounds yet. A round appears here once its cards are revealed and the next round starts, or the product owner records a final.",
+      "No rounds yet. A round appears here once the next round starts.",
     );
+  });
+
+  it("says No votes for a round nobody voted in, with nothing to open", async () => {
+    const silent: HistoryRoundView = {
+      ...anonymous,
+      number: 3,
+      stats: stats([], null),
+      votes: { kind: "named", votes: [] },
+    };
+    const silentAnonymous: HistoryRoundView = {
+      ...silent,
+      number: 4,
+      votes: { kind: "anonymous", cards: [] },
+    };
+    mocks.requestHistory.mockResolvedValue(page([silentAnonymous, silent, named]));
+    render(<RoomHistoryButton />);
+    show(newRoom(), ANA);
+    const dialog = await openPanel();
+    await within(dialog).findByRole("list", { name: "Finished rounds" });
+    for (const number of [4, 3]) {
+      const row = rowOf(dialog, number);
+      expect(row.querySelector("[data-history-no-votes]")?.textContent).toBe("No votes");
+      expect(row.querySelector("[data-history-toggle]")).toBeNull();
+      expect(row.querySelector("[data-history-votes]")).toBeNull();
+    }
+    expect(rowOf(dialog, 2).querySelector("[data-history-no-votes]")).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Votes of round 2" })).toBeTruthy();
+  });
+
+  it("gives a voting time from an hour on in hours and minutes", async () => {
+    const long = (number: number, seconds: number): HistoryRoundView => ({
+      ...named,
+      number,
+      startedAt: NOW - 10_000_000,
+      revealedAt: NOW - 10_000_000 + seconds * 1000,
+    });
+    mocks.requestHistory.mockResolvedValue(page([long(3, 3725), long(2, 7200)]));
+    render(<RoomHistoryButton />);
+    show(newRoom(), ANA);
+    const dialog = await openPanel();
+    await within(dialog).findByRole("list", { name: "Finished rounds" });
+    const duration = (number: number) =>
+      rowOf(dialog, number).querySelector("[data-history-duration]")?.textContent;
+    expect(duration(3)).toBe("1\u{a0}h 2\u{a0}minVoting took 1 hour 2 minutes.");
+    expect(duration(2)).toBe("2\u{a0}h 0\u{a0}minVoting took 2 hours.");
   });
 
   it("fetches the first page again when a round starts or the table's round gets its final", async () => {
@@ -301,12 +347,16 @@ describe("the history panel", () => {
     const dialog = await screen.findByRole("dialog", { name: "Historique" });
     const row = await waitFor(() => rowOf(dialog, 2));
     expect(within(row).getByRole("heading", { name: "Tour 2" })).toBeTruthy();
-    expect(row.textContent).toContain("Vote en 2 minutes 13 secondes.");
+    expect(row.textContent).toContain("Le vote a duré 2 minutes 13 secondes.");
+    expect(row.querySelector("[data-history-final]")?.textContent).toContain("Finale");
     cleanup();
     await act(() => changeLanguage("de"));
     render(<RoomHistoryButton />);
     fireEvent.click(screen.getByRole("button", { name: "Verlauf" }));
     const german = await screen.findByRole("dialog", { name: "Verlauf" });
-    expect((await waitFor(() => rowOf(german, 2))).textContent).toContain("Runde 2");
+    const germanRow = await waitFor(() => rowOf(german, 2));
+    expect(germanRow.textContent).toContain("Runde 2");
+    expect(germanRow.textContent).toContain("Die Abstimmung dauerte 2 Minuten 13 Sekunden.");
+    expect(within(german).getByRole("button", { name: "Stimmen der Runde 2" })).toBeTruthy();
   });
 });

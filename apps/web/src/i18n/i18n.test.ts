@@ -155,6 +155,8 @@ describe("catalogs", () => {
       // The history (#33): the same units, and "Votes" is French too.
       "history.took",
       "history.tookSeconds",
+      "history.tookHours",
+      "history.hoursMinutes",
       "history.votes",
     ],
     de: [
@@ -173,10 +175,11 @@ describe("catalogs", () => {
       "timer.shortSeconds",
       "timer.shortMinutes",
       "timer.add",
-      // The history (#33): the same units, "Final" as in the final estimate, a name and its card.
-      "history.final",
+      // The history (#33): the same units, a name and its card.
       "history.took",
       "history.tookSeconds",
+      "history.tookHours",
+      "history.hoursMinutes",
       "history.voteSpoken",
     ],
   };

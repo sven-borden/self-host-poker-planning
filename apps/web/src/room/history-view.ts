@@ -53,14 +53,23 @@ export function historyKey(room: Pick<RoomView, "round"> | undefined): string {
   return round.phase === "revealed" ? `${round.number}:${round.final ?? ""}` : `${round.number}:`;
 }
 
-/** How long the voting took (`revealedAt − startedAt`), in whole minutes and seconds. */
+/**
+ * How long the voting took (`revealedAt − startedAt`) in whole seconds, split into hours,
+ * the minutes past the hour and the seconds past the minute.
+ */
 export function votingTime(round: Pick<HistoryRoundView, "startedAt" | "revealedAt">): {
   total: number;
+  hours: number;
   minutes: number;
   seconds: number;
 } {
   const total = Math.max(0, Math.round((round.revealedAt - round.startedAt) / 1000));
-  return { total, minutes: Math.floor(total / 60), seconds: total % 60 };
+  return {
+    total,
+    hours: Math.floor(total / 3600),
+    minutes: Math.floor((total % 3600) / 60),
+    seconds: total % 60,
+  };
 }
 
 /** Whether two instants fall on the same calendar day where the reader is. */
