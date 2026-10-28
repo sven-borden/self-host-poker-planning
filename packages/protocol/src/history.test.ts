@@ -66,6 +66,7 @@ describe("parseHistoryRequest", () => {
     ["a cursor of 0", { before: 0 }],
     ["a cursor that is not a number", { before: "21" }],
     ["an unsafe integer", { before: 2 ** 60 }],
+    ["a cursor past Postgres's integer", { before: 2 ** 31 }],
     ["an unknown field", { before: 3, room: "x" }],
     ["a string", "history"],
     ["null", null],

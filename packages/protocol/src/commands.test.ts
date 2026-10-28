@@ -197,6 +197,31 @@ describe("wire commands", () => {
       { id: "1", type: "extendTimer", payload: { seconds: Number.POSITIVE_INFINITY } },
     ],
     ["seconds as a string", { id: "1", type: "startTimer", payload: { seconds: "30" } }],
+    ["negative seconds", { id: "1", type: "startTimer", payload: { seconds: -1 } }],
+    [
+      "seconds past a day",
+      { id: "1", type: "extendTimer", payload: { seconds: WIRE_LIMITS.timerSeconds + 1 } },
+    ],
+    [
+      "a timer setting past a day",
+      {
+        id: "1",
+        type: "updateSettings",
+        payload: { patch: { timer: { seconds: WIRE_LIMITS.timerSeconds + 1 } } },
+      },
+    ],
+    [
+      "a round past Postgres's integer",
+      { id: "1", type: "castVote", payload: { card: "5", round: WIRE_LIMITS.roundNumber + 1 } },
+    ],
+    [
+      "a restart past Postgres's integer",
+      {
+        id: "1",
+        type: "retractVote",
+        payload: { round: 1, restart: WIRE_LIMITS.roundNumber + 1 },
+      },
+    ],
     [
       "an unknown subject kind",
       { id: "1", type: "startRound", payload: { subject: { kind: "jira" } } },

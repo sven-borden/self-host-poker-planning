@@ -6,6 +6,7 @@
  * a log line.
  */
 import { createRoom, DEFAULT_SETTINGS, MAX_ROOM_NAME_LENGTH } from "@pp/domain";
+import { WIRE_LIMITS } from "@pp/protocol";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "./app.ts";
 import type { Config } from "./config.ts";
@@ -209,6 +210,8 @@ describe("POST /api/rooms", () => {
       [{ name: null }, "bad_payload"],
       [[], "bad_payload"],
       [{ name: "x".repeat(MAX_ROOM_NAME_LENGTH + 1) }, "bad_room_name"],
+      // Past the coarse cap (#36): refused before any cleaning.
+      [{ name: "x".repeat(WIRE_LIMITS.name + 1) }, "bad_payload"],
       [{ name: "   " }, "bad_room_name"],
       [{ name: "Team\u{202E}lagel" }, "bad_room_name"],
       [{ name: "Sv\u{200B}en" }, "bad_room_name"],
