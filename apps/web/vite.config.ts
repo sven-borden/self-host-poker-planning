@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 // Paths are absolute because the root Vitest config extends this file from the repo root:
 // relative paths would resolve against the current directory, not apps/web.
@@ -32,6 +32,26 @@ const VENDOR = new RegExp(
   ].join(""),
 );
 
+/**
+ * sonner writes its style sheet into a `<style>` element when it is imported, which the
+ * Content Security Policy refuses (`style-src 'self'`, #36). The call is cut from the
+ * built bundle, and `components/ui/sonner.tsx` imports the same sheet from
+ * `sonner/dist/styles.css` into the app's own CSS. A sonner release that writes it some
+ * other way fails the build here, before the policy would block it in the browser.
+ */
+function sonnerStylesAsCss(): Plugin {
+  return {
+    name: "pp:sonner-styles-as-css",
+    apply: "build",
+    transform(code, id) {
+      if (!/[\\/]sonner[\\/]dist[\\/]index\.mjs$/.test(id.split("?")[0] ?? "")) return null;
+      const cut = code.replace(/__insertCSS\("(?:[^"\\]|\\.)*"\);?/, "");
+      if (cut === code) this.error("sonner no longer calls __insertCSS: check its styles");
+      return { code: cut, map: null };
+    },
+  };
+}
+
 export default defineConfig({
   base: "/",
   plugins: [
@@ -46,6 +66,7 @@ export default defineConfig({
     }),
     react(),
     tailwindcss(),
+    sonnerStylesAsCss(),
   ],
   build: {
     // The real budget is 200 kB of gzipped JavaScript on the room route
@@ -75,7 +96,11 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: { "@": src("") },
+    alias: {
+      "@": src(""),
+      // Radix's scroll lock builds its sheet without a <style> element (src/csp/, #36).
+      "react-style-singleton": src("csp/style-singleton.ts"),
+    },
   },
   server: {
     port: 5173,

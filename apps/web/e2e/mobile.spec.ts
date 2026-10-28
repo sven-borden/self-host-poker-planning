@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./fixtures.ts";
 import {
   createRoom,
   type Guest,
@@ -636,7 +636,10 @@ test("the docked hand never covers Reveal cards or the viewer's seat: 320 to 390
           }
           // 150 % text: the dock grows with it, and still covers nothing.
           if (language !== "fr") {
-            const larger = await viewer.addStyleTag({ content: "html { font-size: 150% }" });
+            // Through the CSSOM: the policy refuses an inline style element (#36).
+            await viewer.evaluate(() => {
+              document.documentElement.style.fontSize = "150%";
+            });
             for (const size of [sizes[0], sizes[2]]) {
               if (!size) continue;
               await viewer.setViewportSize(size);
@@ -648,7 +651,9 @@ test("the docked hand never covers Reveal cards or the viewer's seat: 320 to 390
                 await viewer.screenshot({ path: `${SHOTS}phone-fix-04-text150-390x844.png` });
               }
             }
-            await larger.evaluate((element) => (element as Element).remove());
+            await viewer.evaluate(() => {
+              document.documentElement.style.fontSize = "";
+            });
           }
         }
         // The reviewer's situations, after the fix.

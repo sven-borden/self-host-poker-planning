@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { cardLeaks } from "../../../packages/protocol/src/leak-scan.ts";
+import { expect, type Page, test } from "./fixtures.ts";
 import {
   createRoom,
   join,

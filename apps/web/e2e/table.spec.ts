@@ -1,5 +1,4 @@
 import { fileURLToPath } from "node:url";
-import { expect, type Page, test } from "@playwright/test";
 import {
   AVATAR_HALO,
   type GeometryProblem,
@@ -7,6 +6,7 @@ import {
   type PixelLayout,
   type Rect,
 } from "../src/table/geometry.ts";
+import { expect, type Page, test } from "./fixtures.ts";
 
 // The table in a real browser (#13). For 1 to 16 people at widths from 360 to 1440 px, in
 // both themes, the measured layout passes the same rules as the unit sweep

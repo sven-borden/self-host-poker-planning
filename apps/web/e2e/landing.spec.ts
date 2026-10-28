@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "./fixtures.ts";
 
 // The landing page, joining by code, the missing room and the generic error page (#24),
 // against the real server and Postgres: an unknown code must get the server's real 404.

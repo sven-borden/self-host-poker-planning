@@ -1,42 +1,24 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "@playwright/test";
 
-// End-to-end checks against the built app served by `vite preview` (not part of
-// `pnpm gate`; CI runs them in the `web-e2e` job). Locally they use the installed
-// Microsoft Edge and build first; in CI they use Playwright's Chromium on a fresh build.
+// End-to-end checks against the built app, served by the real server with its production
+// headers (#36: the Content Security Policy and the rest), not by `vite preview`: a policy
+// that breaks the page must fail here before it reaches poker.borden.ch. Not part of
+// `pnpm gate`; CI runs them in the `web-e2e` job. Locally they use the installed Microsoft
+// Edge and build first; in CI they use Playwright's Chromium on a fresh build.
+//
+// The server needs a Postgres it may migrate: DATABASE_URL. E2E_WEB_PORT moves the app,
+// so two worktrees can run the suite side by side. The secret is a fake.
 
-// Two worktrees can run the suite side by side on other ports: E2E_WEB_PORT for the
-// preview, E2E_API_PORT for the server (vite.config.ts forwards to it).
 const PORT = Number(process.env.E2E_WEB_PORT ?? 4173);
-const API_PORT = Number(process.env.E2E_API_PORT ?? 3000);
 const ci = Boolean(process.env.CI);
-const preview = `pnpm exec vite preview --port ${PORT} --strictPort`;
-
-// With DATABASE_URL (a Postgres the server may migrate), the real server runs on 3000,
-// where `vite preview` forwards `/api` and `/socket.io`, as `pnpm dev` does: the identity
-// tests (e2e/identity.spec.ts) need it and skip without it. The secret is a fake.
 const databaseUrl = process.env.DATABASE_URL;
-const apiServer = databaseUrl
-  ? [
-      {
-        command: "pnpm --filter @pp/server exec tsx src/main.ts",
-        url: `http://localhost:${API_PORT}/api/health`,
-        reuseExistingServer: false,
-        timeout: 60_000,
-        env: {
-          DATABASE_URL: databaseUrl,
-          PORT: String(API_PORT),
-          BASE_URL: `http://localhost:${PORT}`,
-          BETTER_AUTH_SECRET: "e2e-fake-secret-not-used-anywhere-else-0123456789",
-          // `vite preview` forwards without adding X-Forwarded-For, so the header a test
-          // sends is the client address: e2e/join.spec.ts gives each person their own, to
-          // stay under the per-address room-creation and sign-in limits. Without the
-          // header the socket's address counts, as before.
-          TRUST_PROXY: "1",
-          LOG_LEVEL: "warn",
-        },
-      },
-    ]
-  : [];
+if (!databaseUrl) {
+  throw new Error(
+    "The e2e suite runs against the real server: set DATABASE_URL to a Postgres it may migrate",
+  );
+}
+const serve = "pnpm --filter @pp/server exec tsx src/main.ts";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -63,11 +45,22 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: ci ? preview : `pnpm exec vite build && ${preview}`,
-      url: `http://localhost:${PORT}/dev/table`,
+      command: ci ? serve : `pnpm exec vite build && ${serve}`,
+      url: `http://localhost:${PORT}/api/health`,
       reuseExistingServer: false,
       timeout: 120_000,
+      env: {
+        DATABASE_URL: databaseUrl,
+        PORT: String(PORT),
+        BASE_URL: `http://localhost:${PORT}`,
+        BETTER_AUTH_SECRET: "e2e-fake-secret-not-used-anywhere-else-0123456789",
+        STATIC_DIR: fileURLToPath(new URL("./dist", import.meta.url)),
+        // The header a test sends is the client address: e2e/join.spec.ts gives each person
+        // their own, to stay under the per-address room-creation and sign-in limits. A page
+        // sends none, so the socket's address counts.
+        TRUST_PROXY: "1",
+        LOG_LEVEL: "warn",
+      },
     },
-    ...apiServer,
   ],
 });

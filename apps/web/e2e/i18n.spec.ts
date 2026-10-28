@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./fixtures.ts";
 
 // Languages in a real browser (#9): the switcher changes every string without a reload and
 // moves <html lang>, the choice survives a reload, a French browser starts in French with

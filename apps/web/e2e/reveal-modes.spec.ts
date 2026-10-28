@@ -1,5 +1,5 @@
-import { type Browser, expect, type Locator, type Page, test } from "@playwright/test";
 import { isPublicCardPath, stringLeaves } from "../../../packages/protocol/src/leak-scan.ts";
+import { type Browser, expect, type Locator, type Page, test } from "./fixtures.ts";
 import {
   createRoom,
   type Guest,
