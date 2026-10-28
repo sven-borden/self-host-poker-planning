@@ -37,9 +37,12 @@ const VENDOR = new RegExp(
  * Content Security Policy refuses (`style-src 'self'`, #36). The call is cut from the
  * built bundle, and `components/ui/sonner.tsx` imports the same sheet from
  * `sonner/dist/styles.css` into the app's own CSS. A sonner release that writes it some
- * other way fails the build here, before the policy would block it in the browser.
+ * other way fails the build here, before the policy would block it in the browser; so
+ * does one whose entry is no longer `dist/index.mjs` (the transform would never run):
+ * the finished bundle may hold neither the call nor the sheet's first rule.
  */
 function sonnerStylesAsCss(): Plugin {
+  const leftovers = ["__insertCSS(", "[data-sonner-toaster][dir=ltr]"];
   return {
     name: "pp:sonner-styles-as-css",
     apply: "build",
@@ -48,6 +51,15 @@ function sonnerStylesAsCss(): Plugin {
       const cut = code.replace(/__insertCSS\("(?:[^"\\]|\\.)*"\);?/, "");
       if (cut === code) this.error("sonner no longer calls __insertCSS: check its styles");
       return { code: cut, map: null };
+    },
+    generateBundle(_options, bundle) {
+      for (const chunk of Object.values(bundle)) {
+        if (chunk.type !== "chunk") continue;
+        const left = leftovers.find((text) => chunk.code.includes(text));
+        if (left) {
+          this.error(`${chunk.fileName} still writes sonner's styles (${left}): check its entry`);
+        }
+      }
     },
   };
 }

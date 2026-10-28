@@ -4,7 +4,7 @@ import { expect, test } from "./fixtures.ts";
 // leaves what the app needs working: React's style props, the Web Animations API, Radix's
 // scroll lock (a constructed style sheet, src/csp/) and sonner's sheet (bundled CSS). The
 // guard in fixtures.ts fails every other spec on a violation; the last test here breaks
-// the policy on purpose, to show that it is enforced.
+// the policy on purpose, to show that it is enforced and that the guard sees it.
 
 const PATHS = [
   "/",
@@ -85,6 +85,15 @@ test("Radix's scroll lock and sonner's sheet load without a style element", asyn
   expect(await page.locator("style").count()).toBe(0);
 });
 
+test("the guard fails a test whose page reads the clipboard", async ({ page }) => {
+  // Expected to fail: the guard throws after the test, on the Permissions-Policy violation.
+  test.fail();
+  await page.goto("/");
+  await expect(page.getByRole("main")).toBeVisible();
+  await page.evaluate(() => navigator.clipboard.readText().catch(() => undefined));
+  await page.waitForTimeout(300);
+});
+
 test.describe("a page that breaks the policy", () => {
   test.use({ policyViolationsExpected: true });
 
@@ -112,5 +121,29 @@ test.describe("a page that breaks the policy", () => {
     expect(outcome.ran).toBe(false);
     expect(outcome.outline).not.toBe("7px");
     expect(outcome.seen).toEqual(expect.arrayContaining(["script-src-elem", "style-src-elem"]));
+  });
+
+  test("cannot read the clipboard, and the guard sees it", async ({ page, policyProblems }) => {
+    await page.goto("/");
+    await expect(page.getByRole("main")).toBeVisible();
+    // `clipboard-read=()`: refused by the policy, whatever the browser's permission.
+    const outcome = await page.evaluate(() =>
+      navigator.clipboard.readText().then(
+        () => "read",
+        (error: Error) => error.name,
+      ),
+    );
+    expect(outcome).toBe("NotAllowedError");
+    // The browser's own console line and the Reporting API's report, through the guard.
+    await expect
+      .poll(() => policyProblems.filter((line) => /permissions[- ]policy/i.test(line)).length)
+      .toBeGreaterThanOrEqual(1);
+    await expect
+      .poll(() =>
+        policyProblems.some((line) =>
+          line.includes("Permissions-Policy violation: clipboard-read"),
+        ),
+      )
+      .toBe(true);
   });
 });

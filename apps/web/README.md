@@ -688,8 +688,15 @@ server sends and never decides the outcome of a round.
   README) and refuses to start without it. Every spec imports `test` from
   `e2e/fixtures.ts`, which fails a test when any page it opened (in the default context
   or one the test made) broke the Content Security Policy or the Permissions-Policy, or
-  threw an uncaught error: an e2e may not inject an inline `<style>` or `<script>`
-  (`addStyleTag` with content), and set styles through the CSSOM instead.
+  threw an uncaught error. It reads the browser's console ("Refused to …", Chromium's
+  "Permissions policy violation") and its own init script's lines: a
+  `securitypolicyviolation` listener and a `ReportingObserver` for
+  `permissions-policy-violation` reports. An e2e may not inject an inline `<style>` or
+  `<script>` (`addStyleTag` with content), and set styles through the CSSOM instead; nor
+  read the clipboard (`clipboard-read=()`): grant `clipboard-write` and spy on
+  `navigator.clipboard.writeText`, as `room.spec.ts` and `exports.spec.ts` do. A test
+  that breaks a policy on purpose sets `policyViolationsExpected` and reads what the guard
+  saw from the `policyProblems` fixture.
   `e2e/security.spec.ts` checks the headers and that style props, the Web Animations
   API, the scroll lock and sonner's sheet work under the policy. Locally it builds first and uses the installed Microsoft Edge; in CI
   (`web-e2e` job) it uses Chromium on the build from the step before. Screenshots go to
