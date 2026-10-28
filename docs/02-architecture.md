@@ -282,10 +282,15 @@ Server: `apps/server/src/sync/room-sync.ts` (the `handlers` of `createRealtime`)
 `apps/web/src/realtime/room-connection.ts` and `stores/room-store.ts`.
 
 - **Message limit**: one token bucket per person, shared by all their sockets, 10
-  messages a second with bursts of 20, for `enter` and `cmd` alike, before any parsing.
-  Past it: `rate_limited`; the socket and the room stay up. A person holds at most 8
-  sockets: the next handshake is refused with `rate_limited`. The bucket outlives the
-  person's last socket until it would be full again, so reconnecting does not refill it.
+  messages a second with bursts of 20, for `enter`, `cmd` and `history` alike, before any
+  parsing. Past it: `rate_limited`; the socket and the room stay up. Two tighter buckets
+  of the person's sit behind it (#36), taken only by a message that parsed: roster
+  commands (`join`, `leave`, `rename`, `setRole`) 10 a minute with bursts of 10, since
+  each is a commit every socket of the room hears and a screen reader announces (and
+  `/api/me/name` allows 10 names a minute); `history` 2 a second with bursts of 10, since
+  each is a database read of up to 50 rounds. A person holds at most 8 sockets: the next
+  handshake is refused with `rate_limited`. The buckets outlive the person's last socket
+  until they would be full again, so reconnecting does not refill them.
 - **Enter**: the session is checked again (`sessionChecker`; a socket outlives a
   sign-out or a deleted user) → `unauthenticated`; the socket joins the room's channel
   `room:<id>` (never the code, a bearer capability) *before* the room is loaded when this
@@ -651,8 +656,16 @@ password, no social provider before W5.
     and per-room limits are as meant whatever the proxies.
   - Logs name the room by its id ("room password changed", "room access granted",
     "wrong room password"); never the password, the hash, the code or the address.
-- Limits: names 32 characters, room names 60, subjects 200, custom cards 4 characters
-  × 20, payloads 16 KB.
+- Input limits, enforced on the server: names 32 characters, room names 60, round
+  titles 200 and links 2000, custom decks of 20 cards of 4 characters, timers of 5 to
+  3600 seconds, passwords 6 to 128, payloads 16 KB (HTTP bodies and socket messages
+  alike: Socket.IO's `maxHttpBufferSize` is the same 16 KB, and a bigger message closes
+  the connection). The domain judges the exact rules and answers their codes (`bad_name`,
+  `bad_subject`, `bad_seconds` …); before it, every inbound schema is strict and caps
+  each string, array and number well above the domain's limit (`WIRE_LIMITS` in
+  `@pp/protocol`: a name 1024 code units, a subject 4096, a card 128, a deck 64 cards,
+  round numbers, restarts and history cursors at Postgres's `integer`, timer seconds at a
+  day), so garbage costs a `bad_payload` and nothing else. `history`'s `limit` is 1 to 50.
 - Text (names, round titles, room names: the domain's `cleanText`): control characters,
   bidi controls and default-ignorable code points are refused (zero-width space, soft
   hyphen, LRM, Hangul fillers, U+FEFF …), except ZWJ, ZWNJ and VS16, and tag characters
@@ -681,8 +694,65 @@ password, no social provider before W5.
   `rate_limited` with `Retry-After`. The counters live in the process (per instance
   with #39), at most 50,000 at once: expired ones are swept every 30 s, and when full the
   oldest tenth goes.
-- Headers: strict CSP (no inline scripts), HSTS, `X-Content-Type-Options`,
-  `Referrer-Policy`. Subject links are rendered with `rel="noopener noreferrer"`,
+- Every limit in one place (#36). "Address" is the client address below, "person" the
+  session's user; each answers `rate_limited` (429 with `Retry-After` over HTTP).
+
+  | Limit | Protects | Key | Number |
+  |---|---|---|---|
+  | Room creation (`POST /api/rooms`) | rooms in a loop, the database | address | 20 in 10 min |
+  | Room header reads (`GET /api/rooms/:code`) | guessing codes, a query each | address | 120 a minute |
+  | Anonymous sign-in | guests in a loop | address | 60 a minute |
+  | Other auth endpoints | Better Auth's routes | address and path | 100 in 10 s |
+  | Display name (`POST /api/me/name`) | name churn | person / address | 10 / 60 a minute |
+  | Password checks, all (`/access`) | CPU (argon2), testing codes | address | 300 in 10 min |
+  | Wrong passwords | brute force, one person's typos | person and room | 10 in 10 min |
+  | Wrong passwords | a handful of guests on one address | address and room | 25 in 10 min |
+  | Wrong passwords (database, every instance) | brute force | room | 50 in 10 min |
+  | Password changes (`PUT`, `DELETE`) | hashing on demand | person (PO) | 30 in 10 min |
+  | argon2 runs at once | memory (19 MiB each) | instance | 2, 32 waiting at most 2 s, then 503 `busy` |
+  | Socket messages (`enter`, `cmd`, `history`) | the server's work | person, all sockets | 10 a second, bursts of 20 |
+  | Roster commands (`join`, `leave`, `rename`, `setRole`) | broadcast and announcement floods | person | 10 a minute, bursts of 10 |
+  | History requests | database reads | person | 2 a second, bursts of 10 |
+  | Sockets | multiplying the buckets | person | 8 at once |
+  | Payload | memory, parsing | request or message | 16 KB (identity routes 4 KB) |
+  | People in a room | the table | room | 16 counted, 32 at most |
+
+  Not limited per address: socket handshakes (each needs a session, and sign-ins are
+  limited), and wrong passwords across rooms (room codes are 58-bit secrets; behind a
+  shared address such a limit would let one client lock every password room).
+
+  **Behind proxies the app is not told about** (`TRUST_PROXY` lower than the proxies in
+  front), every client shares the last proxy's address, so every per-address limit
+  applies to everyone at once: 20 rooms in 10 minutes for the whole instance, 60
+  sign-ins a minute, 300 password checks. The per-person and per-room limits are as meant
+  whatever the proxies.
+- Headers (#36), on every response the server sends (the web app, the API, static files,
+  404s and 500s, and Socket.IO's own polling and upgrade answers), built once at start by
+  `apps/server/src/security-headers.ts` from the config:
+  - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self';
+    img-src 'self' data:; font-src 'self'; connect-src 'self' <ws(s)://BASE_URL host>;
+    object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`, plus
+    `upgrade-insecure-requests` when `BASE_URL` is https. No inline script, no `eval`, no
+    inline style element or attribute. React's `style` props, `element.style` and the Web
+    Animations API write through the CSSOM, which no policy blocks. Two libraries build
+    style sheets at run time: Radix's scroll lock (`react-style-singleton`, aliased to
+    `apps/web/src/csp/style-singleton.ts`, which adopts a constructed sheet) and sonner
+    (whose `<style>` the build cuts; its `styles.css` is bundled instead). A download of a
+    `blob:` URL through `<a download>` is a navigation, which the policy does not govern.
+    `CSP_REPORT_ONLY=true` sends the same policy as `Content-Security-Policy-Report-Only`
+    (without the upgrade, which browsers ignore there); `CSP_EXTRA_SOURCES` adds origins to
+    `script-src`, `style-src`, `img-src`, `font-src`, `connect-src`, `frame-src` or
+    `media-src` (plain `http(s)`/`ws(s)` origins only, no keyword, no path), and #40's
+    Sentry and Umami add theirs the same way.
+  - `Strict-Transport-Security: max-age=31536000; includeSubDomains` when `BASE_URL` is
+    https; no `preload`, which is the domain owner's choice.
+  - `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` (for browsers without
+    `frame-ancestors`), `Referrer-Policy: same-origin` (a room URL carries its code, a
+    bearer capability: it never leaves in a `Referer`), `Cross-Origin-Opener-Policy:
+    same-origin`, `Cross-Origin-Resource-Policy: same-origin`, and a `Permissions-Policy`
+    that turns off every powerful feature the app never uses (camera, microphone,
+    geolocation, payment, USB, `clipboard-read` …) and keeps `clipboard-write=(self)`.
+- Links: subject links are rendered with `rel="noopener noreferrer"`,
   `target="_blank"` and only `http(s)` schemes: the web makes an `<a>` only of a link
   the domain's `cleanSubject` accepts (no other scheme, no credentials), so even an odd
   stored subject never becomes a `javascript:` link (#21).
@@ -896,6 +966,8 @@ language, and an unknown code gets a generic one.
 | `STATIC_DIR` | no (`apps/web/dist`) | built web app; the image sets its own path |
 | `MIGRATIONS_DIR` | no (`apps/server/drizzle`) | SQL migrations applied at start; the image copies the folder next to `dist/` or sets this |
 | `GIT_COMMIT`, `APP_VERSION` | no | reported by `/api/health`; set at image build (build arguments; `SOURCE_COMMIT` stands in for `GIT_COMMIT`) |
+| `CSP_REPORT_ONLY` | no (false) | `true` or `1` sends the Content Security Policy report-only: violations show in the browser console, nothing is blocked (section 8) |
+| `CSP_EXTRA_SOURCES` | no | origins added to the policy, such as `script-src https://stats.example.com; connect-src https://stats.example.com` (section 8) |
 | `POSTGRES_PASSWORD` | compose only | password of the bundled Postgres; letters and digits, since it goes into `DATABASE_URL` |
 | `REDIS_URL` | no | scale-out only (#39) |
 | `SENTRY_DSN`, `UMAMI_URL`, `UMAMI_WEBSITE_ID` | no | opt-in observability |
@@ -907,7 +979,9 @@ language, and an unknown code gets a generic one.
 |---|---|---|
 | Unit | Vitest | every `apply` rule, decks, statistics, projections, parsers |
 | Integration | Vitest + Postgres (CI service) | write path with version conflicts, migrations, auth, sockets |
-| End-to-end | Playwright, several browser contexts | full rounds; secrecy asserted on WebSocket frames; `four-person.spec.ts` (#23) plays W1 end to end on every PR |
+| End-to-end | Playwright, several browser contexts | the built app served by the real server with its production headers; every page fails its test on a CSP or Permissions-Policy violation or an uncaught error (`e2e/fixtures.ts`); full rounds; secrecy asserted on WebSocket frames; `four-person.spec.ts` (#23) plays W1 end to end on every PR |
+| Fuzzing | fast-check + Postgres | `fuzz.db.test.ts` (#36): random and malformed socket messages from the room's PO and a voter (wrong types, huge strings, deep objects, prototype keys, unknown commands and events, binary, extra arguments, oversized and undecodable frames); each gets an ack with `ok` or a known code other than `internal`, or is dropped; the stored room keeps `apply`'s invariants, honest people keep playing, no error is logged. 40 cases in CI, `FUZZ_RUNS` for more. Also a flood against the default limits and fuzzed HTTP bodies (never a 500) |
+| Dependencies | `pnpm audit` in CI | a high or critical advisory in a production dependency fails the `check` job; the rest is listed |
 | Visual | Playwright screenshots | table with 1–16 seats, both themes, 360 px to 1440 px |
 | Accessibility | axe in Playwright + manual screen reader passes | room, settings, history |
 

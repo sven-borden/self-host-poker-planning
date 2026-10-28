@@ -4,9 +4,10 @@
 //
 // Usage: node scripts/docker-smoke.mjs <base url> [expected commit]
 // Checks: /api/health answers ok with db ok (and the expected commit); / serves the web
-// app; the security headers (#36) are on every kind of answer; a WebSocket with the right Origin connects and `enter` gets an ack; a foreign
-// Origin is refused. When /api/auth exists (#10) it signs in anonymously first and sends
-// the session cookie with the WebSocket.
+// app; the security headers (#36) are on every kind of answer; a WebSocket with the right
+// Origin connects and `enter` gets an ack; a foreign Origin is refused. When /api/auth
+// exists (#10) it signs in anonymously first and sends the session cookie with the
+// WebSocket.
 
 const [baseArg, expectedCommit] = process.argv.slice(2);
 if (!baseArg) {
