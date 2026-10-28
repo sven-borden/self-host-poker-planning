@@ -271,7 +271,10 @@ export const fr: Catalog<"many"> = {
     revealed: "Cartes révélées",
     reveal: "Révéler les cartes",
     revealKey: "Touche R, quand le focus est sur la table ou sur vos cartes",
-    revealOwnerOnly: "Seul le product owner peut révéler maintenant.",
+    revealOwnerOnly:
+      "Cartes non révélées\u{202f}: seul le product owner peut désormais les révéler.",
+    revealWaits:
+      "Attendez deux cartes\u{202f}: dans un tour anonyme, une carte seule montre à qui elle appartient.",
     number: "Tour {{round, number}}",
     subjectLabel: "Sujet du prochain tour",
     subjectHint:
@@ -539,6 +542,8 @@ export const fr: Catalog<"many"> = {
       "Un nouveau tour a commencé avant l’arrivée de votre vote. Choisissez à nouveau votre carte.",
     not_voting: "Ce tour n’est pas ouvert au vote.",
     not_allowed: "Les réglages de cette salle ne vous permettent pas de faire cela.",
+    too_few_cards:
+      "Cartes non révélées\u{202f}: dans un tour anonyme, une carte seule montre à qui elle appartient. Attendez une deuxième carte.",
     not_revealed: "Retournez d’abord les cartes.",
     bad_seconds:
       "Cette durée de minuteur n’est pas autorisée : un minuteur dure de {{min, number}} secondes à {{max, number}} minutes. Choisissez-en une autre.",

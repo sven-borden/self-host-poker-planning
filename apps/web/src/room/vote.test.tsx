@@ -698,11 +698,13 @@ describe("the reveal (#19)", () => {
     await renderRoom(ownerRound());
     mocks.commandSender.mockImplementation(() => async () => ({ ok: false, code: "not_allowed" }));
     fireEvent.click(revealButton() as HTMLElement);
-    await screen.findByText("Only the product owner can reveal now.");
+    await screen.findByText("Not revealed: only the product owner can reveal the cards now.");
     mocks.commandSender.mockImplementation(() => async () => ({ ok: false, code: "not_voting" }));
     fireEvent.click(revealButton() as HTMLElement);
     await waitFor(() =>
-      expect(screen.queryByText("Only the product owner can reveal now.")).toBeNull(),
+      expect(
+        screen.queryByText("Not revealed: only the product owner can reveal the cards now."),
+      ).toBeNull(),
     );
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -928,7 +930,9 @@ describe("the reveal by anyone who votes (#28)", () => {
     revealButton()?.focus();
     fireEvent.click(revealButton() as HTMLElement);
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toBe("Only the product owner can reveal now.");
+    expect(alert.textContent).toBe(
+      "Not revealed: only the product owner can reveal the cards now.",
+    );
     expect(server.round?.phase).toBe("voting");
     show(server);
     expect(revealButton()).toBeNull();

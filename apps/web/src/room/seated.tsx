@@ -21,7 +21,7 @@ import { prefetchResults, ResultsPanel } from "./results-chunk.tsx";
 import { RevealedCards } from "./revealed-cards.tsx";
 import { centreFailureMessage, RoundCentre } from "./round-centre.tsx";
 import { RoundSubject } from "./round-subject.tsx";
-import { handView, tableData } from "./table-data.ts";
+import { handView, mayReveal, revealWaits, tableData } from "./table-data.ts";
 import { useVote } from "./use-vote.ts";
 import { YouControls } from "./you-controls.tsx";
 
@@ -83,7 +83,7 @@ const boxOf = (rect: DOMRect): Box => ({
  */
 export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedProps) {
   const t = useT();
-  const ids = { hint: useId() };
+  const ids = { hint: useId(), wait: useId() };
   const vote = useVote();
   const shown = withShownVote(room, shownCard(vote.state, confirmedOf(room)));
   const { people, observers, looks } = tableData(shown);
@@ -101,6 +101,8 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
     setSeen({ key: roundKey, liveReveal });
     setCentreFailure(null);
   }
+  // A voter's "Reveal cards" in an anonymous round waits for a second card (#28).
+  const waits = mayReveal(shown) && revealWaits(shown);
   const inRound = room.round !== null;
   useEffect(() => {
     // A reveal is in sight: load the results' module now, so the reveal draws it at once.
@@ -190,7 +192,13 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           hiddenSlot={flight?.kind === "play" ? me.id : null}
           actions={actions}
         >
-          <RoundCentre room={shown} onFailure={setCentreFailure} next={next} reveal={reveal} />
+          <RoundCentre
+            room={shown}
+            onFailure={setCentreFailure}
+            next={next}
+            reveal={reveal}
+            wait={waits ? ids.wait : null}
+          />
         </TableStage>
         <RevealedCards room={room} />
         {me.isOwner && room.round?.phase === "revealed" ? (
@@ -201,8 +209,14 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
             onFailure={setCentreFailure}
           />
         ) : null}
-        {/* Under the table and the PO's decision, above the results: where the PO acted. */}
-        {centreFailure !== null ? (
+        {waits ? (
+          <p id={ids.wait} data-reveal-wait className="m-0 mt-3 text-center text-sm text-ink-2">
+            {t("round.revealWaits")}
+          </p>
+        ) : null}
+        {/* Under the table and the PO's decision, above the results: where the PO acted. A
+            refusal for too few cards would repeat the line above while it shows. */}
+        {centreFailure !== null && !(waits && centreFailure === "too_few_cards") ? (
           <p role="alert" className="mt-3 flex items-start justify-center gap-2 text-sm">
             <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
             {centreFailureMessage(t, centreFailure)}

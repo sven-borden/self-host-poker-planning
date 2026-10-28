@@ -619,7 +619,14 @@ function refusalMessage(t: TFunction, field: SettingField, code: string): string
 function FieldRow({ field, room, settings, editable, pending, failure, change }: FieldRowProps) {
   const t = useT();
   const format = useFormat();
-  const ids = { control: useId(), label: useId(), hint: useId(), lock: useId(), error: useId() };
+  const ids = {
+    control: useId(),
+    label: useId(),
+    hint: useId(),
+    detail: useId(),
+    lock: useId(),
+    error: useId(),
+  };
   const alert = useRef<HTMLParagraphElement>(null);
   const label = field.label(t);
   const detail = field.detail?.(t, settings, room) ?? null;
@@ -639,7 +646,14 @@ function FieldRow({ field, room, settings, editable, pending, failure, change }:
     pending,
     id: ids.control,
     labelId: ids.label,
-    describedBy: [ids.hint, lock !== null && ids.lock, message !== null && ids.error]
+    // The detail line too, while it shows: "Everyone has voted: turning this on reveals
+    // the cards." must reach a screen reader on the switch, not only the eye.
+    describedBy: [
+      ids.hint,
+      detail !== null && ids.detail,
+      lock !== null && ids.lock,
+      message !== null && ids.error,
+    ]
       .filter(Boolean)
       .join(" "),
   };
@@ -710,7 +724,7 @@ function FieldRow({ field, room, settings, editable, pending, failure, change }:
           {field.hint(t)}
         </p>
         {detail !== null ? (
-          <p data-setting-detail className="m-0 mt-1 text-ink">
+          <p id={ids.detail} data-setting-detail className="m-0 mt-1 text-ink">
             {detail}
           </p>
         ) : null}

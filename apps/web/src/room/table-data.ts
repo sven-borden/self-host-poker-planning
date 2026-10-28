@@ -1,4 +1,4 @@
-import { deckCards } from "@pp/domain";
+import { deckCards, MIN_ANONYMOUS_REVEAL_CARDS } from "@pp/domain";
 import type { ParticipantView, RoomView } from "@pp/protocol";
 import { type AvatarLook, avatarLooks } from "../table/avatar.tsx";
 import type { PersonFlags, SeatStatus, TablePerson } from "../table/seat.tsx";
@@ -132,6 +132,21 @@ export function mayReveal(room: RoomView): boolean {
   if (room.you === room.ownerId) return true;
   const you = room.participants.find((p) => p.id === room.you);
   return room.settings.whoCanReveal === "anyone" && you !== undefined && canVote(you, room);
+}
+
+/**
+ * Whether the viewer's reveal waits for a second card (#28): anyone but the PO, in an
+ * anonymous round with fewer than two cards down, since a lone card would show whose it
+ * is. The domain refuses such a reveal (`too_few_cards`); the PO's goes through.
+ */
+export function revealWaits(room: RoomView): boolean {
+  const round = room.round;
+  return (
+    room.you !== room.ownerId &&
+    round?.phase === "voting" &&
+    round.anonymous &&
+    round.voted.length < MIN_ANONYMOUS_REVEAL_CARDS
+  );
 }
 
 /**

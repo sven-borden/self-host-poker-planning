@@ -227,7 +227,10 @@ server sends and never decides the outcome of a round.
   hand-off is `focusAfterVoterReveal` (the result in the centre, `[data-centre-status]`
   with `tabIndex={-1}`, else the voting count when the PO took the reveal back), and the
   centre fallback hands a focus on it to the loaded result. `centreFailureMessage` words
-  a voter's `not_allowed` as `round.revealOwnerOnly`. The live region names a voter who
+  a voter's `not_allowed` as `round.revealOwnerOnly`. In an anonymous round a voter's
+  reveal waits for two cards (`revealWaits`, the domain's `too_few_cards`): `seated.tsx`
+  shows `round.revealWaits` under the table and passes its id as `wait`, which makes
+  the button `aria-disabled`, described by that line, and drops a press or R. The live region names a voter who
   revealed (`live.revealedBy`, from the `revealed` cause's `who`; not the PO, not the
   viewer). The page treats the forced, automatic and timer reveals alike: they
   are one revealed snapshot. `seatStatus` gives `revealed {card}` after a named reveal

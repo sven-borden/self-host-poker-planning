@@ -106,8 +106,12 @@ Positions are percentages of the stage, so one formula serves every width:
   the result in the centre, without scrolling: voters have no decision bar. When the PO
   takes the reveal back mid-round the voter's button leaves with the next snapshot, and a
   focus on it goes to the count, never to the page; a press that crossed the change says
-  "Only the product owner can reveal now." under the table. The table's live region names
-  a voter who revealed ("Ben revealed the cards. Consensus on 8."); the PO's reveal and
+  "Not revealed: only the product owner can reveal the cards now." under the table. In an
+  anonymous round a voter's button waits for two cards (PO decision, #28 review): until
+  then it stays in place, `aria-disabled` (R does nothing either), and the line under the
+  table says why, "Wait for two cards: in an anonymous round, a lone card shows whose it
+  is.", which also describes the button. The PO's button never waits. The table's live
+  region names a voter who revealed ("Ben revealed the cards. Consensus on 8."); the PO's reveal and
   the automatic ones keep "Cards revealed.". After the reveal the PO's focus moves to "Record 8", the
   final estimate's button under the table (#32), when it was on the button (or nowhere),
   without scrolling the page; to the picker when nothing is preselected. A named reveal turns the seats' cards face up; the
@@ -403,6 +407,11 @@ As built (#25):
   Switching anonymity never re-projects the round on the table (PO decision, #28): names
   already seen cannot be hidden, and an anonymous round must never gain names, so the
   change applies from the next round.
+  Anonymity hides who played which card, not who played (ADR-011, amended): the seats say
+  who voted, so one card, or cards that all agree, still tell whose they are. A voter may
+  therefore reveal an anonymous round only once two cards are down; the PO, who
+  facilitates, may reveal at any count, and the timer and the automatic reveal are
+  unchanged.
 
 - **The deck field (#26).** Across the row under the deck's explanation, for the PO:
   first a line saying when new cards apply ("New cards apply from round 4." in the lobby

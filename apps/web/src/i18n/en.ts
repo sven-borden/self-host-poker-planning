@@ -26,6 +26,8 @@ const errors = {
   round_changed: "A new round started before your vote arrived. Pick your card again.",
   not_voting: "This round is not open for votes.",
   not_allowed: "This room’s settings do not let you do that.",
+  too_few_cards:
+    "Not revealed: in an anonymous round, a lone card shows whose it is. Wait for a second card.",
   not_revealed: "Reveal the cards first.",
   bad_seconds:
     "A timer runs from {{min, number}} seconds to {{max, number}} minutes. Pick another length.",
@@ -308,7 +310,8 @@ export const en = {
     revealed: "Cards revealed",
     reveal: "Reveal cards",
     revealKey: "Key R, while the focus is on the table or your cards",
-    revealOwnerOnly: "Only the product owner can reveal now.",
+    revealOwnerOnly: "Not revealed: only the product owner can reveal the cards now.",
+    revealWaits: "Wait for two cards: in an anonymous round, a lone card shows whose it is.",
     number: "Round {{round, number}}",
     subjectLabel: "Subject of the next round",
     subjectHint:

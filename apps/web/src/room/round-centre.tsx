@@ -26,6 +26,11 @@ interface RoundCentreProps {
   next: NextRound;
   /** How the results arrive after a reveal (#20): live, and when the cards are settled. */
   reveal?: RevealMotion;
+  /**
+   * The id of the line under the table that says why a voter's reveal waits (#28: an
+   * anonymous round with fewer than two cards down), or null when it does not wait.
+   */
+  wait?: string | null;
 }
 
 /** The PO's buttons in the centre, drawn as a card face (warm face, card ink, 44 px tall). */
@@ -48,12 +53,13 @@ export function RoundCentre({
   onFailure,
   next,
   reveal = { live: false, settle: 0 },
+  wait = null,
 }: RoundCentreProps) {
   const t = useT();
   const round = room.round;
   const owner = room.you !== null && room.you === room.ownerId;
   if (round?.phase === "voting") {
-    return <VotingCentre room={room} owner={owner} onFailure={onFailure} />;
+    return <VotingCentre room={room} owner={owner} onFailure={onFailure} wait={wait} />;
   }
   if (round === null) {
     return owner ? (
@@ -90,10 +96,12 @@ function VotingCentre({
   room,
   owner,
   onFailure,
+  wait,
 }: {
   room: RoomView;
   owner: boolean;
   onFailure: (code: string | null) => void;
+  wait: string | null;
 }) {
   const t = useT();
   const countdown = useCountdown(room.round);
@@ -128,7 +136,7 @@ function VotingCentre({
         <TimerChip countdown={countdown} />
       )}
       {status}
-      <RevealButton owner={owner} onFailure={onFailure} />
+      <RevealButton owner={owner} onFailure={onFailure} wait={wait} />
     </div>
   );
 }
@@ -187,14 +195,18 @@ export function isRevealKey(event: KeyboardEvent): boolean {
  * button leaves while it has the focus (pressed, the last vote revealed the round, or the
  * PO took the reveal back), the focus goes to the PO's decision under the table
  * (`focusAfterReveal`), or for a voter to the result in the centre, else the count
- * (`focusAfterVoterReveal`).
+ * (`focusAfterVoterReveal`). A voter's button in an anonymous round waits for a second
+ * card (`wait`, #28): it stays in place, `aria-disabled` and described by the line under
+ * the table that says why, and a press or R does nothing.
  */
 function RevealButton({
   owner,
   onFailure,
+  wait,
 }: {
   owner: boolean;
   onFailure: (code: string | null) => void;
+  wait: string | null;
 }) {
   const t = useT();
   const [busy, setBusy] = useState(false);
@@ -202,10 +214,12 @@ function RevealButton({
   const button = useRef<HTMLButtonElement>(null);
   const focusAfter = useRef(focusAfterReveal);
   focusAfter.current = owner ? focusAfterReveal : focusAfterVoterReveal;
+  const waiting = useRef(wait !== null);
+  waiting.current = wait !== null;
 
   const reveal = useCallback(async () => {
-    // Focusable while busy (aria-disabled), so a second press lands here and is dropped.
-    if (pending.current) return;
+    // Focusable while busy or waiting (aria-disabled), so a press lands here and is dropped.
+    if (pending.current || waiting.current) return;
     pending.current = true;
     setBusy(true);
     onFailure(null);
@@ -245,7 +259,8 @@ function RevealButton({
       variant="outline"
       aria-keyshortcuts="R"
       title={t("round.revealKey")}
-      aria-disabled={busy || undefined}
+      aria-disabled={busy || wait !== null || undefined}
+      aria-describedby={wait ?? undefined}
       onClick={() => void reveal()}
       className={CENTRE_BUTTON}
     >

@@ -11,6 +11,7 @@ import {
   type RoomSettings,
   type RoomState,
   type Round,
+  type Vote,
 } from "./room.ts";
 
 const T0 = 1_700_000_000_000;
@@ -856,7 +857,8 @@ describe("rounds", () => {
 
   it("refuses a voter's reveal of an anonymous round before two cards are down: one would tell whose it is (#28)", () => {
     const anyone = { whoCanReveal: "anyone", revealNames: false } as const;
-    for (const votes of [{}, { [A]: { card: "3" } }, { [B]: { card: "8" } }]) {
+    const lone: Record<string, Vote>[] = [{}, { [A]: { card: "3" } }, { [B]: { card: "8" } }];
+    for (const votes of lone) {
       const before = room({ settings: anyone, round: voting({ anonymous: true, votes }) });
       const result = send(before, { type: "reveal" }, B);
       expect(result).toMatchObject({ ok: false, error: "too_few_cards", causes: [] });

@@ -219,7 +219,9 @@ describe("who revealed (#28)", () => {
   });
 
   it("names the voter in an anonymous round too: the name ties nobody to a card", () => {
-    const { run, voting } = anyoneRoom("me", { revealNames: false });
+    const { run } = anyoneRoom("me", { revealNames: false });
+    // A second card: a voter reveals an anonymous round only once two are down.
+    const voting = run("ben", { type: "castVote", card: "13" });
     const revealed = run("ben", { type: "reveal" });
     expect(revealed.room.round?.anonymous).toBe(true);
     expect(said(liveEvents(revealed.room, revealed.causes, voting.room))).toBe(

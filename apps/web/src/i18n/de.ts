@@ -158,7 +158,8 @@ export const de: Catalog = {
       "Die Ergebnisse zeigen die Karten ohne Namen. Eine Änderung gilt ab der nächsten Runde.",
     roundStaysNamed: "Diese Runde zeigt noch Namen.",
     roundStaysAnonymous: "Diese Runde bleibt anonym.",
-    revealWhenAllVotedNow: "Alle haben abgestimmt: Einschalten deckt die Karten auf.",
+    revealWhenAllVotedNow:
+      "Alle haben abgestimmt: Wenn Sie das einschalten, werden die Karten sofort aufgedeckt.",
     revealWhenAllVoted: "Aufdecken, wenn alle abgestimmt haben",
     revealWhenAllVotedHint:
       "Die Karten werden von selbst aufgedeckt, sobald alle Anwesenden abgestimmt haben.",
@@ -264,7 +265,9 @@ export const de: Catalog = {
     revealed: "Karten aufgedeckt",
     reveal: "Karten aufdecken",
     revealKey: "Taste R, solange der Fokus auf dem Tisch oder Ihren Karten liegt",
-    revealOwnerOnly: "Nur der Product Owner kann jetzt aufdecken.",
+    revealOwnerOnly: "Nicht aufgedeckt: Nur der Product Owner kann die Karten jetzt aufdecken.",
+    revealWaits:
+      "Warten Sie auf zwei Karten: In einer anonymen Runde zeigt eine einzelne Karte, von wem sie ist.",
     number: "Runde {{round, number}}",
     subjectLabel: "Thema der nächsten Runde",
     subjectHint:
@@ -526,6 +529,8 @@ export const de: Catalog = {
       "Eine neue Runde hat begonnen, bevor Ihre Stimme ankam. Wählen Sie Ihre Karte erneut.",
     not_voting: "In dieser Runde kann gerade nicht abgestimmt werden.",
     not_allowed: "Die Einstellungen dieses Raums erlauben das nicht.",
+    too_few_cards:
+      "Nicht aufgedeckt: In einer anonymen Runde zeigt eine einzelne Karte, von wem sie ist. Warten Sie auf eine zweite Karte.",
     not_revealed: "Decken Sie zuerst die Karten auf.",
     bad_seconds:
       "Ein Zeitlimit dauert {{min, number}} Sekunden bis {{max, number}} Minuten. Wählen Sie eine andere Dauer.",
