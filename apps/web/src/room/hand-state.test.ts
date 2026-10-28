@@ -2,6 +2,7 @@ import { apply, type Command, createRoom, type Participant, type RoomState } fro
 import { type RoomView, toSnapshot } from "@pp/protocol";
 import { describe, expect, it } from "vitest";
 import {
+  afterReveal,
   answered,
   type Confirmed,
   confirmedOf,
@@ -59,11 +60,14 @@ function serve(
 }
 
 describe("roundKey and confirmedOf", () => {
-  it("keys a voting round by number and start, and nothing else", () => {
+  it("keys a round by number, start and phase, and nothing else", () => {
     expect(roundKey(view(lobby))).toBeNull();
     expect(roundKey(view(voting))).toBe("1:10");
     const revealed = run(voting, "po", { type: "reveal" });
-    expect(roundKey(view(revealed))).toBeNull();
+    // A wish made while Voting never carries over the reveal (#29).
+    expect(roundKey(view(revealed))).toBe("1:10:revealed");
+    expect(afterReveal("1:10:revealed")).toBe(true);
+    expect(afterReveal("1:10")).toBe(false);
     // A restart (new deck) keeps the number, not the start.
     const restarted = run(voting, "po", { type: "updateSettings", patch: { specials: [] } }, 30);
     expect(roundKey(view(restarted))).toBe("1:30");
@@ -76,8 +80,8 @@ describe("roundKey and confirmedOf", () => {
     });
   });
 
-  it("reads the viewer's card in the voting round only", () => {
-    const none = { card: null, round: null, number: null, restart: null };
+  it("reads the viewer's card in the round, revealed too", () => {
+    const none = { card: null, round: null, number: null, restart: null, revealed: false };
     expect(confirmedOf(undefined)).toEqual(none);
     expect(confirmedOf(view(lobby))).toEqual(none);
     expect(confirmedOf(view(voting))).toEqual({
@@ -85,12 +89,24 @@ describe("roundKey and confirmedOf", () => {
       round: "1:10",
       number: 1,
       restart: 0,
+      revealed: false,
     });
     const voted = run(voting, ME, { type: "castVote", card: "5" });
-    expect(confirmedOf(view(voted))).toEqual({ card: "5", round: "1:10", number: 1, restart: 0 });
-    // Ana's vote does not reveal (the PO has not voted): the viewer's card stays theirs.
+    expect(confirmedOf(view(voted))).toEqual({
+      card: "5",
+      round: "1:10",
+      number: 1,
+      restart: 0,
+      revealed: false,
+    });
     const revealed = run(voted, "po", { type: "reveal" });
-    expect(confirmedOf(view(revealed))).toEqual(none);
+    expect(confirmedOf(view(revealed))).toEqual({
+      card: "5",
+      round: "1:10:revealed",
+      number: 1,
+      restart: 0,
+      revealed: true,
+    });
   });
 });
 
@@ -207,9 +223,67 @@ describe("the hand's state machine", () => {
     });
   });
 
-  it("ignores presses outside Voting", () => {
-    const outside: Confirmed = { card: null, round: null, number: null, restart: null };
+  it("ignores presses in the lobby", () => {
+    const outside: Confirmed = {
+      card: null,
+      round: null,
+      number: null,
+      restart: null,
+      revealed: false,
+    };
     expect(press(SETTLED, "5", outside)).toBe(SETTLED);
+  });
+});
+
+describe("a change after the reveal (#29)", () => {
+  const allowed = run(lobby, "po", {
+    type: "updateSettings",
+    patch: { allowChangeAfterReveal: true },
+  });
+  const started = run(allowed, "po", { type: "startRound", subject: { kind: "none" } });
+  const revealed = run(run(started, ME, { type: "castVote", card: "5" }), "po", {
+    type: "reveal",
+  });
+  const confirmed = confirmedOf(view(revealed));
+
+  it("changes the vote with one castVote, which the server takes", () => {
+    const step = nextStep(press(SETTLED, "8", confirmed), confirmed);
+    expect(shownCard(step.state, confirmed)).toBe("8");
+    expect(step.command).toEqual({
+      type: "castVote",
+      payload: { card: "8", round: 1, restart: 0 },
+    });
+    const server = serve(revealed, step.command ?? { type: "none" });
+    expect(server.ok).toBe(true);
+    expect(server.state.round?.votes[ME]).toEqual({ card: "8", changedAfterReveal: true });
+    const now = confirmedOf(view(server.state));
+    expect(now.card).toBe("8");
+    expect(nextStep(answered(step.state, true), now)).toEqual({ state: SETTLED, command: null });
+  });
+
+  it("never takes the vote back: pressing the card shown again does nothing", () => {
+    expect(press(SETTLED, "5", confirmed)).toBe(SETTLED);
+    const changing = press(SETTLED, "8", confirmed);
+    expect(press(changing, "8", confirmed)).toBe(changing);
+    // The server would refuse a take-back anyway.
+    expect(serve(revealed, { type: "retractVote", payload: { round: 1 } }).ok).toBe(false);
+  });
+
+  it("drops a pick made while Voting once the round is revealed", () => {
+    const before = confirmedOf(view(started));
+    const pending = press(SETTLED, "3", before);
+    expect(shownCard(pending, confirmed)).toBe("5");
+    expect(nextStep(pending, confirmed)).toEqual({ state: SETTLED, command: null });
+  });
+
+  it("rolls back when the room no longer allows it", () => {
+    const off = run(revealed, "po", {
+      type: "updateSettings",
+      patch: { allowChangeAfterReveal: false },
+    });
+    const step = nextStep(press(SETTLED, "8", confirmed), confirmed);
+    expect(serve(off, step.command ?? { type: "none" }).ok).toBe(false);
+    expect(shownCard(answered(step.state, false), confirmed)).toBe("5");
   });
 });
 

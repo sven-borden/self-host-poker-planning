@@ -15,15 +15,23 @@ export const PHONE_QUERY = "(max-width: 640px)";
 /** What must stay in sight above the docked bar: the result in the table's centre. */
 const KEPT_CLEAR = "[data-room-table] [data-centre] [data-centre-status='revealed']";
 
+/** Rows of the desktop bar that are for screen readers only while it is docked. */
+const SR_ONLY_DOCKED = "[data-decision-hint], [data-decision-note='bar']";
+
 /**
  * The docking part's height once docked. On a desktop the bar's hint ("Pick the final
- * estimate…") is for screen readers only while docked, so in the page its row is taken off.
+ * estimate…") and its note ("Votes changed since you recorded 5.", #29) are for screen
+ * readers only while docked, so in the page their rows are taken off. On a phone the
+ * action row docks with its own copy of the note, which counts.
  */
 function dockHeight(part: HTMLElement, docked: boolean): number {
-  const hint = part.querySelector<HTMLElement>("[data-decision-hint]");
-  if (docked || hint === null || !part.contains(hint)) return part.offsetHeight;
+  if (docked) return part.offsetHeight;
   const gap = Number.parseFloat(getComputedStyle(part).rowGap) || 0;
-  return part.offsetHeight - hint.offsetHeight - gap;
+  let height = part.offsetHeight;
+  for (const row of part.querySelectorAll<HTMLElement>(SR_ONLY_DOCKED)) {
+    if (row.offsetHeight > 0) height -= row.offsetHeight + gap;
+  }
+  return height;
 }
 
 /** The lowest edge of the result in the table's centre, from the page's top. */

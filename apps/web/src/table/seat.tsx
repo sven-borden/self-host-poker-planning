@@ -24,9 +24,15 @@ export type SeatStatus =
   | { kind: "voted"; dealt?: boolean }
   /**
    * After reveal: the card played, or null when the person did not vote; `extreme` marks
-   * the lowest and highest cards of a named round, to start the discussion (#20).
+   * the lowest and highest cards of a named round, to start the discussion (#20);
+   * `changed`, a card changed after the reveal (#29).
    */
-  | { kind: "revealed"; card: string | null; extreme?: Extreme | undefined };
+  | {
+      kind: "revealed";
+      card: string | null;
+      extreme?: Extreme | undefined;
+      changed?: boolean | undefined;
+    };
 
 /** Who someone is at the table, beside their state in the round (#17). */
 export interface PersonFlags {
@@ -102,8 +108,8 @@ export function nameWithFlags(t: TFunction, person: { name: string } & PersonFla
 }
 
 /**
- * "Ana, voted", "Ben, product owner, away, thinking", "Cleo, card 5", or the name and its
- * flags alone in the lobby.
+ * "Ana, voted", "Ben, product owner, away, thinking", "Cleo, card 5", "Dan, card 8, highest
+ * card, changed after the reveal", or the name and its flags alone in the lobby.
  */
 export function seatLabel(t: TFunction, person: TablePerson): string {
   const name = nameWithFlags(t, person);
@@ -124,6 +130,7 @@ export function seatLabel(t: TFunction, person: TablePerson): string {
           ? t("table.seatCardWord", { name, card: cardLabel(t, status.card) })
           : t("table.seatCard", { name, card: status.card }),
         ...(status.extreme ? [extremeWord(t, status.extreme)] : []),
+        ...(status.changed ? [t("table.changed")] : []),
       ].join(", ");
   }
 }
@@ -289,7 +296,10 @@ function SeatAvatar({ person, size, badge, settle }: SeatAvatarProps) {
   );
 }
 
-/** "Product owner · Away · Voted": what the badges and the slot say, in words. */
+/**
+ * "Product owner · Away · Voted": what the badges and the slot say, in words, with
+ * "Changed after the reveal" for a card changed then (#29).
+ */
 function seatState(t: TFunction, person: TablePerson): string {
   return [
     person.owner ? t("table.ownerTag") : null,
@@ -298,6 +308,7 @@ function seatState(t: TFunction, person: TablePerson): string {
     person.status.kind === "revealed" && person.status.extreme
       ? t(person.status.extreme === "low" ? "table.lowestTag" : "table.highestTag")
       : null,
+    person.status.kind === "revealed" && person.status.changed ? t("table.changedTag") : null,
   ]
     .filter((part) => part !== null)
     .join(" · ");

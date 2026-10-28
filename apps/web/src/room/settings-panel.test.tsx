@@ -126,7 +126,7 @@ describe("the settings panel", () => {
     const dialog = await openPanel("Room settings");
     const checked = (name: string) =>
       within(dialog).getByRole("switch", { name }).getAttribute("aria-checked") === "true";
-    expect(within(dialog).getAllByRole("switch")).toHaveLength(8);
+    expect(within(dialog).getAllByRole("switch")).toHaveLength(9);
     expect(checked("Not sure")).toBe(true);
     expect(checked("Need a break")).toBe(true);
     expect(checked("Too big to estimate")).toBe(false);
@@ -134,7 +134,7 @@ describe("the settings panel", () => {
     expect(checked("Anonymous voting")).toBe(!DEFAULT_SETTINGS.revealNames);
     expect(checked("The product owner votes too")).toBe(DEFAULT_SETTINGS.poVotes);
     expect(checked("Observers take one of the 16 places")).toBe(DEFAULT_SETTINGS.observersCount);
-    // The deck is a radio group (#26), the timer too (#27); the others are read until their issue adds a control.
+    // The deck is a radio group (#26), the timer too (#27).
     const deck = within(dialog).getByRole("radiogroup", { name: "Deck" });
     expect(within(deck).getByRole("radio", { name: "Fibonacci" })).toHaveProperty("checked", true);
     // The timer (#27): no timer, and the cards turn over when one ends.
@@ -150,12 +150,68 @@ describe("the settings panel", () => {
       true,
     );
     expect(row(dialog, "whoCanReveal").getAttribute("data-layout")).toBe("block");
-    expect(shownValue(dialog, "allowChangeAfterReveal")).toBe("Not allowed");
+    // Changes after the reveal (#29): off, a switch at the row's end.
+    expect(checked("Change a vote after the reveal")).toBe(DEFAULT_SETTINGS.allowChangeAfterReveal);
     const anonymous = within(dialog).getByRole("switch", { name: "Anonymous voting" });
     expect(anonymous.getAttribute("aria-describedby")).toBeTruthy();
     expect(
       document.getElementById(anonymous.getAttribute("aria-describedby") ?? "")?.textContent,
     ).toBe("The results show the cards without names. A change applies from the next round.");
+  });
+
+  it("lets the PO allow changes after the reveal, at once; while anonymity is on, only turning them off (#29)", async () => {
+    mocks.sendCommand.mockResolvedValue({ ok: true, version: 2 });
+    render(<RoomSettingsButton />);
+    show(newRoom(), PO);
+    const dialog = await openPanel("Room settings");
+    const change = within(dialog).getByRole("switch", { name: "Change a vote after the reveal" });
+    expect(change.getAttribute("aria-disabled")).toBeNull();
+    expect(row(dialog, "allowChangeAfterReveal").querySelector("[data-setting-locked]")).toBeNull();
+    fireEvent.click(change);
+    expect(mocks.sendCommand).toHaveBeenCalledWith({
+      type: "updateSettings",
+      payload: { patch: { allowChangeAfterReveal: true } },
+    });
+    show({ ...newRoom(), settings: { ...DEFAULT_SETTINGS, allowChangeAfterReveal: true } }, PO);
+    await waitFor(() => expect(change.getAttribute("aria-checked")).toBe("true"));
+
+    // Anonymity on: the switch keeps its position, says why it cannot move, sends nothing.
+    show({ ...newRoom(), settings: { ...DEFAULT_SETTINGS, revealNames: false } }, PO);
+    const locked = row(dialog, "allowChangeAfterReveal").querySelector("[data-setting-locked]");
+    expect(locked?.textContent).toBe("Anonymous rounds lock their votes at the reveal.");
+    expect(change.getAttribute("aria-disabled")).toBe("true");
+    expect((change.getAttribute("aria-describedby") ?? "").split(" ")).toContain(locked?.id);
+    const sent = mocks.sendCommand.mock.calls.length;
+    fireEvent.click(change);
+    expect(mocks.sendCommand).toHaveBeenCalledTimes(sent);
+
+    // The lock holds one way only: with changes on when anonymity comes on (a named round
+    // still on the table), the PO can still turn them off.
+    show(
+      {
+        ...newRoom(),
+        settings: { ...DEFAULT_SETTINGS, revealNames: false, allowChangeAfterReveal: true },
+      },
+      PO,
+    );
+    await waitFor(() => expect(change.getAttribute("aria-checked")).toBe("true"));
+    expect(change.getAttribute("aria-disabled")).toBeNull();
+    expect(row(dialog, "allowChangeAfterReveal").querySelector("[data-setting-locked]")).toBeNull();
+    fireEvent.click(change);
+    expect(mocks.sendCommand).toHaveBeenLastCalledWith({
+      type: "updateSettings",
+      payload: { patch: { allowChangeAfterReveal: false } },
+    });
+    // Once off, it locks again.
+    show({ ...newRoom(), settings: { ...DEFAULT_SETTINGS, revealNames: false } }, PO);
+    await waitFor(() => expect(change.getAttribute("aria-disabled")).toBe("true"));
+    // Everyone else reads the value and the explanation, never the lock.
+    cleanup();
+    render(<RoomSettingsButton />);
+    show({ ...newRoom(), settings: { ...DEFAULT_SETTINGS, revealNames: false } }, ANA);
+    const rules = await openPanel("Room rules");
+    expect(shownValue(rules, "allowChangeAfterReveal")).toBe("Not allowed");
+    expect(row(rules, "allowChangeAfterReveal").querySelector("[data-setting-locked]")).toBeNull();
   });
 
   it("sends only the changed key, shows it pending until the snapshot confirms it", async () => {
@@ -548,7 +604,7 @@ describe("the settings panel", () => {
     render(<RoomSettingsButton />);
     show(newRoom(), PO);
     const dialog = await openPanel("Room settings");
-    expect(within(dialog).getAllByRole("switch")).toHaveLength(8);
+    expect(within(dialog).getAllByRole("switch")).toHaveLength(9);
     show({ ...state, ownerId: ANA }, PO);
     expect(within(dialog).queryAllByRole("switch")).toEqual([]);
     expect(within(dialog).queryAllByRole("radio")).toEqual([]);

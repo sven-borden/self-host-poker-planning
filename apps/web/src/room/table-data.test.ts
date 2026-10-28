@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { fixedT } from "../i18n/i18n.ts";
 import { nameWithFlags } from "../table/seat.tsx";
 import { isRoomFull } from "./room-full.ts";
-import { handView, namesakes, tableData, voteCount } from "./table-data.ts";
+import { handView, mayChange, namesakes, tableData, voteCount } from "./table-data.ts";
 
 function roomWith(
   people: Array<[string, Participant["role"]]>,
@@ -308,5 +308,72 @@ describe("the round's centre and the hand (#18)", () => {
       playable: false,
       reason: "revealed",
     });
+  });
+
+  it("keeps the hand playable after a named reveal while the room allows changes (#29)", () => {
+    const allow = (s: RoomState, on = true): RoomState => ({
+      ...s,
+      settings: { ...s.settings, allowChangeAfterReveal: on },
+    });
+    const voted = step(allow(voting), "u1", { type: "castVote", card: "5" });
+    const revealed = step(voted, "u0", { type: "reveal" });
+    const voter = me(revealed, "u1");
+    expect(handView(voter.room, voter.person)).toEqual({
+      kind: "cards",
+      cards: ["0", "1", "2", "3", "5", "8", "13", "21", "?", "☕"],
+      playable: true,
+      reason: "change",
+    });
+    expect(mayChange(voter.room)).toBe(true);
+    // Someone who had not voted keeps a disabled hand: a change, never a first card. An
+    // observer has no hand.
+    expect(handView(me(revealed, "u2").room, me(revealed, "u2").person)).toMatchObject({
+      playable: false,
+      reason: "revealed",
+    });
+    expect(mayChange(me(revealed, "u2").room)).toBe(false);
+    expect(handView(me(revealed, "u3").room, me(revealed, "u3").person)).toEqual({
+      kind: "none",
+    });
+    // Turned off, it stops at once.
+    const off = me(allow(revealed, false), "u1");
+    expect(handView(off.room, off.person)).toMatchObject({ playable: false, reason: "revealed" });
+    expect(mayChange(off.room)).toBe(false);
+    // An anonymous round locks its votes at the reveal, whatever the setting says now.
+    const anonymous = step(
+      step(allow(base), "u0", { type: "updateSettings", patch: { revealNames: false } }),
+      "u0",
+      { type: "startRound", subject: { kind: "none" } },
+    );
+    const hidden = step(anonymous, "u0", { type: "reveal" });
+    for (const settings of [{}, { revealNames: true }]) {
+      const viewer = me({ ...hidden, settings: { ...hidden.settings, ...settings } }, "u1");
+      expect(handView(viewer.room, viewer.person)).toMatchObject({
+        playable: false,
+        reason: "revealed",
+      });
+      expect(mayChange(viewer.room)).toBe(false);
+    }
+    expect(mayChange(me(allow(voting), "u1").room)).toBe(false);
+  });
+
+  it("marks a card changed after the reveal on its seat, for everyone (#29)", () => {
+    const allowed = { ...voting, settings: { ...voting.settings, allowChangeAfterReveal: true } };
+    let s = step(allowed, "u1", { type: "castVote", card: "5" });
+    s = step(s, "u2", { type: "castVote", card: "8" });
+    s = step(s, "u0", { type: "castVote", card: "5" });
+    expect(s.round?.phase).toBe("revealed");
+    s = step(s, "u2", { type: "castVote", card: "3" });
+    const status = (viewer: string, id: string) =>
+      tableData(view(s, viewer)).people.find((p) => p.id === id)?.status;
+    for (const viewer of ["u0", "u1", "u2", "u3"]) {
+      expect(status(viewer, "u2")).toEqual({
+        kind: "revealed",
+        card: "3",
+        extreme: "low",
+        changed: true,
+      });
+      expect(status(viewer, "u1")).toEqual({ kind: "revealed", card: "5", extreme: "high" });
+    }
   });
 });

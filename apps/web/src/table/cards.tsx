@@ -287,12 +287,14 @@ function Cover({ radius, cover }: { radius: number; cover: RefObject<HTMLDivElem
  * the others. One seen face down that is `gone` (an anonymous reveal) shrinks and fades.
  * Both keep their back mounted over the slot for that (`Cover`, hidden at rest). A card
  * that is already up or gone when it mounts (a late joiner, a reload) shows at rest, with
- * no motion. A new face cancels the motion.
+ * no motion. A new face cancels the motion. A face-up card whose value changes (a vote
+ * changed after the reveal, #29) turns over once more, at once, to its new value; under
+ * reduced motion the new value simply replaces the old.
  */
 export function SlotCard({ face, value, size, turnDelay = 0, className }: SlotCardProps) {
   const root = useRef<HTMLDivElement>(null);
   const cover = useRef<HTMLDivElement>(null);
-  const before = useRef(face);
+  const before = useRef({ face, value });
   const delay = useRef(turnDelay);
   delay.current = turnDelay;
   const radius = size.width >= 27 ? 5 : 4;
@@ -301,11 +303,18 @@ export function SlotCard({ face, value, size, turnDelay = 0, className }: SlotCa
 
   useLayoutEffect(() => {
     const was = before.current;
-    before.current = shown;
-    const turns = shown === "up" && (was === "down" || was === "empty");
-    const fades = shown === "gone" && was === "down";
-    if (!turns && !fades) return;
+    before.current = { face: shown, value };
+    const changes = shown === "up" && was.face === "up" && was.value !== value;
+    const turns = shown === "up" && (was.face === "down" || was.face === "empty");
+    const fades = shown === "gone" && was.face === "down";
+    if (!turns && !fades && !changes) return;
     const reduced = prefersReducedMotion();
+    if (changes) {
+      if (reduced) return;
+      const turn = turnUp(0, false, size.width * 6);
+      const animations = [play(root.current, turn.face), play(cover.current, turn.cover)];
+      return () => cancelAll(animations);
+    }
     if (fades) {
       const fading = play(cover.current, fadeAway(reduced));
       return () => cancelAll([fading]);
@@ -313,7 +322,7 @@ export function SlotCard({ face, value, size, turnDelay = 0, className }: SlotCa
     const turn = turnUp(delay.current, reduced, size.width * 6);
     const animations = [play(root.current, turn.face), play(cover.current, turn.cover)];
     return () => cancelAll(animations);
-  }, [shown, size.width]);
+  }, [shown, value, size.width]);
 
   if (shown === "empty" || shown === "gone") {
     // Dashed in forced colours, where the filled back of a played card reads solid.

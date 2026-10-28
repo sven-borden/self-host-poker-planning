@@ -218,6 +218,7 @@ export const en = {
     changeAfterReveal: "Change a vote after the reveal",
     changeAfterRevealHint:
       "Voters can still change their card after the reveal. Never in an anonymous round: its votes are final once revealed.",
+    changeAfterRevealLocked: "Anonymous rounds lock their votes at the reveal.",
     allowed: "Allowed",
     notAllowed: "Not allowed",
     poVotes: "The product owner votes too",
@@ -303,6 +304,9 @@ export const en = {
     highest: "highest card",
     lowestTag: "Lowest card",
     highestTag: "Highest card",
+    changed: "changed after the reveal",
+    changedTag: "Changed after the reveal",
+    changedChip: "changed",
   },
   round: {
     start: "Start voting",
@@ -371,6 +375,7 @@ export const en = {
     record: "Record {{card}}",
     recordNothing: "Record",
     recorded: "Recorded",
+    changedSince: "Votes changed since you recorded {{card}}.",
     pick: "Pick the final estimate, then record it.",
     suggested: "{{card}}, suggested",
     tied: "{{card}}, tied",
@@ -405,6 +410,8 @@ export const en = {
     hintLobbyOwner: "Start voting to play your cards.",
     hintRevealed: "The cards are revealed. Votes can no longer change in this round.",
     youVoted: "Your vote: {{card}}.",
+    hintChange: "You can still change your card.",
+    youChanged: "You changed your card: {{card}}.",
     retracted: "Vote taken back.",
     ownerDoesNotVote: "As the product owner, you do not vote in this room.",
   },
@@ -488,6 +495,7 @@ export const en = {
     revealOwner: "Only the product owner can reveal the cards now.",
     changeAfterRevealOn: "Votes can now change after the reveal.",
     changeAfterRevealOff: "Votes can no longer change after the reveal.",
+    changed: "{{name}} changed their card: {{card}}.",
   },
   cards: {
     yourCards: "Your cards",

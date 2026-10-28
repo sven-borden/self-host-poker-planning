@@ -793,10 +793,45 @@ describe("rounds", () => {
     expect(changed.causes).toEqual([{ type: "voteCast", who: A }]);
     expect(ok(changed).round?.votes[A]).toEqual({ card: "5", changedAfterReveal: true });
     expect(send(before, { type: "castVote", card: "3" }, A).state).toBe(before);
-    // Named round: a first vote after reveal is fine.
-    expect(ok(send(before, { type: "castVote", card: "8" }, B)).round?.votes[B]).toEqual({
-      card: "8",
-      changedAfterReveal: true,
+  });
+
+  it("never touches the recorded final when a vote changes after reveal", () => {
+    const before = room({
+      settings: { allowChangeAfterReveal: true },
+      round: revealed({ final: "3", votes: { [A]: { card: "3" }, [B]: { card: "3" } } }),
+    });
+    const changed = ok(send(before, { type: "castVote", card: "13" }, A));
+    expect(changed.round?.final).toBe("3");
+    expect(changed.round?.phase).toBe("revealed");
+    expect(changed.round?.revealedAt).toBe(before.round?.revealedAt);
+  });
+
+  describe("refuses a first card after reveal: changes allowed, never added", () => {
+    const allowed = () =>
+      room({
+        settings: { allowChangeAfterReveal: true },
+        round: revealed({ votes: { [A]: { card: "3" } } }),
+      });
+    const refused = (state: RoomState, actor: string) => {
+      const result = send(state, { type: "castVote", card: "8" }, actor);
+      expect(result).toMatchObject({ ok: false, error: "round_revealed", causes: [] });
+      expect(result.state).toBe(state);
+    };
+
+    it("from a seated voter who had not voted", () => {
+      refused(allowed(), B);
+    });
+
+    it("from an observer who became a voter after reveal", () => {
+      const before = allowed();
+      const voter = ok(send(before, { type: "setRole", role: "voter" }, OBS));
+      expect(voter.participants[OBS]?.role).toBe("voter");
+      refused(voter, OBS);
+    });
+
+    it("from someone who joined after reveal", () => {
+      const joined = ok(send(allowed(), { type: "join", name: "Dan", role: "voter" }, OUT));
+      refused(joined, OUT);
     });
   });
 

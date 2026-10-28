@@ -865,3 +865,126 @@ describe("the timer (#27)", () => {
     expect(describeEvents(fixedT("de"), up)).toBe("Die Zeit ist um.");
   });
 });
+
+describe("a change after the reveal (#29)", () => {
+  /** Me (PO), Ana and Ben vote 5 in a room that allows changes: a consensus on 5. */
+  function revealedRound(viewer = "me") {
+    const { run } = story(viewer);
+    run("me", { type: "join", name: "Me", role: "voter" });
+    run("ana", { type: "join", name: "Ana", role: "voter" });
+    run("ben", { type: "join", name: "Ben", role: "voter" });
+    run("me", { type: "updateSettings", patch: { allowChangeAfterReveal: true } });
+    run("me", { type: "startRound", subject: { kind: "none" } });
+    run("me", { type: "castVote", card: "5" });
+    run("ana", { type: "castVote", card: "5" });
+    const revealed = run("ben", { type: "castVote", card: "5" });
+    expect(revealed.room.round?.phase).toBe("revealed");
+    return { run, revealed };
+  }
+
+  it("says who changed to what, then the result when the suggestion or the consensus moved", () => {
+    const { run, revealed } = revealedRound();
+    const ana = run("ana", { type: "castVote", card: "8" });
+    const events = liveEvents(ana.room, ana.causes, revealed.room);
+    expect(events).toEqual([
+      {
+        kind: "changed",
+        who: "ana",
+        name: "Ana",
+        change: { card: "8" },
+        summary: { kind: "suggested", card: "5", agreement: 2 / 3, mostVoted: false },
+      },
+    ]);
+    expect(said(events)).toBe("Ana changed their card: 8. Suggested 5. Agreement 67%.");
+    const ben = run("ben", { type: "castVote", card: "8" });
+    expect(said(liveEvents(ben.room, ben.causes, ana.room))).toBe(
+      "Ben changed their card: 8. Suggested 8. Agreement 67%.",
+    );
+    // The suggestion stays 8: the change alone is said.
+    const again = run("ana", { type: "castVote", card: "13" });
+    expect(said(liveEvents(again.room, again.causes, ben.room))).toBe(
+      "Ana changed their card: 13.",
+    );
+    // A special card is said in words.
+    const unsure = run("ben", { type: "castVote", card: "?" });
+    expect(said(liveEvents(unsure.room, unsure.causes, again.room))).toMatch(
+      /^Ben changed their card: unsure\./,
+    );
+  });
+
+  it("tells the person who changed only the result that moved: their hand says their card", () => {
+    const { run, revealed } = revealedRound("ana");
+    // 5, 5, 5 was a consensus; 5, 8, 5 suggests 5: the consensus moved.
+    const own = run("ana", { type: "castVote", card: "8" });
+    const events = liveEvents(own.room, own.causes, revealed.room);
+    expect(events).toEqual([
+      {
+        kind: "changed",
+        who: "ana",
+        name: "",
+        summary: { kind: "suggested", card: "5", agreement: 2 / 3, mostVoted: false },
+      },
+    ]);
+    expect(said(events)).toBe("Suggested 5. Agreement 67%.");
+    // A change that moves nothing says nothing to them.
+    const again = run("ana", { type: "castVote", card: "3" });
+    expect(liveEvents(again.room, again.causes, own.room)).toEqual([]);
+    // Everyone else hears the card, the PO who did not change anything too.
+    const ben = run("ben", { type: "castVote", card: "3" });
+    expect(said(liveEvents(ben.room, ben.causes, again.room))).toMatch(
+      /^Ben changed their card: 3\./,
+    );
+  });
+
+  it("says a special card in words after a colon, in every language", () => {
+    const { run, revealed } = revealedRound();
+    const pause = run("ben", { type: "castVote", card: "\u{2615}" });
+    const events = liveEvents(pause.room, pause.causes, revealed.room);
+    expect(said(events)).toMatch(/^Ben changed their card: needs a break\./);
+    expect(describeEvents(fixedT("fr"), events)).toMatch(
+      /^Ben a changé de carte\u{202f}: besoin d’une pause\./u,
+    );
+    expect(describeEvents(fixedT("de"), events)).toMatch(
+      /^Ben hat die Karte geändert: braucht eine Pause\./,
+    );
+  });
+
+  it("says two changes of one person in a batch once, with the last card and the result that holds", () => {
+    const { run, revealed } = revealedRound();
+    const first = run("ana", { type: "castVote", card: "8" });
+    const second = run("ana", { type: "castVote", card: "3" });
+    const batch = mergeEvents(
+      liveEvents(first.room, first.causes, revealed.room),
+      liveEvents(second.room, second.causes, first.room),
+    );
+    // 5, 3 and 5 still suggest 5, as the first change already said.
+    expect(said(batch)).toBe("Ana changed their card: 3. Suggested 5. Agreement 67%.");
+    // Another person in the same batch: both changes, then the result, once.
+    const ben = run("ben", { type: "castVote", card: "13" });
+    expect(said(mergeEvents(batch, liveEvents(ben.room, ben.causes, second.room)))).toBe(
+      "Ana changed their card: 3. Ben changed their card: 13. Suggested 8. Agreement 33%.",
+    );
+    // A new round makes the changes moot.
+    const next = run("me", { type: "startRound", subject: { kind: "none" } });
+    expect(said(mergeEvents(batch, liveEvents(next.room, next.causes, ben.room)))).toBe(
+      "Voting started: Round 2.",
+    );
+  });
+
+  it("never says a card in an anonymous round, nor for a vote that came with the reveal", () => {
+    const { run } = story("me");
+    run("me", { type: "join", name: "Me", role: "voter" });
+    run("ana", { type: "join", name: "Ana", role: "voter" });
+    run("me", { type: "updateSettings", patch: { revealNames: false } });
+    run("me", { type: "startRound", subject: { kind: "none" } });
+    const voting = run("me", { type: "castVote", card: "5" });
+    const revealed = run("ana", { type: "castVote", card: "8" });
+    // The last vote revealed the round: a vote, not a change (its cause names nobody).
+    expect(said(liveEvents(revealed.room, revealed.causes, voting.room))).toBe(
+      "Cards revealed. Suggested 5. Agreement 50%.",
+    );
+    // The domain refuses a change here; a stray cause still says nothing.
+    const stray = liveEvents(revealed.room, [{ type: "voteCast", who: "ana" }], revealed.room);
+    expect(stray).toEqual([]);
+  });
+});

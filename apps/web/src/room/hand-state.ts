@@ -11,17 +11,26 @@ import type { RoomView } from "@pp/protocol";
 // they differ. Fast presses therefore collapse into one command per difference, and the
 // hand always ends on the server's card. A refusal drops every wish.
 
-/** The voting round a wish belongs to: its number and start, or null outside Voting. */
+/**
+ * The round and phase a wish belongs to: the round's number and start, and whether it is
+ * revealed (a change after the reveal, #29), or null in the lobby. A wish made while
+ * Voting never carries over the reveal.
+ */
 export type RoundKey = string | null;
+
+/** Whether a wish was made after the reveal: a change of card (#29). */
+export const afterReveal = (round: string): boolean => round.endsWith(":revealed");
 
 /** What the server holds for the viewer: their card (null for none) in the current round. */
 export interface Confirmed {
   card: string | null;
   round: RoundKey;
-  /** The voting round's number, or null outside Voting. */
+  /** The round's number, or null in the lobby. */
   number: number | null;
-  /** How many times a deck change restarted it (#26), or null outside Voting. */
+  /** How many times a deck change restarted it (#26), or null in the lobby. */
   restart: number | null;
+  /** The round is revealed: a press changes the vote, never takes it back (#29). */
+  revealed: boolean;
 }
 
 export interface Wish {
@@ -52,21 +61,30 @@ export type VoteCommand =
 
 export const SETTLED: HandState = { wish: null, sending: false, sent: null };
 
-/** A voting round's identity: a restart (new deck) keeps the number, not the start. */
+/** A round's identity: a restart (new deck) keeps the number, not the start. */
 export function roundKey(room: RoomView): RoundKey {
   const round = room.round;
-  return round?.phase === "voting" ? `${round.number}:${round.startedAt}` : null;
+  if (round === null) return null;
+  const key = `${round.number}:${round.startedAt}`;
+  return round.phase === "voting" ? key : `${key}:revealed`;
 }
 
-/** The viewer's confirmed card in the current voting round, from the snapshot. */
+/**
+ * The viewer's confirmed card in the current round, from the snapshot. Whether the
+ * server would take a press after the reveal is the hand's business (`handView`): a
+ * disabled hand presses nothing.
+ */
 export function confirmedOf(room: RoomView | undefined): Confirmed {
   const round = room ? roundKey(room) : null;
-  if (round === null) return { card: null, round: null, number: null, restart: null };
+  if (round === null) {
+    return { card: null, round: null, number: null, restart: null, revealed: false };
+  }
   return {
     card: room?.round?.yourVote ?? null,
     round,
     number: room?.round?.number ?? null,
     restart: room?.round?.restarts ?? 0,
+    revealed: room?.round?.phase === "revealed",
   };
 }
 
@@ -79,13 +97,16 @@ export function shownCard(state: HandState, confirmed: Confirmed): string | null
 
 /**
  * A press on `card`: a vote for it, or, when it is the card shown, taking the vote back.
- * Outside Voting nothing changes (the hand is disabled there anyway).
+ * After the reveal (#29) a press only changes the vote: the card shown pressed again does
+ * nothing, since a vote taken back would leave the results (the server refuses it with
+ * `not_voting`). In the lobby nothing changes (the hand is disabled there anyway).
  */
 export function press(state: HandState, card: string, confirmed: Confirmed): HandState {
   const { round, number, restart } = confirmed;
   if (round === null || number === null || restart === null) return state;
-  const wanted = shownCard(state, confirmed) === card ? null : card;
-  return { ...state, wish: { card: wanted, round, number, restart } };
+  const same = shownCard(state, confirmed) === card;
+  if (same && confirmed.revealed) return state;
+  return { ...state, wish: { card: same ? null : card, round, number, restart } };
 }
 
 const sameWish = (a: Wish | null, b: Wish | null) =>

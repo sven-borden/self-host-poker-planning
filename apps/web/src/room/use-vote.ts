@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { type CommandResult, commandSender } from "../realtime/room-connection.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import {
+  afterReveal,
   answered,
   type Confirmed,
   confirmedOf,
@@ -16,8 +17,14 @@ import { voteTick } from "./haptics.ts";
 
 type Sender = (command: VoteCommand) => Promise<CommandResult>;
 
-/** What the viewer's own vote did, for their own live region only. */
-export type VoteNews = { kind: "voted"; card: string } | { kind: "retracted" };
+/**
+ * What the viewer's own vote did, for their own live region only: a vote, a vote taken
+ * back, or a card changed after the reveal (#29).
+ */
+export type VoteNews =
+  | { kind: "voted"; card: string }
+  | { kind: "changed"; card: string }
+  | { kind: "retracted" };
 
 export interface Vote {
   state: HandState;
@@ -89,7 +96,10 @@ export function useVote(): Vote {
     if (acked.card !== null) voteTick();
     setNews({
       id: said.current,
-      what: acked.card === null ? { kind: "retracted" } : { kind: "voted", card: acked.card },
+      what:
+        acked.card === null
+          ? { kind: "retracted" }
+          : { kind: afterReveal(acked.round) ? "changed" : "voted", card: acked.card },
     });
   }, [commit]);
 

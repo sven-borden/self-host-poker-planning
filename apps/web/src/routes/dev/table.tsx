@@ -9,9 +9,10 @@ import { TableStage } from "../../table/table-stage.tsx";
 // A test bench for the table (#13), not linked from the UI and not indexed. The route is
 // split into its own chunk, so nothing here weighs on the room route's budget; the search
 // is parsed in the component for that reason (a validateSearch would ship in the entry).
-// /dev/table?n=1..16&state=lobby|voting|revealed&observers=0..4&away=0|1
+// /dev/table?n=1..16&state=lobby|voting|revealed&observers=0..4&away=0|1&changed=0|1
 // The first person is the viewer and the second the PO (the first when alone). With
-// away=1, every fourth person (index 3, 7, 11, 15) and the second observer are away.
+// away=1, every fourth person (index 3, 7, 11, 15) and the second observer are away. With
+// changed=1 and state=revealed, every card on the table was changed after the reveal (#29).
 
 const STATES = ["lobby", "voting", "revealed"] as const;
 type DevState = (typeof STATES)[number];
@@ -32,6 +33,7 @@ function useBenchSearch() {
     state: STATES.find((state) => state === search.state) ?? ("voting" as DevState),
     observers: wholeNumber(search.observers, 0, 4, 0),
     away: wholeNumber(search.away, 0, 1, 0) === 1,
+    changed: wholeNumber(search.changed, 0, 1, 0) === 1,
   };
 }
 
@@ -98,7 +100,7 @@ const DECK = [
 
 function DevTable() {
   const t = useT();
-  const { n, state, observers, away } = useBenchSearch();
+  const { n, state, observers, away, changed } = useBenchSearch();
   // Every third person is still thinking (or did not vote, after reveal).
   const voted = (i: number) => i % 3 !== 2;
   const seated = NAMES.slice(0, n).map((name, i) => ({ id: `user-${i}`, name }));
@@ -116,7 +118,9 @@ function DevTable() {
         ? { kind: "present" }
         : state === "voting"
           ? { kind: voted(i) ? "voted" : "thinking" }
-          : { kind: "revealed", card: voted(i) ? (PLAYED[i] ?? "5") : null },
+          : voted(i)
+            ? { kind: "revealed", card: PLAYED[i] ?? "5", ...(changed && { changed: true }) }
+            : { kind: "revealed", card: null },
   }));
   const votes = people.filter((_, i) => voted(i)).length;
   const played = people.flatMap((person) =>
