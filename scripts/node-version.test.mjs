@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { nodeVersionError } from "./node-version.mjs";
 
+/** @param {string} version */
 const refusal = (version) => `Poker Planning needs Node 24.7 or a later Node 24, found ${version}`;
 
 describe("nodeVersionError", () => {

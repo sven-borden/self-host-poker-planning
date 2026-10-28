@@ -36,7 +36,11 @@ async function startInstance() {
   const setup = await setupServer(config, logs.logger);
   const server = createServer(config, { ...setup.deps, logger: logs.logger });
   await server.listen();
-  const instance = { server, dispose: setup.dispose, database: setup.database };
+  const instance = {
+    server,
+    dispose: () => setup.dispose?.() ?? Promise.resolve(),
+    database: setup.database,
+  };
   instances.push(instance);
   return instance;
 }
