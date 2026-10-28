@@ -11,7 +11,10 @@
  * Not breaking, so not bumped: an optional field on an outbound view (the web checks
  * shapes), or an optional field on an inbound command, such as the `restart` of
  * `castVote` and `retractVote` and the round view's `restarts` (#26), the room view's
- * `ownerClaimableAt` (#30) and the `revealed` cause's `who` (#28). Nor is a new ack code
- * such as `too_few_cards` (#28): an older client words an unknown code generically.
+ * `ownerClaimableAt` (#30), the `revealed` cause's `who` (#28), and the settings'
+ * `hasPassword` with the `password` of `settingsUpdated` (#31). Nor is a new ack code
+ * such as `too_few_cards` (#28): an older client words an unknown code generically. New
+ * HTTP-only error codes (`bad_room_name`, `wrong_password`, `bad_password`) never reach a
+ * socket.
  */
 export const PROTOCOL_VERSION = 4;

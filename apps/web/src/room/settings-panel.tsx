@@ -29,6 +29,7 @@ import { commandSender } from "../realtime/room-connection.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { DeckControl, SpecialsControl } from "./deck-field.tsx";
 import { codeOf, failureMessage } from "./failure.ts";
+import { PasswordSetting } from "./password-setting.tsx";
 import { WhoCanRevealControl } from "./reveal-setting.tsx";
 import { deckName, type SettingKey } from "./settings-words.ts";
 import { TimerSetting } from "./timer-setting.tsx";
@@ -69,9 +70,15 @@ export interface ControlProps {
   describedBy: string;
 }
 
+/**
+ * What a row of the panel is about: a setting `updateSettings` changes, or the room's
+ * password (#31), whose control talks to the server over HTTP and never calls `change`.
+ */
+export type FieldKey = SettingKey | "hasPassword";
+
 /** One setting in the panel. */
 export interface SettingField {
-  key: SettingKey;
+  key: FieldKey;
   label: (t: TFunction) => string;
   hint: (t: TFunction) => string;
   /** The value in words, as everyone reads it. */
@@ -285,6 +292,15 @@ export const GROUPS: readonly SettingGroup[] = [
           room_full: (t) => t("settings.observersCountRefused", { max: MAX_PARTICIPANTS }),
         },
       },
+      {
+        // #31: everyone else reads "On" or "Off", never more.
+        key: "hasPassword",
+        label: (t) => t("password.label"),
+        hint: (t) => t("password.settingHint"),
+        value: (t, s) => onOff(t, s.hasPassword === true),
+        layout: "block",
+        Control: PasswordSetting,
+      },
     ],
   },
 ];
@@ -308,10 +324,10 @@ export function withPatch(settings: RoomSettingsView, patch: SettingsPatch): Roo
 /** The refusal of a change the page gave up on: the connection dropped while it was on its way. */
 export const CONNECTION_DROPPED = "connection_dropped";
 
-type Pending = Partial<Record<SettingKey, SettingsPatch>>;
-type Failures = Partial<Record<SettingKey, string>>;
+type Pending = Partial<Record<FieldKey, SettingsPatch>>;
+type Failures = Partial<Record<FieldKey, string>>;
 
-function without<V>(record: Partial<Record<SettingKey, V>>, key: SettingKey) {
+function without<V>(record: Partial<Record<FieldKey, V>>, key: FieldKey) {
   const rest = { ...record };
   delete rest[key];
   return rest;
@@ -330,7 +346,7 @@ function without<V>(record: Partial<Record<SettingKey, V>>, key: SettingKey) {
 function useSettingChanges(confirmed: RoomSettingsView) {
   const [pending, setPending] = useState<Pending>({});
   const [failures, setFailures] = useState<Failures>({});
-  const inFlight = useRef(new Map<SettingKey, AbortController>());
+  const inFlight = useRef(new Map<FieldKey, AbortController>());
 
   useEffect(() => {
     const unsubscribe = useRoomStore.subscribe((state, before) => {
@@ -359,7 +375,7 @@ function useSettingChanges(confirmed: RoomSettingsView) {
     };
   }, []);
 
-  async function change(key: SettingKey, patch: SettingsPatch) {
+  async function change(key: FieldKey, patch: SettingsPatch) {
     if (inFlight.current.has(key)) return;
     setFailures({});
     if (useRoomStore.getState().status !== "live") {

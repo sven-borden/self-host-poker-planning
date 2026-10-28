@@ -12,11 +12,13 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import { user } from "./auth-schema.ts";
 
 const instant = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
 
@@ -38,11 +40,38 @@ export const room = pgTable(
     live: jsonb("live").$type<RoomState>().notNull(),
     version: integer("version").notNull(),
     passwordHash: text("password_hash"),
+    /**
+     * Wrong passwords tried on this room in the window that started at
+     * `password_failures_since` (#31): the per-room limit, shared by every instance.
+     */
+    passwordFailures: integer("password_failures").notNull().default(0),
+    passwordFailuresSince: instant("password_failures_since"),
     createdAt: instant("created_at").notNull().defaultNow(),
     lastActiveAt: instant("last_active_at").notNull().defaultNow(),
   },
   // The retention purge (ROOM_TTL_DAYS) deletes by `last_active_at`.
   (t) => [index("room_last_active_at_idx").on(t.lastActiveAt)],
+);
+
+/**
+ * Who may enter a room that has a password without typing it (#31): one row per room and
+ * user, written by a correct password, and for everyone in the room (and its PO) when the
+ * PO sets or changes it. Changing it drops every row first, removing it drops them all,
+ * and a kick drops the removed person's. Keyed by the session's user, so a guest's access
+ * holds on that device (its session cookie), and an account's (W5) everywhere.
+ */
+export const roomAccess = pgTable(
+  "room_access",
+  {
+    roomId: uuid("room_id")
+      .notNull()
+      .references(() => room.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    grantedAt: instant("granted_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.roomId, t.userId] })],
 );
 
 /** The deck a round was played with: its spec and the special cards it allowed. */

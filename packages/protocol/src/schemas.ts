@@ -28,6 +28,11 @@ export const roomSettingsSchema = z.object({
   allowChangeAfterReveal: z.boolean(),
   poVotes: z.boolean(),
   observersCount: z.boolean(),
+  /**
+   * The room has a password (#31): everyone sees whether, never more. Optional, so adding
+   * it kept protocol version 4; the server always sends it.
+   */
+  hasPassword: z.boolean().optional(),
 });
 
 export const subjectSchema = z.discriminatedUnion("kind", [
@@ -153,7 +158,11 @@ export const causeSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("timerExtended") }),
   z.object({ type: z.literal("timeUp") }),
   z.object({ type: z.literal("finalSet"), card: cardSchema }),
-  z.object({ type: z.literal("settingsUpdated") }),
+  z.object({
+    type: z.literal("settingsUpdated"),
+    /** The PO set, changed or removed the password (#31). Optional: protocol 4 still. */
+    password: z.enum(["set", "changed", "removed"]).optional(),
+  }),
   z.object({
     type: z.literal("ownerChanged"),
     by: z.enum(["transfer", "claim"]),

@@ -68,7 +68,9 @@ from the bundled database; to use your own Postgres, run the image alone with
   reachable only through the proxy. With two proxies in a row, the first one must be a
   trusted peer of the second (Traefik: `forwardedHeaders.trustedIPs`), or the second
   deletes `X-Forwarded-For` and the app sees only the first proxy's address; once it
-  trusts the first, set `TRUST_PROXY=2`.
+  trusts the first, set `TRUST_PROXY=2`. Count right: the rate limits are per client
+  address, and with too low a count every visitor shares one, so ten wrong room passwords
+  from anyone lock everyone out of that room for ten minutes.
 - **Coolify** (build pack Dockerfile, port 3000): in the application's settings
   - turn on "Advanced > Build > Source commit availability: Available during build",
     otherwise `/api/health` reports `commit: unknown`;

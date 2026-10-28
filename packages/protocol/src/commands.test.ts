@@ -38,7 +38,8 @@ describe("types", () => {
   it("mirror the domain", () => {
     expectTypeOf<(typeof ACK_ERROR_CODES)[number]>().toEqualTypeOf<AckErrorCode>();
     expectTypeOf<ErrorCode>().toExtend<AckErrorCode>();
-    expectTypeOf<RoomSettingsView>().toEqualTypeOf<RoomSettings>();
+    expectTypeOf<Omit<RoomSettingsView, "hasPassword">>().toEqualTypeOf<RoomSettings>();
+    expectTypeOf<RoomSettingsView["hasPassword"]>().toEqualTypeOf<boolean | undefined>();
     expectTypeOf<SubjectView>().toEqualTypeOf<Subject>();
     expectTypeOf<ResultsView>().toEqualTypeOf<Results>();
     expectTypeOf<CauseView>().toEqualTypeOf<Cause>();

@@ -53,7 +53,7 @@ describe("toSnapshot", () => {
       room: { code: "roomcode", ownerId: "po", round: null, you: "po" },
       causes: [],
     });
-    expect(snapshot.room.settings).toStrictEqual(state.settings);
+    expect(snapshot.room.settings).toStrictEqual({ ...state.settings, hasPassword: false });
     expect(snapshot.room.settings).not.toBe(state.settings);
   });
 
@@ -358,6 +358,37 @@ describe("projectCauses", () => {
       { type: "away", who: "c" },
       { type: "back", who: "c" },
     ]);
+  });
+});
+
+describe("the room password (#31)", () => {
+  const password = (on: boolean): [string, Command] => ["po", { type: "password", on }];
+
+  it("tells everyone whether the room has a password, and nothing more", () => {
+    const { state, causes } = run([join("po"), join("ana"), password(true)]);
+    for (const viewer of ["po", "ana", "stranger"]) {
+      const snapshot = toSnapshot(state, viewer, { ...META, causes });
+      expect(snapshot.room.settings.hasPassword).toBe(true);
+      expect(snapshot.causes).toEqual([{ type: "settingsUpdated", password: "set" }]);
+      expect(snapshotSchema.parse(snapshot)).toEqual(snapshot);
+    }
+  });
+
+  it("says a change and a removal, and no password once removed", () => {
+    const changed = run([join("po"), password(true), password(true)]);
+    expect(toSnapshot(changed.state, "po", { ...META, causes: changed.causes }).causes).toEqual([
+      { type: "settingsUpdated", password: "changed" },
+    ]);
+    const removed = run([join("po"), password(true), password(false)]);
+    const snapshot = toSnapshot(removed.state, "po", { ...META, causes: removed.causes });
+    expect(snapshot.room.settings.hasPassword).toBe(false);
+    expect(snapshot.causes).toEqual([{ type: "settingsUpdated", password: "removed" }]);
+  });
+
+  it("never copies anything else a state might hold beside the flag", () => {
+    const { state } = run([join("po"), password(true)]);
+    const tainted = { ...state, passwordHash: "$argon2id$v=19$secret" } as RoomState;
+    expect(JSON.stringify(toSnapshot(tainted, "po", META))).not.toContain("argon2");
   });
 });
 

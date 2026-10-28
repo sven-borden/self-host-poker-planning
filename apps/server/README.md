@@ -215,6 +215,15 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 - Only `AUTH_ROUTES` (get-session, sign-in/anonymous, sign-out) reach Better Auth; add
   an endpoint there only after checking what it returns (no tokens) and what it lets a
   client change. Cookie names come from `cookieNaming` (`__Host-pp.*` on https).
+- The room password (#31) lives in `room-password.ts` (the three routes),
+  `password.ts` (NFC and bounds, argon2id PHC hashing with `crypto.argon2`, the
+  constant-time check against its own parameters only, the hash gate: 2 at once, 32 in
+  line, 2 s each) and the access side of `db/rooms.ts` (`AccessStore`: the grant written
+  only under the hash checked, the per-room try reserved and released; `AccessWrite` in a
+  commit, with `requireGrant` for a join that needs a grant, checked in the commit's
+  transaction). `PASSWORD_LIMITS` in `room-password.ts` lists the limits. Change a password only through
+  `RoomSync.changePassword`, which runs the `password` command in the room's queue and
+  writes the hash and grants with the flag; never log a body of these routes.
 - Client address for a rate limit: `clientIp(request, config.trustProxy)`, where
   `trustProxy` counts the proxies (`TRUST_PROXY`). Better Auth gets the same address in
   `x-pp-client-ip` (`CLIENT_IP_HEADER`), set by `registerAuthApi` after dropping the

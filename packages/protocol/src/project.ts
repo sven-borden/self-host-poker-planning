@@ -52,7 +52,7 @@ export function toSnapshot(state: RoomState, viewer: UserId, meta: SnapshotMeta)
       code: meta.code,
       ownerId: state.ownerId,
       ...ownerClaimable(state),
-      settings: settingsView(state.settings),
+      settings: settingsView(state.settings, state.hasPassword === true),
       participants: people.map(([id, p]) => participantView(id, p, state.ownerId)),
       you: Object.hasOwn(state.participants, viewer) ? viewer : null,
       round: state.round ? roundView(state.round, order, viewer) : null,
@@ -108,8 +108,11 @@ function causeView(cause: Cause, hideVoter: boolean): CauseView | null {
     case "timerStopped":
     case "timerExtended":
     case "timeUp":
-    case "settingsUpdated":
       return { type: cause.type };
+    case "settingsUpdated":
+      return cause.password === undefined
+        ? { type: cause.type }
+        : { type: cause.type, password: cause.password };
     case "finalSet":
       return { type: cause.type, card: cause.card };
     case "ownerChanged":
@@ -166,7 +169,11 @@ function deckView(deck: DeckSpec): DeckSpec {
     : { kind: "custom", cards: [...deck.cards] };
 }
 
-function settingsView(s: RoomSettings): RoomSettingsView {
+/**
+ * The settings, and whether the room has a password (#31): never the hash, which `live`
+ * never holds.
+ */
+function settingsView(s: RoomSettings, hasPassword: boolean): RoomSettingsView {
   return {
     deck: deckView(s.deck),
     specials: [...s.specials],
@@ -177,6 +184,7 @@ function settingsView(s: RoomSettings): RoomSettingsView {
     allowChangeAfterReveal: s.allowChangeAfterReveal,
     poVotes: s.poVotes,
     observersCount: s.observersCount,
+    hasPassword,
   };
 }
 

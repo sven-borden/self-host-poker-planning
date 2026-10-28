@@ -27,6 +27,11 @@ export interface ServerToClientEvents {
   snapshot: (snapshot: Snapshot) => void;
   /** This user was removed from the room; the server disconnects the socket next. */
   kicked: () => void;
+  /**
+   * The PO set or changed the room's password and this user is not in the room (#31): the
+   * socket left it, and its next `enter` asks for the password. An older client ignores it.
+   */
+  locked: () => void;
 }
 
 export type ParsedEnter =

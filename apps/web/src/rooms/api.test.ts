@@ -74,9 +74,22 @@ describe("createRoom", () => {
 describe("fetchRoomHeader", () => {
   it("reads a room's code and name", async () => {
     serve({ "GET /api/rooms/Abc1234567": () => json({ code: "Abc1234567", name: "Sprint" }) });
-    expect(await fetchRoomHeader("Abc1234567")).toEqual({ code: "Abc1234567", name: "Sprint" });
+    expect(await fetchRoomHeader("Abc1234567")).toEqual({
+      code: "Abc1234567",
+      name: "Sprint",
+      hasPassword: false,
+    });
     serve({ "GET /api/rooms/Abc1234567": () => json({ code: "Abc1234567", name: null }) });
-    expect(await fetchRoomHeader("Abc1234567")).toEqual({ code: "Abc1234567", name: null });
+    expect(await fetchRoomHeader("Abc1234567")).toEqual({
+      code: "Abc1234567",
+      name: null,
+      hasPassword: false,
+    });
+    serve({
+      "GET /api/rooms/Abc1234567": () =>
+        json({ code: "Abc1234567", name: null, hasPassword: true }),
+    });
+    expect((await fetchRoomHeader("Abc1234567")).hasPassword).toBe(true);
   });
 
   it("rejects with room_not_found, and escapes the code in the path", async () => {

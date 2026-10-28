@@ -107,6 +107,12 @@ export type RoomState = {
   participants: Record<UserId, Participant>;
   /** `null` = lobby, before the first round. */
   round: Round | null;
+  /**
+   * The room has a password (#31). Only the flag lives here: the argon2id hash has its own
+   * column (`room.password_hash`), so it can never reach a snapshot. Absent: no password,
+   * as in every room stored before #31.
+   */
+  hasPassword?: true;
 };
 
 /** A room holds at most this many people, observers included unless the room says otherwise. */
@@ -125,6 +131,10 @@ export const MAX_LINK_LENGTH = 2000;
 export const MIN_TIMER_SECONDS = 5;
 /** … to this many. */
 export const MAX_TIMER_SECONDS = 3600;
+/** A room password holds this many characters (code points, after NFC) … (#31) */
+export const MIN_PASSWORD_LENGTH = 6;
+/** … up to this many. Never trimmed: a space is a character like any other. */
+export const MAX_PASSWORD_LENGTH = 128;
 /** Anyone in the room can claim the PO role once the PO has been away this long. */
 export const OWNER_CLAIM_AFTER_MS = 120_000;
 /**

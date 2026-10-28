@@ -3,7 +3,10 @@ import { COMMAND_ID_PATTERN, PROTOCOL_VERSION, type Snapshot, toSnapshot } from 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../stores/room-store.ts";
 import {
+  ACCESS_CHANNEL,
+  announceRoomAccess,
   commandSender,
+  enterRoomAgain,
   isCmdAck,
   isEnterAck,
   isSnapshot,
@@ -204,6 +207,109 @@ describe("openRoom", () => {
     // A later close the server forces is final again.
     fake.fire("disconnect", "io server disconnect");
     expect(useRoomStore.getState()).toMatchObject({ status: "error", error: "offline" });
+  });
+
+  it("locks on password_required, keeps the socket, and enters again once asked (#31)", async () => {
+    let answer: unknown = { ok: false, code: "password_required" };
+    const fake = fakeSocket(() => answer);
+    open(fake);
+    fake.up();
+    await settle();
+    expect(useRoomStore.getState()).toMatchObject({
+      status: "locked",
+      locked: "required",
+      snapshot: null,
+    });
+    expect(fake.socket.disconnect).not.toHaveBeenCalled();
+    // A blip while locked keeps the form: the next enter asks again.
+    fake.drop();
+    expect(status()).toBe("locked");
+    fake.up();
+    await settle();
+    expect(status()).toBe("locked");
+
+    answer = { ok: true, snapshot: snapshot(4) };
+    expect(await enterRoomAgain()).toBe("ok");
+    expect(useRoomStore.getState()).toMatchObject({ status: "live", locked: null });
+    expect(useRoomStore.getState().snapshot?.version).toBe(4);
+  });
+
+  it("says the password changed when the room it showed had one, and re-enters on locked", async () => {
+    const withPassword = { ...createRoom({ ownerId: "ua" }), hasPassword: true as const };
+    let answer: unknown = { ok: true, snapshot: snapshot(2, withPassword) };
+    const fake = fakeSocket(() => answer);
+    open(fake);
+    fake.up();
+    await settle();
+    answer = { ok: false, code: "password_required" };
+    fake.fire("locked");
+    await settle();
+    expect(useRoomStore.getState()).toMatchObject({ status: "locked", locked: "changed" });
+    expect(await enterRoomAgain()).toBe("password_required");
+  });
+
+  it("keeps saying the password changed through a reconnect (N5)", async () => {
+    const withPassword = { ...createRoom({ ownerId: "ua" }), hasPassword: true as const };
+    let answer: unknown = { ok: true, snapshot: snapshot(2, withPassword) };
+    const fake = fakeSocket(() => answer);
+    open(fake);
+    fake.up();
+    await settle();
+    answer = { ok: false, code: "password_required" };
+    fake.fire("locked");
+    await settle();
+    expect(useRoomStore.getState().locked).toBe("changed");
+    // The reconnect enters with no snapshot held: it still says "changed".
+    fake.drop();
+    fake.up();
+    await settle();
+    expect(useRoomStore.getState()).toMatchObject({ status: "locked", locked: "changed" });
+  });
+
+  it("enters again when another tab of this browser got in, and only for its room (N5)", async () => {
+    let answer: unknown = { ok: false, code: "password_required" };
+    const fake = fakeSocket(() => answer);
+    open(fake);
+    fake.up();
+    await settle();
+    expect(status()).toBe("locked");
+    const enters = () => fake.sent.length;
+    const before = enters();
+    const tab = new BroadcastChannel(ACCESS_CHANNEL);
+    try {
+      tab.postMessage({ code: "another-room" });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(enters()).toBe(before);
+      answer = { ok: true, snapshot: snapshot(3) };
+      tab.postMessage({ code: CODE });
+      await vi.waitFor(() => expect(status()).toBe("live"));
+      expect(enters()).toBe(before + 1);
+    } finally {
+      tab.close();
+    }
+  });
+
+  it("tells the other tabs, never itself, that the password was accepted (N5)", async () => {
+    const fake = fakeSocket(() => ({ ok: false, code: "password_required" }));
+    open(fake);
+    fake.up();
+    await settle();
+    const before = fake.sent.length;
+    const tab = new BroadcastChannel(ACCESS_CHANNEL);
+    const heard: unknown[] = [];
+    tab.onmessage = (event) => heard.push(event.data);
+    try {
+      announceRoomAccess();
+      await vi.waitFor(() => expect(heard).toEqual([{ code: CODE }]));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(fake.sent.length).toBe(before);
+    } finally {
+      tab.close();
+    }
+  });
+
+  it("resolves offline when no room is open", async () => {
+    expect(await enterRoomAgain()).toBe("offline");
   });
 
   it("resets the store when closed", async () => {

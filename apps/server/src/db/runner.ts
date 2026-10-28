@@ -6,7 +6,7 @@
  */
 import type { RoomState, Round, UserId } from "@pp/domain";
 import { historyRound } from "./history.ts";
-import type { RoomStore } from "./rooms.ts";
+import type { AccessWrite, RoomStore } from "./rooms.ts";
 
 /** What a step returns; `ApplyResult` fits (both of its branches). */
 export interface StepResult {
@@ -17,6 +17,12 @@ export interface StepResult {
    * (`historyRound`).
    */
   ended?: Round;
+  /**
+   * The room's password and grants to write with this commit, in its transaction (#31): a
+   * kick drops the removed person's grant, a new password writes the hash and the grants.
+   * Ignored when the step changed nothing.
+   */
+  access?: AccessWrite;
 }
 
 /**
@@ -34,8 +40,12 @@ export interface RunSuccess<R extends StepResult> {
   result: R;
 }
 
-/** `room_not_found`: no such code. `conflict`: every attempt lost the compare-and-set. */
-export type RunErrorCode = "room_not_found" | "conflict";
+/**
+ * `room_not_found`: no such code. `conflict`: every attempt lost the compare-and-set.
+ * `password_required`: the step needed a grant (`AccessWrite.requireGrant`) the user no
+ * longer holds when it committed (#31); nothing was written.
+ */
+export type RunErrorCode = "room_not_found" | "conflict" | "password_required";
 
 export type RunOutcome<R extends StepResult> = RunSuccess<R> | { ok: false; error: RunErrorCode };
 
@@ -107,9 +117,15 @@ export function createCommandRunner(store: RoomStore, options: RunnerOptions = {
         participants: names(loaded.state, result.state),
         finishedAt: now(),
       };
-      if (await store.commitRoom(loaded.id, loaded.version, result.state, ended)) {
-        return { ...base, version: loaded.version + 1, changed: true, result };
-      }
+      const committed = await store.commitRoom(
+        loaded.id,
+        loaded.version,
+        result.state,
+        ended,
+        result.access,
+      );
+      if (committed === "password_required") return { ok: false, error: committed };
+      if (committed) return { ...base, version: loaded.version + 1, changed: true, result };
     }
     return { ok: false, error: "conflict" };
   }

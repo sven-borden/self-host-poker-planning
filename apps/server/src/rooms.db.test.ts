@@ -334,7 +334,7 @@ describe("GET /api/rooms/:code", () => {
     // No session needed: the code is what grants access to the header.
     const found = await call(`/api/rooms/${code}`, {});
     expect(found.status).toBe(200);
-    expect(found.json).toEqual({ code, name: "Refinement" });
+    expect(found.json).toEqual({ code, name: "Refinement", hasPassword: false });
     expect(found.response.headers.get("cache-control")).toBe("no-store");
   });
 

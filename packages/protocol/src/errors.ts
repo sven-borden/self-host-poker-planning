@@ -16,8 +16,18 @@ export const PROTOCOL_ERROR_CODES = [
    * only, never in a socket ack, so adding it changed no socket message.
    */
   "bad_room_name",
-  /** The room has a password and this browser holds no access cookie for it. */
+  /**
+   * The room has a password and this person may not enter without it (#31): not in the
+   * room, not its PO, and no access granted to them by a correct password.
+   */
   "password_required",
+  /** `POST /api/rooms/:code/access`: the password is not the room's (#31). HTTP only. */
+  "wrong_password",
+  /**
+   * `PUT /api/rooms/:code/password`: a password needs 6 to 128 characters (#31). HTTP
+   * only, like `bad_room_name`, so adding it changed no socket message.
+   */
+  "bad_password",
   "unauthenticated",
   "rate_limited",
   /**

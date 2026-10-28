@@ -379,6 +379,25 @@ server sends and never decides the outcome of a round.
   panel does the pending state, the rollback, the messages and the focus; the unit test
   "the plug-in contract" plugs in a radio group and a locked switch through the
   `groups` prop without touching the panel.
+  **The password row (#31)** is the one row whose key is not a setting: `FieldKey` adds
+  `hasPassword` to `SettingKey`, and its `Control` (`room/password-setting.tsx`, with
+  `PasswordInput` from `room/password-input.tsx`) never calls `change`: it talks to the
+  server over HTTP (`setRoomPassword`, `removeRoomPassword` in `rooms/api.ts`), shows
+  its own refusals under the row, and follows the snapshot's `settings.hasPassword`.
+  The control's `id` sits on the status line when a password is set, not on a button,
+  since the row's `<label for>` would rename it. **The joiner's side**: an `enter`
+  answered `password_required` puts the store in `locked` (`lock(reason)`, the snapshot
+  dropped, the socket kept); `RoomView` shows the join form with its `password` prop,
+  in the same place as the plain form, so it stays mounted while `JoinForm` checks the
+  password (`enterRoomPassword`), calls `enterRoomAgain()` (the open socket enters again)
+  and sends `join`. The server's `locked` event makes the connection enter again, which
+  then locks. The reason is `changed` when the last snapshot showed a password and the
+  viewer was not removed, and stays `changed` through a reconnect. A tab that got in
+  says so on the `pp-room-access` `BroadcastChannel` (`announceRoomAccess`), and this
+  browser's other tabs locked out of that room enter again. The join form's password
+  block (`room/join-password.tsx`) is a lazy chunk, prefetched by the room page
+  (`loadJoinPassword`) once the header says `hasPassword`; the focus waits for its field. The live region says the password's changes as kind
+  `password` (`passwordEvents` in `announcements.ts`), in its place like a setting.
   **Worked example: the deck field (#26).** `room/deck-field.tsx` holds two `Control`s,
   plugged into `GROUPS` with `layout: "block"` and no change to the panel's internals:
   `DeckControl` (a radio group named by the field's label through `labelId`, `id` on the

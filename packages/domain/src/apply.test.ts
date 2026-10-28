@@ -1585,3 +1585,55 @@ describe("presence (#17)", () => {
     expect(send(gone, { type: "claimOwner" }, A, T0 + OWNER_CLAIM_AFTER_MS).ok).toBe(true);
   });
 });
+
+describe("password (#31)", () => {
+  const on = (value: unknown) => ({ type: "password", on: value });
+
+  it("sets a first password: the flag, and a settings cause that says so", () => {
+    const result = send(room(), on(true));
+    expect(result).toMatchObject({
+      ok: true,
+      causes: [{ type: "settingsUpdated", password: "set" }],
+    });
+    expect(result.state.hasPassword).toBe(true);
+  });
+
+  it("changes a password: a new state (a new version), the flag kept", () => {
+    const before = { ...room(), hasPassword: true as const };
+    const result = send(before, on(true));
+    expect(result).toMatchObject({
+      ok: true,
+      causes: [{ type: "settingsUpdated", password: "changed" }],
+    });
+    expect(result.state).not.toBe(before);
+    expect(result.state.hasPassword).toBe(true);
+  });
+
+  it("removes a password: no flag left at all", () => {
+    const before = { ...room(), hasPassword: true as const };
+    const result = send(before, on(false));
+    expect(result).toMatchObject({
+      ok: true,
+      causes: [{ type: "settingsUpdated", password: "removed" }],
+    });
+    expect("hasPassword" in result.state).toBe(false);
+  });
+
+  it("removing a password the room does not have changes nothing", () => {
+    const before = room();
+    expect(send(before, on(false))).toEqual({ ok: true, state: before, causes: [] });
+  });
+
+  it("is the PO's alone, in the room or not", () => {
+    expect(send(room(), on(true), A)).toMatchObject({ ok: false, error: "not_owner" });
+    expect(send(room(), on(true), OUT)).toMatchObject({ ok: false, error: "not_owner" });
+    const left = room({ participants: { [A]: person("Alice") } });
+    expect(ok(send(left, on(true))).hasPassword).toBe(true);
+  });
+
+  it("refuses anything but true or false", () => {
+    for (const value of [undefined, 1, "yes", null]) {
+      expect(send(room(), on(value))).toMatchObject({ ok: false, error: "bad_command" });
+    }
+  });
+});

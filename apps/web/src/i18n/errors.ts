@@ -2,8 +2,10 @@ import {
   MAX_CARD_LENGTH,
   MAX_DECK_CARDS,
   MAX_NAME_LENGTH,
+  MAX_PASSWORD_LENGTH,
   MAX_ROOM_NAME_LENGTH,
   MAX_TIMER_SECONDS,
+  MIN_PASSWORD_LENGTH,
   MIN_TIMER_SECONDS,
 } from "@pp/domain";
 import type { AckErrorCode } from "@pp/protocol";
@@ -25,6 +27,7 @@ type CodesWithValues = {
 export const ERROR_VALUES: { [C in CodesWithValues]: Params<Key<C>> } = {
   bad_name: { min: 1, max: MAX_NAME_LENGTH },
   bad_room_name: { min: 1, max: MAX_ROOM_NAME_LENGTH },
+  bad_password: { min: MIN_PASSWORD_LENGTH, max: MAX_PASSWORD_LENGTH },
   bad_seconds: { min: MIN_TIMER_SECONDS, max: MAX_TIMER_SECONDS / 60 },
   deck_too_many_cards: { max: MAX_DECK_CARDS },
   card_too_long: { max: MAX_CARD_LENGTH },
