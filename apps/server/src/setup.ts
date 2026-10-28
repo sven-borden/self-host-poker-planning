@@ -1,13 +1,15 @@
 /**
  * The `setup` hook `main.ts` hands to `run()`: the database (#7), then identity (#10) on
- * its pool, then the room API (#14) and the room sync (#15) on its runner. Opens nothing
- * at import time.
+ * its pool, then the room API (#14) and the room sync (#15) on its runner, and the
+ * retention job (#35), whose first run comes a few minutes later. Opens nothing at import
+ * time.
  */
 import { createAuth, registerAuthApi, sessionChecker, sessionMiddleware } from "./auth.ts";
 import type { Config } from "./config.ts";
 import { type Database, setupDatabase } from "./database.ts";
 import type { Logger } from "./logger.ts";
 import { memoryRateLimit } from "./rate-limit.ts";
+import { startRetention } from "./retention.ts";
 import { registerPasswordApi } from "./room-password.ts";
 import { registerRoomApi } from "./rooms.ts";
 import type { Setup } from "./run.ts";
@@ -41,18 +43,25 @@ export async function setupServer(
     await database.close();
     throw error;
   }
-  const { runner, store, db } = database;
+  const { runner, store, db, retention: retentionStore } = database;
   const sync = createRoomSync({
     runner,
     store,
     access: store,
     logger,
     sessionAlive: sessionChecker(db),
+    touchRoom: retentionStore.touchRoom,
     ...(tuning.presenceGraceMs !== undefined && { presenceGraceMs: tuning.presenceGraceMs }),
     ...(tuning.presenceRestartGraceMs !== undefined && {
       presenceRestartGraceMs: tuning.presenceRestartGraceMs,
     }),
     ...(tuning.deadlineTimeouts !== undefined && { deadlineTimeouts: tuning.deadlineTimeouts }),
+  });
+  const retention = startRetention({
+    store: retentionStore,
+    ttlDays: config.roomTtlDays,
+    logger,
+    occupied: () => sync.occupiedRooms(),
   });
   return {
     database,
@@ -69,6 +78,7 @@ export async function setupServer(
     },
     dispose: async () => {
       sync.close();
+      await retention.stop();
       await database.close();
     },
   };

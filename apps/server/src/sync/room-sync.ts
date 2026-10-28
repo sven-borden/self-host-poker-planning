@@ -76,6 +76,11 @@ export interface RoomSyncOptions {
    * out, the handshake's session is trusted (tests without identity).
    */
   sessionAlive?: (sessionId: string) => Promise<boolean>;
+  /**
+   * Records a visit to a room (by id) for the retention purge (#35): an `enter` that
+   * succeeded calls it without waiting, and a failure only logs. Left out, nothing is kept.
+   */
+  touchRoom?: (roomId: string) => Promise<void>;
   /** Epoch milliseconds, for `apply` and the snapshots; `Date.now` by default. */
   now?: () => number;
   recentAcks?: Omit<RecentAcksOptions, "forget">;
@@ -101,6 +106,8 @@ export interface RoomSync extends RealtimeHandlers {
   disconnect(socket: RealtimeSocket): void;
   /** Clears every deadline timeout; the server is shutting down. */
   close(): void;
+  /** The rooms (by id) with a socket on this instance: the retention purge keeps them. */
+  occupiedRooms(): string[];
   /** For tests: the deadline armed for a room (by id) on this instance. */
   deadlines: Pick<DeadlineTimers, "armed">;
   /** For tests: whether a person's presence grace runs in a room (by id) on this instance. */
@@ -115,7 +122,8 @@ export interface RoomSync extends RealtimeHandlers {
 }
 
 /** The Socket.IO room of a room, by its id (never its code). */
-export const channelOf = (roomId: string) => `room:${roomId}`;
+const CHANNEL_PREFIX = "room:";
+export const channelOf = (roomId: string) => `${CHANNEL_PREFIX}${roomId}`;
 
 /** A room as this instance knows it: the id for channels and logs, the code for loads. */
 interface RoomRef {
@@ -165,7 +173,7 @@ function joinNeedsGrant(
 const GONE = refuse("internal");
 
 export function createRoomSync(options: RoomSyncOptions): RoomSync {
-  const { runner, store, logger, sessionAlive, now = Date.now } = options;
+  const { runner, store, logger, sessionAlive, touchRoom, now = Date.now } = options;
   const hasAccess = options.access?.hasAccess ?? (async () => false);
   const log = logger.child({ part: "rooms" });
   // A `busy` answer stored nothing: the same command id may run again.
@@ -619,6 +627,9 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       held.set(socket, Math.max(held.get(socket) ?? 0, loaded.version));
       presenceOnEnter(room, user.id, loaded.state);
       log.debug({ room: room.id, version: loaded.version }, "socket entered");
+      touchRoom?.(room.id).catch((error: unknown) => {
+        log.warn({ room: room.id, err: errorCodeOf(error) }, "visit not recorded");
+      });
       return {
         ok: true,
         snapshot: toSnapshot(loaded.state, user.id, { code, version: loaded.version, now: now() }),
@@ -747,6 +758,16 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       closed = true;
       deadlines.clearAll();
       graces.clearAll();
+    },
+
+    occupiedRooms() {
+      const ids: string[] = [];
+      for (const [name, sockets] of io?.sockets.adapter.rooms ?? []) {
+        if (sockets.size > 0 && name.startsWith(CHANNEL_PREFIX)) {
+          ids.push(name.slice(CHANNEL_PREFIX.length));
+        }
+      }
+      return ids;
     },
 
     deadlines,
