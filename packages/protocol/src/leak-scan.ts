@@ -35,3 +35,36 @@ export function cardLeaks(
     (leaf) => hidden.has(leaf.value) && !isPublicCardPath(leaf.path),
   );
 }
+
+/** The people a `history` answer must not name: their user ids, and their names. */
+export interface HistoryPeople {
+  ids: Iterable<string>;
+  names: Iterable<string>;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+/**
+ * The leaks in a `history` answer (#33), each with its path (`rounds.2.votes.cards.0`): a
+ * user id or a `who` anywhere (no row names its voters by id), and in an anonymous round's
+ * row a person's name or a `name` field at all. The server's socket tests scan real
+ * frames with it, and the four-person e2e every history answer a page receives.
+ */
+export function historyLeaks(
+  answer: unknown,
+  people: HistoryPeople,
+): Array<{ path: string; value: string }> {
+  const ids = new Set(people.ids);
+  const names = new Set(people.names);
+  const rounds = isRecord(answer) && Array.isArray(answer.rounds) ? answer.rounds : [];
+  return rounds.flatMap((row: unknown, i) => {
+    const anonymous = isRecord(row) && isRecord(row.votes) && row.votes.kind === "anonymous";
+    return stringLeaves(row, `rounds.${i}`).filter(
+      ({ path, value }) =>
+        ids.has(value) ||
+        /(^|\.)who$/.test(path) ||
+        (anonymous && (names.has(value) || /(^|\.)name$/.test(path))),
+    );
+  });
+}
