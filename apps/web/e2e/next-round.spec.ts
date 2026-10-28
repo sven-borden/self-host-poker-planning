@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { computeResults } from "../../../packages/domain/src/results.ts";
+import { expect, type Page, test } from "./fixtures.ts";
 import {
   createRoom,
   type Guest,

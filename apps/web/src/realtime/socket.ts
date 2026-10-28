@@ -60,14 +60,35 @@ function retryAfterOf(error: Error): number | undefined {
 }
 
 /**
+ * The server's refusal code in a `connect_error`: a handshake middleware's message, or,
+ * when Engine.IO refused the request before any socket (no session cookie, #36), the
+ * message of its 403, which the polling transport hands over with the XHR. Anything else
+ * (the network, a 5xx) keeps Socket.IO's own message.
+ */
+export function refusalOf(error: Error): string {
+  const { description, context } = error as Error & { description?: unknown; context?: unknown };
+  if (description !== 403 || typeof context !== "object" || context === null) {
+    return error.message;
+  }
+  try {
+    const body: unknown = JSON.parse(String(Reflect.get(context, "responseText")));
+    const message =
+      typeof body === "object" && body !== null ? Reflect.get(body, "message") : undefined;
+    return typeof message === "string" ? message : error.message;
+  } catch {
+    return error.message;
+  }
+}
+
+/**
  * Connects `socket` once this browser has a session (`ensureIdentity`, retried with
  * backoff while it fails for a temporary reason such as a redeploy), never before: the
  * handshake carries the session cookie and the server refuses a socket without one.
  * - `internal` or `rate_limited` (`RETRIED_REFUSALS`): connects again after a capped,
  *   jittered exponential backoff that honours a `retryAfter` the server sends, until it
  *   passes; a successful connect starts the backoff over.
- * - `unauthenticated` (the session expired or was revoked): runs the bootstrap once more
- *   and reconnects; a second refusal in a row, or a failed bootstrap, sets the identity
+ * - `unauthenticated` (the session expired or was revoked, or the cookie is gone): stops
+ *   Socket.IO's own retries, runs the bootstrap once more and reconnects; a second refusal in a row, or a failed bootstrap, sets the identity
  *   store's error to `unauthenticated` for the page to show.
  * Returns a function that removes the listeners and cancels a pending retry.
  */
@@ -94,12 +115,16 @@ export function connectWhenIdentified<
   };
   const onConnectError = (error: Error) => {
     if (stopped) return;
-    if (RETRIED_REFUSALS.has(error.message)) {
+    const code = refusalOf(error);
+    if (RETRIED_REFUSALS.has(code)) {
       clearTimeout(timer);
       timer = setTimeout(connect, delay(attempt++, retryAfterOf(error)));
       return;
     }
-    if (error.message !== UNAUTHENTICATED) return;
+    if (code !== UNAUTHENTICATED) return;
+    // A refusal before the socket (Engine.IO's 403) leaves Socket.IO retrying without
+    // the cookie; after a middleware's, the socket is already closed and this is a no-op.
+    socket.disconnect();
     if (retried) {
       giveUp();
       return;

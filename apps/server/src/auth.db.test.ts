@@ -425,9 +425,35 @@ describe("the anonymous sign-in rate limit", () => {
   });
 });
 
+/** A bare Engine.IO WebSocket that answers no ping; resolves once it is refused or closed. */
+function bareSocket(headers: Record<string, string>, send?: string): Promise<void> {
+  const url = `${baseOf().replace(/^http/, "ws")}/socket.io/?EIO=4&transport=websocket`;
+  const ws = new WebSocket(url, { headers } as unknown as string[]);
+  if (send) ws.addEventListener("open", () => ws.send(send));
+  return new Promise((resolve) => ws.addEventListener("close", () => resolve()));
+}
+
+describe("connections that are nobody's (#36)", () => {
+  it("refuses or closes 200 sockets without a session within 5 s, and holds none after", async () => {
+    const io = servers[0]?.io;
+    const started = Date.now();
+    const outcomes = await Promise.all([
+      // No cookie: refused before the upgrade.
+      ...Array.from({ length: 200 }, () => bareSocket({})),
+      // A cookie the session middleware refuses: the connection closes with the refusal.
+      ...Array.from({ length: 20 }, () => bareSocket({ cookie: `${COOKIE}=junk` }, "40")),
+    ]);
+    expect(outcomes).toHaveLength(220);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    await vi.waitFor(() => expect(io?.engine.clientsCount).toBe(0), { timeout: 1_000 });
+    expect(io?.of("/").sockets.size).toBe(0);
+  });
+});
+
 describe("the socket handshake", () => {
   it("refuses a socket without a cookie, with a junk one, or a forged token", async () => {
-    expect(await handshake({})).toEqual({ ok: false, message: "unauthenticated" });
+    // Without the cookie, Engine.IO refuses the upgrade itself (#36): no socket, no message.
+    expect(await handshake({})).toMatchObject({ ok: false });
     expect(await handshake({ cookie: `${COOKIE}=junk` })).toEqual({
       ok: false,
       message: "unauthenticated",

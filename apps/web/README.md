@@ -682,11 +682,23 @@ server sends and never decides the outcome of a round.
   `vendor` group in `vite.config.ts` (React, React DOM, the scheduler) wins 1.0 kB of
   that back. `@pp/domain`'s decks, a lucide icon and rolldown's runtime stay in chunks
   of their own: grouping them as well made both pages larger.
-- End-to-end: `pnpm --filter @pp/web test:e2e` runs Playwright (`e2e/`) against
-  `vite preview`. With `DATABASE_URL` set (a Postgres the server may migrate, such as
-  the one in the server README), it also starts the real server on 3000, where
-  `vite preview` forwards `/api` and `/socket.io`; `e2e/identity.spec.ts` and
-  `e2e/room.spec.ts` and `e2e/landing.spec.ts` need it and skip without it. Locally it builds first and uses the installed Microsoft Edge; in CI
+- End-to-end: `pnpm --filter @pp/web test:e2e` runs Playwright (`e2e/`) against the
+  built app served by the real server with its production headers (#36), so it needs
+  `DATABASE_URL` (a Postgres the server may migrate, such as the one in the server
+  README) and refuses to start without it. Every spec imports `test` from
+  `e2e/fixtures.ts`, which fails a test when any page it opened (in the default context
+  or one the test made) broke the Content Security Policy or the Permissions-Policy, or
+  threw an uncaught error. It reads the browser's console ("Refused to …", Chromium's
+  "Permissions policy violation") and its own init script's lines: a
+  `securitypolicyviolation` listener and a `ReportingObserver` for
+  `permissions-policy-violation` reports. An e2e may not inject an inline `<style>` or
+  `<script>` (`addStyleTag` with content), and set styles through the CSSOM instead; nor
+  read the clipboard (`clipboard-read=()`): grant `clipboard-write` and spy on
+  `navigator.clipboard.writeText`, as `room.spec.ts` and `exports.spec.ts` do. A test
+  that breaks a policy on purpose sets `policyViolationsExpected` and reads what the guard
+  saw from the `policyProblems` fixture.
+  `e2e/security.spec.ts` checks the headers and that style props, the Web Animations
+  API, the scroll lock and sonner's sheet work under the policy. Locally it builds first and uses the installed Microsoft Edge; in CI
   (`web-e2e` job) it uses Chromium on the build from the step before. Screenshots go to
   `tmp/screenshots/` (gitignored). `e2e/mobile.spec.ts` runs phones: the iPhone 13 and
   Pixel 7 descriptors in the configured Chromium or Edge (`phone()`, which removes
@@ -732,8 +744,8 @@ server sends and never decides the outcome of a round.
   360 px (none under 7 px, none spilling but a clipped dense slot, a 16-way tie as four
   cards and "+12"); shots `deck-widest-16-360`, `deck-presets-*`, `deck-custom-error-*`,
   `deck-range-*`, `deck-restart-question-*`, `deck-20-hand-*`, `deck-20-hand-phone-*`,
-  `deck-20-results-*`, `deck-decimals-fr-*`, `deck-emoji-results-*`. `E2E_WEB_PORT` and
-  `E2E_API_PORT` move the preview and the server, for two worktrees at once.
+  `deck-20-results-*`, `deck-decimals-fr-*`, `deck-emoji-results-*`. `E2E_WEB_PORT` moves the
+  server, for two worktrees at once.
 - The four-person round (#23), `e2e/four-person.spec.ts`: the proof of W1 on every pull
   request. Four browser contexts, the PO, Ben on a Pixel 7, Cleo and the observer Dee,
   play four rounds: a Jira round with a changed card that the PO reveals, a titled round
@@ -838,10 +850,17 @@ French and German tone is reviewed in #41.
 
 ## CSP notes for #36
 
-- `style-src` needs `'unsafe-inline'` or a nonce: sonner injects a `<style>` element when
-  it loads, and react-remove-scroll (under Radix Dialog, Sheet and DropdownMenu) injects
-  one each time a menu or dialog opens. React's `style={…}` props go through the CSSOM
-  and are not affected.
+- `style-src 'self'`, no `'unsafe-inline'`: the app writes no `<style>` element. React's
+  `style={…}` props go through the CSSOM and are not affected. Two libraries would write
+  one, and are worked around: react-remove-scroll (under Radix Dialog, Sheet and
+  DropdownMenu) through `react-style-singleton`, aliased in `vite.config.ts` to
+  `src/csp/style-singleton.ts`, which adopts a constructed sheet; and sonner, whose
+  `<style>` the `pp:sonner-styles-as-css` plugin cuts from the build (and fails the build
+  if any is left), its `styles.css` bundled instead.
+- Not used today, refused by the policy: Radix Select and ScrollArea inject a `<style>`
+  element of their own (not through `react-style-singleton`). Whoever adds one must move
+  that sheet into the app's CSS or a constructed sheet, and check it with
+  `e2e/security.spec.ts`; the e2e guard fails any page that hits it.
 - `script-src 'self'` is enough: there is no inline script. `public/theme-init.js` runs
   before first paint as an external file.
 - `theme-init.js` has no content hash in its name, so it must be served with

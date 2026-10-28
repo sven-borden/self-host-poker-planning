@@ -9,8 +9,15 @@ import {
 } from "@pp/protocol";
 import { io as connect, type Socket } from "socket.io-client";
 import { afterEach, describe, expect, it } from "vitest";
-import { MAX_PAYLOAD_BYTES, MAX_SOCKETS_PER_USER, type SocketMiddleware } from "./realtime.ts";
+import {
+  CONNECT_TIMEOUT_MS,
+  hasCookie,
+  MAX_PAYLOAD_BYTES,
+  MAX_SOCKETS_PER_USER,
+  type SocketMiddleware,
+} from "./realtime.ts";
 import { createServer, type PokerServer, type ServerDeps } from "./server.ts";
+import { HISTORY_LIMIT, ROSTER_LIMIT } from "./sync/token-bucket.ts";
 import { collectLogs, type LogCollector, testConfig } from "./test-support.ts";
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -61,8 +68,10 @@ function handshake(
   port: number,
   transport: "polling" | "websocket",
   origin: string | undefined,
+  extra: Record<string, string> = {},
 ): Promise<number> {
-  const headers: Record<string, string> = origin === undefined ? {} : { origin };
+  const headers: Record<string, string> =
+    origin === undefined ? { ...extra } : { origin, ...extra };
   if (transport === "websocket") {
     Object.assign(headers, {
       connection: "Upgrade",
@@ -90,6 +99,37 @@ function handshake(
     request.once("error", reject);
     request.end();
   });
+}
+
+/**
+ * A bare Engine.IO WebSocket, as a script would hold one open: it never answers a ping.
+ * `closed` resolves when the server closed it, `opened` with whether the upgrade passed.
+ */
+function bareSocket(port: number, headers: Record<string, string> = {}) {
+  const ws = new WebSocket(`ws://localhost:${port}/socket.io/?EIO=4&transport=websocket`, {
+    headers,
+  } as unknown as string[]);
+  const messages: string[] = [];
+  ws.addEventListener("message", (event) => messages.push(String(event.data)));
+  const opened = new Promise<boolean>((resolve) => {
+    ws.addEventListener("open", () => resolve(true));
+    ws.addEventListener("error", () => resolve(false));
+  });
+  const closed = new Promise<void>((resolve) => ws.addEventListener("close", () => resolve()));
+  return { ws, messages, opened, closed };
+}
+
+/** Resolves with the milliseconds `promise` took, or rejects after `limitMs`. */
+async function within(promise: Promise<unknown>, limitMs: number): Promise<number> {
+  const start = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`not within ${limitMs} ms`)), limitMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
+  return Date.now() - start;
 }
 
 function connected(socket: Client): Promise<void> {
@@ -297,6 +337,66 @@ describe("limits per person", () => {
     expect(ok).toBeGreaterThanOrEqual(20);
     expect(ok).toBeLessThanOrEqual(22);
   });
+
+  it(`limits roster commands to a burst of ${ROSTER_LIMIT.burst}, other commands unaffected`, async () => {
+    const { client } = await start({
+      socketMiddleware: [samePerson],
+      handlers: {
+        enter: () => ({ ok: false, code: "room_not_found" }),
+        cmd: () => ({ ok: true, version: 1 }),
+      },
+    });
+    const sockets = [client(), client()];
+    await Promise.all(sockets.map(connected));
+    const roster = [
+      { type: "join", payload: { name: "Ada", role: "voter" } },
+      { type: "rename", payload: { name: "Ada L." } },
+      { type: "setRole", payload: { role: "observer" } },
+      { type: "leave" },
+    ];
+    const acks = [];
+    for (let n = 0; n < 12; n++) {
+      const command = roster[n % roster.length];
+      const socket = sockets[n % 2] as Client;
+      acks.push(
+        cmdAckSchema.parse(await raw(socket).emitWithAck("cmd", { id: `r${n}`, ...command })),
+      );
+    }
+    expect(acks.slice(0, ROSTER_LIMIT.burst).every((ack) => ack.ok)).toBe(true);
+    expect(acks.slice(ROSTER_LIMIT.burst)).toEqual([
+      { ok: false, code: "rate_limited" },
+      { ok: false, code: "rate_limited" },
+    ]);
+    // A refused payload costs no roster token, and the round's commands still pass.
+    expect(await raw(sockets[0] as Client).emitWithAck("cmd", CMD)).toEqual({
+      ok: true,
+      version: 1,
+    });
+  });
+
+  it(`limits history requests to a burst of ${HISTORY_LIMIT.burst}`, async () => {
+    const { client } = await start({
+      socketMiddleware: [samePerson],
+      handlers: {
+        enter: () => ({ ok: false, code: "room_not_found" }),
+        cmd: () => ({ ok: true, version: 1 }),
+        history: () => ({ ok: true, rounds: [] }),
+      },
+    });
+    const socket = client();
+    await connected(socket);
+    // Malformed requests cost no history token.
+    expect(await raw(socket).emitWithAck("history", { before: 2 ** 31 })).toEqual({
+      ok: false,
+      code: "bad_payload",
+    });
+    const acks = await Promise.all(
+      Array.from({ length: 14 }, () => raw(socket).emitWithAck("history", {})),
+    );
+    const ok = acks.filter((ack) => (ack as { ok: boolean }).ok).length;
+    expect(ok).toBeGreaterThanOrEqual(HISTORY_LIMIT.burst);
+    expect(ok).toBeLessThanOrEqual(HISTORY_LIMIT.burst + 1);
+  });
 });
 
 describe("the Origin check", () => {
@@ -330,6 +430,55 @@ describe("the Origin check", () => {
     const foreign = client(["websocket"], { origin: "https://evil.example" });
     await expect(connected(foreign)).rejects.toThrow();
   });
+});
+
+describe("connections that are nobody's (#36)", () => {
+  const COOKIE = "pp.session_token";
+  const refuse: SocketMiddleware = (_socket, next) => next(new Error("unauthenticated"));
+
+  it("reads the cookie's name, not a value or a longer name", () => {
+    expect(hasCookie(`a=1; ${COOKIE}=x.y`, COOKIE)).toBe(true);
+    expect(hasCookie(`${COOKIE}=`, COOKIE)).toBe(true);
+    expect(hasCookie(`x${COOKIE}=1; a=${COOKIE}=2`, COOKIE)).toBe(false);
+    expect(hasCookie(`${COOKIE}_data=1`, COOKIE)).toBe(false);
+    expect(hasCookie(undefined, COOKIE)).toBe(false);
+  });
+
+  it("refuses a handshake without the session cookie before the upgrade, on both transports", async () => {
+    const { port, server } = await start({ sessionCookie: COOKIE });
+    expect(await handshake(port, "websocket", undefined)).toBe(400);
+    expect(await handshake(port, "polling", undefined)).toBe(403);
+    expect(await handshake(port, "polling", undefined, { cookie: "other=1" })).toBe(403);
+    expect(await handshake(port, "websocket", undefined, { cookie: `${COOKIE}=x` })).toBe(101);
+    // The Origin check still comes first.
+    expect(
+      await handshake(port, "polling", "https://evil.example", { cookie: `${COOKIE}=x` }),
+    ).toBe(403);
+    expect(server.io.engine.clientsCount).toBe(0);
+  });
+
+  it("closes the connection as soon as the session middleware refused its socket", async () => {
+    const { port, server } = await start({ sessionCookie: COOKIE, socketMiddleware: [refuse] });
+    const bare = bareSocket(port, { cookie: `${COOKIE}=junk` });
+    expect(await bare.opened).toBe(true);
+    bare.ws.send("40");
+    expect(await within(bare.closed, 1_000)).toBeLessThan(1_000);
+    expect(bare.messages.some((m) => m.startsWith("44") && m.includes("unauthenticated"))).toBe(
+      true,
+    );
+    expect(server.io.engine.clientsCount).toBe(0);
+  });
+
+  it("closes a connection that never asks for a socket after CONNECT_TIMEOUT_MS", async () => {
+    expect(CONNECT_TIMEOUT_MS).toBe(5_000);
+    const { port, server } = await start();
+    const bare = bareSocket(port);
+    expect(await bare.opened).toBe(true);
+    expect(server.io.engine.clientsCount).toBe(1);
+    const took = await within(bare.closed, CONNECT_TIMEOUT_MS + 1_000);
+    expect(took).toBeGreaterThan(CONNECT_TIMEOUT_MS - 1_000);
+    expect(server.io.engine.clientsCount).toBe(0);
+  }, 10_000);
 });
 
 describe("shutdown", () => {

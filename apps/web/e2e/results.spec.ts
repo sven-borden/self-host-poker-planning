@@ -1,6 +1,6 @@
-import { type Browser, expect, type Page, test } from "@playwright/test";
 import { computeResults } from "../../../packages/domain/src/results.ts";
 import { cardLeaks } from "../../../packages/protocol/src/leak-scan.ts";
+import { type Browser, expect, type Page, test } from "./fixtures.ts";
 import {
   animated,
   createRoom,

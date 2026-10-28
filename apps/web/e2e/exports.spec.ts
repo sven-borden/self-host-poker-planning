@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
-import { type BrowserContext, expect, type Locator, type Page, test } from "@playwright/test";
 import { parse } from "csv-parse/sync";
 import { marked } from "marked";
+import { type BrowserContext, expect, type Locator, type Page, test } from "./fixtures.ts";
 import { type Guest, guestsJoin, join, ownAddress, ROOM_PATH, SHOTS, sameUser } from "./support.ts";
 
 // The session summary and the exports (#34) in real browsers, against the real server and
@@ -9,8 +9,9 @@ import { type Guest, guestsJoin, join, ownAddress, ROOM_PATH, SHOTS, sameUser } 
 // "=" and holds quotes, a comma and a semicolon, with the final M; a title with a Jira key,
 // still on the table with its final). The summary counts all three; the CSV is downloaded
 // and parsed, in English with commas and in French and German with semicolons and decimal
-// commas; the Markdown and the key lines are copied (clipboard permissions granted) and
-// read back; the key lines and the range by keyboard; and screenshots of the summary and
+// commas; the Markdown and the key lines are copied (clipboard-write granted; the page
+// may not read the clipboard, `clipboard-read=()` in #36's Permissions-Policy, so the
+// write is watched on its way); the key lines and the range by keyboard; and screenshots of the summary and
 // the menu. Needs DATABASE_URL; skipped without it locally, failing without it in CI.
 
 test.skip(
@@ -76,9 +77,9 @@ async function download(page: Page, panel: Locator, menu: string, item: string) 
   return { name: file.suggestedFilename(), text: readFileSync(path, "utf8") };
 }
 
-/** The clipboard's text; Windows hands line ends back as CRLF. */
-const readClipboard = async (page: Page) =>
-  (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, "\n");
+/** The text the page last handed to `navigator.clipboard.writeText` (`watchClipboard`). */
+const readClipboard = (page: Page) =>
+  page.evaluate(() => (window as { ppCopied?: string }).ppCopied ?? "");
 
 /** Waits until no finite animation runs on the page (the sheet sliding in, the menu). */
 async function settle(page: Page) {
@@ -119,8 +120,18 @@ async function setLanguage(page: Page, language: string) {
   await page.reload();
 }
 
-async function grantClipboard(context: BrowserContext, base: string) {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
+/** Grants the write and watches it: every page of the context records what it copies. */
+async function watchClipboard(context: BrowserContext, base: string) {
+  await context.grantPermissions(["clipboard-write"], { origin: base });
+  await context.addInitScript(() => {
+    const clipboard = navigator.clipboard;
+    if (!clipboard) return;
+    const write = clipboard.writeText.bind(clipboard);
+    clipboard.writeText = (text: string) => {
+      (window as { ppCopied?: string }).ppCopied = text;
+      return write(text);
+    };
+  });
 }
 
 test("the summary counts three rounds; CSV, Markdown and key lines in en, fr and de, by keyboard too", async ({
@@ -130,7 +141,7 @@ test("the summary counts three rounds; CSV, Markdown and key lines in en, fr and
 }) => {
   test.setTimeout(150_000);
   const base = baseURL ?? "";
-  await grantClipboard(context, base);
+  await watchClipboard(context, base);
   await page.goto("/");
   await page.getByRole("textbox", { name: /^Room name/ }).fill(ROOM);
   await page.getByRole("button", { name: "Create the room" }).click();

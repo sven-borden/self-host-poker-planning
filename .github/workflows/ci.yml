@@ -34,6 +34,13 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Dependency audit (#36): a high or critical advisory in a production dependency
+      # fails the job; when npm's audit endpoint cannot be reached it warns and passes
+      # (scripts/audit.mjs). Every advisory, dev-only ones included, is listed without failing.
+      - name: pnpm audit (production, high and critical fail)
+        run: node scripts/audit.mjs
+      - name: pnpm audit (everything, reported only)
+        run: pnpm audit || true
       - run: pnpm gate
 
   db-tests:
@@ -70,9 +77,9 @@ jobs:
       - run: pnpm --filter @pp/server build
       - run: pnpm test:db
 
-  # The table in a real browser (#13): Playwright against `vite preview` of a fresh build.
-  # With DATABASE_URL, playwright.config.ts also starts the real server, which the identity
-  # spec (#10) needs; in CI that spec fails instead of skipping without it.
+  # The app in a real browser (#13, #36): Playwright against the real server, which serves
+  # a fresh build with its production headers and needs the Postgres below
+  # (playwright.config.ts refuses to start without DATABASE_URL).
   web-e2e:
     runs-on: ubuntu-26.04
     timeout-minutes: 15

@@ -50,13 +50,21 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 - `src/config.ts`: `loadConfig(env)`, zod-validated and frozen; `ConfigError` never
   carries a value.
 - `src/logger.ts`: `createLogger(level, destination?)`, pino JSON on stdout.
-- `src/app.ts`: `createApp(config, deps)`, the Hono app: request ids and logs,
-  `/api/health`, the hooks for more API routes, the JSON `/api` 404, the web app.
+- `src/app.ts`: `createApp(config, deps)`, the Hono app: request ids and logs, the
+  security headers on every answer, `/api/health`, the hooks for more API routes, the
+  JSON `/api` 404, the web app.
+- `src/security-headers.ts`: `securityHeaders({ baseUrl, reportOnly, extra })` and
+  `contentSecurityPolicy(...)`, the only place the policy is built (#36); see "Security
+  headers" below.
 - `src/realtime.ts`: `createRealtime(httpServer, options)`, Socket.IO typed with
   `@pp/protocol`'s event maps; takes a token from the sender's bucket, one per person
   for all their sockets (`sync/token-bucket.ts`, 10 a second, bursts of 20, else
-  `rate_limited`), then parses every payload before a handler sees it. A person holds at
-  most `MAX_SOCKETS_PER_USER` (8) sockets; the next handshake gets `rate_limited`.
+  `rate_limited`), then parses every payload before a handler sees it; a parsed roster
+  command (`join`, `leave`, `rename`, `setRole`) takes a token from the person's
+  `ROSTER_LIMIT` bucket too (10 a minute), a parsed `history` request from
+  `HISTORY_LIMIT` (2 a second, bursts of 10). A person holds at most
+  `MAX_SOCKETS_PER_USER` (8) sockets; the next handshake gets `rate_limited`. Engine.IO's
+  own HTTP answers get the security headers through its `headers` event.
   `SocketData` holds `user`, `sessionId` and `room` (`{ id, code }`). Handlers may have
   `attach(io)` and `disconnect(socket)`. `drainRealtime(io, ms)` stops taking messages and
   waits for the answers owed.
@@ -284,6 +292,52 @@ with a socket on this instance, which the retention purge keeps (#35).
   or for a path that matched only a wildcard the normalised path of `loggedPath` (the
   segment after `/r` or `/api/rooms` and any code-shaped segment become `:code`, case
   and `//` ignored); `app.test.ts` and `rooms.db.test.ts` grep the logs.
+
+## Security headers
+
+Every answer carries them (architecture section 8): the policy below,
+`X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`,
+`Permissions-Policy`, `Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy`,
+and HSTS when `BASE_URL` is https. `createApp` sets them after every handler, error and
+404; `createRealtime` adds them to Socket.IO's polling and upgrade answers.
+
+- The policy: `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'
+  data:; font-src 'self'; connect-src 'self' ws(s)://<host>; object-src 'none';
+  base-uri 'none'; form-action 'self'; frame-ancestors 'none'`, and
+  `upgrade-insecure-requests` over https. The web app must never need more: no inline
+  script or `<style>`, no `style="…"` in HTML or through `setAttribute`, no `eval`. Style
+  props and `element.style` are fine (CSSOM).
+- `CSP_REPORT_ONLY` (`true`, `false`, `1`, `0`; default false): sends the policy as
+  `Content-Security-Policy-Report-Only`. The browser logs what the policy would block
+  and blocks nothing: for a self-hoster who adds a script of their own.
+- `CSP_EXTRA_SOURCES`: adds origins, such as
+  `script-src https://stats.example.com; connect-src https://stats.example.com`. Only
+  `script-src`, `style-src`, `img-src`, `font-src`, `connect-src`, `frame-src` and
+  `media-src`; only plain `http(s)://` or `ws(s)://` origins with an optional port from 1
+  to 65535; no keyword, path or bare scheme. A `*.` left-most label must cover at least
+  two labels (`*.example.com`, never `*.com`) and none of the suffixes anyone can get a
+  name under, listed in `CSP_WILDCARD_REFUSED` (`github.io`, `vercel.app`, `co.uk` …; an
+  explicit list, not the Public Suffix List: add one there when you meet it). Anything
+  else stops the server at start with `ConfigError`.
+- Code that needs an origin (#40's Sentry and Umami) passes it as `extra` to
+  `securityHeaders` in `responseHeaders` (`app.ts`), merged with the config's.
+- Tests: `security-headers.test.ts` (the builder over http and https, report-only, extra
+  origins, each header on each kind of answer, Socket.IO's), the web's
+  `e2e/security.spec.ts` and the guard in `e2e/fixtures.ts`, and
+  `scripts/docker-smoke.mjs` against the image.
+
+## Fuzzing
+
+`src/fuzz.db.test.ts` (#36) drives a real server with Postgres over real sockets with
+random and malformed messages from two attackers in the room (its PO and a voter), then
+checks that every message got an ack with `ok` or a known code other than `internal`
+(or was dropped), that the stored room keeps `apply`'s invariants, that honest people
+still enter and act, that nothing reached `Object.prototype` and that nothing was logged
+at `error`. It also floods the default limits and fuzzes the HTTP bodies. CI runs 40
+cases; run more with
+`FUZZ_RUNS=1000 DATABASE_URL=… pnpm exec vitest run --project=db apps/server/src/fuzz.db.test.ts`
+(about a minute). It found that a `history` cursor past Postgres's `integer` reached
+the query and answered `internal`; the wire schema caps it now.
 
 ## Database
 

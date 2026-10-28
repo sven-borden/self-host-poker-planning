@@ -1,4 +1,10 @@
 import { writeFile } from "node:fs/promises";
+import { computeResults } from "../../../packages/domain/src/results.ts";
+import {
+  historyLeaks,
+  isPublicCardPath,
+  stringLeaves,
+} from "../../../packages/protocol/src/leak-scan.ts";
 import {
   type Browser,
   type BrowserContext,
@@ -6,13 +12,7 @@ import {
   type Locator,
   type Page,
   test,
-} from "@playwright/test";
-import { computeResults } from "../../../packages/domain/src/results.ts";
-import {
-  historyLeaks,
-  isPublicCardPath,
-  stringLeaves,
-} from "../../../packages/protocol/src/leak-scan.ts";
+} from "./fixtures.ts";
 import {
   hand,
   handCard,

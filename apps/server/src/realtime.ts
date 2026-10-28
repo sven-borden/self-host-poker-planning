@@ -5,9 +5,16 @@
  * `parseHistoryRequest`, and only parsed values reach the
  * handlers (`sync/room-sync.ts` in the running server). Every message first takes a token
  * from its sender's bucket (`SOCKET_MESSAGE_LIMIT`, one bucket per person shared by all
- * their sockets): past it, the answer is `rate_limited` and the socket stays open. One
+ * their sockets): past it, the answer is `rate_limited` and the socket stays open. Roster
+ * commands (`ROSTER_LIMIT`) and history requests (`HISTORY_LIMIT`) take a token from a
+ * tighter bucket of the person's too. One
  * person holds at most `MAX_SOCKETS_PER_USER` sockets; the next handshake is refused with
  * `rate_limited`. `drainRealtime` stops taking messages and waits for the answers owed.
+ *
+ * A connection costs memory before it is anyone's (#36): a handshake without the session
+ * cookie is refused before the upgrade (`sessionCookie`), a refused handshake closes its
+ * transport at once, and a connection that never asks for a socket is closed after
+ * `CONNECT_TIMEOUT_MS`.
  */
 import { randomBytes } from "node:crypto";
 import type { Server as HttpServer } from "node:http";
@@ -29,6 +36,8 @@ import type { SocketUser } from "./auth.ts";
 import type { Logger } from "./logger.ts";
 import {
   createTokenBucket,
+  HISTORY_LIMIT,
+  ROSTER_LIMIT,
   SOCKET_MESSAGE_LIMIT,
   type TokenBucket,
   type TokenBucketOptions,
@@ -109,10 +118,35 @@ export interface RealtimeOptions {
   handlers?: RealtimeHandlers;
   /** Run in order on every handshake after the connection id is set (#10: session). */
   middleware?: readonly SocketMiddleware[];
-  /** Messages (`enter` and `cmd`) per person; `SOCKET_MESSAGE_LIMIT` by default. */
+  /** Messages (`enter`, `cmd`, `history`) per person; `SOCKET_MESSAGE_LIMIT` by default. */
   messageLimit?: TokenBucketOptions;
+  /** Roster commands per person; `ROSTER_LIMIT` by default. */
+  rosterLimit?: TokenBucketOptions;
+  /** History requests per person; `HISTORY_LIMIT` by default. */
+  historyLimit?: TokenBucketOptions;
   /** Sockets one person may hold at once; `MAX_SOCKETS_PER_USER` by default. */
   maxSocketsPerUser?: number;
+  /** Added to every HTTP answer of Socket.IO's own (polling, the upgrade): the app's (#36). */
+  responseHeaders?: Readonly<Record<string, string>>;
+  /**
+   * The cookie every handshake must carry (`setup.ts`: the session cookie's name). Without
+   * it, Engine.IO refuses the request before any upgrade or session, with the message
+   * `unauthenticated` (403 over polling, 400 on the upgrade); its value is still checked
+   * by the session middleware. Left out (tests without identity), no cookie is needed.
+   */
+  sessionCookie?: string;
+}
+
+/**
+ * How long a connection may stay open without a socket: the handshake's CONNECT packet
+ * normally follows its upgrade within milliseconds. Socket.IO's default is 45 s, which let
+ * one address hold thousands of idle connections.
+ */
+export const CONNECT_TIMEOUT_MS = 5_000;
+
+/** True when the `Cookie` header names `name` (its value is the middleware's to check). */
+export function hasCookie(header: string | undefined, name: string): boolean {
+  return (header ?? "").split(";").some((part) => part.trimStart().startsWith(`${name}=`));
 }
 
 /**
@@ -121,10 +155,12 @@ export interface RealtimeOptions {
  */
 export const MAX_SOCKETS_PER_USER = 8;
 
-/** One person's sockets and their shared message bucket. */
+/** One person's sockets and their shared buckets. */
 interface Holder {
   sockets: Set<string>;
   bucket: TokenBucket;
+  roster: TokenBucket;
+  history: TokenBucket;
   /** Set while the person holds no socket: forgets the holder once the bucket refilled. */
   idle?: ReturnType<typeof setTimeout> | undefined;
 }
@@ -160,6 +196,14 @@ export async function drainRealtime(io: RealtimeServer, timeoutMs: number): Prom
   return pending;
 }
 
+/** The commands that change who is in the room, or how they show (`ROSTER_LIMIT`). */
+const ROSTER_COMMANDS: ReadonlySet<Command["type"]> = new Set([
+  "join",
+  "leave",
+  "rename",
+  "setRole",
+]);
+
 /** Payload cap per message, both transports (architecture section 8). */
 export const MAX_PAYLOAD_BYTES = 16 * 1024;
 
@@ -170,63 +214,93 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     handlers = noRoomHandlers,
     middleware = [],
     messageLimit = SOCKET_MESSAGE_LIMIT,
+    rosterLimit = ROSTER_LIMIT,
+    historyLimit = HISTORY_LIMIT,
     maxSocketsPerUser = MAX_SOCKETS_PER_USER,
+    responseHeaders = {},
+    sessionCookie,
   } = options;
   const io: RealtimeServer = new Server(httpServer, {
     maxHttpBufferSize: MAX_PAYLOAD_BYTES,
     serveClient: false,
+    connectTimeout: CONNECT_TIMEOUT_MS,
+    // Engine.IO calls this for a new connection only, before the upgrade or the session.
     allowRequest: (request, callback) => {
       const origin = request.headers.origin;
-      callback(null, origin === undefined || origin === allowedOrigin);
+      if (origin !== undefined && origin !== allowedOrigin) {
+        callback(null, false);
+        return;
+      }
+      if (sessionCookie !== undefined && !hasCookie(request.headers.cookie, sessionCookie)) {
+        callback("unauthenticated", false);
+        return;
+      }
+      callback(null, true);
     },
+  });
+
+  // Engine.IO answers the polling requests and the upgrade itself, outside Hono.
+  io.engine.on("headers", (headers: Record<string, string>) => {
+    Object.assign(headers, responseHeaders);
   });
 
   io.use((socket, next) => {
     socket.data.conn = randomBytes(6).toString("base64url");
     next();
   });
-  for (const fn of middleware) io.use(guard(fn, logger));
+  for (const fn of middleware) io.use(closeOnRefusal(guard(fn, logger)));
 
   // After the session: the sockets and the message bucket of each person. Without
   // identity (tests), each socket counts as its own person.
   const holders = new Map<string, Holder>();
   const holderKey = (socket: RealtimeSocket) => socket.data.user?.id ?? `socket ${socket.id}`;
-  const refillMs = (messageLimit.burst / messageLimit.perSecond) * 1000;
+  const refillMs =
+    Math.max(
+      ...[messageLimit, rosterLimit, historyLimit].map((limit) => limit.burst / limit.perSecond),
+    ) * 1000;
+  const newHolder = (): Holder => ({
+    sockets: new Set(),
+    bucket: createTokenBucket(messageLimit),
+    roster: createTokenBucket(rosterLimit),
+    history: createTokenBucket(historyLimit),
+  });
   const release = (key: string, id: string) => {
     const holder = holders.get(key);
     if (!holder?.sockets.delete(id) || holder.sockets.size > 0) return;
-    // Kept until its bucket would be full again: closing every socket and opening new
-    // ones does not refill it sooner.
+    // Kept until its buckets would be full again: closing every socket and opening new
+    // ones does not refill them sooner.
     holder.idle = setTimeout(() => {
       if (holder.sockets.size === 0) holders.delete(key);
     }, refillMs);
     holder.idle.unref();
   };
-  io.use((socket, next) => {
-    const conn = socket.client.conn;
-    if (conn.readyState === "closing" || conn.readyState === "closed") {
-      next(new Error("internal"));
-      return;
-    }
-    const key = holderKey(socket);
-    let holder = holders.get(key);
-    if (holder && holder.sockets.size >= maxSocketsPerUser) {
-      logger.debug({ conn: socket.data.conn }, "socket refused: too many sockets for one person");
-      next(new Error("rate_limited"));
-      return;
-    }
-    if (!holder) {
-      holder = { sockets: new Set(), bucket: createTokenBucket(messageLimit) };
-      holders.set(key, holder);
-    }
-    clearTimeout(holder.idle);
-    holder.idle = undefined;
-    holder.sockets.add(socket.id);
-    // Released when the socket disconnects, and when the connection closes before the
-    // socket ever connected.
-    conn.once("close", () => release(key, socket.id));
-    next();
-  });
+  io.use(
+    closeOnRefusal((socket, next) => {
+      const conn = socket.client.conn;
+      if (conn.readyState === "closing" || conn.readyState === "closed") {
+        next(new Error("internal"));
+        return;
+      }
+      const key = holderKey(socket);
+      let holder = holders.get(key);
+      if (holder && holder.sockets.size >= maxSocketsPerUser) {
+        logger.debug({ conn: socket.data.conn }, "socket refused: too many sockets for one person");
+        next(new Error("rate_limited"));
+        return;
+      }
+      if (!holder) {
+        holder = newHolder();
+        holders.set(key, holder);
+      }
+      clearTimeout(holder.idle);
+      holder.idle = undefined;
+      holder.sockets.add(socket.id);
+      // Released when the socket disconnects, and when the connection closes before the
+      // socket ever connected.
+      conn.once("close", () => release(key, socket.id));
+      next();
+    }),
+  );
 
   const drain: Drain = { accepting: true, inFlight: new Set() };
   drains.set(io, drain);
@@ -241,7 +315,7 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
       release(key, socket.id);
       handlers.disconnect?.(socket);
     });
-    const bucket = holders.get(key)?.bucket ?? createTokenBucket(messageLimit);
+    const { bucket, roster, history } = holders.get(key) ?? newHolder();
     const limited = { ok: false, code: "rate_limited" } as const;
 
     onRaw(socket, log, drain, "enter", async (payload) => {
@@ -252,14 +326,15 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     onRaw(socket, log, drain, "cmd", async (payload) => {
       if (!bucket.take()) return limited;
       const parsed = toDomainCommand(payload);
-      return parsed.ok
-        ? handlers.cmd(socket, parsed.id, parsed.command)
-        : { ok: false, code: parsed.code };
+      if (!parsed.ok) return { ok: false, code: parsed.code };
+      if (ROSTER_COMMANDS.has(parsed.command.type) && !roster.take()) return limited;
+      return handlers.cmd(socket, parsed.id, parsed.command);
     });
     onRaw(socket, log, drain, "history", async (payload) => {
       if (!bucket.take()) return limited;
       const parsed = parseHistoryRequest(payload);
       if (!parsed.ok) return { ok: false, code: parsed.code };
+      if (!history.take()) return limited;
       return handlers.history
         ? handlers.history(socket, parsed.request)
         : { ok: false, code: "room_not_found" };
@@ -293,6 +368,21 @@ function guard(fn: SocketMiddleware, logger: Logger): SocketMiddleware {
       fail(error);
     }
   };
+}
+
+/**
+ * Closes the connection once a middleware refused its socket: Socket.IO sends the
+ * `connect_error` and would keep the connection open for another try. The client gives up
+ * on a refusal anyway (`connectWhenIdentified` connects again on a new connection), so an
+ * open one only holds memory. `setImmediate` runs after Socket.IO wrote the refusal
+ * (`process.nextTick`), and Engine.IO closes once that packet has left.
+ */
+function closeOnRefusal(fn: SocketMiddleware): SocketMiddleware {
+  return (socket, next) =>
+    fn(socket, (err) => {
+      next(err);
+      if (err) setImmediate(() => socket.client.conn.close());
+    });
 }
 
 /**

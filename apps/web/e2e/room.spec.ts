@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.ts";
 
 // Creating a room in a real browser (#14), against the real server and Postgres: browser
 // A creates a room and lands on its page, browser B (another context, so another guest)
@@ -53,7 +53,17 @@ test("the copy button copies the room link and confirms with a toast", async ({
   page,
   context,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await context.grantPermissions(["clipboard-write"]);
+  // The page may not read the clipboard (Permissions-Policy `clipboard-read=()`, #36), so
+  // the real write is watched on its way instead.
+  await page.addInitScript(() => {
+    const clipboard = navigator.clipboard;
+    const write = clipboard.writeText.bind(clipboard);
+    clipboard.writeText = (text: string) => {
+      (window as { ppCopied?: string }).ppCopied = text;
+      return write(text);
+    };
+  });
   await page.goto("/");
   await page.getByRole("button", { name: "Create the room" }).click();
   await expect(page).toHaveURL(ROOM_PATH);
@@ -62,7 +72,7 @@ test("the copy button copies the room link and confirms with a toast", async ({
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(`Room ${code}`);
   await page.getByRole("button", { name: "Copy the link" }).click();
   await expect(page.getByText("Link copied. Send it to your team.")).toBeVisible();
-  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  const copied = await page.evaluate(() => (window as { ppCopied?: string }).ppCopied);
   expect(copied).toBe(new URL(`/r/${code}`, page.url()).href);
 });
 

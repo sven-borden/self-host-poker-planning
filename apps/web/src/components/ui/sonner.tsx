@@ -7,6 +7,9 @@ import {
 } from "lucide-react";
 import type { CSSProperties } from "react";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
+// Its sheet as CSS of the app's own: the build cuts the <style> sonner would write, which
+// the Content Security Policy refuses (vite.config.ts, #36).
+import "sonner/dist/styles.css";
 import { useT } from "@/i18n/hooks.ts";
 import { useThemeMode } from "@/theme/use-theme-mode.ts";
 

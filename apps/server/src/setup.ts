@@ -4,7 +4,13 @@
  * retention job (#35), whose first run comes a few minutes later. Opens nothing at import
  * time.
  */
-import { createAuth, registerAuthApi, sessionChecker, sessionMiddleware } from "./auth.ts";
+import {
+  cookieNaming,
+  createAuth,
+  registerAuthApi,
+  sessionChecker,
+  sessionMiddleware,
+} from "./auth.ts";
 import type { Config } from "./config.ts";
 import { type Database, setupDatabase } from "./database.ts";
 import type { Logger } from "./logger.ts";
@@ -87,6 +93,7 @@ export async function setupServer(
         registerPasswordApi(app, { auth, rooms: store, sync, config, limiter });
       },
       socketMiddleware: [sessionMiddleware(auth)],
+      sessionCookie: cookieNaming(config.baseUrl).sessionCookie,
       handlers: sync,
     },
     // Before the server closes its sockets: a run that started during the close would see

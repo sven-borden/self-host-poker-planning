@@ -1,4 +1,4 @@
-import { type Browser, expect, type Locator, type Page, test } from "@playwright/test";
+import { type Browser, expect, type Locator, type Page, test } from "./fixtures.ts";
 import { createRoom, join, newPerson, ownAddress, phone, SHOTS, shoot } from "./support.ts";
 
 // The room password (#31) in real browsers, against the real server and Postgres: the PO

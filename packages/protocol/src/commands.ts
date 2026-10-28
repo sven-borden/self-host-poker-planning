@@ -35,6 +35,10 @@ export const WIRE_LIMITS = {
   specials: 8,
   /** The room code (10 characters of base58). */
   roomCode: 64,
+  /** A round number or a restart count: Postgres's `integer`, where history keeps them. */
+  roundNumber: 2_147_483_647,
+  /** The domain takes a timer of 5 to 3600 seconds. */
+  timerSeconds: 86_400,
 } as const;
 
 export const userIdSchema = z.string().min(1).max(WIRE_LIMITS.userId);
@@ -79,7 +83,7 @@ export const settingsPatchSchema = z.strictObject({
   revealWhenAllVoted: z.boolean().optional(),
   timer: z
     .strictObject({
-      seconds: z.number().nullable().optional(),
+      seconds: z.number().min(0).max(WIRE_LIMITS.timerSeconds).nullable().optional(),
       revealAtEnd: z.boolean().optional(),
     })
     .optional(),
@@ -89,10 +93,13 @@ export const settingsPatchSchema = z.strictObject({
 });
 
 /** A round's number, as the snapshot gave it (rounds count from 1). */
-const roundNumberSchema = z.number().int().min(1);
+const roundNumberSchema = z.number().int().min(1).max(WIRE_LIMITS.roundNumber);
 
 /** How many times the round had restarted when the press was made (#26), 0 for none. */
-const restartSchema = z.number().int().min(0);
+const restartSchema = z.number().int().min(0).max(WIRE_LIMITS.roundNumber);
+
+/** A timer's length or extension; the domain checks integer and range (`bad_seconds`). */
+const secondsSchema = z.number().min(0).max(WIRE_LIMITS.timerSeconds);
 
 /** A command without fields may omit `payload`. */
 const empty = z.strictObject({}).default({});
@@ -124,9 +131,9 @@ const payloads = {
   setFinal: z.strictObject({ card: cardSchema }),
   revote: empty,
   // zod's number refuses NaN and the infinities; the domain checks integer and range.
-  startTimer: z.strictObject({ seconds: z.number() }),
+  startTimer: z.strictObject({ seconds: secondsSchema }),
   stopTimer: empty,
-  extendTimer: z.strictObject({ seconds: z.number() }),
+  extendTimer: z.strictObject({ seconds: secondsSchema }),
   timeUp: empty,
   updateSettings: z.strictObject({ patch: settingsPatchSchema }),
   transferOwner: z.strictObject({ to: userIdSchema }),

@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 // Paths are absolute because the root Vitest config extends this file from the repo root:
 // relative paths would resolve against the current directory, not apps/web.
@@ -11,7 +11,7 @@ const src = (path: string) => fileURLToPath(new URL(`./src/${path}`, import.meta
 // In development the web app runs on 5173 and forwards the API and the socket to the
 // server on 3000, so the browser sees a single origin, as it does in production. The
 // server (#6) serves `dist/` with a history fallback, so the base stays "/".
-// E2E_API_PORT moves the server for an end-to-end run beside another (playwright.config.ts).
+// E2E_API_PORT moves that server, for a second `pnpm dev` beside another.
 const api = `http://localhost:${process.env.E2E_API_PORT ?? 3000}`;
 
 /**
@@ -32,6 +32,38 @@ const VENDOR = new RegExp(
   ].join(""),
 );
 
+/**
+ * sonner writes its style sheet into a `<style>` element when it is imported, which the
+ * Content Security Policy refuses (`style-src 'self'`, #36). The call is cut from the
+ * built bundle, and `components/ui/sonner.tsx` imports the same sheet from
+ * `sonner/dist/styles.css` into the app's own CSS. A sonner release that writes it some
+ * other way fails the build here, before the policy would block it in the browser; so
+ * does one whose entry is no longer `dist/index.mjs` (the transform would never run):
+ * the finished bundle may hold neither the call nor the sheet's first rule.
+ */
+function sonnerStylesAsCss(): Plugin {
+  const leftovers = ["__insertCSS(", "[data-sonner-toaster][dir=ltr]"];
+  return {
+    name: "pp:sonner-styles-as-css",
+    apply: "build",
+    transform(code, id) {
+      if (!/[\\/]sonner[\\/]dist[\\/]index\.mjs$/.test(id.split("?")[0] ?? "")) return null;
+      const cut = code.replace(/__insertCSS\("(?:[^"\\]|\\.)*"\);?/, "");
+      if (cut === code) this.error("sonner no longer calls __insertCSS: check its styles");
+      return { code: cut, map: null };
+    },
+    generateBundle(_options, bundle) {
+      for (const chunk of Object.values(bundle)) {
+        if (chunk.type !== "chunk") continue;
+        const left = leftovers.find((text) => chunk.code.includes(text));
+        if (left) {
+          this.error(`${chunk.fileName} still writes sonner's styles (${left}): check its entry`);
+        }
+      }
+    },
+  };
+}
+
 export default defineConfig({
   base: "/",
   plugins: [
@@ -46,6 +78,7 @@ export default defineConfig({
     }),
     react(),
     tailwindcss(),
+    sonnerStylesAsCss(),
   ],
   build: {
     // The real budget is 200 kB of gzipped JavaScript on the room route
@@ -75,7 +108,11 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: { "@": src("") },
+    alias: {
+      "@": src(""),
+      // Radix's scroll lock builds its sheet without a <style> element (src/csp/, #36).
+      "react-style-singleton": src("csp/style-singleton.ts"),
+    },
   },
   server: {
     port: 5173,

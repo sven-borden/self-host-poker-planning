@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./fixtures.ts";
 
 // Guest identity in a real browser (#10), against the real server and Postgres: a page
 // load creates a guest, a reload keeps the same user id, and a second browser (another

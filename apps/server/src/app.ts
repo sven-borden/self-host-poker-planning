@@ -10,6 +10,7 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { Config } from "./config.ts";
 import type { Logger } from "./logger.ts";
+import { securityHeaders } from "./security-headers.ts";
 
 export interface AppEnv {
   Variables: {
@@ -61,6 +62,7 @@ const REVALIDATE = "no-cache";
 export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const uptime = deps.uptime ?? process.uptime;
+  const headers = Object.entries(responseHeaders(config));
 
   app.use("*", async (c, next) => {
     const incoming = c.req.header("x-request-id");
@@ -71,7 +73,8 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
     const started = performance.now();
     await next();
     c.header("x-request-id", requestId);
-    c.header("X-Content-Type-Options", "nosniff");
+    // On every answer: the web app, the API, static files, 404s and 500s (#36).
+    for (const [name, value] of headers) c.header(name, value);
     // Path only, without a room code (a bearer capability, like a session token): the
     // query string may carry anything, and bodies, cookies and auth headers are never
     // logged.
@@ -136,6 +139,15 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
     mountWebApp(app, deps.staticDir);
   }
   return app;
+}
+
+/** The security headers (`security-headers.ts`) for this config. */
+export function responseHeaders(config: Config): Readonly<Record<string, string>> {
+  return securityHeaders({
+    baseUrl: config.baseUrl,
+    reportOnly: config.cspReportOnly,
+    extra: config.cspExtraSources,
+  });
 }
 
 /** A room code's shape in any case: 10 letters and digits, which no static route has. */

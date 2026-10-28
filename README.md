@@ -57,6 +57,8 @@ Variables compose reads from `.env` (the full list is in
 | `TRUST_PROXY` | no (`false`) | number of reverse proxies in front that append `X-Forwarded-For` (`true` = 1, `false` = 0, up to 10); count only proxies no client can bypass, or clients can fake their address |
 | `LOG_LEVEL`, `ROOM_TTL_DAYS` | no | logging (`info`) and days before an idle room is deleted (`90`) |
 | `GIT_COMMIT`, `APP_VERSION` | no | build arguments shown by `/api/health` |
+| `CSP_REPORT_ONLY` | no (`false`) | `true` reports Content Security Policy violations in the browser console instead of blocking them (see "Security") |
+| `CSP_EXTRA_SOURCES` | no | origins your own additions load from, such as `script-src https://stats.example.com` (see "Security") |
 
 Compose refuses to start while a required variable is empty. `DATABASE_URL` is built
 from the bundled database; to use your own Postgres, run the image alone with
@@ -138,6 +140,52 @@ from the bundled database; to use your own Postgres, run the image alone with
 - **Nothing is tracked by default.** Error reporting (Sentry) and page analytics
   (Umami) are not built yet; they will be opt-in, loaded only when you set their
   variables (#40).
+
+## Security
+
+- **Headers**: every answer carries a strict Content Security Policy (scripts, styles,
+  fonts and connections from the app's own origin only; no inline script; no framing),
+  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+  same-origin` (a room link is a key to the room and never leaves in a `Referer`), a
+  `Permissions-Policy` that turns off camera, microphone, location, payment and the like,
+  and the cross-origin opener and resource policies. With an `https://` `BASE_URL` it
+  adds HSTS for a year (`includeSubDomains`, no `preload`: submit your domain to the
+  preload list yourself if you want it) and `upgrade-insecure-requests`.
+  - `includeSubDomains` reaches every subdomain of the host in `BASE_URL`. On a
+    subdomain such as `poker.example.com` that is only its own children; on an apex
+    domain (`https://example.com`) it is every `*.example.com`, for a year, in every
+    browser that opened the app: serve them all over https first, or install the app on a
+    subdomain.
+  - `upgrade-insecure-requests` makes the browser load everything over https. Opened
+    over plain http (a LAN address such as `http://192.168.1.20:3000` while `BASE_URL`
+    says https), the page stays blank: its scripts are asked for over https, which that
+    address does not answer. Open the app at `BASE_URL`, or run a second instance whose
+    `BASE_URL` is the http address.
+- **Your own additions**: if you inject a script or load something from another origin
+  (a status widget, your own analytics), the policy blocks it. Run with
+  `CSP_REPORT_ONLY=true` first and read the browser console: it lists what the policy
+  would block, and blocks nothing. Then allow the origins with `CSP_EXTRA_SOURCES`,
+  directives separated by `;`, such as
+  `CSP_EXTRA_SOURCES="script-src https://stats.example.com; connect-src https://stats.example.com"`
+  (`script-src`, `style-src`, `img-src`, `font-src`, `connect-src`, `frame-src`,
+  `media-src`; plain origins only, no `'unsafe-inline'`; a wildcard such as
+  `https://*.example.com` only over your own domain, never `*.github.io` or `*.co.uk`),
+  and turn report-only off.
+- **Your proxy**: let the app's headers through unchanged. A proxy that adds headers of
+  its own (Synology's "HSTS" checkbox, a Traefik `headers` middleware, nginx
+  `add_header`) duplicates them: two policies both apply, so the stricter one wins and
+  can break the page, and some graders count a duplicated header as missing. Check with
+  `curl -sI https://your-host/` that each header appears once.
+- **Limits**: room creation, sign-in, header reads and password checks are limited per
+  client address, wrong passwords also per person and room, and socket messages per
+  person (the full table is in
+  [architecture, section 8](docs/02-architecture.md#8-rooms-access-and-security)). Set
+  `TRUST_PROXY` to the number of proxies in front: too low, and every visitor shares one
+  address, so the per-address limits apply to everyone at once.
+- **Inputs**: names, room names, subjects, decks, passwords and every payload (16 KB)
+  are bounded on the server; a fuzz test sends malformed messages to a real server on
+  every pull request.
+- **Dependencies**: CI fails on a high or critical advisory in a production dependency.
 
 ## Run locally
 

@@ -5,6 +5,7 @@ import {
   connectWhenIdentified,
   createSocket,
   type EventsMap,
+  refusalOf,
   type TypedSocket,
   trackConnection,
 } from "./socket.ts";
@@ -102,6 +103,35 @@ describe("trackConnection", () => {
     fire(socket, "connect");
     expect(status()).toBe("offline");
     socket.close();
+  });
+});
+
+/** Engine.IO's polling error: the HTTP status as `description`, the XHR as `context`. */
+function engineRefusal(status: number, responseText: string) {
+  return Object.assign(new Error("xhr poll error"), {
+    description: status,
+    context: { responseText },
+  });
+}
+
+describe("refusalOf", () => {
+  it("reads a middleware's message, and the message of Engine.IO's 403", () => {
+    expect(refusalOf(new Error("rate_limited"))).toBe("rate_limited");
+    expect(refusalOf(engineRefusal(403, '{"code":4,"message":"unauthenticated"}'))).toBe(
+      "unauthenticated",
+    );
+  });
+
+  it("keeps Socket.IO's message for anything else", () => {
+    for (const error of [
+      engineRefusal(502, '{"message":"unauthenticated"}'),
+      engineRefusal(403, "<html>proxy</html>"),
+      engineRefusal(403, '{"code":4}'),
+      engineRefusal(403, "null"),
+      Object.assign(new Error("xhr poll error"), { description: 403 }),
+    ]) {
+      expect(refusalOf(error)).toBe("xhr poll error");
+    }
   });
 });
 
@@ -206,6 +236,19 @@ describe("connectWhenIdentified", () => {
     await tick();
     expect(connect).toHaveBeenCalledTimes(3);
     expect(useIdentityStore.getState().error).toBeNull();
+    stop();
+  });
+
+  it("reads unauthenticated from Engine.IO's 403 before the socket, and stops its retries", async () => {
+    const ensure = vi.fn(() => Promise.resolve({ userId: "u1", name: null }));
+    const { socket, connect, stop } = setup(ensure);
+    const disconnect = vi.spyOn(socket, "disconnect");
+    await tick();
+    fire(socket, "connect_error", engineRefusal(403, '{"code":4,"message":"unauthenticated"}'));
+    await tick();
+    expect(disconnect).toHaveBeenCalledOnce();
+    expect(ensure).toHaveBeenLastCalledWith({ force: true, retry: true });
+    expect(connect).toHaveBeenCalledTimes(2);
     stop();
   });
 
