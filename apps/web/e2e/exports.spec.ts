@@ -77,9 +77,9 @@ async function download(page: Page, panel: Locator, menu: string, item: string) 
   return { name: file.suggestedFilename(), text: readFileSync(path, "utf8") };
 }
 
-/** The clipboard's text; Windows hands line ends back as CRLF. */
-const readClipboard = async (page: Page) =>
-  (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, "\n");
+/** The text the page last handed to `navigator.clipboard.writeText` (`watchClipboard`). */
+const readClipboard = (page: Page) =>
+  page.evaluate(() => (window as { ppCopied?: string }).ppCopied ?? "");
 
 /** Waits until no finite animation runs on the page (the sheet sliding in, the menu). */
 async function settle(page: Page) {

@@ -7,7 +7,7 @@
 // app; the security headers (#36) are on every kind of answer; a WebSocket with the right
 // Origin connects and `enter` gets an ack; a foreign Origin is refused. When /api/auth
 // exists (#10) it signs in anonymously first and sends the session cookie with the
-// WebSocket.
+// WebSocket, and checks that one without the cookie is refused (#36).
 
 const [baseArg, expectedCommit] = process.argv.slice(2);
 if (!baseArg) {
@@ -160,6 +160,13 @@ async function sockets() {
     () => true,
   );
   check(refused, "a WebSocket from a foreign Origin is refused");
+  if (cookie) {
+    const anonymous = await enterOverWebSocket(base, undefined).then(
+      () => false,
+      () => true,
+    );
+    check(anonymous, "a WebSocket without the session cookie is refused before the upgrade");
+  }
 }
 
 try {
