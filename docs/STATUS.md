@@ -130,6 +130,12 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   every answer; every limit in one table (architecture §8); cookieless socket
   handshakes refused before the upgrade; a fuzz test over real sockets; a dependency
   audit in CI. Live at af6c1a0 with every header present.
+- Scale-out from #39 (ADR-016), off unless `REDIS_URL` is set: the Socket.IO Redis
+  adapter carries "room changed" signals only (each instance reads Postgres and builds
+  its own viewers' snapshots), WebSocket only (a `<meta>` tells the page), command ids
+  claimed in Redis, kicks, lockouts, presence and retention across instances, and an
+  instance that never stops for Redis once started. Rate limits stay per instance
+  (architecture §8). Redis must be reachable by the instances only. Live at bf40cf0.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -147,8 +153,8 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
     (server, CI Redis service).
   - Both add dev or runtime dependencies: whichever merges second merges `main` and
     regenerates `pnpm-lock.yaml`.
-  - #39 is PR #99 (CI green, reviewed: no blocker, nine should-fix items, a fixer on
-    them). #37's implementer is still building.
+  - #39 merged (PR #99, live at bf40cf0). #37 is PR #100: reviewed in the main session,
+    `main` merged in, a fix for CI's Linux font widths pushed; waiting on CI.
   - **Sven, 2026-10-29: "after those agents, no more agents, we do task by task on the
     main instance. we pause after it's merged."** The two running agents finish; from
     then on the main session reviews, fixes and merges itself, one task at a time, and
@@ -169,11 +175,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   60 a minute used, 3 more per new block); `/dev/table` crashes in WebKit (React #185),
   with or without the CSP; no per-address cap on socket handshakes yet.
   - Each later setting drops its control into #25's panel (see the web README).
+- Left by #39 for later: rate limits shared through Redis, a sticky-session setting
+  with polling, a Redis key prefix so two deployments can share one Redis.
 - Notes to carry into the briefs:
   - #29: change after reveal never applies to anonymous rounds. The panel's `locked`
     toggle shows why.
-  - #39 (scale-out): a kick must close the person's sockets on every instance; today
-    only on the one that ran it.
   - Later: a person removed while their socket was down comes back to the join form
     with no notice (accepted at #30's review).
   - #37: at 150 % text on phones, the centre stack touches slot cards (390 px, 7 seats)
