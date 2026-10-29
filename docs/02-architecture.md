@@ -805,8 +805,9 @@ password, no social provider before W5.
     `script-src`, `style-src`, `img-src`, `font-src`, `connect-src`, `frame-src` or
     `media-src` (plain `http(s)`/`ws(s)` origins only, no keyword, no path, a port up to
     65535, a `*.` wildcard only over two labels or more and never over a suffix in
-    `CSP_WILDCARD_REFUSED`, such as `github.io` or `co.uk`), and #40's
-    Sentry and Umami add theirs the same way.
+    `CSP_WILDCARD_REFUSED`, such as `github.io` or `co.uk`). The opt-in services (#40,
+    section 11) add theirs when they are on: Umami's origin to `script-src` and
+    `connect-src`, the DSN's host to `connect-src` (`observabilitySources`).
   - `Strict-Transport-Security: max-age=31536000; includeSubDomains` when `BASE_URL` is
     https; no `preload`, which is the domain owner's choice.
   - `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` (for browsers without
@@ -943,8 +944,27 @@ language, and an unknown code gets a generic one.
   rejection. `SIGTERM`/`SIGINT` during the start abort it and exit 0 with one line; later
   they stop accepting connections, drop every socket, wait for open requests (cut after 8 s),
   release the database pool and exit 0 within 10 s, one log line per phase.
-- Optional Sentry (`SENTRY_DSN`) and Umami (`UMAMI_URL`, `UMAMI_WEBSITE_ID`); nothing
-  external loads when they are unset.
+- Optional Sentry (`SENTRY_DSN`) and Umami (`UMAMI_URL` with `UMAMI_WEBSITE_ID`), #40 and
+  ADR-017. Unset, nothing of them loads: no tag in the page, no origin in the policy, no
+  module on the server (`e2e/observability.spec.ts` checks that a round sends no request
+  outside the app's origin). Set, the server puts their tags in `index.html`
+  (`apps/server/src/observability.ts`): `<meta name="pp-sentry-dsn">` with the release in
+  `data-release`, and Umami's tracker, `async`, with `data-auto-track="false"` and
+  `data-do-not-track="true"`.
+  - Umami: the web app (`src/observability/page-views.ts`) sends a view whenever the
+    router shows a new path, named by route (`/r/:code`, `/not-found`), never the address
+    or a query string; the referrer is another site's origin on the first view, else empty.
+  - Sentry in the page (`src/observability/errors.ts`, a lazy chunk `sentry.ts` of about
+    30 kB gzipped): global handlers (uncaught errors, unhandled rejections), linked errors
+    and dedupe; the router's `defaultOnCatch` reports what an error page caught. No
+    breadcrumbs, sessions, tracing or replay, every `dataCollection` category off; the
+    request is the route plus the user agent; every string is masked with
+    `hideRoomCodesIn` (`@pp/domain`) and the code of the room on screen.
+  - Sentry on the server (`apps/server/src/sentry.ts`, imported only with a DSN): every log
+    line at `error` or `fatal` as pino wrote it, except the request log's 5xx line,
+    through `@sentry/core`'s `ServerRuntimeClient` with a `fetch` transport; `err`
+    becomes the exception with its stack's frames, the other fields go as `extra`, no host
+    name. A failed send never throws; every exit waits up to 1 s for reports in flight.
 
 ## 12. Deployment
 
@@ -1033,7 +1053,8 @@ language, and an unknown code gets a generic one.
 | `CSP_EXTRA_SOURCES` | no | origins added to the policy, such as `script-src https://stats.example.com; connect-src https://stats.example.com` (section 8) |
 | `POSTGRES_PASSWORD` | compose only | password of the bundled Postgres; letters and digits, since it goes into `DATABASE_URL` |
 | `REDIS_URL` | no | several instances only (#39): a `redis://` or `rediss://` URL that every instance reaches (Redis 6.2 or newer). Set, sockets use WebSocket only and `/api/health` adds `redis: ok` or `down`; may hold a password, never logged |
-| `SENTRY_DSN`, `UMAMI_URL`, `UMAMI_WEBSITE_ID` | no | opt-in observability |
+| `SENTRY_DSN` | no | error reports to Sentry or GlitchTip from the server and the page (#40, section 11): `http(s)://<public key>@<host>[/<path>]/<project id>`; a DSN with a secret key is refused, since the page receives it |
+| `UMAMI_URL`, `UMAMI_WEBSITE_ID` | no | page views in Umami (#40, section 11), both or neither: Umami's address (the tracker is `/script.js` under it) or the tracker's own URL ending in `.js`, and the website's UUID |
 | Google / Microsoft keys | no (W5) | social sign-in |
 
 ## 13. Testing
@@ -1042,7 +1063,7 @@ language, and an unknown code gets a generic one.
 |---|---|---|
 | Unit | Vitest | every `apply` rule, decks, statistics, projections, parsers |
 | Integration | Vitest + Postgres (CI service) | write path with version conflicts, migrations, auth, sockets |
-| End-to-end | Playwright, several browser contexts | the built app served by the real server with its production headers; every page fails its test on a CSP or Permissions-Policy violation or an uncaught error (`e2e/fixtures.ts`); full rounds; secrecy asserted on WebSocket frames; `four-person.spec.ts` (#23) plays W1 end to end on every PR |
+| End-to-end | Playwright, several browser contexts | the built app served by the real server with its production headers; every page fails its test on a CSP or Permissions-Policy violation or an uncaught error (`e2e/fixtures.ts`); full rounds; secrecy asserted on WebSocket frames; `four-person.spec.ts` (#23) plays W1 end to end on every PR; a second server with Sentry and Umami on, their services answered by Playwright (`e2e/observed.ts`, #40) |
 | Fuzzing | fast-check + Postgres | `fuzz.db.test.ts` (#36): random and malformed socket messages from the room's PO and a voter (wrong types, huge strings, deep objects, prototype keys, unknown commands and events, binary, extra arguments, oversized and undecodable frames); each gets an ack with `ok` or a known code other than `internal`, or is dropped; the stored room keeps `apply`'s invariants, honest people keep playing, no error is logged. 40 cases in CI, `FUZZ_RUNS` for more. Also a flood against the default limits and fuzzed HTTP bodies (never a 500) |
 | Dependencies | `pnpm audit` in CI (`scripts/audit.mjs`) | a high or critical advisory in a production dependency fails the `check` job; an unreachable audit endpoint is a warning, not a failure; the rest is listed |
 | Visual | Playwright screenshots | table with 1–16 seats, both themes, 360 px to 1440 px |

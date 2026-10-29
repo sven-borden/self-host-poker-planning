@@ -205,3 +205,35 @@ reads every visitor's grant again when one is missing in a room with a password.
 read, but cards in Redis); sticky sessions with polling (a balancer setting every
 self-hoster must get right); Postgres `LISTEN/NOTIFY` (no new service, but no request and
 answer between instances, and one more long-lived connection per instance on the pool).
+
+## ADR-017: Opt-in observability that never sees a room (2026-10-29, #40)
+
+**Context.** ADR-014 promises no tracking by default; Sentry and Umami are opt-in. A
+room code is a bearer capability (architecture section 11), and both tools collect
+addresses by default: Umami the page's URL and referrer, Sentry the request URL,
+breadcrumbs of navigations and fetches, and the user's IP. One image serves every
+self-hoster, so the switches are runtime variables, not build flags.
+
+**Decision.** Each service is off unless its variables are set, and then nothing of it
+loads: no tag in the page, no origin in the policy, no module on the server. The server
+puts what the page needs in `index.html` (a `<meta>` with the DSN, Umami's tracker as an
+`async` script), as #39 does for the transport; the policy gains exactly their origins.
+Umami's automatic tracking is off; the web app sends each view itself, named by route
+(`/r/:code`), with another site's origin as the only referrer. In the page Sentry is a lazy
+chunk with three integrations (global handlers, linked errors, dedupe), every collection
+in Sentry 11's `dataCollection` off, the request rewritten to the route and the browser,
+and every string masked (`hideRoomCodesIn`). On the server a report is a log line at
+`error` or `fatal`, as pino wrote it: what the log may hold (tested never to hold a code
+or a secret) is what Sentry gets, through `@sentry/core` and its `ServerRuntimeClient`.
+`@sentry/node` 11 pulls OpenTelemetry, bundler plugins and a native parser (about 30 MB
+in the image) for tracing the app does not do.
+
+**Consequences.** Umami shows pages and countries, not rooms. Sentry's server reports
+carry the log's fields and the stack of the logged error (a cause stays in the message, as
+in the log), not locals or request data. A Sentry outage never touches a request or the
+log; an exit waits up to a second for reports in flight. The page's reports start once
+the chunk has loaded (a few errors wait for it). Pinned SDKs at least two weeks old.
+**Alternatives.** `@sentry/node` (size, and it instruments every request with its URL);
+a hand-written envelope sender (no SDK to follow, but our own stack parsers for every
+browser); Umami's `data-before-send` hook (a global function name, so a global the page
+must expose before the tracker runs).
