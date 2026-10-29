@@ -900,3 +900,22 @@ French and German tone is reviewed in #41.
   before first paint as an external file.
 - `theme-init.js` has no content hash in its name, so it must be served with
   `Cache-Control: no-cache` (hashed files under `assets/` can be immutable).
+
+## Observability (#40)
+
+Sentry and Umami run only when the server's `index.html` asks for them (ADR-017,
+architecture section 11); by default the page loads nothing from another origin, and
+`e2e/observability.spec.ts` checks it over a whole round.
+
+- `src/observability/page-views.ts`: `trackPageViews(router)`, called in `main.tsx` before
+  the router loads. Without Umami's tracker in the page it does nothing. A view is the
+  route (`viewedPath`: `/r/:code`, `/not-found`), sent through `umami.track(fn)` once the
+  tracker has loaded; never pass `location` or a raw path to Umami.
+- `src/observability/errors.ts`: `startErrorReports()` loads the `sentry.ts` chunk when
+  the page carries `<meta name="pp-sentry-dsn">`; `reportError(error)` is the router's
+  `defaultOnCatch`. Keep `@sentry/browser` out of every static import: the chunk must stay
+  lazy (about 30 kB gzipped), off the 200 kB budget.
+- `src/observability/sentry.ts`: the SDK with three integrations and `scrub`, which
+  replaces the request with the route and the user agent and masks every string with
+  `hideRoomCodesIn` and the code of the room on screen. Adding an integration means
+  checking what it sends: breadcrumbs, `httpContext` and sessions carry addresses.

@@ -251,6 +251,31 @@ describe("the headers on every kind of response", () => {
     );
   });
 
+  it("the opt-in services add their origins, once, only when they are on (#40)", async () => {
+    const csp = async (extraEnv: Record<string, string>) =>
+      (await build(extraEnv).request("/")).headers.get("content-security-policy");
+    expect(await csp({})).toBe(contentSecurityPolicy({ baseUrl: env.BASE_URL }));
+    const umami = {
+      UMAMI_URL: "https://stats.example.com/umami/",
+      UMAMI_WEBSITE_ID: "6639e935-21ce-47c9-89d2-da5d28b7dc15",
+    };
+    const sentry = { SENTRY_DSN: "https://0123abcd@o1.ingest.sentry.io/42" };
+    const both = await csp({
+      ...umami,
+      ...sentry,
+      CSP_EXTRA_SOURCES: "script-src https://stats.example.com; img-src https://cdn.example.com",
+    });
+    expect(both).toContain("script-src 'self' https://stats.example.com;");
+    expect(both).toContain("img-src 'self' data: https://cdn.example.com;");
+    expect(both).toContain(
+      "connect-src 'self' wss://poker.example.com https://stats.example.com https://o1.ingest.sentry.io;",
+    );
+    expect(await csp(sentry)).toContain("script-src 'self';");
+    expect(await csp(sentry)).toContain(
+      "connect-src 'self' wss://poker.example.com https://o1.ingest.sentry.io;",
+    );
+  });
+
   it("Socket.IO's own HTTP answers carry them too", async () => {
     const server = createServer(testConfig(env), { logger: collectLogs().logger });
     const { port } = await server.listen();

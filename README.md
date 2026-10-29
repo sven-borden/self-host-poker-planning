@@ -59,6 +59,8 @@ Variables compose reads from `.env` (the full list is in
 | `GIT_COMMIT`, `APP_VERSION` | no | build arguments shown by `/api/health` |
 | `CSP_REPORT_ONLY` | no (`false`) | `true` reports Content Security Policy violations in the browser console instead of blocking them (see "Security") |
 | `CSP_EXTRA_SOURCES` | no | origins your own additions load from, such as `script-src https://stats.example.com` (see "Security") |
+| `SENTRY_DSN` | no | turns on error reports to Sentry (or GlitchTip) from the server and the page, such as `https://0123abcd@o0.ingest.sentry.io/0` (see "Privacy") |
+| `UMAMI_URL`, `UMAMI_WEBSITE_ID` | no | turn on page views in Umami: its address, such as `https://stats.example.com` (or its tracker's URL if you renamed `script.js`), and the website's id; both or neither (see "Privacy") |
 
 Compose refuses to start while a required variable is empty. `DATABASE_URL` is built
 from the bundled database; to use your own Postgres, run the image alone with
@@ -185,9 +187,19 @@ nothing about Redis is loaded or opened.
   (`update room set last_active_at = now()`).
 - **Backups** keep purged rooms until the backups themselves expire: a deleted room
   stays in every dump taken before its deletion.
-- **Nothing is tracked by default.** Error reporting (Sentry) and page analytics
-  (Umami) are not built yet; they will be opt-in, loaded only when you set their
-  variables (#40).
+- **Nothing is tracked by default.** Error reports (Sentry) and page views (Umami) are
+  off unless you set their variables; until then the page loads nothing from anywhere
+  else and the server sends nothing out. The policy allows their origins only once they
+  are on.
+- **Umami** (`UMAMI_URL`, `UMAMI_WEBSITE_ID`) counts page views by route: a room is
+  `/r/:code`, never its code (anyone with the code can enter a room without a password),
+  and never a query string. The referrer is the other site's origin on the first view.
+  It honours the browser's Do Not Track and sets no cookie.
+- **Sentry** (`SENTRY_DSN`) gets the server's lines logged at `error` or `fatal`,
+  exactly as logged (the log never holds a room code, a secret, a vote or an address),
+  and the page's uncaught errors with the route and the browser. No user, IP address,
+  cookies, headers, breadcrumbs, sessions, tracing or replay. Use a DSN with its public
+  key only: the page receives it. A self-hosted Sentry or GlitchTip works the same way.
 
 ## Security
 

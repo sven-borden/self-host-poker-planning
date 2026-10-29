@@ -47,6 +47,14 @@ export interface Config {
    * Unset (the default), nothing about Redis is loaded. May hold a password: never log it.
    */
   readonly redisUrl: string | undefined;
+  /**
+   * Error reports to Sentry (#40, `observability.ts`), from the server and the page. A DSN
+   * carries only a public key (one with a secret key is refused, since the page gets it);
+   * still, never log it.
+   */
+  readonly sentryDsn: string | undefined;
+  /** Page views to Umami (#40, `observability.ts`): its tracker script and the website id. */
+  readonly umami: { readonly scriptUrl: string; readonly websiteId: string } | undefined;
 }
 
 /** Every variable `loadConfig` reads, with the reason shown when its value is invalid. */
@@ -66,11 +74,22 @@ const REASONS = {
   CSP_EXTRA_SOURCES:
     "must be directives and origins such as script-src https://stats.example.com; connect-src https://stats.example.com",
   REDIS_URL: "must be a redis:// or rediss:// URL",
+  SENTRY_DSN:
+    "must be a Sentry DSN such as https://0123abcd@o0.ingest.sentry.io/0, without a secret key",
+  UMAMI_URL:
+    "must be the http(s) address of Umami, such as https://stats.example.com, or of its tracker script ending in .js",
+  UMAMI_WEBSITE_ID: "must be the website's id in Umami, a UUID",
   BETTER_AUTH_SECRET:
     "must be at least 32 random characters, such as the output of openssl rand -base64 32",
 } as const;
 type Variable = keyof typeof REASONS;
 const VARIABLES = Object.keys(REASONS) as Variable[];
+
+/** Variables that work only together: each is required when the other is set. */
+const PAIRED: Partial<Record<Variable, Variable>> = {
+  UMAMI_URL: "UMAMI_WEBSITE_ID",
+  UMAMI_WEBSITE_ID: "UMAMI_URL",
+};
 
 function parsesAsUrl(value: string, protocols: readonly string[]): URL | undefined {
   if (!URL.canParse(value)) return undefined;
@@ -150,6 +169,41 @@ const schema = z.object({
       return Boolean(url?.hostname) && /^(\/\d*)?$/.test(url?.pathname ?? "");
     })
     .optional(),
+  // https://<public key>@<host>[/<path>]/<project id>, as the SDK reads it (a key of
+  // letters, digits and underscores, a numeric project id): it ignores a DSN it cannot read.
+  SENTRY_DSN: z
+    .string()
+    .refine((v) => {
+      const url = parsesAsUrl(v, ["http:", "https:"]);
+      return (
+        url !== undefined &&
+        /^\w+$/.test(url.username) &&
+        !url.password &&
+        !url.search &&
+        !url.hash &&
+        /^(\/[^/]+)*\/\d+$/.test(url.pathname)
+      );
+    })
+    .optional(),
+  // Umami's address, under which the tracker is `/script.js`, or the tracker's own URL
+  // when it was renamed (Umami's TRACKER_SCRIPT_NAME).
+  UMAMI_URL: z
+    .string()
+    .refine((v) => {
+      const url = parsesAsUrl(v, ["http:", "https:"]);
+      return url !== undefined && !url.username && !url.password && !url.search && !url.hash;
+    })
+    .transform((v) => {
+      const url = new URL(v);
+      const path = url.pathname.replace(/\/+$/, "");
+      return `${url.origin}${path.endsWith(".js") ? path : `${path}/script.js`}`;
+    })
+    .optional(),
+  UMAMI_WEBSITE_ID: z
+    .string()
+    .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+    .transform((v) => v.toLowerCase())
+    .optional(),
   BETTER_AUTH_SECRET: z.string().min(32).refine(isRealSecret),
 });
 
@@ -176,13 +230,18 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
     if (value !== undefined && value !== "") input[name] = value;
   }
   const parsed = schema.safeParse(input);
-  if (!parsed.success) {
-    const bad = new Set(parsed.error.issues.map((issue) => String(issue.path[0])));
+  const bad = new Set(parsed.error?.issues.map((issue) => String(issue.path[0])));
+  const missing = (name: Variable) => input[name] === undefined;
+  for (const [name, other] of Object.entries(PAIRED) as [Variable, Variable][]) {
+    if (missing(name) && !missing(other)) bad.add(name);
+  }
+  if (!parsed.success || bad.size > 0) {
     throw new ConfigError(
-      VARIABLES.filter((name) => bad.has(name)).map((variable) => ({
-        variable,
-        reason: input[variable] === undefined ? "is required" : REASONS[variable],
-      })),
+      VARIABLES.filter((name) => bad.has(name)).map((variable) => {
+        const other = PAIRED[variable];
+        const required = other ? `is required when ${other} is set` : "is required";
+        return { variable, reason: missing(variable) ? required : REASONS[variable] };
+      }),
     );
   }
   const v = parsed.data;
@@ -200,6 +259,11 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
     cspReportOnly: v.CSP_REPORT_ONLY,
     cspExtraSources: v.CSP_EXTRA_SOURCES,
     redisUrl: v.REDIS_URL,
+    sentryDsn: v.SENTRY_DSN,
+    umami:
+      v.UMAMI_URL && v.UMAMI_WEBSITE_ID
+        ? Object.freeze({ scriptUrl: v.UMAMI_URL, websiteId: v.UMAMI_WEBSITE_ID })
+        : undefined,
     betterAuthSecret: v.BETTER_AUTH_SECRET,
   });
 }

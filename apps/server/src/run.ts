@@ -55,6 +55,9 @@ export interface ProcessHooks {
   setup?(config: Config, logger: Logger, signal: AbortSignal): Promise<Setup>;
 }
 
+/** How long an exit waits for the error reports on their way (#40). */
+export const REPORTS_FLUSH_MS = 1000;
+
 /** `apps/web/dist`, seen from `apps/server/src` (tsx) and `apps/server/dist` (bundle). */
 export const DEFAULT_STATIC_DIR = resolve(import.meta.dirname, "../../web/dist");
 
@@ -79,12 +82,25 @@ export async function run(
     return undefined;
   }
 
-  const logger = createLogger(config.logLevel, hooks.destination);
+  // Error reports (#40) load only when SENTRY_DSN is set: otherwise no module of theirs.
+  const reports = config.sentryDsn
+    ? (await import("./sentry.ts")).startReports({
+        dsn: config.sentryDsn,
+        release: config.gitCommit ?? config.appVersion,
+      })
+    : undefined;
+  const logger = createLogger(config.logLevel, hooks.destination, reports?.write);
+  // With reports on, the last ones leave before the process does, for at most a second.
+  const exit = (code: number) => {
+    if (!reports) return hooks.exit(code);
+    const done = () => hooks.exit(code);
+    void reports.flush(REPORTS_FLUSH_MS).then(done, done);
+  };
   // A bug that escapes every handler: one fatal line, then exit 1 for the orchestrator to
   // restart the container. Continuing would run on an unknown state.
   hooks.onCrash((crash, error) => {
     logger.fatal({ err: error, crash }, "crashed");
-    hooks.exit(1);
+    exit(1);
   });
   const staticDir = config.staticDir ? resolve(config.staticDir) : DEFAULT_STATIC_DIR;
   if (!existsSync(join(staticDir, "index.html"))) {
@@ -113,7 +129,7 @@ export async function run(
     }
     startLimit = setTimeout(() => {
       logger.error({ timeoutMs }, "shutdown: timed out");
-      hooks.exit(1);
+      exit(1);
     }, timeoutMs);
     startLimit.unref();
     aborter.abort();
@@ -121,7 +137,7 @@ export async function run(
   const stoppedWhileStarting = (signal: Signal) => {
     clearTimeout(startLimit);
     logger.info({ signal }, "shutdown: stopped while starting");
-    hooks.exit(0);
+    exit(0);
     return undefined;
   };
 
@@ -131,7 +147,7 @@ export async function run(
     } catch (error) {
       if (stopping) return stoppedWhileStarting(stopping);
       logger.fatal({ err: error }, "setup failed");
-      hooks.exit(1);
+      exit(1);
       return undefined;
     }
     if (stopping) {
@@ -152,7 +168,7 @@ export async function run(
     await setup.dispose?.().catch((disposeError: unknown) => {
       logger.error({ err: disposeError }, "dispose failed");
     });
-    hooks.exit(1);
+    exit(1);
     return undefined;
   }
   logger.info(
@@ -179,7 +195,7 @@ export async function run(
     }, timeoutMs - 2000);
     const fail = setTimeout(() => {
       logger.error({ timeoutMs }, "shutdown: timed out");
-      hooks.exit(1);
+      exit(1);
     }, timeoutMs);
     cut.unref();
     fail.unref();
@@ -205,13 +221,13 @@ export async function run(
           clearTimeout(cut);
           clearTimeout(fail);
           logger.info("shutdown: done");
-          hooks.exit(0);
+          exit(0);
         },
         (error: unknown) => {
           clearTimeout(cut);
           clearTimeout(fail);
           logger.error({ err: error }, "shutdown: failed");
-          hooks.exit(1);
+          exit(1);
         },
       );
   }

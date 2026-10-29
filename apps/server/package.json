@@ -15,6 +15,7 @@
     "@pp/domain": "workspace:*",
     "@pp/protocol": "workspace:*",
     "@redis/client": "6.3.0",
+    "@sentry/core": "11.7.0",
     "@socket.io/redis-adapter": "8.3.0",
     "better-auth": "1.7.13",
     "drizzle-orm": "0.45.4",

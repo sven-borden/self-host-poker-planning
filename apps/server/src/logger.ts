@@ -32,16 +32,35 @@ const REDACT = [
 ];
 
 /**
+ * The message of the request log's line for a 5xx answer (`app.ts`). Not an error report
+ * of its own (`sentry.ts`): what failed logs its own line.
+ */
+export const REQUEST_FAILED = "request failed";
+
+/**
  * Creates the process logger. `destination` defaults to a synchronous stdout writer, so
  * the line logged right before `process.exit` is never lost; tests pass a collector.
+ * `report` sees every line after it is written, as written (#40: Sentry, `sentry.ts`).
  */
-export function createLogger(level: LogLevel, destination?: DestinationStream): Logger {
+export function createLogger(
+  level: LogLevel,
+  destination?: DestinationStream,
+  report?: (line: string) => void,
+): Logger {
+  const out = destination ?? pino.destination({ dest: 1, sync: true });
   return pino(
     {
       level,
       timestamp: pino.stdTimeFunctions.isoTime,
       redact: { paths: REDACT, censor: "[redacted]" },
     },
-    destination ?? pino.destination({ dest: 1, sync: true }),
+    report
+      ? {
+          write(line: string) {
+            out.write(line);
+            report(line);
+          },
+        }
+      : out,
   );
 }

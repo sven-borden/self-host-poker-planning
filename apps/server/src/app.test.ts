@@ -296,6 +296,33 @@ describe("the built web app", () => {
     expect(await (await get("/index.html")).text()).toBe(INDEX);
   });
 
+  it("puts Sentry's DSN and Umami's tracker in index.html only when they are on (#40)", async () => {
+    const env = {
+      SENTRY_DSN: "https://0123abcd@o1.ingest.sentry.io/42",
+      UMAMI_URL: "https://stats.example.com",
+      UMAMI_WEBSITE_ID: "6639e935-21ce-47c9-89d2-da5d28b7dc15",
+      GIT_COMMIT: "0a14f15",
+    };
+    const tags = [
+      '<meta name="pp-sentry-dsn" content="https://0123abcd@o1.ingest.sentry.io/42" data-release="0a14f15">',
+      '<script async src="https://stats.example.com/script.js" data-website-id="6639e935-21ce-47c9-89d2-da5d28b7dc15" data-auto-track="false" data-do-not-track="true"></script>',
+    ].join("");
+    const on = (deps: Partial<AppDeps>, path: string) =>
+      app({ staticDir: root, ...deps }, env).app.request(path);
+    for (const path of ["/", "/r/AbCdEf1234", "/index.html"]) {
+      expect(await (await on({}, path)).text(), path).toBe(
+        `<!doctype html>${tags}<title>Poker Planning</title>`,
+      );
+      expect(await (await on({ websocketOnly: true }, path)).text(), path).toBe(
+        `<!doctype html>${TRANSPORT_META}${tags}<title>Poker Planning</title>`,
+      );
+    }
+    const sentryOnly = app({ staticDir: root }, { SENTRY_DSN: env.SENTRY_DSN }).app;
+    expect(await (await sentryOnly.request("/")).text()).toBe(
+      '<!doctype html><meta name="pp-sentry-dsn" content="https://0123abcd@o1.ingest.sentry.io/42"><title>Poker Planning</title>',
+    );
+  });
+
   it("answers HEAD on a fallback route", async () => {
     const response = await get("/r/AbCdEf1234", "HEAD");
     expect(response.status).toBe(200);

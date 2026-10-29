@@ -9,8 +9,9 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { Config } from "./config.ts";
-import type { Logger } from "./logger.ts";
-import { securityHeaders } from "./security-headers.ts";
+import { type Logger, REQUEST_FAILED } from "./logger.ts";
+import { observabilitySources, observabilityTags } from "./observability.ts";
+import { mergeCspSources, securityHeaders } from "./security-headers.ts";
 
 export interface AppEnv {
   Variables: {
@@ -97,7 +98,7 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
       status: c.res.status,
       ms: Math.round(performance.now() - started),
     };
-    if (c.res.status >= 500) log.error(line, "request failed");
+    if (c.res.status >= 500) log.error(line, REQUEST_FAILED);
     else if (c.req.path.startsWith("/api/") && c.req.path !== "/api/health")
       log.info(line, "request");
     else log.debug(line, "request");
@@ -153,17 +154,21 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
   app.all("/api/*", (c) => c.notFound());
 
   if (deps.staticDir && existsSync(join(deps.staticDir, "index.html"))) {
-    mountWebApp(app, deps.staticDir, deps.websocketOnly === true);
+    const tags = [...(deps.websocketOnly ? [TRANSPORT_META] : []), ...observabilityTags(config)];
+    mountWebApp(app, deps.staticDir, tags);
   }
   return app;
 }
 
-/** The security headers (`security-headers.ts`) for this config. */
+/**
+ * The security headers (`security-headers.ts`) for this config: `CSP_EXTRA_SOURCES` and
+ * the origins of the opt-in services (#40) that are on.
+ */
 export function responseHeaders(config: Config): Readonly<Record<string, string>> {
   return securityHeaders({
     baseUrl: config.baseUrl,
     reportOnly: config.cspReportOnly,
-    extra: config.cspExtraSources,
+    extra: mergeCspSources(config.cspExtraSources, observabilitySources(config)),
   });
 }
 
@@ -245,9 +250,9 @@ export function listStaticFiles(root: string): Set<string> {
  * everything else (`index.html`, `theme-init.js`, the favicon) is revalidated on every
  * load. A GET for a path whose last segment has no dot gets `index.html` (history
  * fallback, so `/r/:code` works on reload); a missing file with an extension is a 404,
- * so a stale asset URL never receives HTML.
+ * so a stale asset URL never receives HTML. `headTags` go into its head.
  */
-function mountWebApp(app: Hono<AppEnv>, root: string, websocketOnly: boolean): void {
+function mountWebApp(app: Hono<AppEnv>, root: string, headTags: readonly string[]): void {
   const assets = join(root, "assets") + sep;
   // serveStatic builds its response before `onFound` runs, so a header set there is lost:
   // remember the file and set Cache-Control once the response exists.
@@ -258,15 +263,16 @@ function mountWebApp(app: Hono<AppEnv>, root: string, websocketOnly: boolean): v
   });
   const remember = (path: string, c: Context<AppEnv>) => c.set("staticFile", path);
   const allowed = listStaticFiles(root);
-  if (websocketOnly) allowed.delete("/index.html");
+  const injected = headTags.length > 0;
+  if (injected) allowed.delete("/index.html");
   const files = serveStatic<AppEnv>({ root, onFound: remember });
   app.use("*", (c, next) => (allowed.has(c.req.path) ? files(c, next) : next()));
-  const index = websocketOnly
-    ? indexWithTransport(root)
+  const index = injected
+    ? indexWithHead(root, headTags.join(""))
     : serveStatic<AppEnv>({ root, path: "index.html", onFound: remember });
   app.use("*", (c, next) => {
     const last = c.req.path.slice(c.req.path.lastIndexOf("/") + 1);
-    const isIndex = !last.includes(".") || (websocketOnly && c.req.path === "/index.html");
+    const isIndex = !last.includes(".") || (injected && c.req.path === "/index.html");
     return isIndex ? index(c, next) : next();
   });
 }
@@ -275,17 +281,19 @@ function mountWebApp(app: Hono<AppEnv>, root: string, websocketOnly: boolean): v
 export const TRANSPORT_META = '<meta name="pp-socket-transport" content="websocket">';
 
 /**
- * `index.html` with `TRANSPORT_META` in its head (#39), read once: the file is immutable in
- * the image. A tag, not a script: the CSP refuses inline script. Served at `/index.html`
- * too, which the allowlist would otherwise serve from disk without it.
+ * `index.html` with `tags` at the end of its head, read once: the file is immutable in the
+ * image. `TRANSPORT_META` (#39) and the opt-in services' tags (#40); never inline script,
+ * which the CSP refuses. Served at `/index.html` too, which the allowlist would otherwise
+ * serve from disk without them.
  */
-function indexWithTransport(root: string) {
+function indexWithHead(root: string, tags: string) {
   const file = join(root, "index.html");
   const source = readFileSync(file, "utf8");
-  // Vite's index.html has a head; without one, the parser puts the tag in the implied head.
+  // Vite's index.html has a head; without one, the parser puts the tags in the implied head.
+  // Replacer functions: a `$` in a tag (a URL may hold one) is not a pattern.
   const html = /<\/head>/i.test(source)
-    ? source.replace(/<\/head>/i, `${TRANSPORT_META}</head>`)
-    : source.replace(/^(<!doctype html>)?/i, `$1${TRANSPORT_META}`);
+    ? source.replace(/<\/head>/i, () => `${tags}</head>`)
+    : source.replace(/^(<!doctype html>)?/i, (_, doctype = "") => `${doctype}${tags}`);
   return async (c: Context<AppEnv>, next: () => Promise<void>) => {
     if (c.req.method !== "GET" && c.req.method !== "HEAD") return next();
     c.set("staticFile", file);

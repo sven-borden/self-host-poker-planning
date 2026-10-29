@@ -354,12 +354,39 @@ and HSTS when `BASE_URL` is https. `createApp` sets them after every handler, er
   name under, listed in `CSP_WILDCARD_REFUSED` (`github.io`, `vercel.app`, `co.uk` …; an
   explicit list, not the Public Suffix List: add one there when you meet it). Anything
   else stops the server at start with `ConfigError`.
-- Code that needs an origin (#40's Sentry and Umami) passes it as `extra` to
-  `securityHeaders` in `responseHeaders` (`app.ts`), merged with the config's.
+- Code that needs an origin adds it in `responseHeaders` (`app.ts`), merged with the
+  config's by `mergeCspSources`: the opt-in services (#40) through
+  `observabilitySources` (`observability.ts`).
 - Tests: `security-headers.test.ts` (the builder over http and https, report-only, extra
   origins, each header on each kind of answer, Socket.IO's), the web's
   `e2e/security.spec.ts` and the guard in `e2e/fixtures.ts`, and
   `scripts/docker-smoke.mjs` against the image.
+
+## Observability (#40)
+
+Sentry and Umami, each off unless its variables are set (`config.sentryDsn`,
+`config.umami`, both from `config.ts`); off, nothing of them loads. ADR-017.
+
+- `observability.ts`: `observabilityTags` (the `<meta name="pp-sentry-dsn">` with
+  `data-release`, and Umami's `async` tracker with automatic tracking off) go into
+  `index.html`'s head with #39's `TRANSPORT_META` (`indexWithHead` in `app.ts`);
+  `observabilitySources` are their origins for the policy. Attribute values are escaped.
+- `sentry.ts`, imported by `run()` only with a DSN: `startReports` returns `write`, which
+  `createLogger` calls with every line it writes, and `flush`, which every exit in
+  `run()` awaits (`REPORTS_FLUSH_MS`). Lines at `error` and `fatal` become events, except
+  `REQUEST_FAILED` (`logger.ts`): log an error and it is reported, with what the line
+  carries, so the log's rules (no room code, no secret) are Sentry's. Do not report
+  around the logger, and do not log at `error` what is not a fault (a 503 of
+  `/api/health` while the database is down logs only the request line, at `error`, which is
+  why that line stays out).
+- Only `@sentry/core` (and its `/server` entry): no `@sentry/node`, which brings
+  OpenTelemetry and bundler plugins. Sentry 11 has no `sendDefaultPii`; `dataCollection`
+  has every category off.
+- Tests: `sentry.test.ts` (a fake transport: what an event holds, what is left out,
+  redaction, room paths, causes, an outage), `run.test.ts` (a crash reported to a local
+  fake Sentry before the exit), `app.test.ts` and `security-headers.test.ts` (the tags
+  and the policy, on and off), `config.test.ts`; the web's `e2e/observability.spec.ts`
+  against a second server with both on.
 
 ## Fuzzing
 

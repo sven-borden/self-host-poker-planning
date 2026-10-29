@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "@playwright/test";
+import { OBSERVED_ENV, OBSERVED_PORT } from "./e2e/observed.ts";
 
 // End-to-end checks against the built app, served by the real server with its production
 // headers (#36: the Content Security Policy and the rest), not by `vite preview`: a policy
@@ -8,7 +9,9 @@ import { defineConfig } from "@playwright/test";
 // Edge and build first; in CI they use Playwright's Chromium on a fresh build.
 //
 // The server needs a Postgres it may migrate: DATABASE_URL. E2E_WEB_PORT moves the app,
-// so two worktrees can run the suite side by side. The secret is a fake.
+// so two worktrees can run the suite side by side. The secret is a fake. A second server,
+// on the next port, has Sentry and Umami on (#40, e2e/observed.ts); it starts once the
+// first is up, so locally it serves the fresh build too.
 
 const PORT = Number(process.env.E2E_WEB_PORT ?? 4173);
 const ci = Boolean(process.env.CI);
@@ -19,6 +22,18 @@ if (!databaseUrl) {
   );
 }
 const serve = "pnpm --filter @pp/server exec tsx src/main.ts";
+const env = {
+  DATABASE_URL: databaseUrl,
+  PORT: String(PORT),
+  BASE_URL: `http://localhost:${PORT}`,
+  BETTER_AUTH_SECRET: "e2e-fake-secret-not-used-anywhere-else-0123456789",
+  STATIC_DIR: fileURLToPath(new URL("./dist", import.meta.url)),
+  // The header a test sends is the client address: e2e/join.spec.ts gives each person
+  // their own, to stay under the per-address room-creation and sign-in limits. A page
+  // sends none, so the socket's address counts.
+  TRUST_PROXY: "1",
+  LOG_LEVEL: "warn",
+};
 
 export default defineConfig({
   testDir: "./e2e",
@@ -49,17 +64,18 @@ export default defineConfig({
       url: `http://localhost:${PORT}/api/health`,
       reuseExistingServer: false,
       timeout: 120_000,
+      env,
+    },
+    {
+      command: serve,
+      url: `http://localhost:${OBSERVED_PORT}/api/health`,
+      reuseExistingServer: false,
+      timeout: 120_000,
       env: {
-        DATABASE_URL: databaseUrl,
-        PORT: String(PORT),
-        BASE_URL: `http://localhost:${PORT}`,
-        BETTER_AUTH_SECRET: "e2e-fake-secret-not-used-anywhere-else-0123456789",
-        STATIC_DIR: fileURLToPath(new URL("./dist", import.meta.url)),
-        // The header a test sends is the client address: e2e/join.spec.ts gives each person
-        // their own, to stay under the per-address room-creation and sign-in limits. A page
-        // sends none, so the socket's address counts.
-        TRUST_PROXY: "1",
-        LOG_LEVEL: "warn",
+        ...env,
+        PORT: String(OBSERVED_PORT),
+        BASE_URL: `http://localhost:${OBSERVED_PORT}`,
+        ...OBSERVED_ENV,
       },
     },
   ],
