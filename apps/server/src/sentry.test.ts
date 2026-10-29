@@ -73,6 +73,14 @@ describe("error reports (#40)", () => {
     ]);
   });
 
+  it("keeps something thrown that is not an error in the context", async () => {
+    const { logger, events } = reporting();
+    logger.fatal({ err: "boom", crash: "uncaughtException" }, "crashed");
+    expect(await events()).toMatchObject([
+      { level: "fatal", message: "crashed", extra: { err: "boom", crash: "uncaughtException" } },
+    ]);
+  });
+
   it("leaves out lines below error and the request log's 5xx line", async () => {
     const { logger, raw, events } = reporting();
     logger.info("listening");

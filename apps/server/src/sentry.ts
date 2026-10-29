@@ -104,12 +104,12 @@ export function startReports({ dsn, release, send = sendWithFetch }: ReportsOpti
     if (message === REQUEST_FAILED) return;
     const extra = Object.fromEntries(Object.entries(rest).filter(([key]) => !NOT_CONTEXT.has(key)));
     const severity: SeverityLevel = level === 60 ? "fatal" : "error";
-    const hint = { captureContext: { level: severity, extra: { ...extra, msg: message } } };
-    if (err && typeof err === "object" && "message" in err) {
-      client.captureException(asError(err as SerializedError), hint);
-    } else {
-      client.captureMessage(message, severity, hint);
-    }
+    const errorLike = typeof err === "object" && err !== null && "message" in err;
+    // Something thrown that is not an error (`throw "boom"`) stays in the context.
+    const context = { ...extra, ...(err !== undefined && !errorLike && { err }), msg: message };
+    const hint = { captureContext: { level: severity, extra: context } };
+    if (errorLike) client.captureException(asError(err as SerializedError), hint);
+    else client.captureMessage(message, severity, hint);
   };
 
   return {
