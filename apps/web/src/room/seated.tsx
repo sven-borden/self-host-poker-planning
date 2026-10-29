@@ -132,6 +132,31 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
     hand.kind === "cards" && hand.playable && !(revealed && me.isOwner),
     handPanel,
   );
+  // The table grows above a focused hand card (the results after a reveal by R, the
+  // PO's decision): the card would slide out of sight, so it comes back into view, the
+  // least scroll that shows it (#37, WCAG 2.4.7). The scroll padding keeps it above a dock.
+  // Only when this change pushed it out: a person who scrolled away from their hand to
+  // read the results is not pulled back by the next change to the table.
+  const tableSection = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const table = tableSection.current;
+    if (!table || typeof ResizeObserver === "undefined") return;
+    let height = table.getBoundingClientRect().height;
+    const observer = new ResizeObserver(() => {
+      const now = table.getBoundingClientRect().height;
+      const shift = now - height;
+      height = now;
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement) || !handPanel.current?.contains(active)) return;
+      const box = active.getBoundingClientRect();
+      const inView = (top: number, bottom: number) => top >= 0 && bottom <= window.innerHeight;
+      if (!inView(box.top, box.bottom) && inView(box.top - shift, box.bottom - shift)) {
+        active.scrollIntoView?.({ block: "nearest" });
+      }
+    });
+    observer.observe(table);
+    return () => observer.disconnect();
+  }, []);
   /** An interrupted flight's card, for the next one to start from. */
   const inAir = useRef<InAir | null>(null);
 
@@ -202,7 +227,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           canStart={room.round?.phase !== "voting"}
         />
       ) : null}
-      <section aria-label={t("room.tableHeading")} data-room-table>
+      <section ref={tableSection} aria-label={t("room.tableHeading")} data-room-table>
         {room.round !== null ? <RoundSubject round={room.round} /> : null}
         <TableStage
           people={people}

@@ -21,10 +21,11 @@ const Toaster = lazy(() =>
 /**
  * The page's side gutters: 16 px, or more beside a notch on a phone held sideways. In
  * portrait the insets are 0, so the table's `PHONE_MAX_ROOM` (608 px of a 640 px
- * viewport) still holds.
+ * viewport) still holds. In px, not rem (#37): a larger text setting must not take room
+ * from the table, whose geometry is proven for rooms from 328 px (`layout.test.ts`).
  */
 const GUTTERS =
-  "pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))]";
+  "pr-[max(16px,env(safe-area-inset-right))] pl-[max(16px,env(safe-area-inset-left))]";
 
 export const Route = createRootRoute({
   component: RootLayout,

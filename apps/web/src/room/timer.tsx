@@ -301,9 +301,13 @@ function TimerRing({
   );
 }
 
-/** The chip's look: a stadium on the felt, its text in tabular numerals. */
+/**
+ * The chip's look: a stadium on the felt, its text in tabular numerals. In px, as all of
+ * the centre is (CENTRE_BUTTON in round-centre.tsx): a larger text setting must not push
+ * it into the slot cards (#37).
+ */
 const CHIP =
-  "relative inline-flex h-9 min-w-16 items-center justify-center gap-1.5 rounded-full px-3.5 text-[15px] leading-none font-bold whitespace-nowrap text-table-ink tabular-nums in-data-[variant=phone]:h-6 in-data-[variant=phone]:min-w-10 in-data-[variant=phone]:gap-1 in-data-[variant=phone]:px-1.5 in-data-[variant=phone]:text-[11px]";
+  "relative inline-flex h-[36px] min-w-[64px] items-center justify-center gap-[6px] rounded-full px-[14px] text-[15px] leading-none font-bold whitespace-nowrap text-table-ink tabular-nums in-data-[variant=phone]:h-[24px] in-data-[variant=phone]:min-w-[40px] in-data-[variant=phone]:gap-[4px] in-data-[variant=phone]:px-[6px] in-data-[variant=phone]:text-[11px]";
 
 /** "Time is up" is the chip's longest text: smaller on a phone, so it stays within 76 px. */
 const UP_TEXT = "in-data-[variant=phone]:text-[10px] in-data-[variant=phone]:tracking-tight";
@@ -401,7 +405,7 @@ export function TimerChip({ countdown }: { countdown: Countdown }) {
 
 /** The PO's small buttons beside the chip on a desktop: card faces, 32 px, 44 px to touch. */
 const SIDE_BUTTON =
-  "relative inline-flex h-8 items-center gap-1 rounded-md border border-card-edge bg-card-face px-2 text-[12px] leading-none font-semibold whitespace-nowrap text-card-ink shadow-sm outline-none after:absolute after:-inset-y-1.5 after:inset-x-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass aria-disabled:opacity-60 in-data-[variant=phone]:hidden";
+  "relative inline-flex h-[32px] items-center gap-[4px] rounded-md border border-card-edge bg-card-face px-[8px] text-[12px] leading-none font-semibold whitespace-nowrap text-card-ink shadow-sm outline-none after:absolute after:-inset-y-[6px] after:inset-x-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-disabled:opacity-60 in-data-[variant=phone]:hidden";
 
 /**
  * Refusals that only say the reveal won a race with the PO's press: the round no longer
@@ -581,14 +585,14 @@ export function TimerControls({
             onFocus={loadMenu}
             className={cn(
               CHIP,
-              "outline-none after:absolute after:-inset-y-2.5 after:-inset-x-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass",
+              "outline-none after:absolute after:-inset-y-[10px] after:-inset-x-[4px] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
               state === "idle" && "border border-table-ink/50 hover:border-table-ink",
             )}
           >
             <ChipFace countdown={countdown} reduced={reduced} size={size}>
               {state === "idle" ? (
                 <>
-                  <TimerIcon aria-hidden className="size-3.5 shrink-0" />
+                  <TimerIcon aria-hidden className="size-[14px] shrink-0" />
                   <span className="in-data-[variant=phone]:sr-only">{t("timer.button")}</span>
                 </>
               ) : (

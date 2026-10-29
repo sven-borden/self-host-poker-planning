@@ -146,6 +146,8 @@ export function TableStage({
       <div
         data-stage
         data-variant={layout.variant}
+        // The variant whose dense geometry applies (#37: the centre's buttons read it).
+        data-dense={layout.dense ? layout.variant : undefined}
         className="pp-stage relative mx-auto w-full"
         style={{
           aspectRatio: layout.aspect,

@@ -122,7 +122,7 @@ describe("the reader's region", () => {
     expect(fixedT("de")("dev.average", { value: 6.5 })).toBe("Durchschnitt der Zahlenkarten: 6.5");
     // CLDR groups de-CH with ’; some ICU builds (Node's) use a straight apostrophe.
     expect(fixedT("de")("table.votedSoFar", { count: 1234, total: 2000 })).toMatch(
-      /^1[’']234\/2[’']000 haben bisher abgestimmt$/,
+      /^1[’']234\/2[’']000 haben abgestimmt$/,
     );
     // Swiss French keeps the decimal comma but groups like Swiss German.
     expect(localeFor("fr")).toBe("fr-CH");

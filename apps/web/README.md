@@ -156,7 +156,8 @@ server sends and never decides the outcome of a round.
   (`[data-record-final]`, `setFinal`), "Next round" (`[data-start-round]`, the same
   `useNextRound.start`) and "Vote again" (`[data-revote]`, `revote`), the three in
   `[data-decision-actions]`. The reveal moves the PO's focus to "Record 8"
-  (`focusAfterReveal` in `focus.ts`; `focusSoon` never scrolls), and the bar
+  (`focusAfterReveal` in `focus.ts`; `focusSoon` does not scroll for a target on screen,
+  and scrolls one wholly off screen the least that shows it, #37), and the bar
   ignores Enter and Space for `PLACED_FOCUS_GUARD_MS` after such a placed focus. While
   its place is out of view the bar docks at the bottom of the screen (`useDecisionDock`
   in `decision-dock.ts`, `[data-decision-dock]`, `--decision-dock` for the scroll
@@ -762,6 +763,40 @@ server sends and never decides the outcome of a round.
   retries, and takes about 19 s locally. Run it alone, with a Postgres as above:
   `DATABASE_URL=… pnpm --filter @pp/web exec playwright test e2e/four-person.spec.ts`;
   add `--repeat-each=10 --workers=1` to check it for flakiness.
+- Accessibility (#37). `e2e/axe.spec.ts` runs axe (`@axe-core/playwright`, a dev
+  dependency) over the landing, not-found, error, join and room-full pages and the room
+  while voting, revealed with the decision bar, with the settings sheet, the voter's rules
+  and the history sheet open, in light and dark at 1280 and 390 px, against WCAG 2.2 A and
+  AA (`audit` in `e2e/a11y.ts`): a serious or critical violation fails; lesser ones and
+  what axe could not decide are printed and attached. No rule is switched off; an
+  exclusion goes in `audit` by selector, with its reason. `e2e/keyboard.spec.ts` plays a
+  round by keyboard alone (create, join, start, pick and change, R and the button, record,
+  next round, both sheets, the hand-over from a popover) at 1280 and 390 px, and checks at
+  every stop that the ring is drawn, the control on screen and its centre uncovered, that
+  the sheets keep the focus, and that Escape returns it to the opener.
+  `e2e/screen-reader.spec.ts` records what the live regions say (`listen` and
+  `transcript` in `a11y.ts`) for votes, reveals by the PO, a voter and the timer, the
+  results and an anonymous round, checks the hand, the seats and the results with
+  `toMatchAriaSnapshot`, and attaches the transcript. `e2e/text-size.spec.ts` holds the
+  centre 4 px (`CENTRE_GAP`) clear of 7, 11 and 16 slot cards at 150 % text, at 360 and
+  390 px, in three languages; `e2e/reflow.spec.ts` checks for no sideways scroll at
+  320 × 568 and 640 × 400; `e2e/motion.spec.ts` samples every animation of a session under
+  reduced motion (none over 120 ms, none endless). `src/theme/contrast.test.ts` measures
+  every text/background pair the UI draws (4.5:1) and every ring, control border and state
+  mark (3:1), in both themes, from `tokens.css` and the shadcn aliases in `styles.css`, and
+  fails on a `text-*` colour no pair names: a new text colour joins `PAIRS` first.
+- The table's centre is sized in px, not rem (`CENTRE_BUTTON`, the timer's `CHIP` and
+  `SIDE_BUTTON`, the stack's gaps), and so are the page gutters (`GUTTERS` in
+  `__root.tsx`): the layout places the table in px and proves it from a 328 px room, so a
+  larger text setting must neither grow the centre into the slot cards nor narrow the
+  table. On a phone the centre buttons draw a 32 px face and keep a 44 px target with an
+  invisible `::after`; on a dense phone table (`data-dense="phone"` on the stage) the
+  reveal label keeps one line and may run wider than the centre's box. The hand cards'
+  corner indices draw their label from `data-label` as generated content, so a card's
+  visible text equals its name (WCAG 2.5.3). Over the felt a focus ring keeps a band of
+  the page colour (`ring-offset-background`): brass on the light felt reaches only 2.3:1.
+  A focused hand card that the table pushes out of sight (the results after a reveal by
+  R) is scrolled back into view (`Seated`, a `ResizeObserver` on the table).
 - A failure keeps its trace in `test-results/<test>/` (`trace: "retain-on-failure"`);
   videos are off, since Playwright records them only for the built-in `page` and
   `context`, not for the contexts the multi-person tests make, and the trace's screencast
