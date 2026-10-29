@@ -40,12 +40,15 @@ interface RoundCentreProps {
  * the face is 32 px tall and an invisible `::after` keeps the 44 px touch target, as the
  * timer's chip does, so the PO's stack (timer, count, button) fits inside the ring of slot
  * cards. On a dense phone table (11 to 16 people), whose ring is wider, the label keeps one
- * line ("Karten aufdecken") and may run wider than the centre's box, which centres it;
- * with fewer people the side cards come closer, and it wraps inside the box.
- * e2e/text-size.spec.ts and timer.spec.ts check that it stays clear of the cards.
+ * line ("Karten aufdecken") and may run wider than the centre's box, which centres it, set
+ * a little tighter: at 11 people and 360 px the side cards leave it only a few px, and
+ * Linux's rendering draws the label about 3 px wider than Windows's. With fewer people the
+ * side cards come closer, and it wraps inside the box. On a phone the label is 10 px, as
+ * the count above it. e2e/text-size.spec.ts and timer.spec.ts check that it stays clear of
+ * the cards.
  */
 const CENTRE_BUTTON =
-  "relative h-auto min-h-[44px] max-w-full border-card-edge bg-card-face px-[12px] py-[6px] text-[12.5px]/tight font-semibold whitespace-normal text-card-ink shadow-md hover:bg-card-face hover:text-card-ink aria-disabled:opacity-60 in-data-[variant=phone]:min-h-[32px] in-data-[variant=phone]:px-[4px] in-data-[variant=phone]:py-[4px] in-data-[variant=phone]:text-[10.5px]/tight in-data-[dense=phone]:max-w-none in-data-[dense=phone]:whitespace-nowrap in-data-[variant=phone]:after:absolute in-data-[variant=phone]:after:inset-x-0 in-data-[variant=phone]:after:-inset-y-[6px] dark:bg-card-face dark:hover:bg-card-face";
+  "relative h-auto min-h-[44px] max-w-full border-card-edge bg-card-face px-[12px] py-[6px] text-[12.5px]/tight font-semibold whitespace-normal text-card-ink shadow-md hover:bg-card-face hover:text-card-ink aria-disabled:opacity-60 in-data-[variant=phone]:min-h-[32px] in-data-[variant=phone]:px-[4px] in-data-[variant=phone]:py-[4px] in-data-[variant=phone]:text-[10px]/tight in-data-[dense=phone]:max-w-none in-data-[dense=phone]:whitespace-nowrap in-data-[dense=phone]:tracking-tight in-data-[variant=phone]:after:absolute in-data-[variant=phone]:after:inset-x-0 in-data-[variant=phone]:after:-inset-y-[6px] dark:bg-card-face dark:hover:bg-card-face";
 
 /**
  * The status in the middle of the table (#18). Voting: how many have voted out of how
