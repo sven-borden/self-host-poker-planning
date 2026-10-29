@@ -75,7 +75,7 @@ const REASONS = {
     "must be directives and origins such as script-src https://stats.example.com; connect-src https://stats.example.com",
   REDIS_URL: "must be a redis:// or rediss:// URL",
   SENTRY_DSN:
-    "must be a Sentry DSN such as https://public-key@o0.ingest.sentry.io/0, without a secret key",
+    "must be a Sentry DSN such as https://0123abcd@o0.ingest.sentry.io/0, without a secret key",
   UMAMI_URL:
     "must be the http(s) address of Umami, such as https://stats.example.com, or of its tracker script ending in .js",
   UMAMI_WEBSITE_ID: "must be the website's id in Umami, a UUID",
@@ -169,14 +169,15 @@ const schema = z.object({
       return Boolean(url?.hostname) && /^(\/\d*)?$/.test(url?.pathname ?? "");
     })
     .optional(),
-  // https://<public key>@<host>[/<path>]/<project id>; the project id is a number.
+  // https://<public key>@<host>[/<path>]/<project id>, as the SDK reads it (a key of
+  // letters, digits and underscores, a numeric project id): it ignores a DSN it cannot read.
   SENTRY_DSN: z
     .string()
     .refine((v) => {
       const url = parsesAsUrl(v, ["http:", "https:"]);
       return (
         url !== undefined &&
-        url.username !== "" &&
+        /^\w+$/.test(url.username) &&
         !url.password &&
         !url.search &&
         !url.hash &&

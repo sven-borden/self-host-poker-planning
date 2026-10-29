@@ -130,6 +130,19 @@ export function parseCspSources(value: string): CspSources | null {
   return sources;
 }
 
+/** The origins of every one of `all`, per directive, each once. */
+export function mergeCspSources(...all: CspSources[]): CspSources {
+  const merged: Partial<Record<CspDirective, string[]>> = {};
+  for (const sources of all) {
+    for (const directive of CSP_EXTENSIBLE_DIRECTIVES) {
+      const origins = sources[directive];
+      if (origins?.length)
+        merged[directive] = [...new Set([...(merged[directive] ?? []), ...origins])];
+    }
+  }
+  return merged;
+}
+
 export interface PolicyOptions {
   /** The public origin (`BASE_URL`); `https:` turns on HSTS and the upgrade. */
   readonly baseUrl: string;

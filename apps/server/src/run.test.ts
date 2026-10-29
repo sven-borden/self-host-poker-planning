@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { createServer as createHttpServer } from "node:http";
 import { createServer as createNetServer, type Server } from "node:net";
 import { PROTOCOL_VERSION } from "@pp/protocol";
 import { io as connect } from "socket.io-client";
@@ -180,6 +181,40 @@ describe("run", () => {
       const fatal = h.logs.lines.filter((line) => line.level === 60);
       expect(fatal).toHaveLength(1);
       expect(fatal[0]).toMatchObject({ msg: "crashed", crash, err: { message: `boom ${crash}` } });
+    }
+  });
+
+  it("with SENTRY_DSN, reports a crash and exits once the report is out (#40)", async () => {
+    const envelopes: string[] = [];
+    const sentry = createHttpServer((request, response) => {
+      let body = "";
+      request.on("data", (chunk) => {
+        body += chunk;
+      });
+      request.on("end", () => {
+        envelopes.push(body);
+        response.writeHead(200).end("{}");
+      });
+    });
+    await new Promise<void>((resolve) => sentry.listen(0, resolve));
+    const address = sentry.address();
+    const sentryPort = typeof address === "object" && address ? address.port : 0;
+    try {
+      const h = hooks();
+      const server = await run(
+        { ...VALID_ENV, PORT: "0", SENTRY_DSN: `http://0123abcd@localhost:${sentryPort}/42` },
+        h.hooks,
+      );
+      if (!server) throw new Error("server did not start");
+      started.push(server);
+      h.crash("uncaughtException", new Error("boom reported"));
+      expect(h.exits).toEqual([]);
+      expect(await h.exitCode).toBe(1);
+      expect(envelopes).toHaveLength(1);
+      expect(envelopes[0]).toContain('"value":"boom reported"');
+      expect(envelopes[0]).toContain('"level":"fatal"');
+    } finally {
+      await new Promise((resolve) => sentry.close(resolve));
     }
   });
 });

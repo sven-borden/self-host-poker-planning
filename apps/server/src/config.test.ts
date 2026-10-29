@@ -92,6 +92,7 @@ describe("loadConfig", () => {
       `https://abc123:${SECRET}@o1.ingest.sentry.io/42`,
       "https://o1.ingest.sentry.io/42",
       `https://${SECRET}@o1.ingest.sentry.io/project`,
+      "https://public-key@o1.ingest.sentry.io/42",
       `https://${SECRET}@o1.ingest.sentry.io/42?x=1`,
       `ftp://${SECRET}@o1.ingest.sentry.io/42`,
       SECRET,
