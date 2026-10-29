@@ -432,21 +432,23 @@ describe.skipIf(!REDIS_URL)("two instances on one room (Redis)", () => {
         const c = client(cy, one());
         const b = client(bob, two());
         await Promise.all([a.enter(code), c.enter(code), b.enter(code)]);
-        // Ada keeps changing her vote while every connection to Redis is dropped.
-        const votes = (async () => {
-          for (let i = 0; i < 8; i++) {
-            const card = i % 2 === 0 ? "3" : "8";
-            expect((await a.cmd("castVote", { card, round: 1, restart: 0 })).ok).toBe(true);
-          }
-        })();
-        await sleep(15);
+        // Redis stops answering writes (a PUBLISH is one), then drops every connection: the
+        // publishes in flight then reject, as in a Redis restart.
         const redis = await redisClient();
-        await redis.sendCommand(["CLIENT", "KILL", "TYPE", "pubsub"]);
-        await redis.sendCommand(["CLIENT", "KILL", "TYPE", "normal"]);
-        await votes;
-        // Cy, on Ada's instance, saw every vote of hers.
-        const last = (await stored(code))?.version ?? 0;
-        await c.waitFor((s) => s.version === last);
+        await redis.sendCommand(["CLIENT", "PAUSE", "10000", "WRITE"]);
+        try {
+          // Ada votes twice: the command id cannot be claimed (it runs here alone after 1 s),
+          // and the signal waits in flight. Cy, on her instance, sees each vote.
+          for (const card of ["3", "8"]) {
+            expect((await a.cmd("castVote", { card, round: 1, restart: 0 })).ok).toBe(true);
+            const last = (await stored(code))?.version ?? 0;
+            await c.waitFor((s) => s.version === last);
+          }
+          await redis.sendCommand(["CLIENT", "KILL", "TYPE", "pubsub"]);
+          await redis.sendCommand(["CLIENT", "KILL", "TYPE", "normal"]);
+        } finally {
+          await redis.sendCommand(["CLIENT", "UNPAUSE"]);
+        }
 
         // Both subscribers are back: Bob's vote on the second instance reaches the first.
         await expect
