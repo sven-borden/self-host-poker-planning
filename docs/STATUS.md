@@ -141,6 +141,12 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   focus checks, a scripted screen-reader pass (live-region transcript and accessibility
   tree), 150 % text, 320 px reflow and reduced-motion specs, and a contrast test over
   every token pair. The table's centre and the page gutters are in px. Live at 5daa952.
+- Opt-in observability from #40 (ADR-017), off unless set: `SENTRY_DSN` reports the
+  server's error log lines (`@sentry/core` only) and the page's uncaught errors (a lazy
+  30.5 kB chunk), `UMAMI_URL` with `UMAMI_WEBSITE_ID` sends page views by route
+  (`/r/:code`), never a room code; the policy gains their origins only when on. An e2e
+  round proves no request leaves by default; a second e2e server runs with both on. The
+  room route loads 177.4 kB; the image is 239 MB of its 250 MB budget.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -151,19 +157,17 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- Nothing. **Paused after #37 and #39** (Sven, 2026-10-29: "we pause after it's
-  merged"). Nothing new starts until Sven says so. No worktree is open.
+- Nothing. Sven resumed with "next task" (2026-10-29): #40 is merged. Each next task
+  waits for his word. No worktree is open.
 - **No subagents** (Sven, 2026-10-29): the main session does each task itself, one at
   a time (see `CLAUDE.md`).
 
 ## Next
 
-- W3 (#33–#41): #33 to #37 and #39 merged. When Sven resumes: #40 (opt-in Sentry and
-  Umami through `CSP_EXTRA_SOURCES`); #38 and #41 need Sven's OQ-1 and OQ-2.
-  - #40 for poker.borden.ch: Sven gave his Umami website id (2026-10-29). His Umami is
-    `https://analytics.borden.ch` (tracker `/script.js`). With his go, `UMAMI_URL` and
-    `UMAMI_WEBSITE_ID` are already set in Coolify (runtime only), ignored until #40
-    ships. #40 must read exactly these names at runtime, not at build time.
+- W3 (#33–#41): all merged but #38 and #41, which need Sven's OQ-1 and OQ-2. Without
+  them, the next task is W4's #42.
+- Image size: 239 MB of 250 MB after #40 (236 MB before; architecture section 12 still
+  quotes #11's 220 MB). A dependency of more than a few MB needs a look first.
 - Chores to fold into a later issue: a lazy catalog for the panels' copy (settings and
   history, a few kB off both pages); the burst test's one `room_not_found` under load;
   a higher anonymous sign-in limit for the db tests through `SetupTuning` (about 41 of
