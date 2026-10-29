@@ -21,10 +21,38 @@ PostgreSQL 17: rooms (live state + version), round history, auth tables
 ```
 
 - Default and target: **one replica**. Fan-out happens in memory.
-- Scale-out is possible later without redesign: state is already in Postgres with
-  compare-and-set; set `REDIS_URL` to enable the Socket.IO Redis adapter (#39) and
-  use sticky sessions or websocket-only transport.
+- Several replicas (#39, ADR-016): set `REDIS_URL` on every one. Socket.IO's Redis
+  adapter then carries the instances' messages to each other, sockets use WebSocket only
+  (no sticky sessions needed), and Redis holds the command ids. Postgres stays the only
+  store of room state: an instance that hears "room changed" (an id, a version, the
+  causes) loads the room and sends its own sockets their own snapshots, so no state and
+  no card crosses Redis. What is shared and what stays per instance: "Several instances"
+  below. Without `REDIS_URL` nothing about Redis is loaded.
 - Vercel and other serverless hosts are out of scope (ADR-001).
+
+### Several instances (#39)
+
+`apps/server/src/scale-out.ts` connects three Redis clients (`@redis/client`, RESP2: the
+adapter's publisher and subscriber, and one without an offline queue for the command
+ids) in the `setup` hook, within 30 s or the start fails (`redis: unavailable`), and
+closes them in `dispose`. Channels are `pp#/#…`, `pp-request#/#` and `pp-response#/#`;
+keys `pp:ack:<user> <room id> <command id>`. Neither ever holds a room code. Every
+per-instance structure of the realtime path and its verdict:
+
+| Structure | Verdict |
+|---|---|
+| Snapshots (`broadcast`, `held`, `newest`) | per instance, by design: each instance sends its own sockets their own `toSnapshot`. A commit tells the others `roomChanged { room, version, causes, lockout? }`; one with sockets in the room loads it from Postgres (one load for every change waiting, `drainInbox`) and broadcasts it, with the causes when the waiting versions are exactly the ones it missed, without them after a gap |
+| Kicks | shared: the signal carries `kicked`, and every instance closes the person's sockets (also when it already holds that version) |
+| A new password (`lockOut`, `lockouts`) | shared: the signal carries `lockout`; every instance runs `lockOut` before it broadcasts. A visitor on another instance may see the new version for the few milliseconds the signal takes; the grants were dropped in the commit, so they cannot join |
+| Presence graces | per instance, with a question: before marking someone away, the instance asks the others who is in the room (`present`); no answer counts as a failed run (retried 3 times). A state that shows someone away whom an instance holds is mended there (`presence true`). Every 30 s a sweep starts the grace of people shown connected whom no instance holds (their instance stopped) |
+| Deadlines | per instance: each instance with sockets in the room arms its timer; the compare-and-set reveals once. A server run that changed nothing broadcasts nothing (the instance that changed it tells everyone, with the causes) |
+| Command ids (`recent-acks.ts`) | shared: the process memory stays, and each command id is also claimed in Redis (`SET NX`, 15 s) before it runs; a claim while it runs answers `busy` (the client sends it again), a later one gets the stored answer (2 min). Redis away: the command runs, as with one instance |
+| Retention's `occupied` | shared: the local rooms plus every other instance's answer to `occupied`; no answer skips the run |
+| `idOf`, `codeOf`, `entering`, `admitted`, `sessionChecked` | per instance, by design (a cache, or one socket's own state) |
+| Sockets per person, socket message buckets, HTTP rate limits | per instance: section 8 |
+
+The instances' own messages are checked on arrival like a client's. Two deployments must
+not share one Redis (pub/sub ignores the database number).
 
 ## 2. Repository layout
 
@@ -697,7 +725,7 @@ password, no social provider before W5.
   address creates rooms freely while a loop gets two a minute; room header reads 120 per
   address and minute. Answer: 429
   `rate_limited` with `Retry-After`. The counters live in the process (per instance
-  with #39), at most 50,000 at once: expired ones are swept every 30 s, and when full the
+  with several, #39), at most 50,000 at once: expired ones are swept every 30 s, and when full the
   oldest tenth goes.
 - Every limit in one place (#36). "Address" is the client address below, "person" the
   session's user; each answers `rate_limited` (429 with `Retry-After` over HTTP).
@@ -727,6 +755,13 @@ password, no social provider before W5.
   refused before the upgrade, a refused handshake closes at once, an idle connection
   after 5 s, and sign-ins are limited), and wrong passwords across rooms (room codes are 58-bit secrets; behind a
   shared address such a limit would let one client lock every password room).
+
+  **With several instances** (#39) every limit above counts per instance, except the
+  wrong passwords per room, which live in the database: behind a load balancer that
+  spreads requests, a client may get up to the number of instances times a limit (two
+  instances: 40 rooms in 10 minutes, 20 wrong passwords per person and room, 16 sockets
+  per person). The room's 50 in 10 minutes still caps a brute force. Sharing the counters
+  in Redis is left for later.
 
   **Behind proxies the app is not told about** (`TRUST_PROXY` lower than the proxies in
   front), every client shares the last proxy's address, so every per-address limit
@@ -978,7 +1013,7 @@ language, and an unknown code gets a generic one.
 | `CSP_REPORT_ONLY` | no (false) | `true` or `1` sends the Content Security Policy report-only: violations show in the browser console, nothing is blocked (section 8) |
 | `CSP_EXTRA_SOURCES` | no | origins added to the policy, such as `script-src https://stats.example.com; connect-src https://stats.example.com` (section 8) |
 | `POSTGRES_PASSWORD` | compose only | password of the bundled Postgres; letters and digits, since it goes into `DATABASE_URL` |
-| `REDIS_URL` | no | scale-out only (#39) |
+| `REDIS_URL` | no | several instances only (#39): a `redis://` or `rediss://` URL that every instance reaches (Redis 6.2 or newer). Set, sockets use WebSocket only and `/api/health` adds `redis: ok` or `down`; may hold a password, never logged |
 | `SENTRY_DSN`, `UMAMI_URL`, `UMAMI_WEBSITE_ID` | no | opt-in observability |
 | Google / Microsoft keys | no (W5) | social sign-in |
 

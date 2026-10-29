@@ -15,8 +15,18 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   `registerApi` (auth routes, then the room API), `socketMiddleware` (the session) and
   `handlers` (the room sync), plus `database`, `auth` and `retention`, and starts the
   retention job. `beforeClose` stops the job before the server closes its sockets;
-  `dispose` stops it again, clears the deadline and presence timers, then ends the pool.
-- `src/retention.ts`: `startRetention({ store, ttlDays, logger, occupied, now? })`, the
+  `dispose` stops it again, clears the deadline and presence timers, closes Redis (when
+  set), then ends the pool. With `config.redisUrl` (#39) it first awaits
+  `connectScaleOut` and adds `realtimeCluster` (the Redis adapter, `transports:
+  ["websocket"]`), `checkRedis` and `websocketOnly` to `deps`, and `shared` to the room sync.
+- `src/scale-out.ts`: `connectScaleOut(url, logger, { signal })` (#39): imports
+  `@redis/client` and `@socket.io/redis-adapter` only then, opens three clients (adapter
+  publisher and subscriber, and one without an offline queue for the command ids) within
+  `REDIS_CONNECT_BUDGET_MS` (30 s) or throws `RedisUnavailableError`, and logs only
+  "redis: connected" and "redis: unavailable" with a driver error code, never the URL or
+  a driver message. Returns `{ adapter, acks, ping, close }`.
+- `src/retention.ts`: `startRetention({ store, ttlDays, logger, occupied, now? })`
+  (`occupied` may return a promise; a rejection skips the run), the
   retention job (#35): first run 3 to 5 minutes after the start (`RETENTION_START_DELAY_MS`
   plus up to `RETENTION_JITTER_MS`), then `RETENTION_PERIOD_MS` (24 h) after each run, on
   an unref'd timer; one `info` line of counts per run, one `info` line when another
@@ -156,8 +166,9 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 `createRoomSync({ runner, store, logger, sessionAlive, touchRoom })` (`src/sync/room-sync.ts`) is the
 `handlers` of `createRealtime`. A successful `enter` calls `touchRoom(id)` without waiting
 (a failure logs `visit not recorded` with the code; `setupServer` passes the config's
-`ROOM_TTL_DAYS` on to the store), and `occupiedRooms()` names the rooms
-with a socket on this instance, which the retention purge keeps (#35).
+`ROOM_TTL_DAYS` on to the store), and `occupiedRooms()` (a promise) names the rooms
+with a socket on this instance, and on the others when shared, which the retention purge
+keeps (#35).
 
 - `enter { code, protocol }`: checks the session again (`sessionChecker`: a socket outlives
   a sign-out), joins the Socket.IO room `room:<id>` (never the code) **before** loading
@@ -175,7 +186,10 @@ with a socket on this instance, which the retention purge keeps (#35).
      checked again; gone: `unauthenticated`, and the connection closes.
   3. `ackKey(roomId, id)` in the person's `RecentAcks` (100 per person, 1000 people): the
      same id gets the same answer (also while it runs) and runs once. `busy` and a thrown step are forgotten,
-     so the same id may run again. Process memory only: a restart forgets it.
+     so the same id may run again. Process memory: a restart forgets it. Shared (#39),
+     `runOnce` also claims `sharedAckKey(user, roomId, id)` in Redis
+     (`sync/shared-acks.ts`): `mine` runs and stores the answer, `running` answers `busy`,
+     `done` hands back the stored answer; Redis not answering within 1 s runs it here.
   4. Success: every socket of the room gets its own snapshot with the projected
      `causes`, **then** the ack `{ ok: true, version }`. A refusal acks the domain code;
      if the runner still stored something (a timer reveal resolved first), that is
@@ -186,7 +200,19 @@ with a socket on this instance, which the retention purge keeps (#35).
 - Each socket remembers the version it holds: nobody gets the same or an older version
   twice, and a reload that finds nothing new sends nothing. An unchanged run whose loaded
   version is newer than what a socket holds (another instance wrote it) is sent without
-  causes, so a room on two instances catches up on the next command or deadline.
+  causes (a command's) or not at all (a server run, when shared: the writer's signal brings
+  it with its causes).
+- Several instances (#39, `shared`): `publish` ends with `tellOthers` (`roomChanged`:
+  id, version, causes, `lockout`); `onRoomChanged` checks it (`parseSignal`), runs only
+  the effects (kicks, lockout) of a version already held, and queues a newer one in the
+  room's `inbox`; `drainInbox` loads the room once for all of them, runs `lockOut` first,
+  broadcasts with the concatenated causes when the versions are exactly the missing ones
+  (none after a gap), then the kicks. `present` and `occupied` answer the other
+  instances (`presentElsewhere`, `occupiedRooms`, `CLUSTER_REQUEST_TIMEOUT_MS`, 2 s).
+  `markAway` asks `present` first; `mendPresence` (from `advance`) brings back someone a
+  state shows away whom this instance holds; `sweep` (every `PRESENCE_SWEEP_MS`, 30 s)
+  starts the grace of people shown connected whom no instance holds. Without `shared`
+  none of it runs and no inter-server event is ever sent.
 - Deadlines (`sync/deadlines.ts`): one timeout per room with a voting round's
   `deadlineAt` and at least one socket on this instance, re-armed after every broadcast and
   enter, cleared when the round changes or the last socket leaves. It runs `timeUp` (any
@@ -196,7 +222,7 @@ with a socket on this instance, which the retention purge keeps (#35).
   sockets has entered the room here (`isHere`). The last one leaving starts a grace
   (`PRESENCE_GRACE_MS`, 15 s; `presenceGraceMs` in tests) for that person and room, unless
   the room's last socket left (then `forgetIfEmpty` drops every timer of the room) or the
-  person is not a participant of the newest state seen (`members`). An entering socket
+  person is not a participant of the newest state seen (`stateOf`). An entering socket
   of a participant cancels its person's grace and always runs the back step
   (`backStep`), which sends `presence { connected: true }` only when the stored state
   shows them away: the enter's own load may predate an away run that committed since,
@@ -228,7 +254,9 @@ with a socket on this instance, which the retention purge keeps (#35).
   whose load read the room before an away run committed, with a held load; failed away
   runs retried and the bound, with a runner that fails on demand); `presence.test.ts`
   (the timers, fake clock);
-  `restart.db.test.ts` runs the built `dist/main.mjs` (build it first; CI does).
+  `restart.db.test.ts` runs the built `dist/main.mjs` (build it first; CI does);
+  `scale-out.db.test.ts` runs two instances on one Postgres and one Redis
+  (`TEST_REDIS_URL`; skipped without it locally, a failure in CI).
 
 ## Identity
 
@@ -382,3 +410,12 @@ docker stop pp-postgres
 ```
 
 The same container serves `pnpm dev` with that `DATABASE_URL` in `.env`.
+
+`scale-out.db.test.ts` (#39) also needs a Redis, through `TEST_REDIS_URL` (never
+`REDIS_URL`, which no other test file must see):
+
+```sh
+docker run --rm -d --name pp-redis -p 6379:6379 redis:7-alpine
+DATABASE_URL=postgres://pp:pp@localhost:55432/pp_test TEST_REDIS_URL=redis://localhost:6379 pnpm test:db
+docker stop pp-redis
+```

@@ -109,7 +109,43 @@ from the bundled database; to use your own Postgres, run the image alone with
   tags, compare Debian versions, replace both digests), then
   `scripts/docker-check.sh` and a pull request. Nothing automates it.
 - **Health**: `GET /api/health` answers `{ status, version, commit, db, uptime }`; the
-  image's `HEALTHCHECK` uses it.
+  image's `HEALTHCHECK` uses it. With `REDIS_URL` it adds `redis: "ok"` or `"down"`
+  (never the URL); Redis down does not make an instance unhealthy.
+
+### Running several instances
+
+One instance is the default and serves many teams. To run more behind one address, give
+every instance the same Postgres and one Redis (6.2 or newer) with `REDIS_URL`, such as
+`redis://redis:6379` or `rediss://:password@cache.example.com:6380`. Without the variable
+nothing about Redis is loaded or opened.
+
+- **What it changes**: the instances tell each other about every change through Redis
+  (by room id, version and causes: no room state, no card, no room code) and each sends
+  its own sockets their own view, loaded from Postgres. A kick or a new room password
+  closes the sockets concerned on every instance, someone with a tab on either instance
+  stays shown as present, a timer reveals once, a command resent after a reconnect to
+  the other instance runs once, and retention keeps a room in use on any instance.
+- **Load balancer**: sockets use WebSocket only once `REDIS_URL` is set (the web app reads
+  it from the page), so a connection stays on the instance it reached and plain round
+  robin works; let WebSocket upgrades through as for one instance. Clients that cannot
+  open a WebSocket (some corporate proxies) cannot connect then. The alternative, if you
+  need long-polling, is sticky sessions (a cookie or client-IP affinity on the balancer)
+  with the default transports; this build does not offer that mode, so it would take a
+  code change (`transports` in `apps/server/src/setup.ts`).
+- **Per instance, on purpose**: the rate limits (room creation, sign-ins, wrong passwords
+  per person and address, socket messages) and the 8 sockets per person count on each
+  instance, so with two instances a client can get twice as much; the 50 wrong passwords
+  per room in 10 minutes are counted in Postgres for all of them
+  ([architecture, section 8](docs/02-architecture.md#8-rooms-access-and-security)).
+- **Redis down**: each instance keeps serving its own sockets, and people on the other
+  instances see the changes once Redis is back (or when they reconnect); meanwhile nobody
+  is marked away, a command id is remembered per instance only, and the retention purge
+  waits for its next run. The start fails if Redis cannot be reached within 30 s. Redis
+  keeps nothing that matters across a restart (no persistence needed). Give each
+  deployment its own Redis: pub/sub ignores the database number.
+- **Example**: [`compose.scale-out.yaml`](compose.scale-out.yaml) runs two replicas behind
+  nginx with a Redis, laid over `compose.yaml`:
+  `docker compose -f compose.yaml -f compose.scale-out.yaml up -d --build`.
 - **Checking the image**: `scripts/docker-check.sh` builds it and runs the checks CI runs
   (size, health, WebSocket, restarts, migrations, signals) as a separate compose project.
 
