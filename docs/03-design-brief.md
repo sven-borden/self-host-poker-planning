@@ -875,6 +875,17 @@ interruptible and disabled under `prefers-reduced-motion` (120 ms cross-fades in
   result, which belongs to nobody: "Cards revealed. Consensus on 8.", "Cards revealed.
   Suggested 5, agreement 60%.".
 - Touch targets at least 44 px; no hover-only controls.
+- The audit (#37): axe finds no serious or critical WCAG 2.2 A/AA violation on any screen,
+  in either theme, on a desktop or a phone; every text/background pair reaches 4.5:1 and
+  every ring, control border and state mark 3:1 (`contrast.test.ts`). Over the felt, where
+  brass reaches only 2.3:1 in the light theme, a focus ring keeps a 2 px band of the page
+  colour between the control and the brass. A focus the page places, or a focused card the
+  table pushes down, is never left out of sight: it gets the least scroll that shows it.
+  The table's centre is drawn in px, like the table: a larger text setting enlarges the
+  page around it, browser zoom the table too, and the centre stays 4 px clear of the slot
+  cards at 150 % text from 360 px. On a phone the centre's buttons have a 32 px face and a
+  44 px target; on a dense phone table "Karten aufdecken" keeps one line. A human pass
+  with NVDA and VoiceOver is still to do; the scripted pass records the live regions.
 
 ## Copy
 
