@@ -60,6 +60,12 @@ async function startInstance(tuning: SetupTuning = {}): Promise<Instance> {
 }
 
 const one = () => instances[0] as Instance;
+/** The room sync an instance runs (`setupServer`'s `handlers`). */
+function syncOf(instance: Instance): RoomSync {
+  const sync = instance.deps?.handlers;
+  if (!sync) throw new Error("no room sync");
+  return sync as RoomSync;
+}
 const two = () => instances[1] as Instance;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -78,9 +84,12 @@ describe.skipIf(!REDIS_URL)("two instances on one room (Redis)", () => {
 
   /** New guests for each block: a person's message bucket is shared by their sockets. */
   async function freshGuests() {
-    [ada, bob, cy, dee] = await Promise.all(
-      [one(), two(), one(), two()].map((instance) => signInGuest(instance.base, ORIGIN)),
-    );
+    [ada, bob, cy, dee] = await Promise.all([
+      signInGuest(one().base, ORIGIN),
+      signInGuest(two().base, ORIGIN),
+      signInGuest(one().base, ORIGIN),
+      signInGuest(two().base, ORIGIN),
+    ]);
   }
 
   afterEach(() => {
@@ -334,7 +343,7 @@ describe.skipIf(!REDIS_URL)("two instances on one room (Redis)", () => {
     it("counts a room with a socket on the other instance as in use, for retention", async () => {
       const code = await insert(votingRoom());
       const id = (await stored(code))?.id;
-      const sync = one().deps.handlers as RoomSync;
+      const sync = syncOf(one());
       const b = client(bob, two());
       await b.enter(code);
       expect(await sync.occupiedRooms()).toContain(id);
@@ -386,7 +395,7 @@ describe.skipIf(!REDIS_URL)("two instances on one room (Redis)", () => {
       const b = client(bob, two());
       await Promise.all([a.enter(code), c.enter(code), b.enter(code)]);
       // As if the second instance died: its sync forgets the room without a disconnect.
-      (two().deps.handlers as RoomSync).close();
+      syncOf(two()).close();
       b.socket.io.engine.close();
       const away = await a.waitFor(
         (s) => s.room.participants.some((p) => p.id === bob.id && !p.connected),
