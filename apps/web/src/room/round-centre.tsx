@@ -33,9 +33,19 @@ interface RoundCentreProps {
   wait?: string | null;
 }
 
-/** The PO's buttons in the centre, drawn as a card face (warm face, card ink, 44 px tall). */
+/**
+ * The PO's buttons in the centre, drawn as a card face (warm face, card ink, 44 px tall).
+ * Sized in px, like everything in the centre: the layout places the table in px, so a
+ * larger text setting (rem) must not grow the centre into the slot cards (#37). On a phone
+ * the face is 32 px tall and an invisible `::after` keeps the 44 px touch target, as the
+ * timer's chip does, so the PO's stack (timer, count, button) fits inside the ring of slot
+ * cards. On a dense phone table (11 to 16 people), whose ring is wider, the label keeps one
+ * line ("Karten aufdecken") and may run wider than the centre's box, which centres it;
+ * with fewer people the side cards come closer, and it wraps inside the box.
+ * e2e/text-size.spec.ts and timer.spec.ts check that it stays clear of the cards.
+ */
 const CENTRE_BUTTON =
-  "h-auto min-h-11 max-w-full border-card-edge bg-card-face px-3 py-1.5 text-[12.5px]/tight font-semibold whitespace-normal text-card-ink shadow-md hover:bg-card-face hover:text-card-ink aria-disabled:opacity-60 in-data-[variant=phone]:px-1.5 in-data-[variant=phone]:text-[11px]/tight dark:bg-card-face dark:hover:bg-card-face";
+  "relative h-auto min-h-[44px] max-w-full border-card-edge bg-card-face px-[12px] py-[6px] text-[12.5px]/tight font-semibold whitespace-normal text-card-ink shadow-md hover:bg-card-face hover:text-card-ink aria-disabled:opacity-60 in-data-[variant=phone]:min-h-[32px] in-data-[variant=phone]:px-[4px] in-data-[variant=phone]:py-[4px] in-data-[variant=phone]:text-[10.5px]/tight in-data-[dense=phone]:max-w-none in-data-[dense=phone]:whitespace-nowrap in-data-[variant=phone]:after:absolute in-data-[variant=phone]:after:inset-x-0 in-data-[variant=phone]:after:-inset-y-[6px] dark:bg-card-face dark:hover:bg-card-face";
 
 /**
  * The status in the middle of the table (#18). Voting: how many have voted out of how
@@ -114,7 +124,7 @@ function VotingCentre({
     <p
       data-centre-status="voting"
       tabIndex={-1}
-      className="m-0 outline-none in-data-[variant=phone]:max-w-17"
+      className="m-0 outline-none in-data-[variant=phone]:max-w-[68px]"
     >
       {t("table.votedSoFar", { count, total })}
     </p>
@@ -122,14 +132,14 @@ function VotingCentre({
   if (!reveals) {
     if (countdown.state.kind === "none") return status;
     return (
-      <div className="flex flex-col items-center gap-1.5 in-data-[variant=phone]:gap-1">
+      <div className="flex flex-col items-center gap-[6px] in-data-[variant=phone]:gap-[4px]">
         <TimerChip countdown={countdown} />
         {status}
       </div>
     );
   }
   return (
-    <div className="flex flex-col items-center gap-1.5 in-data-[variant=phone]:gap-0.5 in-data-[variant=phone]:text-[10px]/tight">
+    <div className="flex flex-col items-center gap-[6px] in-data-[variant=phone]:gap-[2px] in-data-[variant=phone]:text-[10px]/tight">
       {owner ? (
         <TimerControls countdown={countdown} onFailure={onFailure} />
       ) : countdown.state.kind === "none" ? null : (

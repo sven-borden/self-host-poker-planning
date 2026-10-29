@@ -65,7 +65,7 @@ test.describe("with an English browser", () => {
     await mark(page);
 
     await pick(page, /^Language: English$/, "Deutsch");
-    await expect(page.getByText("6/8 haben bisher abgestimmt")).toBeVisible();
+    await expect(page.getByText("6/8 haben abgestimmt")).toBeVisible();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Tischanordnung");
     // The seat list is for screen readers only.
     await expect(page.getByRole("list", { name: "Personen am Tisch" })).toHaveCount(1);
@@ -73,7 +73,7 @@ test.describe("with an English browser", () => {
     expect(await marked(page)).toBe(true);
 
     await page.reload();
-    await expect(page.getByText("6/8 haben bisher abgestimmt")).toBeVisible();
+    await expect(page.getByText("6/8 haben abgestimmt")).toBeVisible();
   });
 
   test("writes numbers with the language's decimal mark", async ({ page }) => {

@@ -220,7 +220,12 @@ describe("cards", () => {
     expect(card.getAttribute("aria-pressed")).toBe("true");
     expect(card.className).toContain("w-[50px]");
     expect(card.className).toContain("phone:w-11");
-    expect(card.textContent).toBe("131313");
+    // The corners draw their label from data-label (#37): the visible text, as speech
+    // input and axe read it, is the name.
+    expect(card.textContent).toBe("13");
+    const corners = [...card.querySelectorAll("[data-corner] [data-card-value]")];
+    expect(corners.map((corner) => corner.getAttribute("data-label"))).toEqual(["13", "13"]);
+    expect(corners.every((corner) => corner.closest("[aria-hidden='true']"))).toBe(true);
   });
 
   it("draws ☕ and ∞ as icons, not as emoji or a fallback glyph", () => {

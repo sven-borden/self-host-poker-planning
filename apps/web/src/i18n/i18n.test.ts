@@ -253,8 +253,8 @@ describe("translation", () => {
     expect(voted("fr", 1_000_000)).toBe(
       "1\u202f000\u202f000/2\u202f000\u202f000 ont voté pour l’instant",
     );
-    expect(voted("de", 1)).toBe("1/2.000.000 hat bisher abgestimmt");
-    expect(voted("de", 6)).toBe("6/2.000.000 haben bisher abgestimmt");
+    expect(voted("de", 1)).toBe("1/2.000.000 hat abgestimmt");
+    expect(voted("de", 6)).toBe("6/2.000.000 haben abgestimmt");
   });
 
   it("formats numbers in the catalog with the language's decimal mark", () => {
