@@ -712,10 +712,21 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
    */
   function deliver(
     room: RoomRef,
-    { version, state }: Candidate,
+    candidate: Candidate,
     covered: readonly RoomSignal[],
-    blind: boolean,
+    missing: boolean,
   ) {
+    let { version, state } = candidate;
+    let blind = missing;
+    // An `enter` loaded a newer state meanwhile: send that one (`broadcast` drops an older),
+    // without the signals of the versions past the candidate.
+    const known = newest.get(room.id) ?? 0;
+    const newer = stateOf.get(room.id);
+    if (known > version && newer) {
+      version = known;
+      state = newer;
+      blind = true;
+    }
     const before = sent.get(room.id);
     const newPassword = covered.some((signal) => signal.lockout) || before?.hasPassword === false;
     // Blind, `broadcast` reads every visitor's grant instead: one may be newer than the lockout.
