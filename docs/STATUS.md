@@ -136,6 +136,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   claimed in Redis, kicks, lockouts, presence and retention across instances, and an
   instance that never stops for Redis once started. Rate limits stay per instance
   (architecture §8). Redis must be reachable by the instances only. Live at bf40cf0.
+- Accessibility from #37: axe in Playwright on every screen, panel and sheet (light and
+  dark, desktop and phone, WCAG 2.2 A/AA, zero findings), a keyboard-only round with
+  focus checks, a scripted screen-reader pass (live-region transcript and accessibility
+  tree), 150 % text, 320 px reflow and reduced-motion specs, and a contrast test over
+  every token pair. The table's centre and the page gutters are in px. Live at 5daa952.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -146,25 +151,15 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- Resumed 2026-10-29 (Sven: "let's resume our work"). Two at once:
-  - **#37** accessibility audit, `feat/pp-037-accessibility` in `../pp-wt-37` (web and
-    its e2e).
-  - **#39** scale-out behind `REDIS_URL`, `feat/pp-039-scale-out` in `../pp-wt-39`
-    (server, CI Redis service).
-  - Both add dev or runtime dependencies: whichever merges second merges `main` and
-    regenerates `pnpm-lock.yaml`.
-  - #39 merged (PR #99, live at bf40cf0). #37 is PR #100: reviewed in the main session,
-    `main` merged in, a fix for CI's Linux font widths pushed; waiting on CI.
-  - **Sven, 2026-10-29: "after those agents, no more agents, we do task by task on the
-    main instance. we pause after it's merged."** The two running agents finish; from
-    then on the main session reviews, fixes and merges itself, one task at a time, and
-    work **pauses once #37 and #39 are merged**.
+- Nothing. **Paused after #37 and #39** (Sven, 2026-10-29: "we pause after it's
+  merged"). Nothing new starts until Sven says so. No worktree is open.
+- **No subagents** (Sven, 2026-10-29): the main session does each task itself, one at
+  a time (see `CLAUDE.md`).
 
 ## Next
 
-- W3 (#33–#41): #33 to #36 merged; #37 and #39 in flight. Then #40 (opt-in Sentry and
-  Umami through `CSP_EXTRA_SOURCES`; touches the server's CSP and the web, so after
-  one of the two lands); #38 and #41 need Sven's OQ-1 and OQ-2.
+- W3 (#33–#41): #33 to #37 and #39 merged. When Sven resumes: #40 (opt-in Sentry and
+  Umami through `CSP_EXTRA_SOURCES`); #38 and #41 need Sven's OQ-1 and OQ-2.
   - #40 for poker.borden.ch: Sven gave his Umami website id (2026-10-29). His Umami is
     `https://analytics.borden.ch` (tracker `/script.js`). With his go, `UMAMI_URL` and
     `UMAMI_WEBSITE_ID` are already set in Coolify (runtime only), ignored until #40
@@ -182,8 +177,8 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
     toggle shows why.
   - Later: a person removed while their socket was down comes back to the join form
     with no notice (accepted at #30's review).
-  - #37: at 150 % text on phones, the centre stack touches slot cards (390 px, 7 seats)
-    and "Karten aufdecken" wraps (360 px, 16 seats).
+  - The table's geometry is proven from 360 px; 320 px is checked for reflow only
+    (#37).
 - **W2 runs without a new go** (Sven, 2026-10-26: "once wave 0 is done, start the
   next one").
 
@@ -219,6 +214,12 @@ issues are merged.
   - **After #36:** untick the Synology's "Enable HSTS" (every answer now carries two
     HSTS headers; the app's comes first and wins), and confirm the grade on
     securityheaders.com for poker.borden.ch (expected A+; it refuses automated scans).
+- **After #37** (optional): a real screen-reader pass with NVDA (free, Windows) or
+  VoiceOver; PR #100's "Screen reader pass" lists what each step should announce. One
+  thing to judge: in an anonymous round a batch like "Cleo voted. Cards revealed.
+  Suggested 5." names the last voter beside the group's suggestion (no card is paired
+  with a name). Also the German count "0/7 haben abgestimmt" (was "haben bisher
+  abgestimmt", shortened to fit 360 px), if another wording is wanted.
 - **#38**: pick the Azure service (OQ-1).
 - **#41**: French and German tone (OQ-2).
 - **#56**: licence and pricing model for branding (OQ-3).
