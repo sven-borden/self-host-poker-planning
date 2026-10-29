@@ -74,7 +74,16 @@ describe("loadConfig", () => {
     const tls = `rediss://default:${SECRET}@cache.example.com:6380`;
     expect(loadConfig({ ...VALID_ENV, REDIS_URL: tls }).redisUrl).toBe(tls);
     expect(loadConfig({ ...VALID_ENV, REDIS_URL: "" }).redisUrl).toBeUndefined();
-    for (const REDIS_URL of [`http://user:${SECRET}@cache`, `${SECRET}`, "redis://"]) {
+    for (const ok of ["redis://cache", "redis://cache/", "redis://cache:6379/2"]) {
+      expect(loadConfig({ ...VALID_ENV, REDIS_URL: ok }).redisUrl).toBe(ok);
+    }
+    for (const REDIS_URL of [
+      `http://user:${SECRET}@cache`,
+      `${SECRET}`,
+      "redis://",
+      `redis://:${SECRET}@cache/db`,
+      "redis://cache:6379/0/1",
+    ]) {
       const error = configError({ ...VALID_ENV, REDIS_URL });
       expect(error.variables).toEqual(["REDIS_URL"]);
       expect(error.message).toContain("REDIS_URL must be a redis:// or rediss:// URL");

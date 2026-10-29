@@ -144,7 +144,11 @@ const schema = z.object({
     .default({}),
   REDIS_URL: z
     .string()
-    .refine((v) => Boolean(parsesAsUrl(v, ["redis:", "rediss:"])?.hostname))
+    .refine((v) => {
+      const url = parsesAsUrl(v, ["redis:", "rediss:"]);
+      // A path names the database number only: node-redis refuses anything else.
+      return Boolean(url?.hostname) && /^(\/\d*)?$/.test(url?.pathname ?? "");
+    })
     .optional(),
   BETTER_AUTH_SECRET: z.string().min(32).refine(isRealSecret),
 });

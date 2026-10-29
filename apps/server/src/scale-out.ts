@@ -10,7 +10,18 @@
  * that fails at once while Redis is away (no offline queue), so a command never waits for
  * it. The URL may hold a password: no log line here carries it, nor any message of the
  * driver's (they name the host); only "redis: connected" and "redis: unavailable" with an
- * error code.
+ * error code, once per change of state.
+ *
+ * The start fails when Redis cannot be reached within 30 s, as for the database. Once
+ * started, losing Redis never takes the instance down: the adapter fires its publishes
+ * and (un)subscribes without catching them, and node-redis rejects the commands in flight
+ * when the connection drops, so `catchFireAndForget` gives each of those promises a
+ * handler (an unhandled rejection exits the process, `run.ts`). Each instance then serves
+ * its own sockets alone until the connection is back.
+ *
+ * Redis must be trusted (README, "Running several instances"): the adapter answers any
+ * client of it that asks for the sockets (their handshake headers, session cookie
+ * included) and obeys a broadcast or a disconnect published by anyone.
  */
 import type { RedisAdapter } from "@socket.io/redis-adapter";
 import type { Logger } from "./logger.ts";
@@ -24,6 +35,8 @@ export const CLUSTER_REQUEST_TIMEOUT_MS = 2_000;
 const PING_TIMEOUT_MS = 1_000;
 /** The adapter's channel prefix: `pp#/#room:<id>#`, never a room code. */
 const CHANNEL_PREFIX = "pp";
+/** Commands queued while Redis is away, at most; past it, a publish fails (and is dropped). */
+const OFFLINE_QUEUE_MAX = 10_000;
 
 export type RedisStatus = "ok" | "down";
 
@@ -60,6 +73,43 @@ function codeOf(error: unknown): string {
   return typeof name === "string" && /^\w{1,40}$/.test(name) ? name : "unknown";
 }
 
+/** The client methods the adapter calls without awaiting or catching what they return. */
+const FIRE_AND_FORGET = [
+  "publish",
+  "sPublish",
+  "subscribe",
+  "pSubscribe",
+  "sSubscribe",
+  "unsubscribe",
+  "pUnsubscribe",
+  "sUnsubscribe",
+  "sendCommand",
+] as const;
+
+const ignore = () => {};
+
+/**
+ * Gives every promise the adapter's calls return a rejection handler, and still returns
+ * that promise, so a caller that awaits it sees the failure. Without it, a connection that
+ * drops with a publish in flight (a Redis restart) rejects it unhandled, and the process
+ * exits. In place, on the client's own methods (node-redis keeps private state on it).
+ */
+export function catchFireAndForget<T extends object>(client: T): T {
+  const methods = client as unknown as Record<string, unknown>;
+  for (const name of FIRE_AND_FORGET) {
+    const original = methods[name];
+    if (typeof original !== "function") continue;
+    methods[name] = (...args: unknown[]) => {
+      const result: unknown = original.apply(client, args);
+      if (typeof (result as Promise<unknown> | null)?.catch === "function") {
+        (result as Promise<unknown>).catch(ignore);
+      }
+      return result;
+    };
+  }
+  return client;
+}
+
 export async function connectScaleOut(
   url: string,
   logger: Logger,
@@ -74,45 +124,54 @@ export async function connectScaleOut(
     url,
     // The adapter speaks node-redis 4's RESP2 replies (PUBSUB NUMSUB as an array).
     RESP: 2 as const,
+    commandsQueueMaxLength: OFFLINE_QUEUE_MAX,
     socket: { reconnectStrategy: (retries: number) => Math.min(100 * 2 ** retries, 2_000) },
   };
-  const pub = createClient(options);
-  const sub = pub.duplicate();
-  const commands = pub.duplicate({ disableOfflineQueue: true });
-  const clients = [pub, sub, commands];
-
+  const open = () => createClient(options);
+  type Client = ReturnType<typeof open>;
+  let clients: Client[] = [];
   let available = false;
-  for (const client of clients) {
-    // node-redis throws an `error` event nobody listens to: every client has a listener.
-    client.on("error", (error: unknown) => {
-      if (!available) return;
-      available = false;
-      log.warn({ err: codeOf(error) }, "redis: unavailable");
-    });
-    client.on("ready", () => {
-      if (available || !clients.every((c) => c.isReady)) return;
-      available = true;
-      log.info("redis: connected");
-    });
-  }
-
   const destroy = () => {
     for (const client of clients) {
+      // Rejects whatever is still queued: the adapter's calls are caught, the rest awaited.
       if (client.isOpen) client.destroy();
     }
   };
+  let pub: Client;
+  let sub: Client;
+  let commands: Client;
   try {
+    // Inside the try: a URL the driver refuses fails like an unreachable Redis, with the
+    // fixed message (the driver's could name the URL).
+    pub = catchFireAndForget(open());
+    sub = catchFireAndForget(pub.duplicate());
+    commands = pub.duplicate({ disableOfflineQueue: true });
+    clients = [pub, sub, commands];
+    for (const client of clients) {
+      // node-redis throws an `error` event nobody listens to: every client has a listener.
+      client.on("error", (error: unknown) => {
+        if (!available) return;
+        available = false;
+        log.warn({ err: codeOf(error) }, "redis: unavailable");
+      });
+      client.on("ready", () => {
+        if (available || !clients.every((c) => c.isReady)) return;
+        available = true;
+        log.info("redis: connected");
+      });
+    }
     const connected = Promise.all(clients.map((client) => client.connect()));
-    connected.catch(() => {});
+    connected.catch(ignore);
     const aborted = new Promise<never>((_, reject) => {
       signal?.addEventListener("abort", () => reject(new RedisUnavailableError()), { once: true });
     });
-    aborted.catch(() => {});
+    aborted.catch(ignore);
     signal?.throwIfAborted();
     await Promise.race([within(connected, budgetMs), aborted]);
   } catch {
     destroy();
-    log.error("redis: unavailable");
+    // A stop during the start (SIGTERM) is no failure of Redis: `run.ts` says why it stops.
+    if (!signal?.aborted) log.error("redis: unavailable");
     throw new RedisUnavailableError();
   }
   if (!available) {
@@ -123,6 +182,8 @@ export async function connectScaleOut(
   const adapter = createAdapter(pub, sub, {
     key: CHANNEL_PREFIX,
     requestsTimeout: CLUSTER_REQUEST_TIMEOUT_MS,
+    // Answers go to the asking instance's own channel, not to every instance.
+    publishOnSpecificResponseChannel: true,
   }) as (nsp: unknown) => RedisAdapter;
   let closed = false;
   return {
@@ -139,7 +200,15 @@ export async function connectScaleOut(
       if (closed) return;
       closed = true;
       available = false;
-      await Promise.allSettled(clients.map((client) => within(client.close(), 2_000)));
+      // With Redis away, `close` waits for a reconnect that may never come: give up after
+      // 2 s and destroy, which rejects what is queued (caught: the shutdown exits 0).
+      await Promise.allSettled(
+        clients.map((client) => {
+          const closing = client.close();
+          closing.catch(ignore);
+          return within(closing, 2_000);
+        }),
+      );
       destroy();
     },
   };
