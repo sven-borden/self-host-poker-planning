@@ -140,15 +140,19 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- Nothing. **Paused after #36** (Sven, 2026-10-28: "pause after those"). Nothing new
-  starts until Sven says so. No worktree is open.
+- Resumed 2026-10-29 (Sven: "let's resume our work"). Two at once:
+  - **#37** accessibility audit, `feat/pp-037-accessibility` in `../pp-wt-37` (web and
+    its e2e).
+  - **#39** scale-out behind `REDIS_URL`, `feat/pp-039-scale-out` in `../pp-wt-39`
+    (server, CI Redis service).
+  - Both add dev or runtime dependencies: whichever merges second merges `main` and
+    regenerates `pnpm-lock.yaml`.
 
 ## Next
 
-- W3 (#33–#41): #33 to #36 merged. When Sven resumes: #37 (accessibility audit), #39
-  (scale-out; also: retention's `occupied` sees one instance only, and a kick closes
-  sockets on one instance only), #40 (opt-in Sentry and Umami through
-  `CSP_EXTRA_SOURCES`); #38 and #41 need Sven's OQ-1 and OQ-2.
+- W3 (#33–#41): #33 to #36 merged; #37 and #39 in flight. Then #40 (opt-in Sentry and
+  Umami through `CSP_EXTRA_SOURCES`; touches the server's CSP and the web, so after
+  one of the two lands); #38 and #41 need Sven's OQ-1 and OQ-2.
 - Chores to fold into a later issue: a lazy catalog for the panels' copy (settings and
   history, a few kB off both pages); the burst test's one `room_not_found` under load;
   a higher anonymous sign-in limit for the db tests through `SetupTuning` (about 41 of
