@@ -31,6 +31,8 @@ export interface ServerDeps extends AppDeps {
   sessionCookie?: string;
   /** The socket limits per person, for tests only (the fuzz test raises them). */
   realtimeLimits?: Pick<RealtimeOptions, "messageLimit" | "rosterLimit" | "historyLimit">;
+  /** Several instances (#39, `scale-out.ts`): the Redis adapter, WebSocket only. */
+  realtimeCluster?: Pick<RealtimeOptions, "adapter" | "transports">;
 }
 
 /**
@@ -68,6 +70,7 @@ export function createServer(config: Config, deps: ServerDeps): PokerServer {
     responseHeaders: headers,
     ...(deps.sessionCookie !== undefined && { sessionCookie: deps.sessionCookie }),
     ...deps.realtimeLimits,
+    ...deps.realtimeCluster,
     ...(deps.handlers && { handlers: deps.handlers }),
     ...(deps.socketMiddleware && { middleware: deps.socketMiddleware }),
   });

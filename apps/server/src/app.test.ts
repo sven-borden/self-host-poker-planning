@@ -11,6 +11,7 @@ import {
   DB_CHECK_TIMEOUT_MS,
   listStaticFiles,
   loggedPath,
+  TRANSPORT_META,
 } from "./app.ts";
 import { collectLogs, SECRET, testConfig } from "./test-support.ts";
 
@@ -65,6 +66,17 @@ describe("GET /api/health", () => {
     const thrown = await broken.app.request("/api/health");
     expect(thrown.status).toBe(503);
     expect(await thrown.json()).toMatchObject({ db: "error" });
+  });
+
+  it("reports redis only when it is configured, and stays healthy without it (#39)", async () => {
+    const plain = await (await app().app.request("/api/health")).json();
+    expect(plain).not.toHaveProperty("redis");
+    const up = await app({ checkRedis: async () => "ok" }).app.request("/api/health");
+    expect(await up.json()).toMatchObject({ status: "ok", redis: "ok" });
+    const down = app({ checkRedis: () => Promise.reject(new Error("boom")) });
+    const response = await down.app.request("/api/health");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "ok", redis: "down" });
   });
 
   it("gives up on a hung database check and answers 503", async () => {
@@ -266,6 +278,22 @@ describe("the built web app", () => {
       expect(response.headers.get("x-content-type-options")).toBe("nosniff");
       expect(await response.text()).toBe(INDEX);
     }
+  });
+
+  it("tells the web app WebSocket only in index.html when several instances run (#39)", async () => {
+    const shared = (path: string, method = "GET") =>
+      app({ staticDir: root, websocketOnly: true }).app.request(path, { method });
+    for (const path of ["/", "/r/AbCdEf1234", "/index.html"]) {
+      const response = await shared(path);
+      expect(response.status, path).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("no-cache");
+      expect(response.headers.get("content-security-policy")).toContain("script-src 'self'");
+      expect(await response.text()).toBe(
+        `<!doctype html>${TRANSPORT_META}<title>Poker Planning</title>`,
+      );
+    }
+    expect((await shared("/r/AbCdEf1234", "POST")).status).toBe(404);
+    expect(await (await get("/index.html")).text()).toBe(INDEX);
   });
 
   it("answers HEAD on a fallback route", async () => {

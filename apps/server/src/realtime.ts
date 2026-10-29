@@ -31,7 +31,7 @@ import {
   type ServerToClientEvents,
   toDomainCommand,
 } from "@pp/protocol";
-import { type ExtendedError, Server, type Socket } from "socket.io";
+import { type ExtendedError, Server, type ServerOptions, type Socket } from "socket.io";
 import type { SocketUser } from "./auth.ts";
 import type { Logger } from "./logger.ts";
 import {
@@ -65,7 +65,19 @@ export interface SocketData {
   room?: { id: string; code: string };
 }
 
-type InterServerEvents = Record<string, never>;
+/**
+ * What instances say to each other through the Redis adapter (#39, `sync/room-sync.ts`).
+ * With the in-memory adapter (one instance) none of them is ever sent. Each payload is
+ * checked on arrival like a client's: Redis is a network service.
+ */
+export interface InterServerEvents {
+  /** A room (by id) changed: its version, the change's causes, a new password. */
+  roomChanged(signal: unknown): void;
+  /** Who has a socket entered in a room (by id) on the instance that answers. */
+  present(roomId: unknown, answer: (people: string[]) => void): void;
+  /** The rooms (by id) with a socket on the instance that answers. */
+  occupied(answer: (rooms: string[]) => void): void;
+}
 
 export type RealtimeServer = Server<
   ClientToServerEvents,
@@ -135,6 +147,17 @@ export interface RealtimeOptions {
    * by the session middleware. Left out (tests without identity), no cookie is needed.
    */
   sessionCookie?: string;
+  /**
+   * Socket.IO's adapter (#39: the Redis adapter, `scale-out.ts`); the in-memory one when
+   * left out.
+   */
+  adapter?: ServerOptions["adapter"];
+  /**
+   * The transports a client may use. Left out, Socket.IO's default (long-polling, then
+   * the upgrade to WebSocket). With several instances, `["websocket"]`: one connection
+   * stays on one instance, so no sticky sessions are needed (#39).
+   */
+  transports?: ("polling" | "websocket")[];
 }
 
 /**
@@ -219,8 +242,12 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     maxSocketsPerUser = MAX_SOCKETS_PER_USER,
     responseHeaders = {},
     sessionCookie,
+    adapter,
+    transports,
   } = options;
   const io: RealtimeServer = new Server(httpServer, {
+    ...(adapter && { adapter }),
+    ...(transports && { transports }),
     maxHttpBufferSize: MAX_PAYLOAD_BYTES,
     serveClient: false,
     connectTimeout: CONNECT_TIMEOUT_MS,

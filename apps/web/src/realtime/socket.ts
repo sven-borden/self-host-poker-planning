@@ -1,5 +1,5 @@
 import { io, type ManagerOptions, type Socket, type SocketOptions } from "socket.io-client";
-import { ensureIdentity, retryDelay, UNAUTHENTICATED } from "../identity/identity.ts";
+import { ensureIdentity, fetchSession, retryDelay, UNAUTHENTICATED } from "../identity/identity.ts";
 import { useIdentityStore } from "../stores/identity-store.ts";
 import type { ConnectionStatus } from "../stores/room-store.ts";
 
@@ -23,16 +23,29 @@ export type TypedSocket<
 export type SocketFactoryOptions = Partial<ManagerOptions & SocketOptions>;
 
 /**
+ * The transports the server takes, from the tag it puts in `index.html` (#39): with several
+ * instances behind one address it takes WebSocket only, so one connection stays on one
+ * instance. Without the tag (one instance), undefined: Socket.IO's default, long-polling
+ * first, then the upgrade. A tag and not a script, since the CSP refuses inline script.
+ */
+export function socketTransports(doc: Document | undefined = globalThis.document) {
+  const meta = doc?.querySelector('meta[name="pp-socket-transport"]');
+  return meta?.getAttribute("content") === "websocket" ? ["websocket"] : undefined;
+}
+
+/**
  * Creates a socket to the page's own origin without connecting it: the caller decides
  * when to call `connect()`. Nothing in the app connects at module load.
  */
 export function createSocket<ServerToClient extends EventsMap, ClientToServer extends EventsMap>(
   options: SocketFactoryOptions = {},
 ): TypedSocket<ServerToClient, ClientToServer> {
+  const transports = socketTransports();
   return io({
     path: "/socket.io",
     autoConnect: false,
     withCredentials: true,
+    ...(transports && { transports }),
     ...options,
   });
 }
@@ -49,6 +62,17 @@ export interface ConnectOptions {
   ensure?: (options?: { force?: boolean; retry?: boolean }) => Promise<unknown>;
   /** Milliseconds before retry number `attempt`, and the server's Retry-After if any. */
   delay?: (attempt: number, retryAfterSeconds?: number) => number;
+  /** This browser's session over HTTP, null when it has none (`fetchSession`). */
+  session?: () => Promise<unknown>;
+}
+
+/** Socket.IO's message when a WebSocket could not open: the browser tells nothing more. */
+export const WEBSOCKET_ERROR = "websocket error";
+
+/** Whether the socket uses WebSocket alone (several instances, #39: `socketTransports`). */
+function websocketOnly(socket: { io: { opts: { transports?: unknown } } }): boolean {
+  const transports = socket.io.opts.transports;
+  return Array.isArray(transports) && transports.length === 1 && transports[0] === "websocket";
 }
 
 /** The `retryAfter` (seconds) a server put in a refusal's `data`, if any. */
@@ -90,6 +114,10 @@ export function refusalOf(error: Error): string {
  * - `unauthenticated` (the session expired or was revoked, or the cookie is gone): stops
  *   Socket.IO's own retries, runs the bootstrap once more and reconnects; a second refusal in a row, or a failed bootstrap, sets the identity
  *   store's error to `unauthenticated` for the page to show.
+ * - WebSocket only (#39), `websocket error`: the server refuses a handshake without a
+ *   session before the upgrade, and the browser hides why. The session is asked over HTTP
+ *   (at most once per backoff step, not at each of Socket.IO's retries); none, and it goes
+ *   as for `unauthenticated`. With a session, Socket.IO keeps retrying on its own.
  * Returns a function that removes the listeners and cancels a pending retry.
  */
 export function connectWhenIdentified<
@@ -97,12 +125,16 @@ export function connectWhenIdentified<
   ClientToServer extends EventsMap,
 >(
   socket: TypedSocket<ServerToClient, ClientToServer>,
-  { ensure = ensureIdentity, delay = retryDelay }: ConnectOptions = {},
+  { ensure = ensureIdentity, delay = retryDelay, session = fetchSession }: ConnectOptions = {},
 ): () => void {
   let retried = false;
   let stopped = false;
   let attempt = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** WebSocket only: a session check under way, how many ran, and when the next may. */
+  let checking = false;
+  let checks = 0;
+  let nextCheckAt = 0;
   const giveUp = () => {
     if (!stopped) useIdentityStore.getState().setError(UNAUTHENTICATED);
   };
@@ -112,6 +144,31 @@ export function connectWhenIdentified<
   const onConnect = () => {
     retried = false;
     attempt = 0;
+    checks = 0;
+    nextCheckAt = 0;
+  };
+  const reauthenticate = () => {
+    // A refusal before the socket (Engine.IO's 403 or 400) leaves Socket.IO retrying
+    // without the cookie; after a middleware's, the socket is already closed (a no-op).
+    socket.disconnect();
+    if (retried) {
+      giveUp();
+      return;
+    }
+    retried = true;
+    ensure({ force: true, retry: true }).then(connect, giveUp);
+  };
+  const checkSession = () => {
+    if (checking || Date.now() < nextCheckAt) return;
+    checking = true;
+    const settle = () => {
+      checking = false;
+      nextCheckAt = Date.now() + delay(checks++);
+    };
+    session().then((found) => {
+      settle();
+      if (!stopped && found === null) reauthenticate();
+    }, settle);
   };
   const onConnectError = (error: Error) => {
     if (stopped) return;
@@ -121,16 +178,11 @@ export function connectWhenIdentified<
       timer = setTimeout(connect, delay(attempt++, retryAfterOf(error)));
       return;
     }
-    if (code !== UNAUTHENTICATED) return;
-    // A refusal before the socket (Engine.IO's 403) leaves Socket.IO retrying without
-    // the cookie; after a middleware's, the socket is already closed and this is a no-op.
-    socket.disconnect();
-    if (retried) {
-      giveUp();
+    if (code === WEBSOCKET_ERROR && websocketOnly(socket)) {
+      checkSession();
       return;
     }
-    retried = true;
-    ensure({ force: true, retry: true }).then(connect, giveUp);
+    if (code === UNAUTHENTICATED) reauthenticate();
   };
   socket.on("connect", onConnect);
   socket.on("connect_error", onConnectError);

@@ -15,7 +15,13 @@ import type { HistoryQuery, HistoryStore } from "../db/rooms.ts";
 import { createCommandRunner } from "../db/runner.ts";
 import { createServer, type PokerServer } from "../server.ts";
 import { collectLogs, type LogCollector, testConfig } from "../test-support.ts";
-import { channelOf, createRoomSync, type RoomSync, SESSION_RECHECK_MS } from "./room-sync.ts";
+import {
+  channelOf,
+  createRoomSync,
+  parseSignal,
+  type RoomSync,
+  SESSION_RECHECK_MS,
+} from "./room-sync.ts";
 import {
   fakeIdentity,
   type MemoryRoomStore,
@@ -180,12 +186,12 @@ describe("enter", () => {
 
   it("names the rooms with a socket on this instance, and forgets a room left empty", async () => {
     const { client, store, sync } = await start(lobby());
-    expect(sync.occupiedRooms()).toEqual([]);
+    expect(await sync.occupiedRooms()).toEqual([]);
     const ada = client("ua");
     await ada.enter(CODE);
-    expect(sync.occupiedRooms()).toEqual([idOf(store)]);
+    expect(await sync.occupiedRooms()).toEqual([idOf(store)]);
     ada.close();
-    await vi.waitFor(() => expect(sync.occupiedRooms()).toEqual([]));
+    await vi.waitFor(async () => expect(await sync.occupiedRooms()).toEqual([]));
   });
 });
 
@@ -604,5 +610,43 @@ describe("room codes in the logs", () => {
       expect(logs.lines.find((line) => line.msg === message)?.room).toBe(idOf(store));
     }
     expect(logs.raw.filter((line) => line.includes(CODE))).toEqual([]);
+  });
+});
+
+describe("parseSignal (#39)", () => {
+  it("takes a room change from another instance and nothing malformed", () => {
+    const causes = [{ type: "kicked", who: "u1" }];
+    expect(parseSignal({ room: "r1", version: 3, causes })).toEqual({
+      room: "r1",
+      version: 3,
+      causes,
+    });
+    expect(parseSignal({ room: "r1", version: 3, causes: [], lockout: true })).toEqual({
+      room: "r1",
+      version: 3,
+      causes: [],
+      lockout: true,
+    });
+    expect(parseSignal({ room: "r1", version: 3, causes: [], lockout: "yes" })).toEqual({
+      room: "r1",
+      version: 3,
+      causes: [],
+    });
+    for (const bad of [
+      null,
+      "r1",
+      { version: 3, causes: [] },
+      { room: "", version: 3, causes: [] },
+      { room: "r".repeat(65), version: 3, causes: [] },
+      { room: "r1", version: 0, causes: [] },
+      { room: "r1", version: 1.5, causes: [] },
+      { room: "r1", version: "3", causes: [] },
+      { room: "r1", version: 3 },
+      { room: "r1", version: 3, causes: [null] },
+      { room: "r1", version: 3, causes: [{ who: "u1" }] },
+      { room: "r1", version: 3, causes: Array.from({ length: 65 }, () => ({ type: "x" })) },
+    ]) {
+      expect(parseSignal(bad)).toBeUndefined();
+    }
   });
 });
