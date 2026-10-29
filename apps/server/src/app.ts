@@ -281,11 +281,11 @@ export const TRANSPORT_META = '<meta name="pp-socket-transport" content="websock
  */
 function indexWithTransport(root: string) {
   const file = join(root, "index.html");
-  const html = readFileSync(file, "utf8").replace(
-    "</head>",
-    `  ${TRANSPORT_META}
-  </head>`,
-  );
+  const source = readFileSync(file, "utf8");
+  // Vite's index.html has a head; without one, the parser puts the tag in the implied head.
+  const html = /<\/head>/i.test(source)
+    ? source.replace(/<\/head>/i, `${TRANSPORT_META}</head>`)
+    : source.replace(/^(<!doctype html>)?/i, `$1${TRANSPORT_META}`);
   return async (c: Context<AppEnv>, next: () => Promise<void>) => {
     if (c.req.method !== "GET" && c.req.method !== "HEAD") return next();
     c.set("staticFile", file);

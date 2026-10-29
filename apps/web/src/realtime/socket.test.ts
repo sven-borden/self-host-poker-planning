@@ -6,6 +6,7 @@ import {
   createSocket,
   type EventsMap,
   refusalOf,
+  socketTransports,
   type TypedSocket,
   trackConnection,
 } from "./socket.ts";
@@ -40,7 +41,26 @@ describe("createSocket", () => {
     expect(socket.connected).toBe(false);
     expect(socket.active).toBe(false);
     expect(socket.io.opts.path).toBe("/socket.io");
+    expect(socket.io.opts.transports).toBeUndefined();
     socket.close();
+  });
+
+  it("uses WebSocket only when index.html says so (several instances, #39)", () => {
+    const meta = document.createElement("meta");
+    meta.name = "pp-socket-transport";
+    meta.content = "websocket";
+    document.head.append(meta);
+    try {
+      expect(socketTransports()).toEqual(["websocket"]);
+      const socket = createSocket();
+      expect(socket.io.opts.transports).toEqual(["websocket"]);
+      socket.close();
+      meta.content = "polling";
+      expect(socketTransports()).toBeUndefined();
+    } finally {
+      meta.remove();
+    }
+    expect(socketTransports()).toBeUndefined();
   });
 
   it("goes offline after a disconnect forced by the server, which Socket.IO never retries", () => {

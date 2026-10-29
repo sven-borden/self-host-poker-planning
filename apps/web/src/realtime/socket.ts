@@ -23,16 +23,29 @@ export type TypedSocket<
 export type SocketFactoryOptions = Partial<ManagerOptions & SocketOptions>;
 
 /**
+ * The transports the server takes, from the tag it puts in `index.html` (#39): with several
+ * instances behind one address it takes WebSocket only, so one connection stays on one
+ * instance. Without the tag (one instance), undefined: Socket.IO's default, long-polling
+ * first, then the upgrade. A tag and not a script, since the CSP refuses inline script.
+ */
+export function socketTransports(doc: Document | undefined = globalThis.document) {
+  const meta = doc?.querySelector('meta[name="pp-socket-transport"]');
+  return meta?.getAttribute("content") === "websocket" ? ["websocket"] : undefined;
+}
+
+/**
  * Creates a socket to the page's own origin without connecting it: the caller decides
  * when to call `connect()`. Nothing in the app connects at module load.
  */
 export function createSocket<ServerToClient extends EventsMap, ClientToServer extends EventsMap>(
   options: SocketFactoryOptions = {},
 ): TypedSocket<ServerToClient, ClientToServer> {
+  const transports = socketTransports();
   return io({
     path: "/socket.io",
     autoConnect: false,
     withCredentials: true,
+    ...(transports && { transports }),
     ...options,
   });
 }
