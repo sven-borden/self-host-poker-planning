@@ -1,8 +1,8 @@
 /**
  * The server's configuration, read from the environment once by `run()` and passed down.
  * Nothing else reads `process.env`. A bad or missing variable throws `ConfigError`, whose
- * message names the variables and a fixed reason, never a value: `DATABASE_URL` holds a
- * password and `BETTER_AUTH_SECRET` signs the sessions.
+ * message names the variables and a fixed reason, never a value: `DATABASE_URL` and
+ * `REDIS_URL` may hold a password and `BETTER_AUTH_SECRET` signs the sessions.
  */
 import { z } from "zod";
 import { type CspSources, parseCspSources } from "./security-headers.ts";
@@ -41,6 +41,12 @@ export interface Config {
   readonly cspReportOnly: boolean;
   /** Origins added to the policy (`CSP_EXTRA_SOURCES`, `security-headers.ts`). */
   readonly cspExtraSources: CspSources;
+  /**
+   * Redis for running several instances (#39, `scale-out.ts`): set, the instances share
+   * room changes, presence and command ids through it, and sockets use WebSocket only.
+   * Unset (the default), nothing about Redis is loaded. May hold a password: never log it.
+   */
+  readonly redisUrl: string | undefined;
 }
 
 /** Every variable `loadConfig` reads, with the reason shown when its value is invalid. */
@@ -59,6 +65,7 @@ const REASONS = {
   CSP_REPORT_ONLY: "must be true, false, 1 or 0",
   CSP_EXTRA_SOURCES:
     "must be directives and origins such as script-src https://stats.example.com; connect-src https://stats.example.com",
+  REDIS_URL: "must be a redis:// or rediss:// URL",
   BETTER_AUTH_SECRET:
     "must be at least 32 random characters, such as the output of openssl rand -base64 32",
 } as const;
@@ -135,6 +142,14 @@ const schema = z.object({
       return sources ?? {};
     })
     .default({}),
+  REDIS_URL: z
+    .string()
+    .refine((v) => {
+      const url = parsesAsUrl(v, ["redis:", "rediss:"]);
+      // A path names the database number only: node-redis refuses anything else.
+      return Boolean(url?.hostname) && /^(\/\d*)?$/.test(url?.pathname ?? "");
+    })
+    .optional(),
   BETTER_AUTH_SECRET: z.string().min(32).refine(isRealSecret),
 });
 
@@ -184,6 +199,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
     migrationsDir: v.MIGRATIONS_DIR,
     cspReportOnly: v.CSP_REPORT_ONLY,
     cspExtraSources: v.CSP_EXTRA_SOURCES,
+    redisUrl: v.REDIS_URL,
     betterAuthSecret: v.BETTER_AUTH_SECRET,
   });
 }

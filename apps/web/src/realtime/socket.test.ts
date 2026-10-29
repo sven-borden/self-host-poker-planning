@@ -6,6 +6,7 @@ import {
   createSocket,
   type EventsMap,
   refusalOf,
+  socketTransports,
   type TypedSocket,
   trackConnection,
 } from "./socket.ts";
@@ -40,7 +41,26 @@ describe("createSocket", () => {
     expect(socket.connected).toBe(false);
     expect(socket.active).toBe(false);
     expect(socket.io.opts.path).toBe("/socket.io");
+    expect(socket.io.opts.transports).toBeUndefined();
     socket.close();
+  });
+
+  it("uses WebSocket only when index.html says so (several instances, #39)", () => {
+    const meta = document.createElement("meta");
+    meta.name = "pp-socket-transport";
+    meta.content = "websocket";
+    document.head.append(meta);
+    try {
+      expect(socketTransports()).toEqual(["websocket"]);
+      const socket = createSocket();
+      expect(socket.io.opts.transports).toEqual(["websocket"]);
+      socket.close();
+      meta.content = "polling";
+      expect(socketTransports()).toBeUndefined();
+    } finally {
+      meta.remove();
+    }
+    expect(socketTransports()).toBeUndefined();
   });
 
   it("goes offline after a disconnect forced by the server, which Socket.IO never retries", () => {
@@ -250,6 +270,89 @@ describe("connectWhenIdentified", () => {
     expect(ensure).toHaveBeenLastCalledWith({ force: true, retry: true });
     expect(connect).toHaveBeenCalledTimes(2);
     stop();
+  });
+
+  describe("WebSocket only (several instances, #39)", () => {
+    /** A socket on WebSocket alone, as with the server's tag, and its session checks. */
+    function websocketSetup(session: () => Promise<unknown>) {
+      const ensure = vi.fn<Ensure>(() => Promise.resolve({ userId: "u1", name: null }));
+      const socket = createSocket({ transports: ["websocket"] });
+      const connect = vi.spyOn(socket, "connect").mockReturnValue(socket);
+      const disconnect = vi.spyOn(socket, "disconnect");
+      const check = vi.fn(session);
+      const stop = connectWhenIdentified(socket, {
+        ensure,
+        delay: (attempt) => 1000 * 2 ** attempt,
+        session: check,
+      });
+      return { socket, connect, disconnect, ensure, check, stop };
+    }
+
+    it("asks for the session over HTTP on a websocket error, and signs in again when it is gone", async () => {
+      // The server refused the cookieless upgrade (400): the browser only says "websocket error".
+      const { socket, connect, disconnect, ensure, check, stop } = websocketSetup(() =>
+        Promise.resolve(null),
+      );
+      await tick();
+      fire(socket, "connect_error", new Error("websocket error"));
+      await tick();
+      expect(check).toHaveBeenCalledOnce();
+      expect(disconnect).toHaveBeenCalledOnce();
+      expect(ensure).toHaveBeenLastCalledWith({ force: true, retry: true });
+      expect(connect).toHaveBeenCalledTimes(2);
+      stop();
+    });
+
+    it("leaves Socket.IO retrying while the session exists, asking again only after a backoff", async () => {
+      vi.useFakeTimers();
+      try {
+        const { socket, connect, disconnect, ensure, check, stop } = websocketSetup(() =>
+          Promise.resolve({ user: { id: "u1" } }),
+        );
+        await vi.advanceTimersByTimeAsync(0);
+        fire(socket, "connect_error", new Error("websocket error"));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(check).toHaveBeenCalledOnce();
+        // Socket.IO's own retries within the first step ask nothing.
+        fire(socket, "connect_error", new Error("websocket error"));
+        await vi.advanceTimersByTimeAsync(999);
+        fire(socket, "connect_error", new Error("websocket error"));
+        expect(check).toHaveBeenCalledOnce();
+        await vi.advanceTimersByTimeAsync(1);
+        fire(socket, "connect_error", new Error("websocket error"));
+        expect(check).toHaveBeenCalledTimes(2);
+        // A failed check backs off too.
+        check.mockRejectedValueOnce(new Error("network"));
+        await vi.advanceTimersByTimeAsync(2000);
+        fire(socket, "connect_error", new Error("websocket error"));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(check).toHaveBeenCalledTimes(3);
+        fire(socket, "connect_error", new Error("websocket error"));
+        expect(check).toHaveBeenCalledTimes(3);
+        expect(disconnect).not.toHaveBeenCalled();
+        expect(ensure).toHaveBeenCalledOnce();
+        expect(connect).toHaveBeenCalledOnce();
+        stop();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("asks nothing on a websocket error with Socket.IO's default transports", async () => {
+      const check = vi.fn(() => Promise.resolve(null));
+      const socket = createSocket();
+      vi.spyOn(socket, "connect").mockReturnValue(socket);
+      const stop = connectWhenIdentified(socket, {
+        ensure: () => Promise.resolve({ userId: "u1" }),
+        session: check,
+      });
+      await tick();
+      fire(socket, "connect_error", new Error("websocket error"));
+      await tick();
+      expect(check).not.toHaveBeenCalled();
+      stop();
+      socket.close();
+    });
   });
 
   it("reports unauthenticated when the second bootstrap fails, and stops on cleanup", async () => {
