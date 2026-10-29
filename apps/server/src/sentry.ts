@@ -11,7 +11,7 @@
  * the image, for tracing this app does not do. No breadcrumbs, no request data, no host
  * name; every string passes `hideRoomCodes` on the way out as a second line of defence.
  */
-import { hideRoomCodes } from "@pp/domain";
+import { hideRoomCodesIn } from "@pp/domain";
 import {
   createStackParser,
   createTransport,
@@ -70,14 +70,6 @@ const sendWithFetch: SendEnvelope = async (url, request, headers) => {
   };
 };
 
-/** Every string in `value`, with room paths hidden (`hideRoomCodes`). */
-function hidden<T>(value: T): T {
-  if (typeof value === "string") return hideRoomCodes(value) as T;
-  if (Array.isArray(value)) return value.map(hidden) as T;
-  if (typeof value !== "object" || value === null) return value;
-  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, hidden(child)])) as T;
-}
-
 export function startReports({ dsn, release, send = sendWithFetch }: ReportsOptions): Reports {
   const client = new ServerRuntimeClient({
     dsn,
@@ -88,13 +80,20 @@ export function startReports({ dsn, release, send = sendWithFetch }: ReportsOpti
     integrations: [dedupeIntegration()],
     transport: (options) =>
       createTransport(options, (request) => send(options.url, request, options.headers)),
-    sendDefaultPii: false,
+    // Nothing about the person: no user, cookies, headers, bodies or query strings.
+    dataCollection: {
+      userInfo: false,
+      cookies: false,
+      httpHeaders: false,
+      httpBodies: [],
+      urlQueryParams: false,
+    },
     sendClientReports: false,
     traceLifecycle: "static",
     beforeSend: (event: ErrorEvent) => {
       delete event.server_name;
       delete event.breadcrumbs;
-      return hidden(event);
+      return hideRoomCodesIn(event);
     },
   });
   client.init();

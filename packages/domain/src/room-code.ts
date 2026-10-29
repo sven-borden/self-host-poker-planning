@@ -28,3 +28,16 @@ export function hideRoomCodes(text: string, codes: Iterable<string> = []): strin
   for (const code of codes) if (code) hidden = hidden.replaceAll(code, ":code");
   return hidden;
 }
+
+/** `value` with `hideRoomCodes` applied to every string in it, keys included. */
+export function hideRoomCodesIn<T>(value: T, codes: readonly string[] = []): T {
+  if (typeof value === "string") return hideRoomCodes(value, codes) as T;
+  if (Array.isArray(value)) return value.map((item) => hideRoomCodesIn(item, codes)) as T;
+  if (typeof value !== "object" || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, child]) => [
+      hideRoomCodes(key, codes),
+      hideRoomCodesIn(child, codes),
+    ]),
+  ) as T;
+}

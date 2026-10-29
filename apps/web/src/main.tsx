@@ -11,6 +11,8 @@ import { createRoot } from "react-dom/client";
 import { App } from "./app.tsx";
 import { startLanguage } from "./i18n/i18n.ts";
 import { ensureIdentity } from "./identity/identity.ts";
+import { startErrorReports } from "./observability/errors.ts";
+import { trackPageViews } from "./observability/page-views.ts";
 import { createAppRouter } from "./router.ts";
 
 const container = document.getElementById("root");
@@ -18,7 +20,10 @@ if (!container) {
   throw new Error("The page has no #root element.");
 }
 
+// Sentry and Umami, each only when the server's page asks for it (#40): nothing by default.
+startErrorReports();
 const router = createAppRouter();
+trackPageViews(router);
 
 // The first render waits for the language's catalog (French and German are separate
 // chunks) and, in parallel, for the route's own chunk, which the router would fetch

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   hideRoomCodes,
+  hideRoomCodesIn,
   isRoomCode,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
@@ -39,5 +40,14 @@ describe("room codes", () => {
     expect(hideRoomCodes("room Abc1234567 failed, Abc1234567 again", ["Abc1234567", ""])).toBe(
       "room :code failed, :code again",
     );
+  });
+
+  it("are hidden in every string of a value, keys included", () => {
+    expect(
+      hideRoomCodesIn(
+        { url: "/r/Abc1234567", list: ["Abc1234567", 7, null], Abc1234567: { ok: true } },
+        ["Abc1234567"],
+      ),
+    ).toEqual({ url: "/r/:code", list: [":code", 7, null], ":code": { ok: true } });
   });
 });
