@@ -153,6 +153,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 - W3 (#33–#41): #33 to #36 merged; #37 and #39 in flight. Then #40 (opt-in Sentry and
   Umami through `CSP_EXTRA_SOURCES`; touches the server's CSP and the web, so after
   one of the two lands); #38 and #41 need Sven's OQ-1 and OQ-2.
+  - #40 for poker.borden.ch: Sven gave his Umami website id (2026-10-29). His Umami is
+    `https://analytics.borden.ch` (tracker `/script.js`). Both go into Coolify's env
+    after #40 merges, with his go.
 - Chores to fold into a later issue: a lazy catalog for the panels' copy (settings and
   history, a few kB off both pages); the burst test's one `room_not_found` under load;
   a higher anonymous sign-in limit for the db tests through `SetupTuning` (about 41 of
