@@ -147,6 +147,12 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
     (server, CI Redis service).
   - Both add dev or runtime dependencies: whichever merges second merges `main` and
     regenerates `pnpm-lock.yaml`.
+  - #39 is PR #99 (CI green, reviewed: no blocker, nine should-fix items, a fixer on
+    them). #37's implementer is still building.
+  - **Sven, 2026-10-29: "after those agents, no more agents, we do task by task on the
+    main instance. we pause after it's merged."** The two running agents finish; from
+    then on the main session reviews, fixes and merges itself, one task at a time, and
+    work **pauses once #37 and #39 are merged**.
 
 ## Next
 

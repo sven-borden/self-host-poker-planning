@@ -20,6 +20,9 @@ Code conventions live next to the code (package READMEs); do not duplicate them 
 
 ## Build process
 
+- **Since 2026-10-29 (Sven): no subagents.** The main session does each task itself,
+  one at a time (build, review, fix, merge); CI is watched with a background shell
+  command. The agent rules below stay for reference until Sven says otherwise.
 - Two issues may be in flight at once (Sven, 2026-10-26), when both have their "Depends
   on" issues merged and they touch different parts of the repo. Otherwise one at a time.
   One implementer agent per issue; the main session orchestrates.
