@@ -89,7 +89,7 @@ export function startRetention(options: RetentionOptions): Retention {
     const durationMs = () => Math.round(performance.now() - started);
     let inUse: readonly string[];
     try {
-      // One instance answers at once; a store called in the same tick keeps the order.
+      // One instance answers at once, several after their answers: awaited either way.
       const asked = occupied();
       inUse = asked instanceof Promise ? await asked : asked;
     } catch {

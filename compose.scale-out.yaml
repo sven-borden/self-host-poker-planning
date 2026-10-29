@@ -18,7 +18,8 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
-      # nginx appends X-Forwarded-For.
+      # nginx appends X-Forwarded-For. With another proxy in front of nginx, set
+      # TRUST_PROXY=2: X-Forwarded-Proto $scheme below overwrites an outer TLS proxy's value.
       TRUST_PROXY: ${TRUST_PROXY:-true}
 
   redis:

@@ -193,7 +193,14 @@ stay per instance (documented in architecture section 8).
 **Consequences.** Without Redis nothing changes, not even the transports. With it, one
 Postgres read per instance and change, a few milliseconds of fan-out, no long-polling
 fallback (sticky sessions would bring it back, as a later option), and Redis must be up
-for cross-instance correctness (each instance degrades to serving its own sockets).
+for cross-instance correctness (each instance degrades to serving its own sockets, and
+never stops for it once started). Redis is trusted: the adapter answers any Redis
+client's FETCH_SOCKETS with every socket's handshake (session cookie included) and room
+code, and obeys anyone's BROADCAST or REMOTE_DISCONNECT, so it must be reachable by the
+instances only, with a password, and TLS off a private network; "no room code crosses
+Redis" holds for the app's own messages. Signals are lossy pub/sub, so an instance sends
+each version after the signals of the versions before it (waiting 100 ms at most) and
+reads every visitor's grant again when one is missing in a room with a password.
 **Alternatives.** Sending the state (or each viewer's snapshot) through Redis (no extra
 read, but cards in Redis); sticky sessions with polling (a balancer setting every
 self-hoster must get right); Postgres `LISTEN/NOTIFY` (no new service, but no request and

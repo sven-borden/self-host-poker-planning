@@ -121,7 +121,8 @@ nothing about Redis is loaded or opened.
 
 - **What it changes**: the instances tell each other about every change through Redis
   (by room id, version and causes: no room state, no card, no room code) and each sends
-  its own sockets their own view, loaded from Postgres. A kick or a new room password
+  its own sockets their own view, loaded from Postgres. A change whose message comes late
+  (over 100 ms) still shows, but without its announcement ("X voted") there. A kick or a new room password
   closes the sockets concerned on every instance, someone with a tab on either instance
   stays shown as present, a timer reveals once, a command resent after a reconnect to
   the other instance runs once, and retention keeps a room in use on any instance.
@@ -137,12 +138,23 @@ nothing about Redis is loaded or opened.
   instance, so with two instances a client can get twice as much; the 50 wrong passwords
   per room in 10 minutes are counted in Postgres for all of them
   ([architecture, section 8](docs/02-architecture.md#8-rooms-access-and-security)).
+- **Redis must be trusted**: whoever can talk to it can read every connection's
+  headers, session cookies included, and room codes from the instances (the Socket.IO
+  adapter answers such questions from any Redis client), and can send any client a
+  message or close its connection. Make it reachable by the instances only (a private
+  network, as in the example compose file), with a password, and with TLS (`rediss://`)
+  whenever the network between them is not private. "No room code crosses Redis" is
+  true of the app's own messages, not of what Redis lets a stranger ask.
 - **Redis down**: each instance keeps serving its own sockets, and people on the other
-  instances see the changes once Redis is back (or when they reconnect); meanwhile nobody
-  is marked away, a command id is remembered per instance only, and the retention purge
-  waits for its next run. The start fails if Redis cannot be reached within 30 s. Redis
-  keeps nothing that matters across a restart (no persistence needed). Give each
-  deployment its own Redis: pub/sub ignores the database number.
+  instances see the changes once Redis is back (with the next change, or when they
+  reconnect), without the announcements of what they missed; meanwhile nobody is marked
+  away, a command id is remembered per instance only, and the retention purge waits for
+  its next run. A running instance never stops because of Redis; the start fails if
+  Redis cannot be reached within 30 s. Redis keeps nothing that matters across a restart
+  (no persistence needed). Give each deployment its own Redis: pub/sub ignores the
+  database number.
+- **Turning it on**: browser tabs opened before `REDIS_URL` was set keep long-polling
+  and are refused (400) until they reload the page.
 - **Example**: [`compose.scale-out.yaml`](compose.scale-out.yaml) runs two replicas behind
   nginx with a Redis, laid over `compose.yaml`:
   `docker compose -f compose.yaml -f compose.scale-out.yaml up -d --build`.

@@ -200,14 +200,21 @@ keeps (#35).
 - Each socket remembers the version it holds: nobody gets the same or an older version
   twice, and a reload that finds nothing new sends nothing. An unchanged run whose loaded
   version is newer than what a socket holds (another instance wrote it) is sent without
-  causes (a command's) or not at all (a server run, when shared: the writer's signal brings
-  it with its causes).
-- Several instances (#39, `shared`): `publish` ends with `tellOthers` (`roomChanged`:
-  id, version, causes, `lockout`); `onRoomChanged` checks it (`parseSignal`), runs only
-  the effects (kicks, lockout) of a version already held, and queues a newer one in the
-  room's `inbox`; `drainInbox` loads the room once for all of them, runs `lockOut` first,
-  broadcasts with the concatenated causes when the versions are exactly the missing ones
-  (none after a gap), then the kicks. `present` and `occupied` answer the other
+  causes; when shared, it waits for the writer's signal first, which brings them.
+- Several instances (#39, `shared`): `publish` sends `tellOthers` (`roomChanged`: id,
+  version, causes, `lockout`) and puts its own commit in the room's `inbox`;
+  `onRoomChanged` checks a signal (`parseSignal`) and queues it there too (merged with one
+  of the same version), also while the room's first socket still enters. One loop per
+  room, `drainInbox`, sends the newest state it has or loads (`candidates`, `offer`) with
+  the causes of every version since `sent`: a version that skips a signal waits for it
+  until the candidate's deadline (`GAP_WAIT_MS`, 100 ms; `UNSIGNALLED_WAIT_MS`, 500 ms,
+  for a server run's unchanged find), then goes out `blind` with the causes it has, and
+  in a room with a password `recheck` reads every visitor's grant before they get it.
+  `deliver` runs `lockOut` first (the signal says so, or the last state sent had no
+  password), then the kicks of anyone the state no longer shows. A signal for a version
+  already sent only brings its effects (`applyStale`). A failed or short load is retried
+  (`MAX_RELOADS`), then given up failing closed (`giveUp`). `execute` awaits `publish`,
+  so the answer still follows the snapshot (`delivered`, at most 1 s). `present` and `occupied` answer the other
   instances (`presentElsewhere`, `occupiedRooms`, `CLUSTER_REQUEST_TIMEOUT_MS`, 2 s).
   `markAway` asks `present` first; `mendPresence` (from `advance`) brings back someone a
   state shows away whom this instance holds; `sweep` (every `PRESENCE_SWEEP_MS`, 30 s)
