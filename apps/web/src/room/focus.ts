@@ -2,10 +2,12 @@
 
 /**
  * Once the screen changed under the focus, it goes to `selector`, after a frame for React
- * to draw it, unless the person already moved it somewhere. The page never scrolls for it
- * (`preventScroll`): after a reveal the table, its flips and its result stay where the
- * person was looking, and the PO's decision docks at the bottom of the screen when it
- * fits (#32, `decision-dock.ts`).
+ * to draw it, unless the person already moved it somewhere. The page does not scroll for
+ * a target already on screen (`preventScroll`): after a reveal the table, its flips and
+ * its result stay where the person was looking, and the PO's decision docks at the bottom
+ * of the screen when it fits (#32, `decision-dock.ts`). A target wholly off screen gets
+ * the least scroll that shows it (#37, WCAG 2.4.7): the hand after "Start voting" sits
+ * under the fold of a laptop's screen, and the focus must never be out of sight.
  */
 export function focusSoon(...selectors: string[]) {
   requestAnimationFrame(() => {
@@ -15,6 +17,10 @@ export function focusSoon(...selectors: string[]) {
       const target = document.querySelector<HTMLElement>(selector);
       if (target) {
         target.focus({ preventScroll: true });
+        const box = target.getBoundingClientRect();
+        if (box.bottom <= 0 || box.top >= window.innerHeight) {
+          target.scrollIntoView?.({ block: "nearest" });
+        }
         return;
       }
     }

@@ -132,6 +132,24 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
     hand.kind === "cards" && hand.playable && !(revealed && me.isOwner),
     handPanel,
   );
+  // The table grows above a focused hand card (the results after a reveal by R, the
+  // PO's decision): the card would slide out of sight, so it comes back into view, the
+  // least scroll that shows it (#37, WCAG 2.4.7). The scroll padding keeps it above a dock.
+  const tableSection = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const table = tableSection.current;
+    if (!table || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement) || !handPanel.current?.contains(active)) return;
+      const box = active.getBoundingClientRect();
+      if (box.top < 0 || box.bottom > window.innerHeight) {
+        active.scrollIntoView?.({ block: "nearest" });
+      }
+    });
+    observer.observe(table);
+    return () => observer.disconnect();
+  }, []);
   /** An interrupted flight's card, for the next one to start from. */
   const inAir = useRef<InAir | null>(null);
 
@@ -202,7 +220,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           canStart={room.round?.phase !== "voting"}
         />
       ) : null}
-      <section aria-label={t("room.tableHeading")} data-room-table>
+      <section ref={tableSection} aria-label={t("room.tableHeading")} data-room-table>
         {room.round !== null ? <RoundSubject round={room.round} /> : null}
         <TableStage
           people={people}
