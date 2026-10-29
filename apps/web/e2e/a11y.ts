@@ -121,3 +121,58 @@ export function reportFindings() {
     await info.attach("axe-findings.txt", { body: text, contentType: "text/plain" });
   });
 }
+
+/** One thing a live region said: which region, and its words. */
+export interface Said {
+  region: string;
+  text: string;
+}
+
+/**
+ * Records, from the next page load on, what every live region of the page says (`status`,
+ * `alert`, `log`, or `aria-live` polite or assertive), in order: what a screen reader
+ * would announce, short of the reader itself. Read it with `transcript`.
+ */
+export async function listen(page: Page) {
+  await page.addInitScript(() => {
+    const said: { region: string; text: string }[] = [];
+    Object.assign(window, { __said: said });
+    const LIVE =
+      "[role='status'], [role='alert'], [role='log'], [aria-live='polite'], [aria-live='assertive']";
+    const last = new WeakMap<Element, string>();
+    const name = (region: Element) =>
+      [...region.attributes]
+        .map((attribute) => attribute.name)
+        .find((attribute) => attribute.startsWith("data-")) ??
+      region.getAttribute("role") ??
+      "live";
+    // The same words again count when they come in a new element (the table's region
+    // renders one per announcement), not when React only re-renders them.
+    const hear = (region: Element, fresh: boolean) => {
+      const text = (region.textContent ?? "").replace(/\s+/g, " ").trim();
+      if (text === "" || (!fresh && last.get(region) === text)) return;
+      last.set(region, text);
+      said.push({ region: name(region), text });
+    };
+    new MutationObserver((mutations) => {
+      const regions = new Map<Element, boolean>();
+      for (const mutation of mutations) {
+        const node =
+          mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
+        const region = node?.closest(LIVE);
+        const fresh = [...mutation.addedNodes].some((added) => added instanceof Element);
+        if (region) regions.set(region, (regions.get(region) ?? false) || fresh);
+        for (const added of mutation.addedNodes) {
+          if (added instanceof Element && added.matches(LIVE)) regions.set(added, false);
+        }
+      }
+      for (const [region, fresh] of regions) hear(region, fresh);
+    }).observe(document, { subtree: true, childList: true, characterData: true });
+  });
+}
+
+/** What the page's live regions said so far (`listen`), from `from` on. */
+export async function transcript(page: Page, from = 0): Promise<Said[]> {
+  const said = await page.evaluate(() => (window as unknown as { __said: Said[] }).__said);
+  return said.slice(from);
+}
