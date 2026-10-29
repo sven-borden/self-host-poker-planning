@@ -29,6 +29,8 @@ describe("loadConfig", () => {
       cspReportOnly: false,
       cspExtraSources: {},
       redisUrl: undefined,
+      sentryDsn: undefined,
+      umami: undefined,
       betterAuthSecret: VALID_ENV.BETTER_AUTH_SECRET,
     });
     expect(Object.isFrozen(config)).toBe(true);
@@ -50,6 +52,9 @@ describe("loadConfig", () => {
       CSP_REPORT_ONLY: "true",
       CSP_EXTRA_SOURCES: "script-src https://stats.example.com",
       REDIS_URL: "redis://redis.internal:6379/0",
+      SENTRY_DSN: "https://abc123@o1.ingest.sentry.io/42",
+      UMAMI_URL: "https://stats.example.com",
+      UMAMI_WEBSITE_ID: "6639E935-21CE-47C9-89D2-DA5D28B7DC15",
       UNRELATED: "ignored",
     });
     expect(config).toEqual({
@@ -66,8 +71,79 @@ describe("loadConfig", () => {
       cspReportOnly: true,
       cspExtraSources: { "script-src": ["https://stats.example.com"] },
       redisUrl: "redis://redis.internal:6379/0",
+      sentryDsn: "https://abc123@o1.ingest.sentry.io/42",
+      umami: {
+        scriptUrl: "https://stats.example.com/script.js",
+        websiteId: "6639e935-21ce-47c9-89d2-da5d28b7dc15",
+      },
       betterAuthSecret: VALID_ENV.BETTER_AUTH_SECRET,
     });
+  });
+
+  it("takes a SENTRY_DSN with a public key only, and never echoes a bad one (#40)", () => {
+    for (const ok of [
+      "https://abc123@o1.ingest.us.sentry.io/42",
+      "http://abc123@localhost:9000/1",
+      "https://abc123@sentry.example.com/sentry/7",
+    ]) {
+      expect(loadConfig({ ...VALID_ENV, SENTRY_DSN: ok }).sentryDsn).toBe(ok);
+    }
+    for (const SENTRY_DSN of [
+      `https://abc123:${SECRET}@o1.ingest.sentry.io/42`,
+      "https://o1.ingest.sentry.io/42",
+      `https://${SECRET}@o1.ingest.sentry.io/project`,
+      `https://${SECRET}@o1.ingest.sentry.io/42?x=1`,
+      `ftp://${SECRET}@o1.ingest.sentry.io/42`,
+      SECRET,
+    ]) {
+      const error = configError({ ...VALID_ENV, SENTRY_DSN });
+      expect(error.variables).toEqual(["SENTRY_DSN"]);
+      expect(error.message).toContain("SENTRY_DSN must be a Sentry DSN");
+      expect(error.message).not.toContain(SECRET);
+    }
+  });
+
+  it("finds Umami's tracker under UMAMI_URL, or takes the tracker's own URL (#40)", () => {
+    const id = "6639e935-21ce-47c9-89d2-da5d28b7dc15";
+    const script = (UMAMI_URL: string) =>
+      loadConfig({ ...VALID_ENV, UMAMI_URL, UMAMI_WEBSITE_ID: id }).umami?.scriptUrl;
+    expect(script("https://stats.example.com")).toBe("https://stats.example.com/script.js");
+    expect(script("https://stats.example.com/")).toBe("https://stats.example.com/script.js");
+    expect(script("https://example.com/umami/")).toBe("https://example.com/umami/script.js");
+    expect(script("https://stats.example.com/s.js")).toBe("https://stats.example.com/s.js");
+    expect(script("http://localhost:3001")).toBe("http://localhost:3001/script.js");
+    for (const UMAMI_URL of [
+      `${SECRET}.example.com`,
+      `https://umami.example.org/?site=${SECRET}`,
+      `https://user:${SECRET}@umami.example.org`,
+      `javascript:alert("${SECRET}")`,
+    ]) {
+      const error = configError({ ...VALID_ENV, UMAMI_URL, UMAMI_WEBSITE_ID: id });
+      expect(error.variables).toEqual(["UMAMI_URL"]);
+      expect(error.message).toContain("UMAMI_URL must be the http(s) address of Umami");
+      expect(error.message).not.toContain(SECRET);
+    }
+    const badId = configError({
+      ...VALID_ENV,
+      UMAMI_URL: "https://umami.example.org",
+      UMAMI_WEBSITE_ID: SECRET,
+    });
+    expect(badId.variables).toEqual(["UMAMI_WEBSITE_ID"]);
+    expect(badId.message).toContain("UMAMI_WEBSITE_ID must be the website's id in Umami, a UUID");
+    expect(badId.message).not.toContain(SECRET);
+  });
+
+  it("needs UMAMI_URL and UMAMI_WEBSITE_ID together (#40)", () => {
+    expect(configError({ ...VALID_ENV, UMAMI_URL: "https://stats.example.com" }).message).toBe(
+      "Invalid configuration: UMAMI_WEBSITE_ID is required when UMAMI_URL is set. See .env.example.",
+    );
+    const error = configError({
+      ...VALID_ENV,
+      PORT: "-1",
+      UMAMI_WEBSITE_ID: "6639e935-21ce-47c9-89d2-da5d28b7dc15",
+    });
+    expect(error.variables).toEqual(["PORT", "UMAMI_URL"]);
+    expect(error.message).toContain("UMAMI_URL is required when UMAMI_WEBSITE_ID is set");
   });
 
   it("takes a redis:// or rediss:// REDIS_URL, and never echoes a bad one (#39)", () => {

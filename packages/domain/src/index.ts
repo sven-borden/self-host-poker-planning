@@ -64,6 +64,7 @@ export {
   type WhoCanReveal,
 } from "./room.ts";
 export {
+  hideRoomCodes,
   isRoomCode,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,

@@ -13,3 +13,18 @@ export const ROOM_CODE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{10}$/;
 export function isRoomCode(value: string): boolean {
   return ROOM_CODE_PATTERN.test(value);
 }
+
+/** The segment after `/r/` or `/api/rooms/` in a path or a URL, in any case. */
+const ROOM_PATH = /(\/(?:r|api\/rooms)\/+)[^/?#\s"'`<>]+/gi;
+
+/**
+ * `text` with the segment after `/r/` or `/api/rooms/`, and every one of `codes` wherever
+ * it stands, replaced by `:code`. For what leaves on purpose (#40: error reports and page
+ * views): a room code is a bearer capability (architecture section 11). A code-shaped word
+ * elsewhere stays: ten letters such as "connection" fit the alphabet.
+ */
+export function hideRoomCodes(text: string, codes: Iterable<string> = []): string {
+  let hidden = text.replace(ROOM_PATH, "$1:code");
+  for (const code of codes) if (code) hidden = hidden.replaceAll(code, ":code");
+  return hidden;
+}
