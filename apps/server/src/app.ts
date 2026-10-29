@@ -3,7 +3,7 @@
  * (server.ts) mounts the app on a Node HTTP server next to Socket.IO.
  */
 import { randomUUID } from "node:crypto";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { type Context, Hono } from "hono";
@@ -23,6 +23,7 @@ export interface AppEnv {
 }
 
 export type DbStatus = "ok" | "error";
+export type RedisStatus = "ok" | "down";
 
 export interface AppDeps {
   logger: Logger;
@@ -42,6 +43,18 @@ export interface AppDeps {
   uptime?: () => number;
   /** How long `/api/health` waits for `checkDb` before it reports `"error"`. */
   dbCheckTimeoutMs?: number;
+  /**
+   * Pings Redis for `/api/health` (#39), only when `REDIS_URL` is set: the answer then
+   * carries `redis`, never the URL. Redis away does not make the instance unhealthy (every
+   * instance shares it: restarting them would not bring it back); rooms still work on
+   * each instance, without the others' changes.
+   */
+  checkRedis?: () => Promise<RedisStatus>;
+  /**
+   * Sockets use WebSocket only (#39): `index.html` carries
+   * `<meta name="pp-socket-transport" content="websocket">`, which the web app reads.
+   */
+  websocketOnly?: boolean;
 }
 
 /** A hung pool must not hang the Docker HEALTHCHECK: the check gives up after this. */
@@ -105,7 +118,10 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
   const checkDb = deps.checkDb;
   const dbCheckTimeoutMs = deps.dbCheckTimeoutMs ?? DB_CHECK_TIMEOUT_MS;
   app.get("/api/health", async (c) => {
-    const db = checkDb ? await withTimeout(checkDb, dbCheckTimeoutMs) : "unchecked";
+    const [db, redis] = await Promise.all([
+      checkDb ? withTimeout(checkDb, dbCheckTimeoutMs) : "unchecked",
+      deps.checkRedis?.().catch((): RedisStatus => "down"),
+    ]);
     c.header("Cache-Control", "no-store");
     return c.json(
       {
@@ -113,6 +129,7 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
         version: config.appVersion ?? "dev",
         commit: config.gitCommit ?? "unknown",
         db,
+        ...(redis !== undefined && { redis }),
         uptime: Math.floor(uptime()),
       },
       db === "error" ? 503 : 200,
@@ -136,7 +153,7 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
   app.all("/api/*", (c) => c.notFound());
 
   if (deps.staticDir && existsSync(join(deps.staticDir, "index.html"))) {
-    mountWebApp(app, deps.staticDir);
+    mountWebApp(app, deps.staticDir, deps.websocketOnly === true);
   }
   return app;
 }
@@ -230,7 +247,7 @@ export function listStaticFiles(root: string): Set<string> {
  * fallback, so `/r/:code` works on reload); a missing file with an extension is a 404,
  * so a stale asset URL never receives HTML.
  */
-function mountWebApp(app: Hono<AppEnv>, root: string): void {
+function mountWebApp(app: Hono<AppEnv>, root: string, websocketOnly: boolean): void {
   const assets = join(root, "assets") + sep;
   // serveStatic builds its response before `onFound` runs, so a header set there is lost:
   // remember the file and set Cache-Control once the response exists.
@@ -241,11 +258,37 @@ function mountWebApp(app: Hono<AppEnv>, root: string): void {
   });
   const remember = (path: string, c: Context<AppEnv>) => c.set("staticFile", path);
   const allowed = listStaticFiles(root);
+  if (websocketOnly) allowed.delete("/index.html");
   const files = serveStatic<AppEnv>({ root, onFound: remember });
   app.use("*", (c, next) => (allowed.has(c.req.path) ? files(c, next) : next()));
-  const index = serveStatic<AppEnv>({ root, path: "index.html", onFound: remember });
+  const index = websocketOnly
+    ? indexWithTransport(root)
+    : serveStatic<AppEnv>({ root, path: "index.html", onFound: remember });
   app.use("*", (c, next) => {
     const last = c.req.path.slice(c.req.path.lastIndexOf("/") + 1);
-    return last.includes(".") ? next() : index(c, next);
+    const isIndex = !last.includes(".") || (websocketOnly && c.req.path === "/index.html");
+    return isIndex ? index(c, next) : next();
   });
+}
+
+/** What tells the web app that sockets use WebSocket only (`apps/web/src/realtime/socket.ts`). */
+export const TRANSPORT_META = '<meta name="pp-socket-transport" content="websocket">';
+
+/**
+ * `index.html` with `TRANSPORT_META` in its head (#39), read once: the file is immutable in
+ * the image. A tag, not a script: the CSP refuses inline script. Served at `/index.html`
+ * too, which the allowlist would otherwise serve from disk without it.
+ */
+function indexWithTransport(root: string) {
+  const file = join(root, "index.html");
+  const html = readFileSync(file, "utf8").replace(
+    "</head>",
+    `  ${TRANSPORT_META}
+  </head>`,
+  );
+  return async (c: Context<AppEnv>, next: () => Promise<void>) => {
+    if (c.req.method !== "GET" && c.req.method !== "HEAD") return next();
+    c.set("staticFile", file);
+    return c.html(html);
+  };
 }

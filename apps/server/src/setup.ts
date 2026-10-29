@@ -1,8 +1,8 @@
 /**
  * The `setup` hook `main.ts` hands to `run()`: the database (#7), then identity (#10) on
- * its pool, then the room API (#14) and the room sync (#15) on its runner, and the
- * retention job (#35), whose first run comes a few minutes later. Opens nothing at import
- * time.
+ * its pool, then Redis when `REDIS_URL` is set (#39, several instances), the room API
+ * (#14) and the room sync (#15) on its runner, and the retention job (#35), whose first
+ * run comes a few minutes later. Opens nothing at import time.
  */
 import {
   cookieNaming,
@@ -19,6 +19,7 @@ import { type Retention, startRetention } from "./retention.ts";
 import { registerPasswordApi } from "./room-password.ts";
 import { registerRoomApi } from "./rooms.ts";
 import type { Setup } from "./run.ts";
+import { connectScaleOut, type ScaleOut } from "./scale-out.ts";
 import { createRoomSync } from "./sync/room-sync.ts";
 
 /** Knobs for tests only; production runs with the defaults. */
@@ -33,6 +34,8 @@ export interface SetupTuning {
   retentionStartDelayMs?: number;
   /** The retention job's clock (Postgres's `now()` by default). */
   retentionNow?: () => number;
+  /** Several instances: how often the presence sweep runs (`PRESENCE_SWEEP_MS`). */
+  presenceSweepMs?: number;
 }
 
 export async function setupServer(
@@ -55,6 +58,15 @@ export async function setupServer(
     await database.close();
     throw error;
   }
+  let scaleOut: ScaleOut | undefined;
+  if (config.redisUrl !== undefined) {
+    try {
+      scaleOut = await connectScaleOut(config.redisUrl, logger, signal ? { signal } : {});
+    } catch (error) {
+      await database.close();
+      throw error;
+    }
+  }
   const { runner, store, db, retention: retentionStore } = database;
   const sync = createRoomSync({
     runner,
@@ -69,6 +81,12 @@ export async function setupServer(
       presenceRestartGraceMs: tuning.presenceRestartGraceMs,
     }),
     ...(tuning.deadlineTimeouts !== undefined && { deadlineTimeouts: tuning.deadlineTimeouts }),
+    ...(scaleOut && {
+      shared: {
+        acks: scaleOut.acks,
+        ...(tuning.presenceSweepMs !== undefined && { sweepMs: tuning.presenceSweepMs }),
+      },
+    }),
   });
   const retention = startRetention({
     store: retentionStore,
@@ -95,6 +113,13 @@ export async function setupServer(
       socketMiddleware: [sessionMiddleware(auth)],
       sessionCookie: cookieNaming(config.baseUrl).sessionCookie,
       handlers: sync,
+      ...(scaleOut && {
+        // WebSocket only: a connection stays on the instance it reached, so no sticky
+        // sessions are needed; the web app learns it from index.html (`app.ts`).
+        realtimeCluster: { adapter: scaleOut.adapter, transports: ["websocket"] },
+        checkRedis: scaleOut.ping,
+        websocketOnly: true,
+      }),
     },
     // Before the server closes its sockets: a run that started during the close would see
     // no socket and take the occupied rooms for idle ones.
@@ -103,6 +128,8 @@ export async function setupServer(
       // Again here, for a failed listen and for tests: `stop` is idempotent.
       await retention.stop();
       sync.close();
+      // After the server closed, which closed the adapter's subscriptions.
+      await scaleOut?.close();
       await database.close();
     },
   };

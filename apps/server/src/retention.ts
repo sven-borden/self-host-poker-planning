@@ -20,8 +20,12 @@ export interface RetentionOptions {
   store: Pick<RetentionStore, "purge">;
   ttlDays: number;
   logger: Logger;
-  /** The rooms (by id) with a socket on this instance, asked at each run. */
-  occupied?: () => readonly string[];
+  /**
+   * The rooms (by id) with a socket on any instance, asked at each run. A rejection (an
+   * instance did not answer, #39) skips the run: a room in use must never be taken for an
+   * idle one.
+   */
+  occupied?: () => readonly string[] | Promise<readonly string[]>;
   /**
    * The run's clock, epoch milliseconds, for tests. Left out (production), each run reads
    * Postgres's `now()`, the clock that writes `last_active_at`.
@@ -83,11 +87,20 @@ export function startRetention(options: RetentionOptions): Retention {
   async function purge(): Promise<RetentionRun> {
     const started = performance.now();
     const durationMs = () => Math.round(performance.now() - started);
+    let inUse: readonly string[];
+    try {
+      // One instance answers at once; a store called in the same tick keeps the order.
+      const asked = occupied();
+      inUse = asked instanceof Promise ? await asked : asked;
+    } catch {
+      log.warn({ durationMs: durationMs() }, "retention: rooms in use unknown, run skipped");
+      return "failed";
+    }
     try {
       const counts = await store.purge({
         ...(now && { now: new Date(now()) }),
         ttlDays,
-        occupied: occupied(),
+        occupied: inUse,
         signal: aborter.signal,
         ...(batchSize !== undefined && { batchSize }),
       });

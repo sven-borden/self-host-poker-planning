@@ -29,6 +29,18 @@
  * History (#33): `history` answers one page of the entered room's finished rounds to
  * someone in it (a voter, an observer or the PO), checked on a fresh load at every
  * request; the round on the table is left out.
+ *
+ * Several instances (#39, `shared`): every instance sends its own sockets their own
+ * snapshots, as with one. A change tells the other instances `roomChanged` (the room's id,
+ * the version, the causes, whether a new password locked visitors out); an instance with
+ * sockets in that room loads it from Postgres and broadcasts it, so no state and no card
+ * ever crosses Redis. A grace that runs out first asks the other instances whether the
+ * person is still there, a state that shows someone away who is here is mended, and a
+ * sweep starts the grace of people no instance holds (their instance stopped). Command
+ * ids are claimed in Redis (`shared-acks.ts`), so a resend to another instance never runs
+ * twice. Deadlines need nothing more: each instance arms its own, and the compare-and-set
+ * reveals once; a server run that changed nothing broadcasts nothing, since the instance
+ * that changed it tells everyone, with the causes.
  */
 import { type ApplyResult, apply, type Cause, type Command, type RoomState } from "@pp/domain";
 import {
@@ -47,6 +59,7 @@ import type { AccessStore, AccessWrite, HistoryStore, RoomStore } from "../db/ro
 import type { CommandRunner, RunOutcome } from "../db/runner.ts";
 import type { Logger } from "../logger.ts";
 import type { RealtimeHandlers, RealtimeServer, RealtimeSocket } from "../realtime.ts";
+import { CLUSTER_REQUEST_TIMEOUT_MS } from "../scale-out.ts";
 import { createDeadlineTimers, type DeadlineTimers } from "./deadlines.ts";
 import {
   createGraceTimers,
@@ -55,6 +68,7 @@ import {
   PRESENCE_RESTART_GRACE_MS,
 } from "./presence.ts";
 import { ackKey, createRecentAcks, type RecentAcksOptions } from "./recent-acks.ts";
+import { type Claim, type SharedAcks, sharedAckKey, within } from "./shared-acks.ts";
 
 /** The actor of the server's own `timeUp` and `presence`: `apply` lets anyone send them. */
 export const SERVER_ACTOR = ":server";
@@ -68,6 +82,32 @@ export const MAX_AWAY_RETRIES = 3;
 
 /** A command re-checks the socket's session once its last check is older than this. */
 export const SESSION_RECHECK_MS = 60_000;
+
+/**
+ * With several instances: how often each looks for people its rooms show connected whom
+ * no instance holds (their instance stopped without them coming back), to start their
+ * grace. A disconnect on a running instance starts it at once, as with one instance.
+ */
+export const PRESENCE_SWEEP_MS = 30_000;
+
+/** What an instance tells the others when it changed a room (#39). */
+export interface RoomSignal {
+  /** The room's id, never its code. */
+  room: string;
+  version: number;
+  causes: readonly Cause[];
+  /** A new password: the visitors without a grant leave, as on the instance that set it. */
+  lockout?: true;
+}
+
+/** Several instances behind one address (#39, `scale-out.ts`). */
+export interface SharedOptions {
+  acks: SharedAcks;
+  /** How long a question to the other instances may take; `CLUSTER_REQUEST_TIMEOUT_MS`. */
+  requestTimeoutMs?: number;
+  /** For tests only: `PRESENCE_SWEEP_MS` otherwise. */
+  sweepMs?: number;
+}
 
 export interface RoomSyncOptions {
   runner: CommandRunner;
@@ -112,6 +152,12 @@ export interface RoomSyncOptions {
    * `timeUp` ping resolves a deadline (architecture section 9). True by default.
    */
   deadlineTimeouts?: boolean;
+  /**
+   * Several instances (#39): the command ids shared through Redis. Set, the room sync
+   * also talks to the other instances through the Socket.IO adapter (`roomChanged`,
+   * `present`, `occupied`). Left out (one instance), it never does.
+   */
+  shared?: SharedOptions;
 }
 
 export interface RoomSync extends RealtimeHandlers {
@@ -120,8 +166,11 @@ export interface RoomSync extends RealtimeHandlers {
   disconnect(socket: RealtimeSocket): void;
   /** Clears every deadline timeout; the server is shutting down. */
   close(): void;
-  /** The rooms (by id) with a socket on this instance: the retention purge keeps them. */
-  occupiedRooms(): string[];
+  /**
+   * The rooms (by id) with a socket on this instance, and on every other one when shared:
+   * the retention purge keeps them. Rejects when another instance does not answer.
+   */
+  occupiedRooms(): Promise<string[]>;
   /** For tests: the deadline armed for a room (by id) on this instance. */
   deadlines: Pick<DeadlineTimers, "armed">;
   /** For tests: whether a person's presence grace runs in a room (by id) on this instance. */
@@ -130,7 +179,7 @@ export interface RoomSync extends RealtimeHandlers {
    * The PO (`actor`) sets or changes the room's password to `hash`, or removes it (null),
    * through the room's queue like any command (#31): the flag, the hash and the grants
    * land in one transaction, everyone in the room then is granted, and the sockets of
-   * anyone else on this instance hear `locked` and leave. `not_owner` for anyone else.
+   * anyone else, on every instance, hear `locked` and leave. `not_owner` for anyone else.
    */
   changePassword(code: string, actor: string, hash: string | null): Promise<CmdAck>;
 }
@@ -149,6 +198,36 @@ type ApplyRun = RunOutcome<ReturnType<typeof apply>>;
 
 /** How a run of the server's own command ended: `failed` stored nothing it knows of. */
 type ServerRun = "changed" | "unchanged" | "failed";
+
+/** A `roomChanged` from another instance, checked: Redis is a network service. */
+export function parseSignal(raw: unknown): RoomSignal | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const { room, version, causes, lockout } = raw as Record<string, unknown>;
+  if (typeof room !== "string" || room === "" || room.length > 64) return undefined;
+  if (typeof version !== "number" || !Number.isSafeInteger(version) || version < 1) {
+    return undefined;
+  }
+  if (!Array.isArray(causes) || causes.length > 64) return undefined;
+  const typed = causes.every(
+    (cause: unknown) =>
+      typeof cause === "object" &&
+      cause !== null &&
+      typeof (cause as { type?: unknown }).type === "string",
+  );
+  if (!typed) return undefined;
+  return { room, version, causes: causes as Cause[], ...(lockout === true && { lockout }) };
+}
+
+/** The other instances' answers to `present` or `occupied`: lists of ids, all of them. */
+function idsIn(responses: unknown): string[] {
+  if (!Array.isArray(responses)) throw new Error("bad answer");
+  const ids: string[] = [];
+  for (const response of responses) {
+    if (!Array.isArray(response)) throw new Error("bad answer");
+    for (const id of response) if (typeof id === "string") ids.push(id);
+  }
+  return ids;
+}
 
 const refuse = <C extends Extract<CmdAck, { ok: false }>["code"]>(code: C) =>
   ({ ok: false, code }) as const;
@@ -187,7 +266,8 @@ function joinNeedsGrant(
 const GONE = refuse("internal");
 
 export function createRoomSync(options: RoomSyncOptions): RoomSync {
-  const { runner, store, logger, sessionAlive, touchRoom, now = Date.now } = options;
+  const { runner, store, logger, sessionAlive, touchRoom, now = Date.now, shared } = options;
+  const requestTimeoutMs = shared?.requestTimeoutMs ?? CLUSTER_REQUEST_TIMEOUT_MS;
   const hasAccess = options.access?.hasAccess ?? (async () => false);
   const loadHistory =
     options.history?.loadHistory ?? (async () => ({ rounds: [], more: false }) as const);
@@ -236,8 +316,16 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   const restartGraceMs = options.presenceRestartGraceMs ?? PRESENCE_RESTART_GRACE_MS;
   /** The rooms (by id) whose presence this instance follows: those it has sockets in. */
   const watched = new Set<string>();
-  /** The participants of the newest state seen of each room (by id) with sockets here. */
-  const members = new Map<string, ReadonlySet<string>>();
+  /** The newest state seen of each room (by id) with sockets here. */
+  const stateOf = new Map<string, RoomState>();
+  /** Shared: per room (by id), the other instances' changes this one has yet to load. */
+  const inbox = new Map<string, Map<number, RoomSignal>>();
+  /** Shared: the rooms (by id) whose inbox is being loaded. */
+  const draining = new Set<string>();
+  /** Shared: the people (`room who`) whose stored away is being mended. */
+  const mending = new Set<string>();
+  let sweeper: ReturnType<typeof setInterval> | undefined;
+  let sweeping = false;
   /** Per room (by id): how many away runs of each person failed in a row. */
   const awayFailures = new Map<string, Map<string, number>>();
   /** Shutting down: no new grace starts. */
@@ -263,10 +351,17 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   function advance(id: string, version: number, state: RoomState): boolean {
     if (version < (newest.get(id) ?? 0)) return false;
     newest.set(id, version);
-    members.set(id, new Set(Object.keys(state.participants)));
+    stateOf.set(id, state);
     armDeadline(id, state);
+    if (shared) mendPresence(id, state);
     return true;
   }
+
+  /** Whether the newest state seen of the room (by id) has the person in it. */
+  const knows = (id: string, who: string) => {
+    const state = stateOf.get(id);
+    return state !== undefined && Object.hasOwn(state.participants, who);
+  };
 
   /**
    * Sends every socket of the room its own snapshot of `state`, except those that already
@@ -299,14 +394,26 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     deadlines.set(id, round?.phase === "voting" ? round.deadlineAt : undefined);
   }
 
-  /** After a run: broadcast what is new, and remove the people it kicked. */
-  function publish(room: RoomRef, outcome: Extract<ApplyRun, { ok: true }>) {
+  /**
+   * After a run: broadcast what is new, remove the people it kicked, and tell the other
+   * instances (shared). `serverRun`: the server's own run, which nobody waits on.
+   * `lockout`: the run set a new password, and `lockOut` already ran here.
+   */
+  function publish(
+    room: RoomRef,
+    outcome: Extract<ApplyRun, { ok: true }>,
+    { serverRun = false, lockout = false } = {},
+  ) {
     const { result } = outcome;
     if (!outcome.changed) {
       // The loaded state may still be newer than what this instance sent: another instance
       // wrote it. Its causes are unknown here, so it goes out without any. A version this
       // instance already knows goes nowhere: a socket still entering (in the channel, no
-      // version held yet) gets it with its answer, and would get it twice.
+      // version held yet) gets it with its answer, and would get it twice. Shared, the
+      // instance that wrote it tells this one, with its causes: a server run leaves it to
+      // that (two deadline timers firing at once would otherwise drop the reveal's causes
+      // here); a command still sends it, since its sender expects the version it acks.
+      if (serverRun && shared) return;
       if (outcome.version > (newest.get(room.id) ?? 0)) {
         broadcast(room, outcome.version, result.state, []);
       }
@@ -315,6 +422,189 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     broadcast(room, outcome.version, result.state, result.causes);
     for (const cause of result.causes) {
       if (cause.type === "kicked") removeKicked(room.id, cause.who);
+    }
+    tellOthers({
+      room: room.id,
+      version: outcome.version,
+      causes: result.causes,
+      ...(lockout && { lockout: true as const }),
+    });
+  }
+
+  // ------------------------------------------------------------- several instances (#39)
+
+  /** Tells the other instances that a room changed (shared only). */
+  function tellOthers(signal: RoomSignal) {
+    if (!shared || closed || !io) return;
+    io.serverSideEmit("roomChanged", signal);
+  }
+
+  /**
+   * Another instance changed a room. One this instance has no socket in is none of its
+   * business. A version it holds already only brings its effects (kicks, a lockout); a
+   * newer one waits in the room's inbox for one load.
+   */
+  function onRoomChanged(raw: unknown) {
+    const signal = parseSignal(raw);
+    if (!signal) {
+      log.warn("cluster: a room change was not understood");
+      return;
+    }
+    const id = signal.room;
+    if (!codeOf.has(id)) return;
+    if (signal.version <= (newest.get(id) ?? 0)) {
+      const state = stateOf.get(id);
+      if (signal.lockout && state) lockOut(id, state);
+      kickAll(id, [signal]);
+      return;
+    }
+    let box = inbox.get(id);
+    if (!box) {
+      box = new Map();
+      inbox.set(id, box);
+    }
+    box.set(signal.version, signal);
+    if (!draining.has(id)) void drainInbox(id);
+  }
+
+  /**
+   * Loads the room once for every change waiting in its inbox, and broadcasts it. The
+   * causes go along when the waiting changes are exactly the versions between what this
+   * instance sent and what it loaded; with a gap, none do (as after a reconnect). A
+   * lockout runs before the broadcast, as on the instance that set the password; kicks
+   * after it, so the removed person sees themselves gone first.
+   */
+  async function drainInbox(id: string) {
+    draining.add(id);
+    try {
+      for (;;) {
+        const box = inbox.get(id);
+        const code = codeOf.get(id);
+        if (!box || box.size === 0 || code === undefined) {
+          inbox.delete(id);
+          return;
+        }
+        let loaded: Awaited<ReturnType<typeof store.loadRoom>> | undefined;
+        try {
+          loaded = await store.loadRoom(code);
+        } catch (error) {
+          log.warn({ room: id, err: errorCodeOf(error) }, "cluster: room reload failed");
+        }
+        const mine = loaded && loaded.id === id ? loaded : undefined;
+        const top = mine?.version ?? Math.max(...box.keys());
+        const covered = [...box.values()]
+          .filter((signal) => signal.version <= top)
+          .sort((a, b) => a.version - b.version);
+        for (const signal of covered) box.delete(signal.version);
+        // Every socket of the room left during the load: nothing to send.
+        if (codeOf.get(id) !== code) continue;
+        const lockout = covered.some((signal) => signal.lockout);
+        if (mine) {
+          if (lockout) lockOut(id, mine.state);
+          const known = newest.get(id) ?? 0;
+          const fresh = covered.filter((signal) => signal.version > known);
+          const exact =
+            fresh.length === mine.version - known &&
+            fresh.every((signal, index) => signal.version === known + 1 + index);
+          const causes = exact ? fresh.flatMap((signal) => signal.causes) : [];
+          broadcast({ id, code }, mine.version, mine.state, causes);
+        } else {
+          const state = stateOf.get(id);
+          if (lockout && state) lockOut(id, state);
+        }
+        kickAll(id, covered);
+      }
+    } finally {
+      draining.delete(id);
+    }
+  }
+
+  function kickAll(id: string, signals: readonly RoomSignal[]) {
+    for (const signal of signals) {
+      for (const cause of signal.causes) {
+        if (cause.type === "kicked" && typeof cause.who === "string") removeKicked(id, cause.who);
+      }
+    }
+  }
+
+  /** The people with a socket entered in the room (by id) on this instance. */
+  function peopleHere(id: string): string[] {
+    const people = new Set<string>();
+    for (const socket of socketsOf(id)) {
+      const who = socket.data.user?.id;
+      if (who !== undefined && socket.connected && socket.data.room?.id === id) people.add(who);
+    }
+    return [...people];
+  }
+
+  /** The people with a socket entered in the room on another instance. Rejects on a timeout. */
+  async function presentElsewhere(id: string): Promise<ReadonlySet<string>> {
+    if (!shared || !io) return new Set();
+    const answers = await within(io.serverSideEmitWithAck("present", id), requestTimeoutMs);
+    return new Set(idsIn(answers));
+  }
+
+  function localOccupied(): string[] {
+    const ids: string[] = [];
+    for (const [name, sockets] of io?.sockets.adapter.rooms ?? []) {
+      if (sockets.size > 0 && name.startsWith(CHANNEL_PREFIX)) {
+        ids.push(name.slice(CHANNEL_PREFIX.length));
+      }
+    }
+    return ids;
+  }
+
+  /**
+   * A state shows someone away (or gone) whom this instance holds a socket of: another
+   * instance marked them away after asking who is here, and their socket entered here
+   * right after. Bring them back, one run at a time per person.
+   */
+  function mendPresence(id: string, state: RoomState) {
+    for (const [who, person] of Object.entries(state.participants)) {
+      if (person.connected && person.awaySince === undefined) continue;
+      const key = `${id} ${who}`;
+      if (mending.has(key) || !isHere(id, who)) continue;
+      mending.add(key);
+      void runAsServer(id, (current) => backStep(current, id, who), "presence", "back").finally(
+        () => mending.delete(key),
+      );
+    }
+  }
+
+  /**
+   * Starts the grace of the people a room shows connected whom no instance holds: their
+   * instance stopped, so nobody started it. One sweep at a time.
+   */
+  async function sweep() {
+    if (sweeping || closed) return;
+    sweeping = true;
+    try {
+      for (const id of [...watched]) {
+        const state = stateOf.get(id);
+        if (!state) continue;
+        const missing = Object.entries(state.participants)
+          .filter(
+            ([who, person]) =>
+              person.connected &&
+              person.awaySince === undefined &&
+              !graces.pending(id, who) &&
+              !isHere(id, who),
+          )
+          .map(([who]) => who);
+        if (missing.length === 0) continue;
+        let elsewhere: ReadonlySet<string>;
+        try {
+          elsewhere = await presentElsewhere(id);
+        } catch {
+          continue;
+        }
+        if (closed || !watched.has(id)) continue;
+        for (const who of missing) {
+          if (!elsewhere.has(who) && !isHere(id, who)) graces.start(id, who);
+        }
+      }
+    } finally {
+      sweeping = false;
     }
   }
 
@@ -334,7 +624,10 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   async function resync(room: RoomRef) {
     try {
       const loaded = await store.loadRoom(room.code);
-      if (loaded) broadcast(room, loaded.version, loaded.state, []);
+      if (!loaded) return;
+      broadcast(room, loaded.version, loaded.state, []);
+      // The lost reply may hide a commit the other instances never heard of.
+      if (loaded.id === room.id) tellOthers({ room: room.id, version: loaded.version, causes: [] });
     } catch (error) {
       log.warn({ room: room.id, err: errorCodeOf(error) }, "room reload failed");
     }
@@ -363,7 +656,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
           : { ok: true, state, causes: [] };
       });
       if (outcome.ok) {
-        publish(room, outcome);
+        publish(room, outcome, { serverRun: true });
         return outcome.changed ? "changed" : "unchanged";
       }
       if (outcome.error === "conflict") {
@@ -392,9 +685,26 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   const participant = (state: RoomState, who: string) =>
     Object.hasOwn(state.participants, who) ? state.participants[who] : undefined;
 
-  /** The grace ran out: mark the person away, unless a socket of theirs came back. */
+  /**
+   * The grace ran out: mark the person away, unless a socket of theirs came back, here or
+   * (shared) on another instance, which is asked first; no answer counts as a failed run.
+   */
   async function markAway(id: string, who: string) {
-    if (!members.get(id)?.has(who)) return;
+    if (!knows(id, who)) return;
+    if (shared) {
+      let elsewhere: ReadonlySet<string>;
+      try {
+        elsewhere = await presentElsewhere(id);
+      } catch {
+        log.warn({ room: id }, "presence: the other instances did not answer");
+        retryAway(id, who);
+        return;
+      }
+      if (elsewhere.has(who)) {
+        awayFailures.get(id)?.delete(who);
+        return;
+      }
+    }
     // Decided when the run's turn comes: a socket that entered meanwhile keeps them here.
     const outcome = await runAsServer(
       id,
@@ -473,7 +783,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
    */
   function presenceOnLeave(id: string, who: string | undefined) {
     if (closed || who === undefined || !watched.has(id)) return;
-    if (!members.get(id)?.has(who) || isHere(id, who)) return;
+    if (!knows(id, who) || isHere(id, who)) return;
     graces.start(id, who);
   }
 
@@ -505,6 +815,43 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     }
   }
 
+  /**
+   * Runs a command once across instances (shared): the instance that claims its id runs
+   * it and stores the answer; a claim while it runs elsewhere answers `busy` (the client
+   * sends it again), and a later one gets the stored answer. Without an answer from Redis
+   * the command runs here, as with one instance.
+   */
+  async function runOnce(
+    room: RoomRef,
+    actor: string,
+    commandId: string,
+    command: Command,
+  ): Promise<CmdAck> {
+    const sharedAcks = shared?.acks;
+    if (!sharedAcks) return execute(room, actor, command);
+    const key = sharedAckKey(actor, room.id, commandId);
+    let claim: Claim;
+    try {
+      claim = await sharedAcks.claim(key);
+    } catch {
+      log.warn({ room: room.id }, "redis: command id not shared");
+      return execute(room, actor, command);
+    }
+    if (claim.state === "done") return claim.ack;
+    if (claim.state === "running") return refuse("busy");
+    let ack: CmdAck | null = null;
+    try {
+      ack = await execute(room, actor, command);
+      return ack;
+    } finally {
+      // A `busy` stored nothing, and a throw neither: let the id go, so a resend runs.
+      const keep = ack && !(!ack.ok && ack.code === "busy") ? ack : null;
+      await sharedAcks.settle(key, keep).catch(() => {
+        log.warn({ room: room.id }, "redis: command answer not shared");
+      });
+    }
+  }
+
   /** Leaves the socket's room, if any: no more snapshots, and the room forgets it. */
   function leaveRoom(socket: RealtimeSocket) {
     const room = socket.data.room;
@@ -528,7 +875,8 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     awayFailures.delete(id);
     lockouts.delete(id);
     watched.delete(id);
-    members.delete(id);
+    stateOf.delete(id);
+    inbox.delete(id);
     newest.delete(id);
     const code = codeOf.get(id);
     codeOf.delete(id);
@@ -679,7 +1027,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     // Locked out by a new password while the grant was read: the grant was the old one's.
     if (command.type === "join" && socket.data.room !== room) return refuse("password_required");
     const ack = await acks.remember(user.id, ackKey(room.id, id), () =>
-      execute(room, user.id, command),
+      runOnce(room, user.id, id, command),
     );
     // The grant was gone when the join committed (a kick, a new password): the socket
     // leaves the room, and the person enters the password first.
@@ -761,8 +1109,9 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       });
       if (!outcome.ok) return refuse(outcome.error === "conflict" ? "busy" : "room_not_found");
       const room = { id: outcome.id, code };
-      if (outcome.changed && on) lockOut(room.id, outcome.result.state);
-      publish(room, outcome);
+      const lockout = outcome.changed && on;
+      if (lockout) lockOut(room.id, outcome.result.state);
+      publish(room, outcome, { lockout });
       const { result } = outcome;
       if (!result.ok) return refuse(result.error);
       if (outcome.changed) log.info({ room: room.id, on }, "room password changed");
@@ -777,6 +1126,17 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   return {
     attach(server) {
       io = server;
+      if (!shared) return;
+      server.on("roomChanged", onRoomChanged);
+      server.on("present", (roomId, answer) => {
+        if (typeof answer !== "function") return;
+        answer(typeof roomId === "string" ? peopleHere(roomId) : []);
+      });
+      server.on("occupied", (answer) => {
+        if (typeof answer === "function") answer(localOccupied());
+      });
+      sweeper = setInterval(() => void sweep(), shared.sweepMs ?? PRESENCE_SWEEP_MS);
+      sweeper.unref();
     },
 
     enter(socket, { code }: EnterPayload): Promise<EnterAck> {
@@ -818,18 +1178,18 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
 
     close() {
       closed = true;
+      clearInterval(sweeper);
+      sweeper = undefined;
+      inbox.clear();
       deadlines.clearAll();
       graces.clearAll();
     },
 
-    occupiedRooms() {
-      const ids: string[] = [];
-      for (const [name, sockets] of io?.sockets.adapter.rooms ?? []) {
-        if (sockets.size > 0 && name.startsWith(CHANNEL_PREFIX)) {
-          ids.push(name.slice(CHANNEL_PREFIX.length));
-        }
-      }
-      return ids;
+    async occupiedRooms() {
+      const here = localOccupied();
+      if (!shared || !io) return here;
+      const answers = await within(io.serverSideEmitWithAck("occupied"), requestTimeoutMs);
+      return [...new Set([...here, ...idsIn(answers)])];
     },
 
     deadlines,

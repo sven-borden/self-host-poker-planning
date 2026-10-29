@@ -168,6 +168,16 @@ describe("the schedule", () => {
 });
 
 describe("a run", () => {
+  it("skips a run when the rooms in use are unknown (another instance did not answer, #39)", async () => {
+    const { retention, calls, logs } = job(undefined, {
+      occupied: () => Promise.reject(new Error("timeout")),
+    });
+    expect(await retention.runNow()).toBe("failed");
+    expect(calls).toHaveLength(0);
+    expect(logs.messages()).toContain("retention: rooms in use unknown, run skipped");
+    await retention.stop();
+  });
+
   it("passes the clock, the TTL, the occupied rooms and the batch size", async () => {
     const { retention, calls } = job(undefined, {
       ttlDays: 1,

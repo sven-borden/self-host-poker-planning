@@ -180,12 +180,12 @@ describe("enter", () => {
 
   it("names the rooms with a socket on this instance, and forgets a room left empty", async () => {
     const { client, store, sync } = await start(lobby());
-    expect(sync.occupiedRooms()).toEqual([]);
+    expect(await sync.occupiedRooms()).toEqual([]);
     const ada = client("ua");
     await ada.enter(CODE);
-    expect(sync.occupiedRooms()).toEqual([idOf(store)]);
+    expect(await sync.occupiedRooms()).toEqual([idOf(store)]);
     ada.close();
-    await vi.waitFor(() => expect(sync.occupiedRooms()).toEqual([]));
+    await vi.waitFor(async () => expect(await sync.occupiedRooms()).toEqual([]));
   });
 });
 
