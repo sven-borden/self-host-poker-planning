@@ -96,24 +96,3 @@ export function within<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
   return Promise.race([promise, timedOut]).finally(() => clearTimeout(timer));
 }
-
-/** For tests: the same contract in this process, as if every instance shared it. */
-export function memoryAcks(): SharedAcks & { readonly keys: Map<string, string> } {
-  const keys = new Map<string, string>();
-  return {
-    keys,
-    claim: async (key) => {
-      const value = keys.get(key);
-      if (value === undefined) {
-        keys.set(key, RUNNING);
-        return { state: "mine" };
-      }
-      const ack = value === RUNNING ? undefined : parseAck(value);
-      return ack ? { state: "done", ack } : { state: "running" };
-    },
-    settle: async (key, ack) => {
-      if (ack === null) keys.delete(key);
-      else keys.set(key, JSON.stringify(ack));
-    },
-  };
-}
