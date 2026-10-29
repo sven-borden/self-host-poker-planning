@@ -128,8 +128,20 @@ function overflows(label: HTMLElement): boolean {
  * (`data-clipped`, the whole label in a `title`); the card's accessible name, the seat's
  * popover and the results' words say it whole. ☕ and ∞ are drawn as icons: emoji and
  * missing glyphs would render in another font, colour or size on every system.
+ *
+ * `index`: a hand card's corner index (#37). Its text is drawn from `data-label` as
+ * generated content, so the button's visible text is the big numeral alone and matches
+ * its accessible name (WCAG 2.5.3: "5", not "5 5 5", for speech input and axe).
  */
-export function CardValue({ value, room }: { value: string; room: number }) {
+export function CardValue({
+  value,
+  room,
+  index = false,
+}: {
+  value: string;
+  room: number;
+  index?: boolean;
+}) {
   useLabelFonts();
   const ref = useRef<HTMLSpanElement>(null);
   const [clipped, setClipped] = useState(false);
@@ -170,13 +182,14 @@ export function CardValue({ value, room }: { value: string; room: number }) {
       data-card-value
       data-narrow={narrow || undefined}
       data-clipped={clipped || undefined}
-      className="whitespace-nowrap"
+      data-label={index ? value : undefined}
+      className={cn("whitespace-nowrap", index && "before:content-[attr(data-label)]")}
       style={{
         fontSize: `max(${MIN_LABEL_PX}px, ${scale}em)`,
         fontStretch: narrow ? "70%" : undefined,
       }}
     >
-      {value}
+      {index ? null : value}
     </span>
   );
   if (!clipped) return label;
@@ -230,16 +243,21 @@ export function HandCard({ value, selected = false, label, className, ...props }
       )}
       {...props}
     >
-      <span data-corner className="absolute top-[5px] left-[5px] text-[9px] leading-none font-bold">
-        <CardValue value={value} room={3.6} />
+      <span
+        aria-hidden="true"
+        data-corner
+        className="absolute top-[5px] left-[5px] text-[9px] leading-none font-bold"
+      >
+        <CardValue value={value} room={3.6} index />
       </span>
       {/* 34 px of the phone card's 44, in its 18 px font. */}
       <CardValue value={value} room={1.88} />
       <span
+        aria-hidden="true"
         data-corner
         className="absolute right-[5px] bottom-[5px] rotate-180 text-[9px] leading-none font-bold"
       >
-        <CardValue value={value} room={3.6} />
+        <CardValue value={value} room={3.6} index />
       </span>
     </button>
   );

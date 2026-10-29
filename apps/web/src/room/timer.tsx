@@ -401,7 +401,7 @@ export function TimerChip({ countdown }: { countdown: Countdown }) {
 
 /** The PO's small buttons beside the chip on a desktop: card faces, 32 px, 44 px to touch. */
 const SIDE_BUTTON =
-  "relative inline-flex h-8 items-center gap-1 rounded-md border border-card-edge bg-card-face px-2 text-[12px] leading-none font-semibold whitespace-nowrap text-card-ink shadow-sm outline-none after:absolute after:-inset-y-1.5 after:inset-x-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass aria-disabled:opacity-60 in-data-[variant=phone]:hidden";
+  "relative inline-flex h-8 items-center gap-1 rounded-md border border-card-edge bg-card-face px-2 text-[12px] leading-none font-semibold whitespace-nowrap text-card-ink shadow-sm outline-none after:absolute after:-inset-y-1.5 after:inset-x-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-disabled:opacity-60 in-data-[variant=phone]:hidden";
 
 /**
  * Refusals that only say the reveal won a race with the PO's press: the round no longer
@@ -581,7 +581,7 @@ export function TimerControls({
             onFocus={loadMenu}
             className={cn(
               CHIP,
-              "outline-none after:absolute after:-inset-y-2.5 after:-inset-x-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass",
+              "outline-none after:absolute after:-inset-y-2.5 after:-inset-x-1 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
               state === "idle" && "border border-table-ink/50 hover:border-table-ink",
             )}
           >
