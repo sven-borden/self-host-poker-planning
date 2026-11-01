@@ -13,6 +13,7 @@ import { startLanguage } from "./i18n/i18n.ts";
 import { ensureIdentity } from "./identity/identity.ts";
 import { startErrorReports } from "./observability/errors.ts";
 import { trackPageViews } from "./observability/page-views.ts";
+import { registerServiceWorker } from "./pwa/register.ts";
 import { createAppRouter } from "./router.ts";
 
 const container = document.getElementById("root");
@@ -44,3 +45,5 @@ void Promise.all([startLanguage(), router.load().catch(() => {})]).then(() => {
 // (`connectWhenIdentified`). A temporary failure (a redeploy) is retried with backoff;
 // a final one (cookies blocked) is kept in the identity store.
 ensureIdentity({ retry: true }).catch(() => {});
+
+registerServiceWorker();

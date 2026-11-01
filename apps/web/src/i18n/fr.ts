@@ -436,6 +436,15 @@ export const fr: Catalog<"many"> = {
     volume: "Volume",
     level: "{{level, number(style: percent; maximumFractionDigits: 0)}}",
   },
+  haptics: {
+    enable: "Vibrer",
+    hint: "Une pression à votre vote et à la révélation. Enregistré sur cet appareil.",
+  },
+  offline: {
+    title: "Vous êtes hors ligne",
+    body: "Une salle a besoin d’une connexion. Vérifiez la vôtre, puis réessayez.",
+    retry: "Réessayer",
+  },
   claim: {
     away: "{{name}}, le product owner, est hors ligne.",
     gone: "Le product owner a quitté la salle.",

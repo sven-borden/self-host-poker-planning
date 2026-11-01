@@ -43,4 +43,19 @@ export function applyThemeMode(
   } else {
     root.setAttribute("data-theme", mode);
   }
+  applyThemeColour(mode, root.ownerDocument);
+}
+
+/**
+ * The colour of a phone's bar and of an installed app's title bar (#46). `index.html` holds
+ * one `theme-color` per scheme, each saying which it is: a forced theme switches one on for
+ * good and the other off, and "system" hands both back to their media query. The colours
+ * stay in that file, and public/theme-init.js does the same before first paint.
+ */
+export function applyThemeColour(mode: ThemeMode, page: Document = document): void {
+  for (const meta of page.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
+    const scheme = meta.dataset.scheme;
+    meta.media =
+      mode === "system" ? `(prefers-color-scheme: ${scheme})` : mode === scheme ? "all" : "not all";
+  }
 }

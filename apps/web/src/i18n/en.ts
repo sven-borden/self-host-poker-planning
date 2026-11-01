@@ -472,6 +472,15 @@ export const en = {
     volume: "Volume",
     level: "{{level, number(style: percent; maximumFractionDigits: 0)}}",
   },
+  haptics: {
+    enable: "Vibrate",
+    hint: "A tap on your vote and on the reveal. Saved on this device.",
+  },
+  offline: {
+    title: "You are offline",
+    body: "A room needs a connection. Check yours, then try again.",
+    retry: "Try again",
+  },
   claim: {
     away: "{{name}}, the product owner, is away.",
     gone: "The product owner left the room.",

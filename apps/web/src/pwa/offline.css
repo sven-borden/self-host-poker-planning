@@ -1,0 +1,70 @@
+/*
+ * The offline page (#46). `scripts/pwa-plugin.ts` puts `src/tokens.css` in front of this, so
+ * the page has the app's colours in both themes. System fonts: the app's are not stored.
+ */
+
+html {
+  height: 100%;
+}
+
+body {
+  box-sizing: border-box;
+  display: grid;
+  min-height: 100%;
+  margin: 0;
+  padding: 24px 16px;
+  place-items: center;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  text-align: center;
+}
+
+main {
+  max-width: 28rem;
+}
+
+svg {
+  width: 64px;
+  height: 64px;
+}
+
+/* One language at a time: the script sets <html lang>. */
+section {
+  display: none;
+}
+
+html[lang="en"] section[lang="en"],
+html[lang="fr"] section[lang="fr"],
+html[lang="de"] section[lang="de"] {
+  display: block;
+}
+
+h1 {
+  margin: 16px 0 8px;
+  font-size: 1.5rem;
+  line-height: 1.25;
+}
+
+p {
+  margin: 0 0 24px;
+  color: var(--ink-2);
+}
+
+button {
+  min-height: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--spruce);
+  color: var(--on-spruce);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}

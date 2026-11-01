@@ -429,6 +429,15 @@ export const de: Catalog = {
     volume: "Lautstärke",
     level: "{{level, number(style: percent; maximumFractionDigits: 0)}}",
   },
+  haptics: {
+    enable: "Vibrieren",
+    hint: "Ein Tippen bei Ihrer Stimme und beim Aufdecken. Auf diesem Gerät gespeichert.",
+  },
+  offline: {
+    title: "Sie sind offline",
+    body: "Ein Raum braucht eine Verbindung. Prüfen Sie Ihre und versuchen Sie es erneut.",
+    retry: "Erneut versuchen",
+  },
   claim: {
     away: "{{name}}, der Product Owner, ist abwesend.",
     gone: "Der Product Owner hat den Raum verlassen.",
