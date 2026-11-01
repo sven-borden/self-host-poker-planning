@@ -6,7 +6,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeLanguage } from "../i18n/i18n.ts";
 import { IdentityError } from "../identity/identity.ts";
@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   sendCommand: vi.fn(),
   commandSender: vi.fn(),
   setDisplayName: vi.fn(),
+  setSavedAvatar: vi.fn(),
 }));
 vi.mock("../realtime/room-connection.ts", () => ({
   sendCommand: mocks.sendCommand,
@@ -26,6 +27,7 @@ vi.mock("../realtime/room-connection.ts", () => ({
 vi.mock("../identity/identity.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../identity/identity.ts")>()),
   setDisplayName: mocks.setDisplayName,
+  setSavedAvatar: mocks.setSavedAvatar,
 }));
 
 const CODE = "abcdefghij";
@@ -102,6 +104,118 @@ afterEach(async () => {
   mocks.setDisplayName.mockReset();
   vi.restoreAllMocks();
   await act(() => changeLanguage("en"));
+});
+
+describe("the avatar", () => {
+  const picker = () => screen.getByRole("group", { name: "Your avatar" });
+
+  it("joins with the one picked, saved on the user first", async () => {
+    useIdentityStore.getState().setIdentity({ userId: ME, name: "Cleo" });
+    mocks.setSavedAvatar.mockResolvedValue(undefined);
+    await renderView();
+    show(stateWith(others));
+    const open = await screen.findByRole("button", { name: "Choose an avatar" });
+    expect(open.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("group", { name: "Your avatar" })).toBeNull();
+    fireEvent.click(open);
+    expect(open.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(within(picker()).getByRole("radio", { name: "Fox" }));
+    expect(screen.getByRole("button", { name: "Change your avatar" })).toBe(open);
+    mocks.sendCommand.mockImplementation(async () => {
+      show(stateWith([...others, [ME, "Cleo", "voter"]]));
+      return { ok: true, version };
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Join the room" }));
+    await waitFor(() => expect(mocks.sendCommand).toHaveBeenCalled());
+    expect(mocks.setSavedAvatar).toHaveBeenCalledWith("fox");
+    expect(mocks.sendCommand).toHaveBeenCalledWith({
+      type: "join",
+      payload: { name: "Cleo", role: "voter", avatar: "fox" },
+    });
+  });
+
+  it("starts with the saved one, sends it, and saves nothing new", async () => {
+    useIdentityStore.getState().setIdentity({ userId: ME, name: "Cleo", avatar: "owl" });
+    await renderView();
+    show(stateWith(others));
+    await screen.findByRole("button", { name: "Change your avatar" });
+    mocks.sendCommand.mockImplementation(async () => {
+      show(stateWith([...others, [ME, "Cleo", "voter"]]));
+      return { ok: true, version };
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Join the room" }));
+    await waitFor(() => expect(mocks.sendCommand).toHaveBeenCalled());
+    expect(mocks.setSavedAvatar).not.toHaveBeenCalled();
+    expect(mocks.sendCommand).toHaveBeenCalledWith({
+      type: "join",
+      payload: { name: "Cleo", role: "voter", avatar: "owl" },
+    });
+  });
+
+  it("joins all the same when saving it fails", async () => {
+    useIdentityStore.getState().setIdentity({ userId: ME, name: "Cleo" });
+    mocks.setSavedAvatar.mockRejectedValue(new IdentityError("rate_limited"));
+    await renderView();
+    show(stateWith(others));
+    fireEvent.click(await screen.findByRole("button", { name: "Choose an avatar" }));
+    fireEvent.click(within(picker()).getByRole("radio", { name: "Bat" }));
+    mocks.sendCommand.mockResolvedValue({ ok: true, version });
+    fireEvent.click(screen.getByRole("button", { name: "Join the room" }));
+    await waitFor(() =>
+      expect(mocks.sendCommand).toHaveBeenCalledWith({
+        type: "join",
+        payload: { name: "Cleo", role: "voter", avatar: "bat" },
+      }),
+    );
+  });
+
+  it("changes from the room: a choice sends nothing, Save does, Escape cancels", async () => {
+    useIdentityStore.getState().setIdentity({ userId: ME, name: "Cleo" });
+    mocks.setSavedAvatar.mockResolvedValue(undefined);
+    const seated = stateWith([...others, [ME, "Cleo", "voter"]]);
+    await renderView();
+    await showSeated(seated);
+    const change = screen.getByRole("button", { name: "Change your avatar" });
+    fireEvent.click(change);
+    const initials = within(picker()).getByRole("radio", { name: "Initials" });
+    expect(document.activeElement).toBe(initials);
+    fireEvent.click(within(picker()).getByRole("radio", { name: "Owl" }));
+    expect(mocks.sendCommand).not.toHaveBeenCalled();
+    fireEvent.keyDown(initials, { key: "Escape" });
+    const back = await screen.findByRole("button", { name: "Change your avatar" });
+    await waitFor(() => expect(document.activeElement).toBe(back));
+    expect(mocks.sendCommand).not.toHaveBeenCalled();
+
+    // Saving what was already there closes the editor without a request.
+    fireEvent.click(back);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("radio", { name: "Owl" })).toBeNull());
+    expect(mocks.sendCommand).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Change your avatar" }));
+    fireEvent.click(within(picker()).getByRole("radio", { name: "Owl" }));
+    mocks.sendCommand.mockResolvedValue({ ok: true, version });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("radio", { name: "Owl" })).toBeNull());
+    expect(mocks.setSavedAvatar).toHaveBeenCalledWith("owl");
+    expect(mocks.sendCommand).toHaveBeenCalledWith({
+      type: "setAvatar",
+      payload: { avatar: "owl" },
+    });
+  });
+
+  it("keeps the picker open with the message when the change is refused", async () => {
+    useIdentityStore.getState().setIdentity({ userId: ME, name: "Cleo" });
+    mocks.setSavedAvatar.mockResolvedValue(undefined);
+    await renderView();
+    await showSeated(stateWith([...others, [ME, "Cleo", "voter"]]));
+    fireEvent.click(screen.getByRole("button", { name: "Change your avatar" }));
+    fireEvent.click(within(picker()).getByRole("radio", { name: "Owl" }));
+    mocks.sendCommand.mockResolvedValue({ ok: false, code: "bad_avatar" });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/not available/);
+    expect(screen.getByRole("radio", { name: "Owl" })).toBeTruthy();
+  });
 });
 
 describe("the join form", () => {

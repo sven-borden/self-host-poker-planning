@@ -8,6 +8,7 @@ import {
   resetIdentityModule,
   retryDelay,
   setDisplayName,
+  setSavedAvatar,
 } from "./identity.ts";
 
 type Route = (init: RequestInit | undefined) => Response | Promise<Response>;
@@ -67,6 +68,38 @@ describe("ensureIdentity", () => {
       name: "Ada",
       error: null,
     });
+  });
+
+  it("keeps a saved avatar it knows, and ignores one it does not", async () => {
+    serve({
+      "/api/auth/get-session": () => json({ user: { id: "u1", name: "Ada", avatar: "fox" } }),
+    });
+    const fox = { userId: "u1", name: "Ada", avatar: "fox" };
+    await expect(ensureIdentity()).resolves.toEqual(fox);
+    expect(useIdentityStore.getState().avatar).toBe("fox");
+    await expect(ensureIdentity()).resolves.toEqual(fox);
+
+    resetIdentityModule();
+    useIdentityStore.getState().reset();
+    serve({
+      "/api/auth/get-session": () => json({ user: { id: "u1", name: "Ada", avatar: "dragon" } }),
+    });
+    await expect(ensureIdentity()).resolves.toEqual({ userId: "u1", name: "Ada" });
+    expect(useIdentityStore.getState().avatar).toBeNull();
+  });
+
+  it("saves an avatar on the user; a refusal changes nothing", async () => {
+    useIdentityStore.getState().setIdentity({ userId: "u1", name: "Ada" });
+    const calls = serve({ "/api/me/avatar": () => json({ avatar: "owl" }) });
+    await setSavedAvatar("owl");
+    expect(useIdentityStore.getState().avatar).toBe("owl");
+    expect(calls[0]?.init).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({ avatar: "owl" }),
+    });
+    serve({ "/api/me/avatar": () => json({ code: "rate_limited" }, 429) });
+    await expect(setSavedAvatar(null)).rejects.toMatchObject({ code: "rate_limited" });
+    expect(useIdentityStore.getState().avatar).toBe("owl");
   });
 
   it("signs in as a guest without a session and reads it back; an empty name is no name yet", async () => {

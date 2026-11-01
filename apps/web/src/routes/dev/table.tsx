@@ -1,4 +1,4 @@
-import { cardValue } from "@pp/domain";
+import { AVATAR_IDS, cardValue } from "@pp/domain";
 import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useT } from "../../i18n/hooks.ts";
 import { avatarLooks } from "../../table/avatar.tsx";
@@ -10,9 +10,11 @@ import { TableStage } from "../../table/table-stage.tsx";
 // split into its own chunk, so nothing here weighs on the room route's budget; the search
 // is parsed in the component for that reason (a validateSearch would ship in the entry).
 // /dev/table?n=1..16&state=lobby|voting|revealed&observers=0..4&away=0|1&changed=0|1
+// &avatars=0|1|2
 // The first person is the viewer and the second the PO (the first when alone). With
 // away=1, every fourth person (index 3, 7, 11, 15) and the second observer are away. With
 // changed=1 and state=revealed, every card on the table was changed after the reveal (#29).
+// With avatars=1, everyone has a drawing of their own (#42); with avatars=2, the same one.
 
 const STATES = ["lobby", "voting", "revealed"] as const;
 type DevState = (typeof STATES)[number];
@@ -34,6 +36,7 @@ function useBenchSearch() {
     observers: wholeNumber(search.observers, 0, 4, 0),
     away: wholeNumber(search.away, 0, 1, 0) === 1,
     changed: wholeNumber(search.changed, 0, 1, 0) === 1,
+    avatars: wholeNumber(search.avatars, 0, 2, 0),
   };
 }
 
@@ -100,11 +103,21 @@ const DECK = [
 
 function DevTable() {
   const t = useT();
-  const { n, state, observers, away, changed } = useBenchSearch();
+  const { n, state, observers, away, changed, avatars } = useBenchSearch();
   // Every third person is still thinking (or did not vote, after reveal).
   const voted = (i: number) => i % 3 !== 2;
-  const seated = NAMES.slice(0, n).map((name, i) => ({ id: `user-${i}`, name }));
-  const watching = OBSERVERS.slice(0, observers).map((name, i) => ({ id: `observer-${i}`, name }));
+  const avatar = (i: number) =>
+    avatars === 0 ? undefined : AVATAR_IDS[avatars === 1 ? (i * 7) % AVATAR_IDS.length : 7];
+  const seated = NAMES.slice(0, n).map((name, i) => ({
+    id: `user-${i}`,
+    name,
+    avatar: avatar(i),
+  }));
+  const watching = OBSERVERS.slice(0, observers).map((name, i) => ({
+    id: `observer-${i}`,
+    name,
+    avatar: avatar(i + 16),
+  }));
   const looks = avatarLooks([...seated, ...watching]);
   const people: TablePerson[] = seated.map(({ id, name }, i) => ({
     id,

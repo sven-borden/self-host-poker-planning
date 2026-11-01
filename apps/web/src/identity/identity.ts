@@ -1,3 +1,4 @@
+import { type AvatarId, isAvatarId } from "@pp/domain";
 import { useIdentityStore } from "../stores/identity-store.ts";
 
 // The identity bootstrap (#10): a few typed fetch calls to the server's Better Auth
@@ -28,6 +29,8 @@ export interface Identity {
   readonly userId: string;
   /** null until the person picks a name. */
   readonly name: string | null;
+  /** The saved avatar (#42), when there is one this version knows. */
+  readonly avatar?: AvatarId | undefined;
 }
 
 /** A failed identity call, with the server's code (`rate_limited`, `bad_name`, …). */
@@ -46,12 +49,13 @@ export class IdentityError extends Error {
 interface ServerUser {
   id?: unknown;
   name?: unknown;
+  avatar?: unknown;
 }
 
 function toIdentity(user: ServerUser | undefined): Identity {
   if (typeof user?.id !== "string" || user.id === "") throw new IdentityError("internal");
   const name = typeof user.name === "string" && user.name !== "" ? user.name : null;
-  return { userId: user.id, name };
+  return { userId: user.id, name, ...(isAvatarId(user.avatar) ? { avatar: user.avatar } : {}) };
 }
 
 /** The JSON body, or undefined when there is none or it is not JSON. */
@@ -205,7 +209,11 @@ export function ensureIdentity({
 } = {}): Promise<Identity> {
   const store = useIdentityStore.getState();
   if (!force && !pending && store.status === "ready" && store.userId !== null) {
-    return Promise.resolve({ userId: store.userId, name: store.name });
+    return Promise.resolve({
+      userId: store.userId,
+      name: store.name,
+      ...(store.avatar === null ? {} : { avatar: store.avatar }),
+    });
   }
   if (pending) {
     // A bootstrap without retries is running: if it fails for a while, retry after it.
@@ -236,6 +244,17 @@ export async function setDisplayName(name: string): Promise<string> {
   if (typeof json?.name !== "string") throw new IdentityError("internal");
   useIdentityStore.getState().setName(json.name);
   return json.name;
+}
+
+/** Stores the avatar on the user (#42); null goes back to the initials. */
+export async function setSavedAvatar(avatar: AvatarId | null): Promise<void> {
+  await ensureIdentity();
+  const response = await request("/api/me/avatar", {
+    ...JSON_POST,
+    body: JSON.stringify({ avatar }),
+  });
+  if (!response.ok) throw await failure(response);
+  useIdentityStore.getState().setAvatar(avatar);
 }
 
 /** For tests: forgets a cookie refusal and a running bootstrap. */

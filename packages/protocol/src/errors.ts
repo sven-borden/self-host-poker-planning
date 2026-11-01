@@ -52,6 +52,7 @@ export const ACK_ERROR_CODES = [
   "not_owner",
   "already_joined",
   "bad_name",
+  "bad_avatar",
   "bad_role",
   "room_full",
   "cannot_kick_self",

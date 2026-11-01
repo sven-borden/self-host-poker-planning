@@ -1,4 +1,11 @@
-import { cleanName, MAX_NAME_LENGTH, MAX_PARTICIPANTS, type Role } from "@pp/domain";
+import {
+  type AvatarId,
+  cleanName,
+  isAvatarId,
+  MAX_NAME_LENGTH,
+  MAX_PARTICIPANTS,
+  type Role,
+} from "@pp/domain";
 import type { ParticipantView } from "@pp/protocol";
 import { OctagonXIcon } from "lucide-react";
 import {
@@ -10,17 +17,20 @@ import {
   useRef,
   useState,
 } from "react";
+import { AvatarPicker } from "../avatars/avatar-picker.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { type CommandResult, commandSender, sendCommand } from "../realtime/room-connection.ts";
-import { Avatar, type AvatarLook } from "../table/avatar.tsx";
+import { Avatar, type AvatarLook, avatarColour } from "../table/avatar.tsx";
 import { shownName } from "../table/seat.tsx";
 import { codeOf, failureMessage } from "./failure.ts";
 import { NAME_INPUT_MAX_UNITS } from "./join-form.tsx";
+import { saveAvatar } from "./save-avatar.ts";
 import { saveName } from "./save-name.ts";
 
-type Action = "rename" | "role" | "leave";
+type Action = "rename" | "avatar" | "role" | "leave";
+type Editor = "name" | "avatar";
 
 interface YouControlsProps {
   /** The viewer as the snapshot lists them. */
@@ -39,9 +49,10 @@ interface YouControlsProps {
 }
 
 /**
- * The viewer's own place in the room (#16): their name and role, and the three things
+ * The viewer's own place in the room (#16): their name and role, and the four things
  * they can change from the room. Rename saves the name on the user too, so the next room
- * prefills it; switching role sends `setRole`; leaving sends `leave`, after which the
+ * prefills it, and so does the avatar (#42), chosen in the picker, then saved, so the arrow
+ * keys send nothing; switching role sends `setRole`; leaving sends `leave`, after which the
  * snapshot no longer holds `you` and the page shows the join form again.
  */
 export function YouControls({
@@ -57,9 +68,11 @@ export function YouControls({
   const ids = { heading: useId(), name: useId(), hint: useId(), error: useId() };
   const heading = useRef<HTMLHeadingElement>(null);
   const renameButton = useRef<HTMLButtonElement>(null);
+  const avatarButton = useRef<HTMLButtonElement>(null);
   const nameInput = useRef<HTMLInputElement>(null);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState<Editor | null>(null);
   const [draft, setDraft] = useState(me.name);
+  const [avatarDraft, setAvatarDraft] = useState<AvatarId | null>(null);
   const [busy, setBusy] = useState<Action | null>(null);
   const [failure, setFailure] = useState<{ message: string; nameRefused: boolean } | null>(null);
 
@@ -70,20 +83,20 @@ export function YouControls({
   }, [focusOnMount, onFocused]);
 
   useEffect(() => {
-    if (editing) {
+    if (editing === "name") {
       nameInput.current?.focus();
       nameInput.current?.select();
     }
   }, [editing]);
 
-  // Leaving the editor gives the focus back to the rename button once React has mounted
-  // it again. A layout effect, not a frame: after an awaited rename the render that
-  // brings the button back may come after the next frame.
-  const refocusRename = useRef(false);
+  // Leaving an editor gives the focus back to the button that opened it once React has
+  // mounted it again. A layout effect, not a frame: after an awaited rename the render
+  // that brings the button back may come after the next frame.
+  const refocus = useRef<Editor | null>(null);
   useLayoutEffect(() => {
-    if (editing || !refocusRename.current) return;
-    refocusRename.current = false;
-    renameButton.current?.focus();
+    if (editing || !refocus.current) return;
+    (refocus.current === "name" ? renameButton : avatarButton).current?.focus();
+    refocus.current = null;
   }, [editing]);
 
   function refuse(code: string) {
@@ -118,12 +131,18 @@ export function YouControls({
   function startEditing() {
     setFailure(null);
     setDraft(me.name);
-    setEditing(true);
+    setEditing("name");
+  }
+
+  function startChoosing() {
+    setFailure(null);
+    setAvatarDraft(isAvatarId(me.avatar) ? me.avatar : null);
+    setEditing("avatar");
   }
 
   function stopEditing() {
-    refocusRename.current = true;
-    setEditing(false);
+    refocus.current = editing;
+    setEditing(null);
     setFailure(null);
   }
 
@@ -144,6 +163,21 @@ export function YouControls({
     const done = await run("rename", async () =>
       send({ type: "rename", payload: { name: await saveName(cleaned) } }),
     );
+    if (done) stopEditing();
+  }
+
+  async function chooseAvatar(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (avatarDraft === (me.avatar ?? null)) {
+      stopEditing();
+      return;
+    }
+    // Bound now, as for a rename: this room or nowhere, whatever the save takes.
+    const send = commandSender();
+    const done = await run("avatar", async () => {
+      await saveAvatar(avatarDraft);
+      return send({ type: "setAvatar", payload: { avatar: avatarDraft } });
+    });
     if (done) stopEditing();
   }
 
@@ -183,7 +217,31 @@ export function YouControls({
       >
         {t("you.title")}
       </h2>
-      {editing ? (
+      {editing === "avatar" ? (
+        <form
+          className="mt-3 flex flex-col gap-3"
+          onSubmit={chooseAvatar}
+          onKeyDown={onEditorKey}
+          noValidate
+        >
+          <AvatarPicker
+            value={avatarDraft}
+            onChange={setAvatarDraft}
+            id={me.id}
+            name={me.name}
+            colour={look?.colour ?? avatarColour(me.id)}
+            focusOnMount
+          />
+          <div className="flex gap-2">
+            <Button type="submit" className={busyClass} aria-disabled={busy !== null || undefined}>
+              {busy === "avatar" ? t("you.saving") : t("you.save")}
+            </Button>
+            <Button type="button" variant="outline" onClick={stopEditing}>
+              {t("you.cancel")}
+            </Button>
+          </div>
+        </form>
+      ) : editing === "name" ? (
         <form
           className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end"
           onSubmit={rename}
@@ -239,6 +297,9 @@ export function YouControls({
           <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
             <Button ref={renameButton} variant="outline" onClick={startEditing}>
               {t("you.rename")}
+            </Button>
+            <Button ref={avatarButton} variant="outline" onClick={startChoosing}>
+              {t("avatar.change")}
             </Button>
             <Button
               variant="outline"

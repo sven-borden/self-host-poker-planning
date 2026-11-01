@@ -102,6 +102,9 @@ export const PAIRS: Pair[] = [
   { fg: "--bg", on: ["--ink"], min: 4.5, where: "tooltips (text-background on bg-foreground)" },
 
   // Non-text, 3:1.
+  { fg: "--card-face", on: AVATARS, min: 3, where: "an avatar's drawing on its disc" },
+  { fg: "--card-ink", on: ["--card-face"], min: 3, where: "the features of an avatar's drawing" },
+  { fg: "--ink-2", on: ["--surface-2"], min: 3, where: "an away avatar's drawing" },
   {
     fg: "--line-strong",
     on: PAGE,

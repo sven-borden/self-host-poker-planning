@@ -17,9 +17,11 @@ import type { Role, RoomState, Round, SettingsPatch, Subject, UserId } from "./r
  * the web app always sends it. The domain checks each whenever it is given.
  */
 export type Command =
-  | { type: "join"; name: string; role: Role }
+  | { type: "join"; name: string; role: Role; avatar?: string }
   | { type: "leave" }
   | { type: "rename"; name: string }
+  /** `null` goes back to the initials (#42). */
+  | { type: "setAvatar"; avatar: string | null }
   | { type: "setRole"; role: Role }
   | { type: "kick"; who: UserId }
   | { type: "startRound"; subject: Subject }
@@ -66,6 +68,7 @@ export type Cause =
   | { type: "left"; who: UserId }
   | { type: "kicked"; who: UserId }
   | { type: "renamed"; who: UserId }
+  | { type: "avatarChanged"; who: UserId }
   | { type: "roleChanged"; who: UserId; role: Role }
   | { type: "roundStarted"; number: number; restarted?: true; revote?: true }
   | { type: "voteCast"; who?: UserId }
@@ -98,6 +101,7 @@ export type ErrorCode =
   | "not_owner"
   | "already_joined"
   | "bad_name"
+  | "bad_avatar"
   | "bad_role"
   | "room_full"
   | "cannot_kick_self"

@@ -7,6 +7,7 @@
  * of them when a test scans a snapshot's strings.
  */
 import {
+  AVATAR_IDS,
   apply,
   type Cause,
   type ClientCommand,
@@ -95,10 +96,25 @@ const restartArb = fc.constantFrom(0, 0, 0, 1);
 export const clientCommandArb: fc.Arbitrary<ClientCommand> = fc.oneof(
   {
     weight: 2,
-    arbitrary: fc.record({ type: fc.constant("join" as const), name: nameArb, role: roleArb }),
+    arbitrary: fc.record(
+      {
+        type: fc.constant("join" as const),
+        name: nameArb,
+        role: roleArb,
+        avatar: fc.constantFrom(...AVATAR_IDS),
+      },
+      { requiredKeys: ["type", "name", "role"] },
+    ),
   },
   { weight: 1, arbitrary: fc.constant({ type: "leave" as const }) },
   { weight: 1, arbitrary: fc.record({ type: fc.constant("rename" as const), name: nameArb }) },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      type: fc.constant("setAvatar" as const),
+      avatar: fc.constantFrom(null, ...AVATAR_IDS),
+    }),
+  },
   { weight: 1, arbitrary: fc.record({ type: fc.constant("setRole" as const), role: roleArb }) },
   { weight: 1, arbitrary: fc.record({ type: fc.constant("kick" as const), who: personArb }) },
   {

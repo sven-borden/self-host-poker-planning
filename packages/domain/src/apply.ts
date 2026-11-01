@@ -19,6 +19,7 @@ import {
   sameJson,
 } from "./apply-input.ts";
 import { cleanSubject } from "./apply-subject.ts";
+import { isAvatarId } from "./avatars.ts";
 import type {
   ApplyContext,
   ApplyResult,
@@ -116,11 +117,13 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
 
   switch (command.type) {
     case "join":
-      return join(state, actor, command.name, command.role, now);
+      return join(state, actor, command, now);
     case "leave":
       return done(removeParticipant(state, actor), { type: "left", who: actor });
     case "rename":
       return rename(state, actor, command.name);
+    case "setAvatar":
+      return setAvatar(state, actor, command.avatar);
     case "setRole":
       return setRole(state, actor, command.role);
     case "kick":
@@ -212,17 +215,29 @@ function unknownCommand(_command: never): Step {
 
 // ---------------------------------------------------------------------------- membership
 
-function join(state: RoomState, actor: UserId, rawName: unknown, role: Role, now: number): Step {
+function join(
+  state: RoomState,
+  actor: UserId,
+  { name: rawName, role, avatar }: Extract<Command, { type: "join" }>,
+  now: number,
+): Step {
   if (participant(state, actor)) return refuse("already_joined");
   const name = cleanName(rawName);
   if (name === null) return refuse("bad_name");
   if (!ROLES.includes(role)) return refuse("bad_role");
+  if (avatar !== undefined && !isAvatarId(avatar)) return refuse("bad_avatar");
   const members = Object.keys(state.participants).length;
   if (members >= MAX_MEMBERS) return refuse("room_full");
   if (counts(state.settings, role) && countedPeople(state) >= MAX_PARTICIPANTS) {
     return refuse("room_full");
   }
-  const person: Participant = { name, role, joinedAt: now, connected: true };
+  const person: Participant = {
+    name,
+    role,
+    ...(avatar === undefined ? {} : { avatar }),
+    joinedAt: now,
+    connected: true,
+  };
   return done(
     { ...state, participants: { ...state.participants, [actor]: person } },
     { type: "joined", who: actor },
@@ -235,6 +250,14 @@ function rename(state: RoomState, actor: UserId, rawName: unknown): Step {
   const person = state.participants[actor] as Participant;
   if (person.name === name) return done(state);
   return done(withParticipant(state, actor, { ...person, name }), { type: "renamed", who: actor });
+}
+
+function setAvatar(state: RoomState, actor: UserId, avatar: unknown): Step {
+  if (avatar !== null && !isAvatarId(avatar)) return refuse("bad_avatar");
+  const { avatar: current, ...person } = state.participants[actor] as Participant;
+  if ((current ?? null) === avatar) return done(state);
+  const next: Participant = avatar === null ? person : { ...person, avatar };
+  return done(withParticipant(state, actor, next), { type: "avatarChanged", who: actor });
 }
 
 function setRole(state: RoomState, actor: UserId, role: Role): Step {

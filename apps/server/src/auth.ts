@@ -13,13 +13,13 @@
  *   Auth from printing its own 4xx lines; the handler logs a thrown error's code only;
  * - `sessionUser` turns any failure into a `DatabaseError` holding a code.
  */
-import { cleanName } from "@pp/domain";
+import { cleanName, isAvatarId } from "@pp/domain";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { isAPIError } from "better-auth/api";
 import { anonymous } from "better-auth/plugins";
 import { and, eq, gt, sql } from "drizzle-orm";
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { AppEnv } from "./app.ts";
 import type { Config } from "./config.ts";
@@ -58,7 +58,8 @@ export const AUTH_DEFAULT_LIMIT = { window: 10, max: 100 } as const;
 
 /**
  * Display name changes, per user and per client address (`POST /api/me/name`): typing a
- * name and fixing it a few times passes, a script renaming in a loop does not.
+ * name and fixing it a few times passes, a script renaming in a loop does not. An avatar
+ * change (`POST /api/me/avatar`) counts the same, in buckets of its own.
  */
 export const RENAME_LIMITS = {
   user: { window: 60, max: 10 },
@@ -179,6 +180,8 @@ export function authOptions(
         },
       },
     },
+    // `input: false`: only `POST /api/me/avatar` writes it, by the domain's list.
+    user: { additionalFields: { avatar: { type: "string", required: false, input: false } } },
     plugins: [anonymous()],
   } satisfies BetterAuthOptions;
 }
@@ -293,8 +296,8 @@ function codeOf(json: unknown): unknown {
 }
 
 /**
- * Mounts the allowed Better Auth endpoints (`AUTH_ROUTES`) under `/api/auth/*` and
- * `POST /api/me/name`. Each auth request gets the client address in `CLIENT_IP_HEADER`,
+ * Mounts the allowed Better Auth endpoints (`AUTH_ROUTES`) under `/api/auth/*`, and
+ * `POST /api/me/name` and `/api/me/avatar`. Each auth request gets the client address in `CLIENT_IP_HEADER`,
  * resolved by `clientIp` as every other rate limit does; a client's own copy of that
  * header is dropped. Answers carry the app's codes, never Better Auth's sentences, and no
  * `token` field.
@@ -349,31 +352,60 @@ export function registerAuthApi(
     return rewrite(response, withoutTokens(await jsonOf(response)));
   });
 
-  // The display name, cleaned by the domain's rules (32 characters, whitespace collapsed,
-  // well-formed, nothing invisible). A browser always sends Origin on a POST: another
-  // origin is refused, and a JSON body cannot come from a plain cross-site form.
-  app.post("/api/me/name", async (c) => {
+  /**
+   * A change to the person's own row: `change` gets who they are and one field of the JSON
+   * body. A browser always sends Origin on a POST: another origin is refused, and a JSON
+   * body cannot come from a plain cross-site form.
+   */
+  async function changeMine(
+    c: Context<AppEnv>,
+    bucket: string,
+    field: string,
+    change: (me: SocketUser, raw: unknown) => Promise<Response>,
+  ): Promise<Response> {
     c.header("Cache-Control", "no-store");
     if (foreignOrigin(c, config)) return c.json({ code: "not_allowed" }, 403);
     if (!isJsonBody(c)) {
       return c.json({ code: "bad_payload" }, 415);
     }
-    const ipKey = `rename|ip|${requestIp(c, config) ?? "unknown"}`;
+    const ipKey = `${bucket}|ip|${requestIp(c, config) ?? "unknown"}`;
     const byIp = await limiter.consume(ipKey, RENAME_LIMITS.ip);
     if (!byIp.allowed) return rateLimited(c, byIp.retryAfter);
     const me = await sessionUser(auth, c.req.raw.headers);
     if (!me) return c.json({ code: "unauthenticated" }, 401);
-    const byUser = await limiter.consume(`rename|user|${me.id}`, RENAME_LIMITS.user);
+    const byUser = await limiter.consume(`${bucket}|user|${me.id}`, RENAME_LIMITS.user);
     if (!byUser.allowed) return rateLimited(c, byUser.retryAfter);
     const body: unknown = await c.req.json().catch(() => undefined);
-    const raw = typeof body === "object" && body !== null ? Reflect.get(body, "name") : undefined;
-    const name = cleanName(raw);
-    if (name === null) return c.json({ code: "bad_name" }, 400);
-    await guard("rename user", () =>
-      db.update(user).set({ name, updatedAt: new Date() }).where(eq(user.id, me.id)),
+    return change(
+      me,
+      typeof body === "object" && body !== null ? Reflect.get(body, field) : undefined,
     );
-    return c.json({ name });
-  });
+  }
+
+  // The display name, cleaned by the domain's rules (32 characters, whitespace collapsed,
+  // well-formed, nothing invisible).
+  app.post("/api/me/name", (c) =>
+    changeMine(c, "rename", "name", async (me, raw) => {
+      const name = cleanName(raw);
+      if (name === null) return c.json({ code: "bad_name" }, 400);
+      await guard("rename user", () =>
+        db.update(user).set({ name, updatedAt: new Date() }).where(eq(user.id, me.id)),
+      );
+      return c.json({ name });
+    }),
+  );
+
+  // The avatar the next room starts with (#42): one of the domain's ids, or null for the
+  // initials. The room itself hears of it through `join` and `setAvatar`.
+  app.post("/api/me/avatar", (c) =>
+    changeMine(c, "avatar", "avatar", async (me, avatar) => {
+      if (avatar !== null && !isAvatarId(avatar)) return c.json({ code: "bad_avatar" }, 400);
+      await guard("save avatar", () =>
+        db.update(user).set({ avatar, updatedAt: new Date() }).where(eq(user.id, me.id)),
+      );
+      return c.json({ avatar });
+    }),
+  );
 }
 
 /**

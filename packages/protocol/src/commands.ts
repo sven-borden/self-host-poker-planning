@@ -27,6 +27,8 @@ export const WIRE_LIMITS = {
   name: 1024,
   /** The domain caps a title at 3200 code units (200 characters) and a link at 2000. */
   subject: 4096,
+  /** An avatar id: the domain knows the 24 of them, each a short word. */
+  avatar: 32,
   /** The domain caps a card label at 64 code units (4 characters). */
   card: 128,
   /** The domain caps a custom deck at 20 cards. */
@@ -62,6 +64,7 @@ const wireDeckSpecSchema = z.discriminatedUnion("kind", [
 ]);
 
 const nameSchema = z.string().max(WIRE_LIMITS.name);
+const avatarSchema = z.string().max(WIRE_LIMITS.avatar);
 const textSchema = z.string().max(WIRE_LIMITS.subject);
 
 /**
@@ -110,9 +113,10 @@ const empty = z.strictObject({}).default({});
  * command. The server's own commands (`presence`) have no schema, so they never parse.
  */
 const payloads = {
-  join: z.strictObject({ name: nameSchema, role: roleSchema }),
+  join: z.strictObject({ name: nameSchema, role: roleSchema, avatar: avatarSchema.optional() }),
   leave: empty,
   rename: z.strictObject({ name: nameSchema }),
+  setAvatar: z.strictObject({ avatar: avatarSchema.nullable() }),
   setRole: z.strictObject({ role: roleSchema }),
   kick: z.strictObject({ who: userIdSchema }),
   startRound: z.strictObject({ subject: wireSubjectSchema }),
@@ -157,6 +161,7 @@ export const wireCommandSchema = z.discriminatedUnion("type", [
   wire("join", payloads.join),
   wire("leave", payloads.leave),
   wire("rename", payloads.rename),
+  wire("setAvatar", payloads.setAvatar),
   wire("setRole", payloads.setRole),
   wire("kick", payloads.kick),
   wire("startRound", payloads.startRound),

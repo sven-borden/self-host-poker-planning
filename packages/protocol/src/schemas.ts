@@ -137,6 +137,7 @@ export const causeSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("left"), who: userIdSchema }),
   z.object({ type: z.literal("kicked"), who: userIdSchema }),
   z.object({ type: z.literal("renamed"), who: userIdSchema }),
+  z.object({ type: z.literal("avatarChanged"), who: userIdSchema }),
   z.object({ type: z.literal("roleChanged"), who: userIdSchema, role: roleSchema }),
   z.object({
     type: z.literal("roundStarted"),

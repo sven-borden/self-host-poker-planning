@@ -1,4 +1,5 @@
 import {
+  type AvatarId,
   cleanName,
   MAX_NAME_LENGTH,
   MAX_PARTICIPANTS,
@@ -7,6 +8,7 @@ import {
 } from "@pp/domain";
 import { OctagonXIcon } from "lucide-react";
 import {
+  type ComponentType,
   type FormEvent,
   lazy,
   Suspense,
@@ -16,6 +18,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { JoinAvatarProps } from "../avatars/join-avatar.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { errorMessage } from "../i18n/errors.ts";
@@ -27,10 +30,20 @@ import { useIdentityStore } from "../stores/identity-store.ts";
 import type { LockReason } from "../stores/room-store.ts";
 import { codeOf, failureMessage } from "./failure.ts";
 import { loadJoinPassword } from "./load-join-password.ts";
+import { saveAvatar } from "./save-avatar.ts";
 import { saveName } from "./save-name.ts";
 
 const JoinPassword = lazy(() =>
   loadJoinPassword().then((module) => ({ default: module.JoinPassword })),
+);
+
+/** The avatar is optional: if its chunk cannot load, the form goes on without it. */
+const JoinAvatar = lazy(
+  (): Promise<{ default: ComponentType<JoinAvatarProps> }> =>
+    import("../avatars/join-avatar.tsx").then(
+      (module) => ({ default: module.JoinAvatar }),
+      () => ({ default: () => null }),
+    ),
 );
 
 /**
@@ -76,9 +89,10 @@ function tooMany(t: ReturnType<typeof useT>, retryAfter: number | undefined): st
 
 /**
  * The join screen (#16): a display name, prefilled with the last one this browser used,
- * and voter or observer, voter by default. The PO joins the same way. Submitting checks
- * the name with the domain's `cleanName`, saves it on the user when it changed (`saveName`,
- * which never blocks the join), then sends `join` to the room that was on screen at the
+ * an avatar, likewise (#42), and voter or observer, voter by default. The PO joins the
+ * same way. Submitting checks the name with the domain's `cleanName`, saves both on the
+ * user when they changed (`saveName`, `saveAvatar`, which never block the join), then sends
+ * `join` to the room that was on screen at the
  * submit. The page swaps the form for the table when the snapshot says `you`.
  *
  * In a room with a password (#31) the form asks for it first, above the name, with one
@@ -106,6 +120,9 @@ export function JoinForm({
   const savedName = useIdentityStore((state) => state.name);
   const [name, setName] = useState(savedName ?? "");
   const [edited, setEdited] = useState(false);
+  const savedAvatar = useIdentityStore((state) => state.avatar);
+  const [avatar, setAvatar] = useState(savedAvatar);
+  const [avatarPicked, setAvatarPicked] = useState(false);
   const [role, setRole] = useState<Role>("voter");
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
@@ -121,6 +138,15 @@ export function JoinForm({
   useEffect(() => {
     if (!edited && savedName !== null) setName(savedName);
   }, [edited, savedName]);
+
+  useEffect(() => {
+    if (!avatarPicked) setAvatar(savedAvatar);
+  }, [avatarPicked, savedAvatar]);
+
+  const pickAvatar = useCallback((picked: AvatarId | null) => {
+    setAvatarPicked(true);
+    setAvatar(picked);
+  }, []);
 
   useEffect(() => {
     if (!focusOnMount || (asked && !passwordShown)) return;
@@ -149,9 +175,10 @@ export function JoinForm({
       // The join goes to the room on screen now, or nowhere: the page may move to another
       // room while the name is being saved.
       const send = commandSender();
-      const joinName = await saveName(cleaned);
+      const [joinName] = await Promise.all([saveName(cleaned), saveAvatar(avatar)]);
       onJoining(true);
-      const ack = await send({ type: "join", payload: { name: joinName, role } });
+      const payload = { name: joinName, role, ...(avatar === null ? {} : { avatar }) };
+      const ack = await send({ type: "join", payload });
       // Joined, or another tab of this browser joined first: the snapshot holds `you`.
       if (ack.ok || ack.code === "already_joined") return;
       onJoining(false);
@@ -281,6 +308,10 @@ export function JoinForm({
             {t("seat.nameHint", { max: MAX_NAME_LENGTH })}
           </p>
         </div>
+        {/* A button's height held for it, so the role and "Join" do not jump. */}
+        <Suspense fallback={<div className="h-11" />}>
+          <JoinAvatar value={avatar} onChange={pickAvatar} name={name} />
+        </Suspense>
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-2 font-medium">{t("seat.roleLabel")}</legend>
           <div className="grid gap-2 sm:grid-cols-2">
