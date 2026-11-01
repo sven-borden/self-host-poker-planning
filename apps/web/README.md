@@ -636,6 +636,12 @@ server sends and never decides the outcome of a round.
   mid-glide carries on), and puts a leaver's dropped element back on the stage, every
   `data-*` stripped, `inert` and `aria-hidden`, until it has faded. A spec that measures seats right after a
   change waits for them first (`settled` in `e2e/support.ts`).
+- Sound (#44, ADR-020): `RoomSoundButton` in the top bar lazy-loads `sound-control.tsx`, which
+  holds the switch, the volume and `useSoundEffects`. A sound is a list of voices in
+  `sound-recipes.ts`; `soundCues` says which play for a change of the room, read from
+  `liveEvents` so a sound follows a sentence's rules. Never make an `AudioContext` outside
+  `unlock()`, and never queue a sound for later: `play` drops it unless the context runs.
+  Unit tests use `fake-audio.ts`; `e2e/sound.spec.ts` writes down the real context's voices.
 - Budget: `pnpm build` ends with `scripts/check-budget.ts`, which reads the Vite manifest
   and fails when the initial JavaScript of the room route or of the landing page (entry,
   route chunk and their static imports) exceeds 200 kB gzipped. Lazy chunks (Motion features, the toaster, the

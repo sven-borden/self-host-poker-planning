@@ -11,6 +11,9 @@ import { createRoom, type Guest, guestsJoin, handCard, join, phone, sameUser } f
 // desktop, and a CI runner is slower, so it gets less of a slowdown and tests the same
 // phone, never more than 4x. `pnpm exec playwright test reveal-performance --no-deps` runs it alone; in the
 // whole suite it runs after everything else (`performance` in playwright.config.ts).
+//
+// The sound is on (#44), the page's first tap starting it: the worst case has sixteen flicks
+// and a chord to lay out as well.
 
 /** DevTools' "Mid-tier mobile" CPU, on the desktop that `REFERENCE_MS` was measured on. */
 const MID_RANGE_RATE = 4;
@@ -47,6 +50,7 @@ const benchmark = (page: Page) =>
 
 async function watchLongTasks(page: Page) {
   await page.addInitScript(() => {
+    window.localStorage.setItem("pp-sound", JSON.stringify({ on: true }));
     const tasks: { start: number; duration: number }[] = [];
     Object.assign(window, { __longTasks: tasks });
     new PerformanceObserver((list) => {

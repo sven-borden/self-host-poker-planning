@@ -426,6 +426,16 @@ export const fr: Catalog<"many"> = {
     cancel: "Annuler",
     targetAway: "{{name}} est hors ligne.",
   },
+  sound: {
+    title: "Effets sonores",
+    off: "Effets sonores : désactivés",
+    on: "Effets sonores : activés",
+    waiting: "Effets sonores : activés, dès votre premier clic ou votre première touche",
+    enable: "Jouer les effets sonores",
+    hint: "Une carte posée, la révélation, un consensus et les dernières secondes du minuteur. Enregistré sur cet appareil.",
+    volume: "Volume",
+    level: "{{level, number(style: percent; maximumFractionDigits: 0)}}",
+  },
   claim: {
     away: "{{name}}, le product owner, est hors ligne.",
     gone: "Le product owner a quitté la salle.",

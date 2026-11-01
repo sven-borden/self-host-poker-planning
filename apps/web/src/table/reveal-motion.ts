@@ -21,6 +21,8 @@ export const FADE_AWAY_MS = 350;
 const FADE_AWAY_SCALE = 0.6;
 /** A badge pops onto a seat in this long (#20). */
 export const POP_MS = 300;
+/** The viewer's card travels from the hand to above its slot in this long (#18)… */
+export const TRAVEL_MS = 520;
 /** A card lands on its slot in this long, from this far above it (#18, #43). */
 export const DROP_MS = 380;
 export const HOVER_PX = 10;

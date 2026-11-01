@@ -895,6 +895,31 @@ own, so no frame of a 16-seat reveal holds the page for 50 ms on a mid-range pho
 steps take a few frames, and nothing visibly waits on them: the columns and the rest of the
 results start when the cards have settled, a second or two on.
 
+## Sound
+
+Off by default; heard only by a person who turned it on, on that device (#44, ADR-020). A
+speaker in the top bar, left of the language, once the person is in the room; crossed out
+while off or at volume 0. It opens a popover: the switch "Play sound effects", a line saying
+what is heard and that it stays on this device, and "Volume" (0 to 100 % in steps of 5, 60 %
+to start, disabled while off, each move heard). Turning it on is heard at once.
+
+After a reload the browser lets nothing play before a gesture, so the speaker greys and its
+name says "on, from your first click or key press"; nothing that happened before then plays
+late.
+
+| Moment | Sound | When |
+|---|---|---|
+| A card placed | a low thud and a little of the card's edge | as it lands: 150 ms after someone's card appears, 670 ms after the viewer's own (the end of its flight); only a new card, never a take-back, and never someone else's changed card |
+| Flip | a flick of noise, no pitch, a little higher or lower each time so sixteen riffle | as each card turns edge-on, in the flips' stagger; as each mini card is dealt after an anonymous reveal; a card changed after the reveal, 85 ms in |
+| Reveal | two soft mallet notes rising, A then E | at once, for everyone, whoever revealed |
+| Consensus | C major broken upwards, four notes | when the cards have settled, as the pill pops; a consensus made by a changed card, after its turn |
+| Last seconds | a wood-block tick, a semitone higher each time | as "0:05" to "0:01" show; a page that opens late starts at the second it is in; the reveal or "Time is up" ends them |
+
+Nothing rings over a voice on a call: all but the two moments that matter last under 100 ms,
+and those fade within a second. Under reduced motion nothing turns, so no flicks, and the
+consensus follows the reveal's notes. Nothing is said by sound alone: the live region and the
+screen say all of it. Hidden tabs hear everything: that is what it is for.
+
 ## Accessibility
 
 - Text contrast at least 4.5:1 in both themes; focus ring 2 px `--brass`.

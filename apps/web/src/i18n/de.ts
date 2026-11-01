@@ -419,6 +419,16 @@ export const de: Catalog = {
     cancel: "Abbrechen",
     targetAway: "{{name}} ist abwesend.",
   },
+  sound: {
+    title: "Soundeffekte",
+    off: "Soundeffekte: aus",
+    on: "Soundeffekte: an",
+    waiting: "Soundeffekte: an, ab Ihrem ersten Klick oder Tastendruck",
+    enable: "Soundeffekte abspielen",
+    hint: "Eine gelegte Karte, das Aufdecken, ein Konsens und die letzten Sekunden des Timers. Auf diesem Gerät gespeichert.",
+    volume: "Lautstärke",
+    level: "{{level, number(style: percent; maximumFractionDigits: 0)}}",
+  },
   claim: {
     away: "{{name}}, der Product Owner, ist abwesend.",
     gone: "Der Product Owner hat den Raum verlassen.",

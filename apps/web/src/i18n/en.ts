@@ -462,6 +462,16 @@ export const en = {
     cancel: "Cancel",
     targetAway: "{{name}} is away.",
   },
+  sound: {
+    title: "Sound effects",
+    off: "Sound effects: off",
+    on: "Sound effects: on",
+    waiting: "Sound effects: on, from your first click or key press",
+    enable: "Play sound effects",
+    hint: "A card placed, the reveal, a consensus and the timer’s last seconds. Saved on this device.",
+    volume: "Volume",
+    level: "{{level, number(style: percent; maximumFractionDigits: 0)}}",
+  },
   claim: {
     away: "{{name}}, the product owner, is away.",
     gone: "The product owner left the room.",

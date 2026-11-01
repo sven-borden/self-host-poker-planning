@@ -10,6 +10,7 @@ import { buttonVariants } from "../components/ui/button.tsx";
 import { errorMessage } from "../i18n/errors.ts";
 import { useT } from "../i18n/hooks.ts";
 import { COOKIES_BLOCKED, UNAUTHENTICATED } from "../identity/identity.ts";
+import { RoomSoundButton } from "../sound/sound-button.tsx";
 import { useIdentityStore } from "../stores/identity-store.ts";
 
 // The toaster (sonner) loads after first render: no toast can come before the room has
@@ -46,16 +47,18 @@ function RootLayout() {
       {/* Inside the safe areas: the page runs under a notch or a home indicator (viewport-fit=cover). */}
       <header className="border-b border-line bg-surface pt-[env(safe-area-inset-top)]">
         <div
-          className={`mx-auto flex max-w-5xl items-center justify-between gap-4 py-2 phone:py-1 ${GUTTERS}`}
+          className={`group/bar mx-auto flex max-w-5xl items-center justify-between gap-4 py-2 phone:py-1 ${GUTTERS}`}
         >
           <Link
             to="/"
             className="flex min-h-11 items-center gap-2.5 rounded-md font-display text-base font-[760] [font-stretch:110%]"
           >
             <BrandMark />
-            {t("app.name")}
+            {/* Under 360 px three buttons leave no room for the words: the mark says it. */}
+            <span className="narrow:group-has-[[data-sound]]/bar:sr-only">{t("app.name")}</span>
           </Link>
           <div className="flex items-center gap-1">
+            <RoomSoundButton />
             <LanguageSwitcher />
             <ThemeToggle />
           </div>

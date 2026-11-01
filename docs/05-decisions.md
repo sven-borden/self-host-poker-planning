@@ -310,3 +310,41 @@ everything into a transition (commits are not interruptible, so the frame stays 
 the store's `useSyncExternalStore` opts out); `content-visibility` on the panels (does not
 reach the commit, and the page's height jumps); a smaller results panel on phones (removes
 what the team came for).
+
+## ADR-020: Sound effects synthesised in the page, off by default
+
+**Decision.** Five sounds (a card placed, a flip, the reveal, a consensus, the timer's last
+seconds) as data (`sound/sound-recipes.ts`), played with oscillators and a short noise
+buffer through the Web Audio API. Off until a person turns them on; on or off and the
+volume stay on the device (`pp-sound`), not on the user or the room.
+
+**The gesture.** The `AudioContext` is made in a gesture's handler, never at load: the
+switch, or after a reload the first click or key. `play` drops a sound unless the context
+runs, so nothing queues up for the first click and a reveal missed before it stays missed.
+The button says so meanwhile. `Permissions-Policy: autoplay=()` stays: it blocks audio
+without a gesture, and Chromium lets a context start after one (checked under the
+production headers, `e2e/sound.spec.ts`).
+
+**What a sound follows.** The live region's news (`liveEvents`), so a sound obeys the rules a
+sentence does: a changed card before the reveal is not news, and no sound depends on a
+value before the reveal. The viewer's own card comes from `yourVote`. Each cue lands on
+what the eye sees; under reduced motion nothing turns, so there are no flicks.
+
+**Hidden tabs are the point.** The story is noticing a reveal while looking elsewhere, and a
+hidden tab holds timers back. So the timer's five ticks are laid out ahead on the audio
+clock and taken back with the timer, and cues run from a `MessageChannel`, not a timeout.
+That task is also what keeps them out of the reveal's commit: laying out 16 flicks and a
+chord takes 7 ms at 4x CPU, more than that task has to spare (ADR-019).
+
+**Where it lives.** A speaker in the top bar, beside language and theme, which are device
+preferences too, shown only to someone in the room. A fourth button in the room's header
+broke the room's code across lines at 360 px. The control, the synth and the cues are a
+lazy chunk; a failed load costs the button, never the page.
+
+**Alternatives.** Audio files (bytes, licences, `media-src` in the CSP, and no pitch per
+tick); an `AudioWorklet` (needs `script-src` for a worklet, and nothing here needs it); a
+setting on the user (a person's phone and laptop want different answers).
+
+**Not heard yet.** The recipes were checked by rendering them offline (no clipping, every
+voice ends in silence, the reveal stronger than a card), not by ear. They are numbers in
+one file.

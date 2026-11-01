@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from "react";
 import { cn } from "../lib/utils.ts";
 import { REDUCED_FADE_SECONDS } from "../motion/motion.tsx";
 import { CARD_FACE, CardValue } from "../table/cards.tsx";
-import { DROP_MS, HOVER_PX } from "../table/reveal-motion.ts";
+import { DROP_MS, HOVER_PX, TRAVEL_MS } from "../table/reveal-motion.ts";
 
 // The card's trip between the hand and the viewer's seat (#18; docs/03-design-brief.md,
 // "Motion spec"). Decorative only: the hand's pressed card, the seat's voted badge and
@@ -33,8 +33,6 @@ export interface Flight {
   slot: Box;
 }
 
-/** Hand → seat: a 520 ms arc, then the drop onto the slot. */
-export const TRAVEL_MS = 520;
 /** The arc's midpoint rises this far above the straight line. */
 const ARC_PX = 36;
 const TILT_DEG = -9;
