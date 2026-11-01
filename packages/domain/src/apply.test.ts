@@ -650,6 +650,44 @@ describe("membership", () => {
     expect(same.state).toBe(before);
   });
 
+  it("joins with an avatar, and refuses one that is not on the list", () => {
+    const join = { type: "join", name: "Zoe", role: "voter" } as const;
+    const joined = ok(send(room(), { ...join, avatar: "fox" }, OUT));
+    expect(joined.participants[OUT]?.avatar).toBe("fox");
+    expect(ok(send(room(), join, OUT)).participants[OUT]).not.toHaveProperty("avatar");
+    for (const avatar of ["dragon", "", "constructor"]) {
+      expect(send(room(), { ...join, avatar }, OUT)).toMatchObject({
+        ok: false,
+        error: "bad_avatar",
+      });
+    }
+  });
+
+  it("sets, changes and clears an avatar, and treats the same one as no change", () => {
+    const set = send(room(), { type: "setAvatar", avatar: "owl" }, A);
+    expect(set.causes).toEqual([{ type: "avatarChanged", who: A }]);
+    const picked = ok(set);
+    expect(picked.participants[A]?.avatar).toBe("owl");
+    const same = send(picked, { type: "setAvatar", avatar: "owl" }, A);
+    expect(same).toEqual({ ok: true, state: picked, causes: [] });
+    expect(same.state).toBe(picked);
+    const cleared = ok(send(picked, { type: "setAvatar", avatar: null }, A));
+    expect(cleared.participants[A]).not.toHaveProperty("avatar");
+    const before = room();
+    expect(send(before, { type: "setAvatar", avatar: null }, A).state).toBe(before);
+  });
+
+  it("refuses an avatar off the list, and from someone not in the room", () => {
+    expect(send(room(), { type: "setAvatar", avatar: "dragon" }, A)).toMatchObject({
+      ok: false,
+      error: "bad_avatar",
+    });
+    expect(send(room(), { type: "setAvatar", avatar: "owl" }, OUT)).toMatchObject({
+      ok: false,
+      error: "not_participant",
+    });
+  });
+
   it("changes roles, dropping the vote of a voter who starts observing", () => {
     const before = room({ round: voting({ votes: { [A]: { card: "3" } } }) });
     const result = send(before, { type: "setRole", role: "observer" }, A);

@@ -206,6 +206,37 @@ read, but cards in Redis); sticky sessions with polling (a balancer setting ever
 self-hoster must get right); Postgres `LISTEN/NOTIFY` (no new service, but no request and
 answer between instances, and one more long-lived connection per instance on the pool).
 
+## ADR-018: Avatars printed on the person's colour, moving one at a time (2026-11-01, #42)
+
+**Context.** W4 adds 24 small animated avatars, picked by choice and optional. The room
+route has 22.6 kB of its 200 kB budget left with four more delight issues to come. Colours
+already tell people apart at the table (#17), the CSP forbids inline styles and scripts,
+and #27 found that an animation running on every frame restyles the page for good.
+
+**Decision.** Each drawing is a list of paths in a TypeScript module, in a lazy chunk,
+rendered inline: tones are classes on the token palette (card face, card ink, card edge,
+brass), so themes, the away state and a brand reach them, and no `dangerouslySetInnerHTML`
+is needed. The disc stays the person's colour; only the face on it changes, and a drawing
+counts as a face in `avatarLooks`. An avatar shows initials until the chunk arrives, and
+for an id it does not know. The domain lists the ids, so only those reach `live` or
+`user.avatar`; a change goes through `apply` (`setAvatar`), and the user row is a nullable
+column read back with the session. The picker is native radios with a save step, so the
+arrow keys send nothing. Idle life is one gesture at a time, from one timer shared by every
+avatar on the page, through `Element.animate`: nothing runs between gestures, reduced
+motion and a hidden tab skip them.
+
+**Consequences.** All 24 weigh 21 kB as markup, under the issue's 60 KB (a test measures
+it), and a room where nobody picks one never loads them. There may be a short moment of
+initials on first load. Sixteen people share one blink or bob every couple of seconds
+instead of each moving on their own, which suits a calm table and costs no frames. A
+drawing may repeat at a table in another colour; past eight, initials take over. Forced
+colours keep the drawing as drawn. **Alternatives.** Full-colour animals (no room for the
+person's colour, and each would need tuning on eight discs); `.svg` files through `<img>`
+or a sprite (no tokens, no away tone, a page cannot pause an image's animations, and the
+policy applies to their inline styles); a CSS loop per avatar (a restyle on every frame for
+16 seats, in a tab left open all day); applying a pick on each arrow press (a command per
+key).
+
 ## ADR-017: Opt-in observability that never sees a room (2026-10-29, #40)
 
 **Context.** ADR-014 promises no tracking by default; Sentry and Umami are opt-in. A

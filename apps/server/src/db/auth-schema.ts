@@ -25,6 +25,8 @@ export const user = pgTable("user", {
   createdAt: instant("created_at").notNull().defaultNow(),
   updatedAt: instant("updated_at").notNull().defaultNow(),
   isAnonymous: boolean("is_anonymous").default(false),
+  /** The avatar the person picked (#42), one of the domain's ids; null shows initials. */
+  avatar: text("avatar"),
 });
 
 export const session = pgTable(

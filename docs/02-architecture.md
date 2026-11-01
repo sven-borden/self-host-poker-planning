@@ -114,7 +114,7 @@ type RoomSettings = {
 type Participant = {
   name: string;                     // 1–32 characters, trimmed
   role: "voter" | "observer";
-  avatar?: string;                  // avatar id (W4)
+  avatar?: AvatarId;                // one of 24 (#42); absent, they show initials
   joinedAt: number;
   connected: boolean;
   awaySince?: number;               // set after the presence grace period
@@ -206,9 +206,10 @@ client that sends one gets `bad_payload`; the server's timers send it (section 9
 
 | Command | Who | Rule (error codes) |
 |---|---|---|
-| `join {name, role}` | anyone admitted | name with whitespace runs (tabs, line breaks) collapsed to one space and trimmed, 1–32 chars and at most 512 code units, no lone surrogate, at most 3 combining marks in a row (`bad_name`; titles follow the same rules with 200 chars); `already_joined`; `room_full` past 16 counted or 32 in all |
+| `join {name, role, avatar?}` | anyone admitted | `bad_avatar` for an id off the domain's list; name with whitespace runs (tabs, line breaks) collapsed to one space and trimmed, 1–32 chars and at most 512 code units, no lone surrogate, at most 3 combining marks in a row (`bad_name`; titles follow the same rules with 200 chars); `already_joined`; `room_full` past 16 counted or 32 in all |
 | `leave` | self | removes the person (and their vote while Voting); after a named reveal the vote stays with the `name` they had (#19), after an anonymous one the card stays alone; a leaving PO keeps ownership |
 | `rename {name}` | self | as `join` |
+| `setAvatar {avatar}` | self | an id on the domain's list, or `null` for the initials (`bad_avatar`); no change without a cause; the `avatarChanged` cause says nothing to the live region (#42) |
 | `setRole {role}` | self | voter → observer drops the vote while Voting; observer → voter checks capacity when observers do not count |
 | `kick {who}` | PO | `cannot_kick_self`, `unknown_participant`; the vote as for `leave` |
 | `startRound {subject}` | PO | any phase; from Voting it abandons the round (the web offers it only in the lobby and after a reveal, #21); number + 1; captures deck, specials, anonymity; starts `timer.seconds` (`bad_subject`). A link's `key` is read here (`cleanSubject` → `linkKey`, in `apply-subject.ts`, so by the server; a client's own is dropped): a Jira key (`[A-Z][A-Z0-9_]{1,31}-[1-9][0-9]{0,9}`, read in any case, stored in capitals) from a path ending in `/browse/KEY` or Jira Cloud's `/projects/{project}/issues/KEY`, or a query's `selectedIssue=KEY`, on any host; an Azure DevOps work item id from a path ending in `/_workitems/edit/{id}` after one to three segments, on any host (Azure DevOps Server is self-hosted), or a query's `workitem={id}` on `dev.azure.com` and `*.visualstudio.com`, stored as the digits |
@@ -337,8 +338,8 @@ Server: `apps/server/src/sync/room-sync.ts` (the `handlers` of `createRealtime`)
   messages a second with bursts of 20, for `enter`, `cmd` and `history` alike, before any
   parsing. Past it: `rate_limited`; the socket and the room stay up. Two tighter buckets
   of the person's sit behind it (#36), taken only by a message that parsed: roster
-  commands (`join`, `leave`, `rename`, `setRole`) 10 a minute with bursts of 10, since
-  each is a commit every socket of the room hears and a screen reader announces (and
+  commands (`join`, `leave`, `rename`, `setAvatar`, `setRole`) 10 a minute with bursts of
+  10, since each is a commit every socket of the room hears and a screen reader announces (and
   `/api/me/name` allows 10 names a minute); `history` 2 a second with bursts of 10, since
   each is a database read of up to 50 rounds. A person holds at most 8 sockets: the next
   handshake is refused with `rate_limited`. The buckets outlive the person's last socket
@@ -590,6 +591,12 @@ password, no social provider before W5.
   `{ code: "bad_name" }`; it refuses another `Origin` and a non-JSON body, and allows 10
   changes per user and 60 per address a minute. Better Auth's `/update-user` is never
   forwarded.
+- **Avatar** (#42): `user.avatar`, nullable, an additional field with `input: false`, so
+  only `POST /api/me/avatar { avatar }` writes it: an id on the domain's list or `null`,
+  under the same checks and limits as the name, in buckets of its own; it answers
+  `{ avatar }` or `{ code: "bad_avatar" }`. It reads back with the session, and the page
+  ignores an id it does not know. The room hears of it through `join` and `setAvatar`, as
+  it hears of a name: other rooms keep what they have.
 - **Privacy**: sessions store neither the client address nor the user agent (a database
   hook nulls both); Better Auth's telemetry is off.
 - **Logs**: a failed query's error carries its parameters (a session token), so no
@@ -756,6 +763,7 @@ password, no social provider before W5.
   | Anonymous sign-in | guests in a loop | address | 60 a minute |
   | Other auth endpoints | Better Auth's routes | address and path | 100 in 10 s |
   | Display name (`POST /api/me/name`) | name churn | person / address | 10 / 60 a minute |
+  | Avatar (`POST /api/me/avatar`) | avatar churn | person / address | 10 / 60 a minute |
   | Password checks, all (`/access`) | CPU (argon2), testing codes | address | 300 in 10 min |
   | Wrong passwords | brute force, one person's typos | person and room | 10 in 10 min |
   | Wrong passwords | a handful of guests on one address | address and room | 25 in 10 min |
@@ -763,7 +771,7 @@ password, no social provider before W5.
   | Password changes (`PUT`, `DELETE`) | hashing on demand | person (PO) | 30 in 10 min |
   | argon2 runs at once | memory (19 MiB each) | instance | 2, 32 waiting at most 2 s, then 503 `busy` |
   | Socket messages (`enter`, `cmd`, `history`) | the server's work | person, all sockets | 10 a second, bursts of 20 |
-  | Roster commands (`join`, `leave`, `rename`, `setRole`) | broadcast and announcement floods | person | 10 a minute, bursts of 10 |
+  | Roster commands (`join`, `leave`, `rename`, `setAvatar`, `setRole`) | broadcast and announcement floods | person | 10 a minute, bursts of 10 |
   | History requests | database reads | person | 2 a second, bursts of 10 (the web's `historyPace`, #34, sends at most 8 at once, then 2 a second) |
   | Sockets | multiplying the buckets | person | 8 at once |
   | Connections before a socket | memory | connection | none without the session cookie; closed at a refusal, or after 5 s without a socket |

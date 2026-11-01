@@ -102,6 +102,21 @@ describe("wire commands", () => {
     expect(
       toDomainCommand({ id: "1", type: "startTimer", payload: { seconds: 2.5 } }),
     ).toMatchObject({ ok: true });
+    expect(
+      toDomainCommand({ id: "1", type: "setAvatar", payload: { avatar: "dragon" } }),
+    ).toMatchObject({ ok: true, command: { avatar: "dragon" } });
+  });
+
+  it("cap an avatar's length, and take null only where it means the initials", () => {
+    const avatar = "a".repeat(33);
+    expect(toDomainCommand({ id: "1", type: "setAvatar", payload: { avatar } }).ok).toBe(false);
+    const join = { name: "Ana", role: "voter" };
+    expect(toDomainCommand({ id: "1", type: "join", payload: { ...join, avatar: null } }).ok).toBe(
+      false,
+    );
+    expect(
+      toDomainCommand({ id: "1", type: "setAvatar", payload: { avatar: null } }),
+    ).toMatchObject({ ok: true, command: { avatar: null } });
   });
 
   const junk: Array<[string, unknown]> = [

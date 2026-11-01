@@ -35,7 +35,7 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   at its next batch and waits for it; `runNow()` is for tests.
 - `src/auth.ts`: identity. `createAuth(config, db, logger)` builds Better Auth (Drizzle
   adapter, anonymous plugin, options in `authOptions`); `registerAuthApi` mounts
-  `/api/auth/*` and `POST /api/me/name`; `sessionMiddleware(auth)` is the socket
+  `/api/auth/*`, and `POST /api/me/name` and `/api/me/avatar`; `sessionMiddleware(auth)` is the socket
   handshake; `sessionUser(auth, headers)` resolves a cookie into a `SocketUser`
   (`{ id, name, isAnonymous }`) or null, and rejects when the database fails.
 - `src/rooms.ts`: the room API (#14). `registerRoomApi(app, { auth, rooms, config,
@@ -70,7 +70,7 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   `@pp/protocol`'s event maps; takes a token from the sender's bucket, one per person
   for all their sockets (`sync/token-bucket.ts`, 10 a second, bursts of 20, else
   `rate_limited`), then parses every payload before a handler sees it; a parsed roster
-  command (`join`, `leave`, `rename`, `setRole`) takes a token from the person's
+  command (`join`, `leave`, `rename`, `setAvatar`, `setRole`) takes a token from the person's
   `ROSTER_LIMIT` bucket too (10 a minute), a parsed `history` request from
   `HISTORY_LIMIT` (2 a second, bursts of 10). A person holds at most
   `MAX_SOCKETS_PER_USER` (8) sockets; the next handshake gets `rate_limited`. Engine.IO's
@@ -276,6 +276,10 @@ keeps (#35).
 - `user.name` is `""` until the person picks one; `POST /api/me/name` sets it through
   the domain's `cleanName`, rate limited per user and per address. Never write
   `user.name` another way.
+- `user.avatar` is null until the person picks one (#42); `POST /api/me/avatar` sets it to
+  an id on the domain's list, or back to null, under the same checks and limits as the
+  name (`changeMine`), and it reads back with the session. It is an additional field with
+  `input: false`, so a sign-in cannot set it.
 - Only `AUTH_ROUTES` (get-session, sign-in/anonymous, sign-out) reach Better Auth; add
   an endpoint there only after checking what it returns (no tokens) and what it lets a
   client change. Cookie names come from `cookieNaming` (`__Host-pp.*` on https).

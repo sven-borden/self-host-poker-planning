@@ -2,6 +2,7 @@
  * The room model (architecture, section 3). `RoomState` is what the server stores as the
  * room's `live` JSON; every change to it goes through `apply` (apply.ts).
  */
+import type { AvatarId } from "./avatars.ts";
 import type { Card, DeckSpec, SpecialCard } from "./decks.ts";
 
 /** A Better Auth user id (guest or account). */
@@ -43,8 +44,8 @@ export type Participant = {
   /** 1 to 32 user-perceived characters (at most 512 code units), trimmed. */
   name: string;
   role: Role;
-  /** Avatar id (W4). */
-  avatar?: string;
+  /** The avatar the person picked (#42); absent, they show their initials. */
+  avatar?: AvatarId;
   joinedAt: number;
   connected: boolean;
   /** Set by presence once the grace period after the last socket closed has passed. */

@@ -347,6 +347,10 @@ function commandArb(ids: () => string[]) {
     fc.record({ type: fc.constant("join"), payload: fc.record({ name: text(40), role }) }),
     fc.record({ type: fc.constant("leave") }),
     fc.record({ type: fc.constant("rename"), payload: fc.record({ name: text(40) }) }),
+    fc.record({
+      type: fc.constant("setAvatar"),
+      payload: fc.record({ avatar: fc.option(text(10), { nil: null }) }),
+    }),
     fc.record({ type: fc.constant("setRole"), payload: fc.record({ role }) }),
     fc.record({ type: fc.constant("kick"), payload: fc.record({ who }) }),
     fc.record({ type: fc.constant("startRound"), payload: fc.record({ subject }) }),

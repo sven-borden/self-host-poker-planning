@@ -310,6 +310,57 @@ describe("anonymous sign-in", () => {
   });
 });
 
+describe("the avatar", () => {
+  const pick = (cookie: string, body: unknown, headers: Record<string, string> = {}) =>
+    call("/api/me/avatar", { method: "POST", cookie, body, headers });
+  const saved = async (cookie: string) =>
+    Reflect.get((await sessionOf(cookie))?.user ?? {}, "avatar");
+
+  it("is stored on the user, reads back with the session, and clears with null", async () => {
+    const { cookie } = await signIn({ "x-forwarded-for": "198.51.100.210" });
+    expect(await saved(cookie)).toBeNull();
+    expect(await pick(cookie, { avatar: "fox" })).toMatchObject({
+      status: 200,
+      json: { avatar: "fox" },
+    });
+    expect(await saved(cookie)).toBe("fox");
+    expect(await pick(cookie, { avatar: null })).toMatchObject({
+      status: 200,
+      json: { avatar: null },
+    });
+    expect(await saved(cookie)).toBeNull();
+  });
+
+  it("refuses what is not on the domain's list with bad_avatar", async () => {
+    const { cookie } = await signIn({ "x-forwarded-for": "198.51.100.211" });
+    for (const avatar of ["dragon", "", "constructor", 42, undefined]) {
+      expect(await pick(cookie, { avatar })).toMatchObject({
+        status: 400,
+        json: { code: "bad_avatar" },
+      });
+    }
+    expect(await saved(cookie)).toBeNull();
+  });
+
+  it("needs a session and the app's own origin, and has a limit of its own", async () => {
+    const { cookie } = await signIn({ "x-forwarded-for": "198.51.100.212" });
+    expect(await pick("", { avatar: "fox" })).toMatchObject({
+      status: 401,
+      json: { code: "unauthenticated" },
+    });
+    expect(
+      await pick(cookie, { avatar: "fox" }, { origin: "https://elsewhere.example" }),
+    ).toMatchObject({ status: 403, json: { code: "not_allowed" } });
+    for (let i = 0; i < RENAME_LIMITS.user.max; i++) {
+      expect((await pick(cookie, { avatar: "fox" })).status).toBe(200);
+    }
+    expect(await pick(cookie, { avatar: "fox" })).toMatchObject({
+      status: 429,
+      json: { code: "rate_limited" },
+    });
+  });
+});
+
 describe("the display name", () => {
   const rename = (cookie: string, body: unknown, headers: Record<string, string> = {}) =>
     call("/api/me/name", { method: "POST", cookie, body, headers });

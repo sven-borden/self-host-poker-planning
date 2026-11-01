@@ -55,8 +55,8 @@ Contrast rules (WCAG 2.2 AA, both themes, on `--bg` and `--surface`):
   separates content that is identifiable without it.
 - `apps/web/src/theme/tokens.test.ts` checks these ratios from this table.
 
-Avatar placeholders (until W4): initials on one of eight colours (`--av1` … `--av8`)
-derived from the user id, white text, readable in both themes.
+Avatars sit on one of eight colours (`--av1` … `--av8`) derived from the user id, the same
+in both themes: white initials, or the drawing the person picked (see "Avatars" below).
 
 ## Typography
 
@@ -218,8 +218,9 @@ Positions are percentages of the stage, so one formula serves every width:
   the card as soon as someone leaves; the name field then takes the focus and "A seat is
   free" is announced politely. When observers do not count and only the seats are
   taken, a voter is told so on the card and can join as an observer. Under the table a
-  "You" panel renames, switches between voter and observer, and leaves the room.
-- With more than 10 people on a phone, seats show initials only; names on tap. Every
+  "You" panel renames, changes the avatar (#42), switches between voter and observer, and
+  leaves the room.
+- With more than 10 people on a phone, seats show the avatar alone; names on tap. Every
   seat opens the same way, on tap or by keyboard: a popover with the whole name and what
   its badges mean ("Product owner · Away · Voted"). Every seat is a button whatever its
   state, so the focus never drops when someone votes or goes away.
@@ -241,7 +242,8 @@ Positions are percentages of the stage, so one formula serves every width:
   that nobody with the same initials has. So a rename changes no colour, and a leave
   moves only people who gave way. Up to 8 people get 8 different colours, and past 8
   twins the second letter becomes a number ("A2"). A name ending in a number keeps up
-  to two of its digits, so "Guest 1" to "Guest 16" read "G1" to "G16".
+  to two of its digits, so "Guest 1" to "Guest 16" read "G1" to "G16". Since #42 a picked
+  drawing counts as the person's face in all of this (see "Avatars").
 - The table picks its variant from the width its container gives it, not from the
   viewport, so any page can host it.
 - #13 proves the geometry for 1–16 people in every room from 328 px (a 360 px phone)
@@ -252,6 +254,44 @@ Positions are percentages of the stage, so one formula serves every width:
   (round 1) failed it: names dipped into the rounded table ends, and 16 slots touched on
   narrow screens. The changes above are the smallest set that passes; the code holds
   them in `GEOMETRY` (`apps/web/src/table/layout.ts`).
+
+## Avatars
+
+As built (#42, ADR-018):
+
+- **The set.** 24 animal heads, original work under the repo's MIT licence, printed like a
+  playing card: the warm `--card-face` over the person's `--av` colour, features in
+  `--card-ink`, a touch of `--card-edge` and `--brass`. The disc stays the person's, so a
+  pick changes nobody's colour, and those tones read on all eight discs in both themes
+  (3:1 or more, `contrast.test.ts`). A head reads at the observers' 24 px.
+- **Optional.** Nobody has to pick: initials stay the default and remain one of the
+  choices. Until the drawings have loaded, and if they cannot load, a person shows their
+  initials: nobody's seat waits for a picture.
+- **Telling people apart.** A drawing counts as the person's face: no two people share
+  face and colour. One drawing can sit at a table in eight colours; a ninth person who
+  picked it shows their initials there, and keeps the pick.
+- **Joining.** Under the name, the person as the table will show them and an outline
+  button, "Choose an avatar" ("Change your avatar" once there is one), with a chevron: a
+  disclosure, closed by default, because most people came to vote and the form stays one
+  screen on a phone. The saved avatar is already set, as the name is. Its block is a lazy
+  chunk with its height held; if it cannot load the form goes on without it.
+- **In the room.** "Change your avatar" in the "You" panel opens the same picker in place,
+  on the current choice, with "Save" and "Cancel"; Esc cancels, and the focus returns to
+  the button either way. A refusal shows under it and the picker stays.
+- **The picker.** A group labelled "Your avatar", 25 native radios in 44 px targets, the
+  initials first, wrapping to the width. Each shows on the person's own colour, with its
+  name in a tooltip and for screen readers. Choosing only moves the choice, so the arrow
+  keys send nothing; Enter joins or saves. The pick wears a 2 px brass outline and a check
+  in a spruce disc (a shape, so it never rests on colour alone); the keyboard focus is an
+  ink outline further out, so the two never look alike.
+- **Idle life.** One gesture at a time, somewhere at the table, 1.5 to 3.5 s apart: a blink
+  (180 ms, the eyes close to a line) or, one time in three or so, a small bob (800 ms, 6 %
+  of the avatar, the drawing inside its disc). Calm, and cheap: between gestures nothing
+  runs. In the picker only the pick has idle life. Nothing moves under reduced motion or
+  while the tab is hidden, and an avatar means the same without it.
+- **Away.** The same grey disc with a dashed edge as initials, the drawing in `--ink-2`
+  (about 6:1) with its eyes shut, at rest. The moon badge and the seat's label say it too.
+- **Forced colours** leave a drawing alone: their palette would paint it one flat colour.
 
 ## Phones
 

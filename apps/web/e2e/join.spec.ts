@@ -266,7 +266,10 @@ test("the join form works with the keyboard alone and explains a refused name", 
   expect(names).toEqual([]);
 
   await name.fill("Kim");
-  // Tab to the role choice, pick observer with the arrow key, Tab to the button, Enter.
+  // Tab past the avatar to the role choice, pick observer with the arrow key, Tab to the
+  // button, Enter.
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "Choose an avatar" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("radio", { name: /^Voter/ })).toBeFocused();
   await page.keyboard.press("ArrowDown");

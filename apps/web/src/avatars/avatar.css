@@ -1,0 +1,69 @@
+/*
+ * The avatars' paints (#42, docs/03-design-brief.md, "Avatars"). Warm card face, card ink
+ * and brass, over the person's colour. Only tokens, like everything else, so a brand (W7)
+ * can repaint them.
+ */
+.pp-av-face {
+  fill: var(--card-face);
+}
+
+.pp-av-shade {
+  fill: var(--card-edge);
+}
+
+.pp-av-ink {
+  fill: var(--card-ink);
+}
+
+.pp-av-brass {
+  fill: var(--brass);
+}
+
+.pp-av-line,
+.pp-av-pale {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pp-av-line {
+  stroke: var(--card-ink);
+  stroke-width: 1.5;
+}
+
+.pp-av-pale {
+  stroke: var(--card-face);
+  stroke-width: 1.8;
+}
+
+/* The eyes close towards their own middle line. */
+.pp-av-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/*
+ * Away: the same grey disc as initials, the drawing in `--ink-2` on it (about 6:1 in both
+ * themes), its eyes shut. The moon badge and the seat's label say it too.
+ */
+[data-avatar-away] .pp-av-face,
+[data-avatar-away] .pp-av-shade,
+[data-avatar-away] .pp-av-brass {
+  fill: var(--ink-2);
+}
+
+[data-avatar-away] .pp-av-ink {
+  fill: var(--surface-2);
+}
+
+[data-avatar-away] .pp-av-line {
+  stroke: var(--surface-2);
+}
+
+[data-avatar-away] .pp-av-pale {
+  stroke: var(--ink-2);
+}
+
+[data-avatar-away] .pp-av-eyes {
+  transform: scaleY(0.15);
+}

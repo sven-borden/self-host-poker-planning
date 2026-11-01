@@ -16,6 +16,8 @@
  * such as `too_few_cards` (#28): an older client words an unknown code generically. New
  * HTTP-only error codes (`bad_room_name`, `wrong_password`, `bad_password`) never reach a
  * socket. Nor is a new client event with its own ack, such as `history` (#33): no message
- * an older peer sends or reads changes, and a client and its server ship together.
+ * an older peer sends or reads changes, and a client and its server ship together. Nor
+ * is the `avatar` of `join`, the `setAvatar` command or their `avatarChanged` cause (#42):
+ * a page reads only the causes it knows, and an older one never sends them.
  */
 export const PROTOCOL_VERSION = 4;

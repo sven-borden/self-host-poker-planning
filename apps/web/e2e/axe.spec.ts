@@ -57,6 +57,10 @@ test("the room: join screen, voting, revealed, the decision bar, settings, rules
     await ben.page.goto(page.url());
     await expect(ben.page.getByRole("textbox", { name: "Your name" })).toBeVisible();
     await audit(ben.page, "join screen");
+    await ben.page.getByRole("button", { name: "Choose an avatar" }).click();
+    await expect(ben.page.getByRole("radio", { name: "Tiger" })).toBeAttached();
+    await audit(ben.page, "avatar picker");
+    await ben.page.getByRole("button", { name: "Choose an avatar" }).click();
 
     await join(page, "Ana");
     await join(ben.page, "Ben");

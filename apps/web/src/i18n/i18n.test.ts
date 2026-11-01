@@ -137,6 +137,9 @@ describe("catalogs", () => {
   const SAME_AS_ENGLISH: Record<"fr" | "de", readonly string[]> = {
     fr: [
       "app.name",
+      "avatar.koala",
+      "avatar.lion",
+      "avatar.panda",
       "table.seatCardWord",
       "table.nameNumbered",
       "common.notifications",
@@ -164,6 +167,10 @@ describe("catalogs", () => {
     ],
     de: [
       "app.name",
+      "avatar.koala",
+      "avatar.otter",
+      "avatar.panda",
+      "avatar.tiger",
       "table.seatCardWord",
       "table.nameNumbered",
       "theme.system",

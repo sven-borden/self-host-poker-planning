@@ -1,6 +1,7 @@
 export { apply } from "./apply.ts";
 export { cleanName, cleanRoomName } from "./apply-input.ts";
 export { cleanSubject, linkKey } from "./apply-subject.ts";
+export { AVATAR_IDS, type AvatarId, isAvatarId } from "./avatars.ts";
 export type {
   ApplyContext,
   ApplyResult,
