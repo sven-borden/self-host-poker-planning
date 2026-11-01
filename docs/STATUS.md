@@ -152,6 +152,12 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
   (`POST /api/me/avatar`, `user.avatar`) for the next room. One blink or bob at a time,
   none under reduced motion or in a hidden tab; away, grey with shut eyes. A lazy 2.6 kB
   chunk; the room route loads 178.4 kB. Live at bac3f39.
+- The motion pass from #43 (ADR-019): the whole motion spec, with the voted badge's pop,
+  seats fading in and out while the others glide, and a card's drop on someone else's slot.
+  A 16-seat reveal has no long task on a mid-range phone: the table's cards draw first, the
+  seats' labels, the decision and the hand panel a step behind, the results after them.
+  `reveal-performance.spec.ts` holds it, alone after the other specs. The room route loads
+  178.4 kB. Live at 2aee937.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -162,22 +168,25 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- Nothing. Sven resumed with "resume work" (2026-11-01): #42 is merged. Each next task
-  waits for his word. No worktree is open.
+- Nothing. #43 is merged (2026-11-01). Each next task waits for Sven's word. No worktree
+  is open.
 - **No subagents** (Sven, 2026-10-29): the main session does each task itself, one at
   a time (see `CLAUDE.md`).
 
 ## Next
 
 - W3 (#33–#41): all merged but #38 and #41, which need Sven's OQ-1 and OQ-2. Without
-  them, the next task is W4's #43.
+  them, the next task is W4's #44.
 - Image size: 239 MB of 250 MB after #40 (236 MB before; architecture section 12 still
   quotes #11's 220 MB). A dependency of more than a few MB needs a look first.
 - Chores to fold into a later issue: a lazy catalog for the panels' copy (settings and
   history, a few kB off both pages); the burst test's one `room_not_found` under load;
   a higher anonymous sign-in limit for the db tests through `SetupTuning` (about 41 of
   60 a minute used, 3 more per new block); `/dev/table` crashes in WebKit (React #185),
-  with or without the CSP; no per-address cap on socket handshakes yet.
+  with or without the CSP; no per-address cap on socket handshakes yet; nothing uses
+  Motion's `m` any more (ADR-008), so `motion` could go, with `AppMotionConfig`; a new e2e
+  test that creates a room on the plain `page` fixture tips a fast local run over the 20
+  rooms in 10 minutes (use `newPerson`).
   - Each later setting drops its control into #25's panel (see the web README).
 - Left by #39 for later: rate limits shared through Redis, a sticky-session setting
   with polling, a Redis key prefix so two deployments can share one Redis.
