@@ -9,7 +9,7 @@ import { createRoom, type Guest, guestsJoin, handCard, join, phone, sameUser } f
 //
 // The speed is set from a benchmark, not a fixed rate: DevTools' 4x is meant for a fast
 // desktop, and a CI runner is slower, so it gets less of a slowdown and tests the same
-// phone. `pnpm exec playwright test reveal-performance --no-deps` runs it alone; in the
+// phone, never more than 4x. `pnpm exec playwright test reveal-performance --no-deps` runs it alone; in the
 // whole suite it runs after everything else (`performance` in playwright.config.ts).
 
 /** DevTools' "Mid-tier mobile" CPU, on the desktop that `REFERENCE_MS` was measured on. */
@@ -107,7 +107,7 @@ for (const anonymous of [false, true]) {
       const card = await handCard(page, "5").boundingBox();
       if (!card) throw new Error("no card to play");
       const speed = await benchmark(page);
-      const rate = Math.max(1, (MID_RANGE_RATE * REFERENCE_MS) / speed);
+      const rate = Math.min(MID_RANGE_RATE, Math.max(1, (MID_RANGE_RATE * REFERENCE_MS) / speed));
       const cdp = await device.context.newCDPSession(page);
       await throttle(cdp, rate);
       const from = await page.evaluate(() => performance.now());

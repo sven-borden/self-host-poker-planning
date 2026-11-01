@@ -1,10 +1,18 @@
-import { type ReactNode, useId, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useDeferredValue,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Popover, PopoverTrigger } from "../components/ui/popover.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
 import { Avatar } from "./avatar.tsx";
 import { SlotCard, type SlotFace } from "./cards.tsx";
-import { layoutTable, type TableVariant, variantFor } from "./layout.ts";
+import { layoutTable, type TableLayout, type TableVariant, variantFor } from "./layout.ts";
 import { useFocusAfterRemoval } from "./person-focus.ts";
 import { FLIP_STAGGER_MS, revealSettleMs } from "./reveal-motion.ts";
 import {
@@ -86,6 +94,57 @@ function ChangedMark({ corner }: { corner: boolean }) {
   );
 }
 
+interface SeatListProps {
+  people: TablePerson[];
+  layout: TableLayout;
+  settle: number;
+  actions?: PersonActions | undefined;
+}
+
+/**
+ * The seats, a step behind their cards: sixteen popovers are the heaviest part of the
+ * table, and a card turning over needs none of them (#43, ADR-019). The urgent render
+ * reuses the list; a deferred one, which React can pause for the page, draws the badges
+ * and the labels. Someone coming or leaving moves everyone, so then the seats go with the
+ * slots, at once. Each deferred render also brings a person's open popover the room as it
+ * is now (`latest`).
+ */
+function SeatList({ people, layout, settle, actions }: SeatListProps) {
+  const t = useT();
+  const label = t("table.seats");
+  const later = useDeferredValue(people);
+  const sameSeats =
+    later.length === people.length && later.every((person, i) => person.id === people[i]?.id);
+  const shown = sameSeats ? later : people;
+  const latest = useRef(actions);
+  latest.current = actions;
+  const steady = useCallback<PersonActions>(
+    (person, close) => latest.current?.(person, close) ?? null,
+    [],
+  );
+  const { seats, seat } = layout;
+  return useMemo(
+    () => (
+      <ul aria-label={label} className="m-0 list-none p-0">
+        {shown.map((person, i) => {
+          const place = seats[i];
+          return place ? (
+            <Seat
+              key={person.id}
+              person={person}
+              place={place}
+              geometry={seat}
+              settle={settle}
+              actions={steady}
+            />
+          ) : null;
+        })}
+      </ul>
+    ),
+    [label, shown, seats, seat, settle, steady],
+  );
+}
+
 /**
  * The boardroom table (ADR-005): a stage with the stadium table, a card slot per person,
  * the seats around it, and a status area in the middle. Presentational only: it renders
@@ -106,11 +165,9 @@ export function TableStage({
 }: TableStageProps) {
   const t = useT();
   const [roomRef, room] = useRoomWidth<HTMLDivElement>();
-  const layout = layoutTable(
-    people.length,
-    variant ?? (room === null ? "desktop" : variantFor(room)),
-  );
-  const seated = people.slice(0, layout.count);
+  const drawnAs = variant ?? (room === null ? "desktop" : variantFor(room));
+  const layout = useMemo(() => layoutTable(people.length, drawnAs), [people.length, drawnAs]);
+  const seated = useMemo(() => people.slice(0, layout.count), [people, layout.count]);
   // A dense phone table's slots (20 × 28) sit too close for the word: a corner mark.
   const corner = layout.variant === "phone" && layout.dense;
   const observersId = useId();
@@ -194,21 +251,7 @@ export function TableStage({
         >
           {children}
         </div>
-        <ul aria-label={t("table.seats")} className="m-0 list-none p-0">
-          {seated.map((person, i) => {
-            const place = layout.seats[i];
-            return place ? (
-              <Seat
-                key={person.id}
-                person={person}
-                place={place}
-                geometry={layout.seat}
-                settle={settle}
-                actions={actions}
-              />
-            ) : null;
-          })}
-        </ul>
+        <SeatList people={seated} layout={layout} settle={settle} actions={actions} />
       </div>
       {observers.length > 0 ? (
         <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-2">

@@ -3,9 +3,11 @@ import { OctagonXIcon } from "lucide-react";
 import {
   type ReactNode,
   startTransition,
+  useCallback,
   useDeferredValue,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -119,8 +121,9 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
   const ids = { hint: useId(), wait: useId() };
   const vote = useVote();
   const mine = shownCard(vote.state, confirmedOf(room));
-  const shown = withShownVote(room, mine);
-  const { people, observers, looks } = tableData(shown);
+  // The same people until the room or the pick changes: the seats redraw only then.
+  const shown = useMemo(() => withShownVote(room, mine), [room, mine]);
+  const { people, observers, looks } = useMemo(() => tableData(shown), [shown]);
   const hand = handView(shown, me);
   /** A refused start or reveal; a new round or phase clears it. */
   const [centreFailure, setCentreFailure] = useState<string | null>(null);
@@ -160,8 +163,10 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
     hand.kind === "cards" && hand.playable && !(revealed && me.isOwner),
     handPanel,
   );
-  // Undocking restyles the whole panel: a step behind the table, as the hand turns off.
+  // Undocking and turning off restyle the whole panel: a step behind the table (#43). A
+  // press in between goes to the server, which refuses it as any late press.
   const handDocked = useDeferredValue(docked);
+  const handOff = useDeferredValue(hand.kind !== "cards" || !hand.playable);
   // The table grows above a focused hand card (the results after a reveal by R, the
   // PO's decision): the card would slide out of sight, so it comes back into view, the
   // least scroll that shows it (#37, WCAG 2.4.7). The scroll padding keeps it above a dock.
@@ -230,6 +235,13 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
       slot: boxOf(slot),
     });
   }
+
+  const latestPick = useRef(pick);
+  latestPick.current = pick;
+  const onPick = useCallback(
+    (card: string, element: HTMLButtonElement) => latestPick.current(card, element),
+    [],
+  );
 
   const hint =
     hand.kind !== "cards"
@@ -328,9 +340,9 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           <Hand
             cards={hand.cards}
             selected={mine}
-            disabled={!hand.playable}
+            disabled={handOff}
             describedBy={ids.hint}
-            onPick={pick}
+            onPick={onPick}
           />
           {/* Docked, the hint is for screen readers only: the dock stays one card high in every language. */}
           <p

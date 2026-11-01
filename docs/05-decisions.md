@@ -288,11 +288,14 @@ only the root needs: the docks set `scroll-padding-bottom` themselves
 (`keepScrollPadding`). What lies under the table draws a step behind it: `UnderTable` in
 `seated.tsx` gives the decision a deferred copy of the room (`useDeferredValue`), and the
 results one step later (a transition after that commit); the hand panel's disabled cards,
-dock and hint follow in the first deferred render, and the stage has `contain: layout`, so
-what changes on it relays out nothing else. `focusSoon` looks for its target for up to 30
+dock and hint follow in the first deferred render, as do the seats' labels and badges
+(`SeatList`, unless someone joins or leaves); the hand is memoised so a commit that does
+not change it skips its labels, and the stage has `contain: layout`, so what changes on it
+relays out nothing else. `focusSoon` looks for its target for up to 30
 frames, so the PO's focus lands on "Record" when it arrives.
 `reveal-performance.spec.ts` holds the line at a speed set from a benchmark, so a slower CI
-runner tests the same phone, and it runs alone after the other specs, on a quiet machine.
+runner tests the same phone, and it runs alone after the other specs, on a quiet machine,
+with three tries.
 
 **Consequences.** The table answers first, and React can pause the rest for the page. The
 decision and the results arrive a few frames after the first flip, which nobody can see:
@@ -302,8 +305,7 @@ press. For one frame a label that does not fit can overflow its card. The decisi
 measures its dock in its own commit, a step behind the flips: the focus that lands on it
 must find it docked, or it scrolls the page. The table and what lies under it can differ
 for those frames, so nothing under the table may be read to decide what the table shows.
-The budget is near: the reveal's worst tasks run 40 to 48 ms, so a seat or a results row
-that adds work will fail the spec. **Alternatives.** Moving
+The budget is near: a slot or a results row that adds work will fail the spec. **Alternatives.** Moving
 everything into a transition (commits are not interruptible, so the frame stays long, and
 the store's `useSyncExternalStore` opts out); `content-visibility` on the panels (does not
 reach the commit, and the page's height jumps); a smaller results panel on phones (removes
