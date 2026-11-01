@@ -224,6 +224,7 @@ const ROSTER_COMMANDS: ReadonlySet<Command["type"]> = new Set([
   "join",
   "leave",
   "rename",
+  "setAvatar",
   "setRole",
 ]);
 

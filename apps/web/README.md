@@ -552,13 +552,31 @@ server sends and never decides the outcome of a round.
   bare `<main>`), `empty-table.tsx` (the token-drawn illustration) and
   `use-page-title.ts` (`usePageTitle(page)` sets "page · Poker Planning" and restores
   the title on unmount; never pass a code).
+- `src/avatars/` (#42, ADR-018): `art.ts` holds the 24 drawings as path lists (a head on a
+  48 × 48 box, each path a `Tone`; `both` mirrors a path, and winds the other way, so a
+  mirrored shape overlapping another needs a layer of its own or it punches a hole). It is
+  a lazy chunk: `use-art.ts` (`loadAvatarArt`, `useAvatarDrawing`) loads it once, for the
+  first avatar with a drawing or the picker; a failed load is forgotten. `avatar.css` gives
+  each tone its token, and the away state. `Avatar` (`table/avatar.tsx`) takes the id from
+  `look.art` and shows initials until the drawing is there, or for an id it does not
+  know; `avatarLooks` counts a drawing as the person's face and gives a ninth wearer of
+  one their initials. `idle.ts`: one gesture at a time (`holdIdle`, one timer for every
+  avatar marked `[data-avatar-art="idle"]`), skipped under reduced motion and in a hidden
+  tab. `avatar-picker.tsx` (`[data-avatar-picker]`, `[data-avatar-option]`) is native
+  radios that only move the choice; `join-avatar.tsx` is the join form's disclosure, a
+  lazy chunk the form can do without (`JoinAvatar`); `YouControls` opens the picker in
+  place with Save and Cancel. `saveAvatar` (`room/save-avatar.ts`) saves on the user before
+  `join` or `setAvatar`, skipped when unchanged, and a failed save stops nothing, as
+  `saveName`. `/dev/table`'s `avatars=1` gives everyone a drawing, `avatars=2` the same
+  one. Copy: `avatar.*`. Budgets after #42: see the build log.
 - `src/identity/identity.ts`: who this browser is (#10). `ensureIdentity({ force? })`
   reads `/api/auth/get-session` and, without a session, signs in as a guest
   (`/api/auth/sign-in/anonymous`); concurrent calls share one request. `setDisplayName(name)`
-  posts to `/api/me/name` and keeps the name the server stored. Both reject with
+  posts to `/api/me/name` and keeps the name the server stored; `setSavedAvatar(avatar)`
+  does the same for `/api/me/avatar`. All reject with
   `IdentityError` carrying the server's code. `useIdentityStore` holds `status`
-  (`idle`, `loading`, `ready`, `error`), `userId`, `name` (null until picked) and
-  `error`. Typed `fetch` calls, not `better-auth/client` (12 kB gzipped). `main.tsx`
+  (`idle`, `loading`, `ready`, `error`), `userId`, `name` (null until picked), `avatar`
+  (null for initials; an id this version does not know reads as null) and `error`. Typed `fetch` calls, not `better-auth/client` (12 kB gzipped). `main.tsx`
   starts the bootstrap next to the first render.
 
 ## Rules

@@ -48,7 +48,7 @@ test("a pick by keyboard reaches the table, everyone's page and the next room", 
   await expect(page.getByRole("heading", { name: "You", exact: true })).toBeVisible();
 
   await expect(seats(page).locator(`[data-seat][data-you] ${art}`)).toBeVisible();
-  await expect(page.locator("[data-you] [data-avatar] svg")).toBeVisible();
+  await expect(page.locator("section[data-you] [data-avatar] svg")).toBeVisible();
 
   // Someone else sees the drawing; a person without one keeps their initials.
   const ben = await newPerson(browser);

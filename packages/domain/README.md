@@ -56,7 +56,9 @@ canonical: `.` is the decimal mark and the domain never localises (the UI may sh
 
 `room.ts` (model, `DEFAULT_SETTINGS`, `createRoom`, limits), `commands.ts` (`Command`,
 `Cause`, `ErrorCode`, `ApplyResult`), `apply.ts` (the machine) and `apply-input.ts`
-(runtime validation of names, subjects, seconds and settings patches) (#3).
+(runtime validation of names, subjects, seconds and settings patches) (#3). `avatars.ts`
+lists the 24 avatar ids (#42): the drawings live in the web app, and only an id on this
+list reaches a room's state or the user's row (`bad_avatar`).
 `cleanRoomName` applies the same text rules to a room name (1 to
 `MAX_ROOM_NAME_LENGTH`, 60), which the server takes when it creates a room (#14). All of
 them refuse more than 3 combining marks in a row on one character. `room-code.ts` holds

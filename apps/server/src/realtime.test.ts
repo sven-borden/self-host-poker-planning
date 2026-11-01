@@ -351,6 +351,7 @@ describe("limits per person", () => {
     const roster = [
       { type: "join", payload: { name: "Ada", role: "voter" } },
       { type: "rename", payload: { name: "Ada L." } },
+      { type: "setAvatar", payload: { avatar: "fox" } },
       { type: "setRole", payload: { role: "observer" } },
       { type: "leave" },
     ];
