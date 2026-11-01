@@ -1,13 +1,12 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DROP_MS } from "../table/reveal-motion.ts";
+import { DROP_MS, TRAVEL_MS } from "../table/reveal-motion.ts";
 import {
   CardFlight,
   continueFrom,
   type Flight,
   flightKeyframes,
   type InAir,
-  TRAVEL_MS,
 } from "./card-flight.tsx";
 
 // The hand-to-seat trip (docs/03-design-brief.md, "Motion spec"): a 520 ms arc whose
