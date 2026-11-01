@@ -28,6 +28,7 @@ export default function SoundControl() {
   const lastPreview = useRef(0);
   const state = !on ? "off" : started ? "on" : "waiting";
   const label = t(`sound.${state}`);
+  const level = t("sound.level", { level: volume });
 
   function toggle(next: boolean) {
     setSoundPrefs({ on: next });
@@ -83,9 +84,10 @@ export default function SoundControl() {
             <label htmlFor={ids.volume} className="font-medium">
               {t("sound.volume")}
             </label>
-            <output htmlFor={ids.volume} className="text-sm text-ink-2 tabular-nums">
-              {t("sound.level", { level: volume })}
-            </output>
+            {/* For the eye: the slider says its own value, and a live region would say it twice. */}
+            <span aria-hidden="true" data-sound-level className="text-sm text-ink-2 tabular-nums">
+              {level}
+            </span>
           </div>
           <input
             id={ids.volume}
@@ -94,6 +96,7 @@ export default function SoundControl() {
             max={100}
             step={5}
             value={Math.round(volume * 100)}
+            aria-valuetext={level}
             disabled={!on}
             data-sound-volume
             className="h-11 w-full cursor-pointer accent-brass disabled:cursor-not-allowed disabled:opacity-50"

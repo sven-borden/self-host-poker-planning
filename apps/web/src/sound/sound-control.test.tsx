@@ -186,7 +186,8 @@ describe("the room's sound", () => {
     open();
     const slider = screen.getByRole<HTMLInputElement>("slider", { name: "Volume" });
     expect(slider.value).toBe("60");
-    expect(screen.getByRole("status").textContent).toContain("60");
+    expect(slider.getAttribute("aria-valuetext")).toContain("60");
+    expect(document.querySelector("[data-sound-level]")?.textContent).toContain("60");
     fireEvent.change(slider, { target: { value: "25" } });
     expect(savedPrefs()).toEqual({ on: true, volume: 0.25 });
     fireEvent.click(screen.getByRole("switch"));
