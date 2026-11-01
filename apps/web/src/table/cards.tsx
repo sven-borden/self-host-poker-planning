@@ -142,24 +142,30 @@ export function CardValue({
   room: number;
   index?: boolean;
 }) {
-  useLabelFonts();
+  const fonts = useLabelFonts();
   const ref = useRef<HTMLSpanElement>(null);
   const [clipped, setClipped] = useState(false);
+  const { scale, narrow } = labelFit(value, room);
 
-  // After every layout, and whenever the card's size changes without a render (a
-  // breakpoint): measure the drawn label against its card.
+  // Measure the drawn label against its card when the label or its fit changes, and
+  // whenever the card's size changes without a render (a breakpoint). The observer's first
+  // delivery does it, once the frame's layout is done: a read here, in the commit, would
+  // force a layout per label, and sixteen cards turning over would stall the reveal (#43).
+  // The wrapper of a clipped label remounts the label, hence `clipped`.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each of these redraws the label.
   useLayoutEffect(() => {
     const label = ref.current;
     if (!label) return;
     const check = () => setClipped(overflows(label));
-    check();
-    if (typeof ResizeObserver === "undefined") return;
     const card = label.closest(CARD_BOX);
-    if (!card) return;
+    if (!card || typeof ResizeObserver === "undefined") {
+      check();
+      return;
+    }
     const observer = new ResizeObserver(check);
     observer.observe(card);
     return () => observer.disconnect();
-  });
+  }, [value, scale, narrow, fonts, clipped]);
 
   if (value === "☕" || value === "∞") {
     const Icon = value === "☕" ? CoffeeIcon : InfinityIcon;
@@ -174,7 +180,6 @@ export function CardValue({
       />
     );
   }
-  const { scale, narrow } = labelFit(value, room);
   const label = (
     <span
       ref={ref}

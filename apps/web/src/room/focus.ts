@@ -10,6 +10,13 @@
  * under the fold of a laptop's screen, and the focus must never be out of sight.
  */
 export function focusSoon(...selectors: string[]) {
+  placeFocus(selectors, PLACE_FRAMES);
+}
+
+/** How long a target may take to show: the PO's decision draws a step behind the table. */
+const PLACE_FRAMES = 30;
+
+function placeFocus(selectors: readonly string[], frames: number) {
   requestAnimationFrame(() => {
     const active = document.activeElement;
     if (active !== null && active !== document.body) return;
@@ -24,6 +31,7 @@ export function focusSoon(...selectors: string[]) {
         return;
       }
     }
+    if (frames > 0) placeFocus(selectors, frames - 1);
   });
 }
 

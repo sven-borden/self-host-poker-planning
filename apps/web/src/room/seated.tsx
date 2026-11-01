@@ -1,6 +1,14 @@
 import type { ParticipantView, RoomView as RoomSnapshotView } from "@pp/protocol";
 import { OctagonXIcon } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import {
+  type ReactNode,
+  startTransition,
+  useDeferredValue,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
 import { cardLabel } from "../table/cards.tsx";
@@ -41,6 +49,26 @@ interface SeatedProps {
 const keyOf = (
   round: RoomSnapshotView["round"] | { number: number; startedAt: number; phase: string },
 ) => (round === null ? "lobby" : `${round.number}:${round.startedAt}:${round.phase}`);
+
+/**
+ * What lies under the table, a step behind it: a reveal draws the table first, then the
+ * PO's decision (`under`), then the results (`last`), each in a render of its own that
+ * React can pause for the page. Drawn at once, they made one frame of a 16-seat reveal
+ * take 120 ms on a mid-range phone (#43). The flips are composited and do not wait; a
+ * focus that lands in the decision follows it (`focusSoon`).
+ */
+function UnderTable({
+  room,
+  children,
+}: {
+  room: RoomSnapshotView;
+  children: (under: RoomSnapshotView, last: RoomSnapshotView) => ReactNode;
+}) {
+  const under = useDeferredValue(room);
+  const [last, setLast] = useState(under);
+  useEffect(() => startTransition(() => setLast(under)), [under]);
+  return children(under, last);
+}
 
 const boxOf = (rect: DOMRect): Box => ({
   left: rect.left,
@@ -243,29 +271,42 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
             wait={waits ? ids.wait : null}
           />
         </TableStage>
-        <RevealedCards room={room} />
-        {me.isOwner && room.round?.phase === "revealed" ? (
-          <Decision
-            key={`${room.round.number}:${room.round.startedAt}`}
-            round={room.round}
-            next={next}
-            onFailure={setCentreFailure}
-          />
-        ) : null}
-        {waits ? (
-          <p id={ids.wait} data-reveal-wait className="m-0 mt-3 text-center text-sm text-ink-2">
-            {t("round.revealWaits")}
-          </p>
-        ) : null}
-        {/* Under the table and the PO's decision, above the results: where the PO acted. A
-            refusal for too few cards would repeat the line above while it shows. */}
-        {centreFailure !== null && !(waits && centreFailure === "too_few_cards") ? (
-          <p role="alert" className="mt-3 flex items-start justify-center gap-2 text-sm">
-            <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
-            {centreFailureMessage(t, centreFailure)}
-          </p>
-        ) : null}
-        {room.round?.phase === "revealed" ? <ResultsPanel room={room} motion={reveal} /> : null}
+        <UnderTable room={room}>
+          {(under, last) => (
+            <>
+              <RevealedCards room={under} />
+              {me.isOwner && under.round?.phase === "revealed" ? (
+                <Decision
+                  key={`${under.round.number}:${under.round.startedAt}`}
+                  round={under.round}
+                  next={next}
+                  onFailure={setCentreFailure}
+                />
+              ) : null}
+              {waits ? (
+                <p
+                  id={ids.wait}
+                  data-reveal-wait
+                  className="m-0 mt-3 text-center text-sm text-ink-2"
+                >
+                  {t("round.revealWaits")}
+                </p>
+              ) : null}
+              {/* Under the table and the PO's decision, above the results: where the PO
+                  acted. A refusal for too few cards would repeat the line above while it
+                  shows. */}
+              {centreFailure !== null && !(waits && centreFailure === "too_few_cards") ? (
+                <p role="alert" className="mt-3 flex items-start justify-center gap-2 text-sm">
+                  <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
+                  {centreFailureMessage(t, centreFailure)}
+                </p>
+              ) : null}
+              {last.round?.phase === "revealed" ? (
+                <ResultsPanel room={last} motion={reveal} />
+              ) : null}
+            </>
+          )}
+        </UnderTable>
         <LiveAnnouncer />
       </section>
       {hand.kind === "cards" ? (

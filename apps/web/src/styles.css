@@ -185,28 +185,6 @@
     outline-offset: 2px;
   }
 
-  /*
-   * While the hand is docked at the bottom of a phone (#22), whatever takes the focus or
-   * is scrolled to (a seat, "Reveal cards") stops above the hand instead of under it: the
-   * scroll padding is the dock's height (`--hand-dock`, set by useHandDock). The dock is
-   * sticky, so it keeps its own place at the end of the flow and nothing has to be padded
-   * for the page to scroll everything above it clear.
-   */
-  @media (max-width: 640px) and (min-height: 520px) {
-    :root:has([data-hand-dock]) {
-      scroll-padding-bottom: var(--hand-dock, 10rem);
-    }
-  }
-
-  /*
-   * While the PO's decision is docked at the bottom of the screen after a reveal (#32), a
-   * control that takes the focus stops above it (WCAG 2.4.11): the scroll padding is the
-   * docked part's height (`--decision-dock`, set by useDecisionDock).
-   */
-  :root:has([data-decision-dock]) {
-    scroll-padding-bottom: var(--decision-dock, 8rem);
-  }
-
   /* Reduced motion: no travel, only short cross-fades (design brief, motion spec). */
   /* biome-ignore-start lint/complexity/noImportantStyles: reduced motion must beat every component's own durations. */
   @media (prefers-reduced-motion: reduce) {

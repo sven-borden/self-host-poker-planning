@@ -2,6 +2,7 @@ import {
   type FocusEvent,
   type KeyboardEvent,
   useCallback,
+  useDeferredValue,
   useLayoutEffect,
   useRef,
   useState,
@@ -58,12 +59,15 @@ const isPress = (key: string) => key === "Enter" || key === " ";
 export function Hand({
   cards,
   selected,
-  disabled = false,
+  disabled: refused = false,
   describedBy,
   onPick,
   className,
 }: HandProps) {
   const t = useT();
+  // Every card restyles when the hand turns off: a step behind a reveal's first frame
+  // (#43). A press in between is refused by the server, as any late press is.
+  const disabled = useDeferredValue(refused);
   const toolbar = useRef<HTMLDivElement>(null);
   const [focused, setFocused] = useState<number | null>(null);
   const [edges, setEdges] = useState({ start: false, end: false });
