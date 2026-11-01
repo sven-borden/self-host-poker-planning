@@ -256,6 +256,21 @@ export async function recordAnimations(page: Page, { reload = false } = {}) {
 export const animated = (page: Page) =>
   page.evaluate(() => (window as unknown as { __animated: Animated[] }).__animated);
 
+/**
+ * Waits for what the page is animating: a seat that joined or glided, a badge in mid-pop
+ * (#43). Anything measured right after a change would otherwise be measured in motion.
+ * The timer's endless pulse is left alone.
+ */
+export const settled = (page: Page) =>
+  page.evaluate(() =>
+    Promise.allSettled(
+      document
+        .getAnimations()
+        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+        .map((animation) => animation.finished),
+    ),
+  );
+
 type Device = "iPhone 13" | "iPhone SE" | "Pixel 7";
 
 export interface Phone {

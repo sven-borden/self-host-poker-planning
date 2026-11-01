@@ -48,12 +48,43 @@ function clearBottom(): number {
 }
 
 /**
+ * The dock the scroll padding follows. The next round docks the hand a step before the
+ * PO's decision leaves (`UnderTable`), and the leaver must not clear the padding.
+ */
+let padded: HTMLElement | null = null;
+
+/**
+ * While something is docked at the bottom of the screen, whatever takes the focus or is
+ * scrolled to stops above it (WCAG 2.4.11): the page's scroll padding follows `dock`'s
+ * height until the returned function ends it. The dock is sticky, so it keeps its own
+ * place at the end of the flow, and nothing has to be padded for the page to scroll
+ * everything above it clear. Set on the root as itself, not through an inherited custom
+ * property, which would restyle every element of the page (a reveal's slowest frame, #43).
+ */
+export function keepScrollPadding(dock: HTMLElement): () => void {
+  const root = document.documentElement;
+  const keep = () => {
+    padded = dock;
+    root.style.scrollPaddingBottom = `${dock.offsetHeight}px`;
+  };
+  const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(keep);
+  if (observer) observer.observe(dock);
+  else keep();
+  return () => {
+    observer?.disconnect();
+    if (padded !== dock) return;
+    padded = null;
+    root.style.removeProperty("scroll-padding-bottom");
+  };
+}
+
+/**
  * Whether the hand docks: `wanted` (the hand is playable) on an upright phone whose screen
  * leaves the table clear above the dock (`dockFits`). Measured again whenever the page or
  * the panel changes size (a rotation, a longer subject, a larger text size, fonts). The
  * position of a sticky element does not change the layout around it, so the measure
- * cannot flip the state back and forth. While docked, the page's `--hand-dock` holds the
- * dock's height, the scroll padding that keeps a focused seat or button above it.
+ * cannot flip the state back and forth. While docked, the scroll padding keeps a focused
+ * seat or button above it (`keepScrollPadding`).
  */
 export function useHandDock(wanted: boolean, panel: RefObject<HTMLElement | null>): boolean {
   const [fits, setFits] = useState(false);
@@ -88,15 +119,7 @@ export function useHandDock(wanted: boolean, panel: RefObject<HTMLElement | null
   useLayoutEffect(() => {
     const element = panel.current;
     if (!docked || !element) return;
-    const root = document.documentElement;
-    const keep = () => root.style.setProperty("--hand-dock", `${element.offsetHeight}px`);
-    keep();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(keep);
-    observer?.observe(element);
-    return () => {
-      observer?.disconnect();
-      root.style.removeProperty("--hand-dock");
-    };
+    return keepScrollPadding(element);
   }, [docked, panel]);
 
   return docked;

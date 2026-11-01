@@ -8,12 +8,25 @@
  * of the screen when it fits (#32, `decision-dock.ts`). A target wholly off screen gets
  * the least scroll that shows it (#37, WCAG 2.4.7): the hand after "Start voting" sits
  * under the fold of a laptop's screen, and the focus must never be out of sight.
+ *
+ * What is drawn a step behind the table (#43) needs a few frames: the target may not be
+ * there yet, and the button that was pressed may not have left yet. So it looks again each
+ * frame for a while, as long as the focus is nowhere or still where it was. A control that
+ * keeps the focus (the subject field) is left with it.
  */
 export function focusSoon(...selectors: string[]) {
+  placeFocus(selectors, document.activeElement, PLACE_FRAMES);
+}
+
+/** About half a second at 60 frames a second, a slow phone's deferred renders included. */
+const PLACE_FRAMES = 30;
+
+function placeFocus(selectors: readonly string[], held: Element | null, frames: number) {
   requestAnimationFrame(() => {
     const active = document.activeElement;
-    if (active !== null && active !== document.body) return;
-    for (const selector of selectors) {
+    const free = active === null || active === document.body;
+    if (!free && active !== held) return;
+    for (const selector of free ? selectors : []) {
       const target = document.querySelector<HTMLElement>(selector);
       if (target) {
         target.focus({ preventScroll: true });
@@ -24,6 +37,7 @@ export function focusSoon(...selectors: string[]) {
         return;
       }
     }
+    if (frames > 0) placeFocus(selectors, held, frames - 1);
   });
 }
 

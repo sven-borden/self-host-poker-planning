@@ -1,5 +1,5 @@
 import { type RefObject, useLayoutEffect, useState } from "react";
-import { dockFits } from "./hand-dock.ts";
+import { dockFits, keepScrollPadding } from "./hand-dock.ts";
 
 // The PO's decision after a reveal (#32) docked at the bottom of the screen while its place
 // in the page, under the table, is out of view: the PO sees "Record 8" and "Next round"
@@ -50,9 +50,10 @@ function clearBottom(): number {
  * rotation, a recorded final, a larger text size, fonts). The docking part's padding and
  * border are the same docked or not, its hint is taken off when it is not docked
  * (`dockHeight`), and a sticky element moves nothing around it, so the measure cannot
- * flip the state back and forth. While docked, the page's
- * `--decision-dock` holds its height, the scroll padding that keeps a focused control
- * above it (WCAG 2.4.11).
+ * flip the state back and forth. The first measure is in the commit, a layout read this
+ * file may make: the decision draws a step behind the table's flips (`UnderTable`), and
+ * the focus that lands on it must find it docked, or it scrolls the page to it. While
+ * docked, the scroll padding keeps a focused control above it (`keepScrollPadding`).
  */
 export function useDecisionDock(
   bar: RefObject<HTMLElement | null>,
@@ -92,15 +93,7 @@ export function useDecisionDock(
 
   useLayoutEffect(() => {
     if (!docked || part === null) return;
-    const root = document.documentElement;
-    const keep = () => root.style.setProperty("--decision-dock", `${part.offsetHeight}px`);
-    keep();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(keep);
-    observer?.observe(part);
-    return () => {
-      observer?.disconnect();
-      root.style.removeProperty("--decision-dock");
-    };
+    return keepScrollPadding(part);
   }, [docked, part]);
 
   return docked;

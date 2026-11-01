@@ -155,6 +155,8 @@ function statusText(t: TFunction, status: SeatStatus): string | null {
 
 interface BadgesProps {
   voted?: boolean | undefined;
+  /** The voted check, which pops in as the vote lands on screen (#43). */
+  votedRef?: Ref<HTMLSpanElement> | undefined;
   owner?: boolean | undefined;
   away?: boolean | undefined;
   /** The disc's diameter in pixels. */
@@ -167,7 +169,7 @@ interface BadgesProps {
  * Each overhangs the avatar by 4 px, inside the seat's halo (`AVATAR_HALO`). The parent
  * must be positioned.
  */
-export function AvatarBadges({ voted, owner, away, size }: BadgesProps) {
+export function AvatarBadges({ voted, votedRef, owner, away, size }: BadgesProps) {
   const icon = { width: size - 6, height: size - 6 };
   const disc = "absolute grid place-items-center rounded-full ring-2 ring-surface";
   const box = { width: size, height: size };
@@ -195,6 +197,7 @@ export function AvatarBadges({ voted, owner, away, size }: BadgesProps) {
       ) : null}
       {voted ? (
         <span
+          ref={votedRef}
           aria-hidden="true"
           data-badge="voted"
           className={cn(disc, "-right-1 -bottom-1 bg-good text-surface")}
@@ -247,26 +250,37 @@ interface SeatAvatarProps {
 }
 
 /**
- * The avatar with its badges. Away, its disc turns grey with a dashed edge and the
- * initials stay readable (the moon badge and the label say so too); the viewer's gets a
- * spruce ring outside its own, 4 px out at most. A lowest or highest mark that appears
- * on screen (a reveal) pops in once the cards are settled; one there when the seat mounts
- * (a reload) shows at rest.
+ * The ref for a badge that pops in, after `delay` ms, when `state` appears on screen; one
+ * already there when the seat mounts (a reload) shows at rest.
  */
-function SeatAvatar({ person, size, badge, settle }: SeatAvatarProps) {
-  const extreme = person.status.kind === "revealed" ? person.status.extreme : undefined;
-  const mark = useRef<HTMLSpanElement>(null);
-  const before = useRef(extreme);
-  const delay = useRef(settle);
-  delay.current = settle;
+function usePopIn(state: unknown, delay = 0) {
+  const badge = useRef<HTMLSpanElement>(null);
+  const before = useRef(state);
+  const wait = useRef(delay);
+  wait.current = delay;
 
   useLayoutEffect(() => {
     const was = before.current;
-    before.current = extreme;
-    if (!extreme || was === extreme) return;
-    const popping = play(mark.current, popIn(delay.current, prefersReducedMotion()));
+    before.current = state;
+    if (!state || was === state) return;
+    const popping = play(badge.current, popIn(wait.current, prefersReducedMotion()));
     return () => cancelAll([popping]);
-  }, [extreme]);
+  }, [state]);
+
+  return badge;
+}
+
+/**
+ * The avatar with its badges. Away, its disc turns grey with a dashed edge and the
+ * initials stay readable (the moon badge and the label say so too); the viewer's gets a
+ * spruce ring outside its own, 4 px out at most. The voted check pops in as the vote lands
+ * (#43), a lowest or highest mark (a reveal) once the cards are settled.
+ */
+function SeatAvatar({ person, size, badge, settle }: SeatAvatarProps) {
+  const extreme = person.status.kind === "revealed" ? person.status.extreme : undefined;
+  const voted = person.status.kind === "voted";
+  const check = usePopIn(voted);
+  const mark = usePopIn(extreme, settle);
 
   return (
     <span className="relative block">
@@ -279,7 +293,8 @@ function SeatAvatar({ person, size, badge, settle }: SeatAvatarProps) {
         className={cn(person.you && "outline-2 outline-offset-2 outline-spruce")}
       />
       <AvatarBadges
-        voted={person.status.kind === "voted"}
+        voted={voted}
+        votedRef={check}
         owner={person.owner}
         away={person.away}
         size={badge}
@@ -391,6 +406,7 @@ export function Seat({ person, place, geometry, settle = 0, actions }: SeatProps
     return (
       <li
         data-seat
+        data-person={person.id}
         {...marks}
         className="absolute"
         style={{
@@ -448,6 +464,7 @@ export function Seat({ person, place, geometry, settle = 0, actions }: SeatProps
   return (
     <li
       data-seat
+      data-person={person.id}
       {...marks}
       className="absolute"
       style={{

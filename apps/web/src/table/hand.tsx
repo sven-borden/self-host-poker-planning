@@ -1,6 +1,7 @@
 import {
   type FocusEvent,
   type KeyboardEvent,
+  memo,
   useCallback,
   useLayoutEffect,
   useRef,
@@ -55,7 +56,7 @@ export const PLACED_FOCUS_GUARD_MS = 300;
 
 const isPress = (key: string) => key === "Enter" || key === " ";
 
-export function Hand({
+function HandCards({
   cards,
   selected,
   disabled = false,
@@ -244,3 +245,19 @@ export function Hand({
     </div>
   );
 }
+
+/**
+ * The hand redraws only for what it shows: dozens of labels, on every snapshot of a full
+ * room, in the commit of every reveal (#43). `onPick` is left out of the comparison, so
+ * give it a function that stays the same and calls the latest handler.
+ */
+export const Hand = memo(
+  HandCards,
+  (a, b) =>
+    a.selected === b.selected &&
+    a.disabled === b.disabled &&
+    a.describedBy === b.describedBy &&
+    a.className === b.className &&
+    a.cards.length === b.cards.length &&
+    a.cards.every((card, i) => card === b.cards[i]),
+);

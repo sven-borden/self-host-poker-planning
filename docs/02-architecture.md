@@ -1084,4 +1084,5 @@ language, and an unknown code gets a generic one.
 - Initial JavaScript under 200 KB gzipped for the room route and for the landing page
   (`apps/web/scripts/check-budget.ts` checks both after every build).
 - Command to snapshot under 150 ms p95 on one instance.
-- Reveal with 16 seats at 60 fps on a mid-range phone.
+- Reveal with 16 seats at 60 fps on a mid-range phone: no long task of 50 ms or more
+  (`apps/web/e2e/reveal-performance.spec.ts`, ADR-019).

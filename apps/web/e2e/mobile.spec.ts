@@ -11,6 +11,7 @@ import {
   SHOTS,
   sameUser,
   seats,
+  settled,
 } from "./support.ts";
 
 // Phones (#22), against the real server and Postgres: a whole round on the iPhone 13 and
@@ -299,7 +300,8 @@ const overlap = (a: Box, b: Box) =>
   b.top < a.bottom - 0.5;
 
 /** Each seat as the page draws it: its name for screen readers, its look, its boxes. */
-function seatLayout(page: Page) {
+async function seatLayout(page: Page) {
+  await settled(page);
   return seats(page)
     .locator("[data-seat]")
     .evaluateAll((items) =>

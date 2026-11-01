@@ -21,6 +21,9 @@ export const FADE_AWAY_MS = 350;
 const FADE_AWAY_SCALE = 0.6;
 /** A badge pops onto a seat in this long (#20). */
 export const POP_MS = 300;
+/** A card lands on its slot in this long, from this far above it (#18, #43). */
+export const DROP_MS = 380;
+export const HOVER_PX = 10;
 /** The design brief's easing (`EASE_STANDARD` in motion.tsx). */
 export const EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
 
@@ -98,6 +101,27 @@ export function fadeAway(reduced: boolean): Motion {
           { opacity: 0, transform: `scale(${FADE_AWAY_SCALE})` },
         ],
         timing: { duration: FADE_AWAY_MS, easing: EASE, fill: "backwards" },
+      };
+}
+
+/**
+ * Someone's card lands face down on their slot (#43), the end of the trip the viewer's own
+ * card makes (`card-flight.tsx`): there is no flight to see from another seat, so the card
+ * drops in, and the check pops beside it. Under reduced motion it only fades in.
+ */
+export function landDown(reduced: boolean): Motion {
+  return reduced
+    ? {
+        keyframes: [{ opacity: 0 }, { opacity: 1 }],
+        timing: { duration: REDUCED_FADE_MS, fill: "backwards" },
+      }
+    : {
+        keyframes: [
+          { offset: 0, opacity: 0, transform: `translateY(-${HOVER_PX}px)` },
+          { offset: 0.4, opacity: 1 },
+          { offset: 1, opacity: 1, transform: "none" },
+        ],
+        timing: { duration: DROP_MS, easing: EASE, fill: "backwards" },
       };
 }
 

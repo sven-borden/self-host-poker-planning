@@ -878,7 +878,7 @@ interruptible and disabled under `prefers-reduced-motion` (120 ms cross-fades in
 |---|---|
 | Hand deal-in | cards rise 12 px and fade in, 260 ms, 30 ms stagger; when the hand appears (not each round, so the focus stays) |
 | Hover / select | lift 6 px (180 ms); selected lifts 12 px with a 2 px brass ring |
-| Hand → seat travel | 520 ms arc, midpoint 36 px above the line, −9° tilt, scales to the slot; lands face down with a 380 ms drop |
+| Hand → seat travel | 520 ms arc, midpoint 36 px above the line, −9° tilt, scales to the slot; lands face down with a 380 ms drop (#43: someone else's card has no flight to see from here, so it only makes the drop, 10 px and a fade, on their slot) |
 | Seat → hand (vote taken back, #18) | the face-down card flies back on the same 520 ms arc and fades over its hand card |
 | Voted badge | 300 ms pop with slight overshoot |
 | Reveal flip | `rotateY(180deg)` 650 ms, 90 ms stagger in seat order from the viewer (#19: only the face-up cards count, so an empty seat adds no pause; the last vote, which arrives with the reveal, turns from its empty slot in its place, its back showing while it waits; built as a turn to the edge with the back on, then back bare, so nothing keeps a transform at rest) |
@@ -887,7 +887,13 @@ interruptible and disabled under `prefers-reduced-motion` (120 ms cross-fades in
 | A card changed after the reveal (#29) | the seat's card turns over to its new value, 650 ms, at once; under reduced motion the value is replaced without a turn |
 | Consensus | pill pops (400 ms) and one soft ring pulse; no confetti storm |
 | Timer | ring drains linearly, in steps of about a device pixel (at most 20 a second); last 10 s turns `--warn` and pulses at 1 Hz (#27: the chip scales to 1.08 and back each second; under reduced motion no pulse, and the ring steps once a second) |
-| Seat join / leave | fade and scale from 0.9, 220 ms |
+| Seat join / leave | fade and scale from 0.9, 220 ms, seat and slot alike (#43: the table spreads its seats by how many there are, so everyone else glides to their new place in the same 220 ms; a leaver fades as they looked, out of reach; a table drawn for the first time or for another width shows at rest; observers have no seat and do not move; under reduced motion a 120 ms cross-fade and no glide) |
+
+What the table needs goes first (#43, ADR-019). A reveal draws the table, then a step
+later the PO's decision and the hand turning off, then the results: each a render of its
+own, so no frame of a 16-seat reveal holds the page for 50 ms on a mid-range phone. The
+steps take a few frames, and nothing visibly waits on them: the columns and the rest of the
+results start when the cards have settled, a second or two on.
 
 ## Accessibility
 

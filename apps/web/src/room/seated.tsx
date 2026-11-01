@@ -1,6 +1,16 @@
 import type { ParticipantView, RoomView as RoomSnapshotView } from "@pp/protocol";
 import { OctagonXIcon } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import {
+  type ReactNode,
+  startTransition,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
 import { cardLabel } from "../table/cards.tsx";
@@ -41,6 +51,26 @@ interface SeatedProps {
 const keyOf = (
   round: RoomSnapshotView["round"] | { number: number; startedAt: number; phase: string },
 ) => (round === null ? "lobby" : `${round.number}:${round.startedAt}:${round.phase}`);
+
+/**
+ * What lies under the table, a step behind it: a reveal draws the table first, then the
+ * PO's decision (`under`), then the results (`last`), each in a render of its own that
+ * React can pause for the page. Drawn at once, they made one frame of a 16-seat reveal
+ * take 120 ms on a mid-range phone (#43). The flips are composited and do not wait; a
+ * focus that lands in the decision follows it (`focusSoon`).
+ */
+function UnderTable({
+  room,
+  children,
+}: {
+  room: RoomSnapshotView;
+  children: (under: RoomSnapshotView, last: RoomSnapshotView) => ReactNode;
+}) {
+  const under = useDeferredValue(room);
+  const [last, setLast] = useState(under);
+  useEffect(() => startTransition(() => setLast(under)), [under]);
+  return children(under, last);
+}
 
 const boxOf = (rect: DOMRect): Box => ({
   left: rect.left,
@@ -91,8 +121,9 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
   const ids = { hint: useId(), wait: useId() };
   const vote = useVote();
   const mine = shownCard(vote.state, confirmedOf(room));
-  const shown = withShownVote(room, mine);
-  const { people, observers, looks } = tableData(shown);
+  // The same people until the room or the pick changes: the seats redraw only then.
+  const shown = useMemo(() => withShownVote(room, mine), [room, mine]);
+  const { people, observers, looks } = useMemo(() => tableData(shown), [shown]);
   const hand = handView(shown, me);
   /** A refused start or reveal; a new round or phase clears it. */
   const [centreFailure, setCentreFailure] = useState<string | null>(null);
@@ -132,6 +163,10 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
     hand.kind === "cards" && hand.playable && !(revealed && me.isOwner),
     handPanel,
   );
+  // Undocking and turning off restyle the whole panel: a step behind the table (#43). A
+  // press in between goes to the server, which refuses it as any late press.
+  const handDocked = useDeferredValue(docked);
+  const handOff = useDeferredValue(hand.kind !== "cards" || !hand.playable);
   // The table grows above a focused hand card (the results after a reveal by R, the
   // PO's decision): the card would slide out of sight, so it comes back into view, the
   // least scroll that shows it (#37, WCAG 2.4.7). The scroll padding keeps it above a dock.
@@ -149,7 +184,9 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
       const active = document.activeElement;
       if (!(active instanceof HTMLElement) || !handPanel.current?.contains(active)) return;
       const box = active.getBoundingClientRect();
-      const inView = (top: number, bottom: number) => top >= 0 && bottom <= window.innerHeight;
+      // A pixel of slack: the card's place is fractional and a scroll is not, so a card the
+      // last step of a reveal scrolled into view can end a fraction past the edge.
+      const inView = (top: number, bottom: number) => top >= -1 && bottom <= window.innerHeight + 1;
       if (!inView(box.top, box.bottom) && inView(box.top - shift, box.bottom - shift)) {
         active.scrollIntoView?.({ block: "nearest" });
       }
@@ -201,6 +238,13 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
     });
   }
 
+  const latestPick = useRef(pick);
+  latestPick.current = pick;
+  const onPick = useCallback(
+    (card: string, element: HTMLButtonElement) => latestPick.current(card, element),
+    [],
+  );
+
   const hint =
     hand.kind !== "cards"
       ? ""
@@ -211,6 +255,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           : hand.reason === "change"
             ? t("hand.hintChange")
             : t("hand.hintRevealed");
+  const laterHint = useDeferredValue(hint);
   const news = vote.news;
   const owner = [...people, ...observers].find((person) => person.owner);
   // Every popover asks; `PersonActions` shows itself to the PO only.
@@ -243,36 +288,49 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
             wait={waits ? ids.wait : null}
           />
         </TableStage>
-        <RevealedCards room={room} />
-        {me.isOwner && room.round?.phase === "revealed" ? (
-          <Decision
-            key={`${room.round.number}:${room.round.startedAt}`}
-            round={room.round}
-            next={next}
-            onFailure={setCentreFailure}
-          />
-        ) : null}
-        {waits ? (
-          <p id={ids.wait} data-reveal-wait className="m-0 mt-3 text-center text-sm text-ink-2">
-            {t("round.revealWaits")}
-          </p>
-        ) : null}
-        {/* Under the table and the PO's decision, above the results: where the PO acted. A
-            refusal for too few cards would repeat the line above while it shows. */}
-        {centreFailure !== null && !(waits && centreFailure === "too_few_cards") ? (
-          <p role="alert" className="mt-3 flex items-start justify-center gap-2 text-sm">
-            <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
-            {centreFailureMessage(t, centreFailure)}
-          </p>
-        ) : null}
-        {room.round?.phase === "revealed" ? <ResultsPanel room={room} motion={reveal} /> : null}
+        <UnderTable room={room}>
+          {(under, last) => (
+            <>
+              <RevealedCards room={under} />
+              {me.isOwner && under.round?.phase === "revealed" ? (
+                <Decision
+                  key={`${under.round.number}:${under.round.startedAt}`}
+                  round={under.round}
+                  next={next}
+                  onFailure={setCentreFailure}
+                />
+              ) : null}
+              {waits ? (
+                <p
+                  id={ids.wait}
+                  data-reveal-wait
+                  className="m-0 mt-3 text-center text-sm text-ink-2"
+                >
+                  {t("round.revealWaits")}
+                </p>
+              ) : null}
+              {/* Under the table and the PO's decision, above the results: where the PO
+                  acted. A refusal for too few cards would repeat the line above while it
+                  shows. */}
+              {centreFailure !== null && !(waits && centreFailure === "too_few_cards") ? (
+                <p role="alert" className="mt-3 flex items-start justify-center gap-2 text-sm">
+                  <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
+                  {centreFailureMessage(t, centreFailure)}
+                </p>
+              ) : null}
+              {last.round?.phase === "revealed" ? (
+                <ResultsPanel room={last} motion={reveal} />
+              ) : null}
+            </>
+          )}
+        </UnderTable>
         <LiveAnnouncer />
       </section>
       {hand.kind === "cards" ? (
         <div
           ref={handPanel}
           data-room-hand
-          data-hand-dock={docked || undefined}
+          data-hand-dock={handDocked || undefined}
           className={cn(
             // On a phone the padding clears the home indicator, docked or not, so the
             // panel measures the same in both states (`useHandDock`).
@@ -284,9 +342,9 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           <Hand
             cards={hand.cards}
             selected={mine}
-            disabled={!hand.playable}
+            disabled={handOff}
             describedBy={ids.hint}
-            onPick={pick}
+            onPick={onPick}
           />
           {/* Docked, the hint is for screen readers only: the dock stays one card high in every language. */}
           <p
@@ -294,10 +352,10 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
             data-hand-hint
             className={cn(
               "m-0 px-4 text-center text-sm text-ink-2 phone:text-xs",
-              docked && "sr-only",
+              handDocked && "sr-only",
             )}
           >
-            {hint}
+            {laterHint}
           </p>
           {vote.error !== null && vote.error.round === (room.round?.number ?? null) ? (
             <p role="alert" className="mx-4 mt-2 flex items-start justify-center gap-2 text-sm">

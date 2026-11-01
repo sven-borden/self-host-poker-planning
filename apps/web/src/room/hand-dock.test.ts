@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dockFits, inSight } from "./hand-dock.ts";
+import { dockFits, inSight, keepScrollPadding } from "./hand-dock.ts";
 
 describe("the docked hand (#22)", () => {
   it("docks only when what must stay in sight ends above it at the top of the page", () => {
@@ -18,5 +18,25 @@ describe("the docked hand (#22)", () => {
     expect(inSight(slot, 844, { top: 520 })).toBe(false);
     expect(inSight(slot, 520, null)).toBe(false);
     expect(inSight({ top: -4, bottom: 24 }, 844, null)).toBe(false);
+  });
+});
+
+describe("the scroll padding (#43)", () => {
+  const padding = () => document.documentElement.style.scrollPaddingBottom;
+
+  it("follows the dock, and ends with it", () => {
+    const end = keepScrollPadding(document.createElement("div"));
+    expect(padding()).toBe("0px");
+    end();
+    expect(padding()).toBe("");
+  });
+
+  it("stays when a dock leaves after another took over", () => {
+    const endDecision = keepScrollPadding(document.createElement("div"));
+    const endHand = keepScrollPadding(document.createElement("div"));
+    endDecision();
+    expect(padding()).toBe("0px");
+    endHand();
+    expect(padding()).toBe("");
   });
 });

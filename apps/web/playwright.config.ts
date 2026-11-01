@@ -45,6 +45,20 @@ export default defineConfig({
   retries: ci ? 1 : 0,
   workers: ci ? 2 : undefined,
   reporter: ci ? [["list"], ["html", { open: "never" }]] : "list",
+  projects: [
+    { name: "e2e", testIgnore: /reveal-performance/ },
+    // Long tasks mean nothing on a machine busy with other tests: this one runs alone,
+    // after them (#43). The worst task sits a little under 50 ms, so a stray 51 from the
+    // system is one more try; a real regression fails all three. `--no-deps` runs it alone.
+    {
+      name: "performance",
+      testMatch: /reveal-performance/,
+      dependencies: ["e2e"],
+      fullyParallel: false,
+      workers: 1,
+      retries: 2,
+    },
+  ],
   use: {
     baseURL: `http://localhost:${PORT}`,
     // The same browser language on every machine; a test that needs another says so.
