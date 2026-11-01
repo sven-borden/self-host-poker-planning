@@ -55,7 +55,9 @@ export function applyThemeMode(
 export function applyThemeColour(mode: ThemeMode, page: Document = document): void {
   for (const meta of page.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
     const scheme = meta.dataset.scheme;
-    meta.media =
-      mode === "system" ? `(prefers-color-scheme: ${scheme})` : mode === scheme ? "all" : "not all";
+    meta.setAttribute(
+      "media",
+      mode === "system" ? `(prefers-color-scheme: ${scheme})` : mode === scheme ? "all" : "not all",
+    );
   }
 }

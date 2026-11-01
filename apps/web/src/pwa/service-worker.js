@@ -1,6 +1,6 @@
 // The service worker (#46, ADR-022), served as `/sw.js`. `scripts/pwa-plugin.ts` fills in
 // the two constants below at build time, so every build that changes what is cached is a new
-// worker, and `service-worker.test.ts` runs this very file against a stand-in browser.
+// worker, and `scripts/service-worker.test.ts` runs this very file against a stand-in browser.
 //
 // It keeps the page's files, never a room:
 // - A navigation always goes to the network and its answer is never stored: not under its

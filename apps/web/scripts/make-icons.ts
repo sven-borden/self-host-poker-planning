@@ -1,6 +1,6 @@
 // Draws the home-screen icons (#46, ADR-022) from the brand mark in `public/favicon.svg` and
 // the page's background in `src/tokens.css`, into `public/icons/`. By hand, not in the build:
-// the PNGs are committed, and `src/pwa/pwa-files.test.ts` checks them.
+// the PNGs are committed, and `scripts/pwa-files.test.ts` checks them.
 //
 //   node apps/web/scripts/make-icons.ts
 //
