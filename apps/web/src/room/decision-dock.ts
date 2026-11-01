@@ -50,10 +50,10 @@ function clearBottom(): number {
  * rotation, a recorded final, a larger text size, fonts). The docking part's padding and
  * border are the same docked or not, its hint is taken off when it is not docked
  * (`dockHeight`), and a sticky element moves nothing around it, so the measure cannot
- * flip the state back and forth. The first measure waits for the observer's first
- * delivery, after the frame's layout: read in the commit, it would force the layout of a
- * reveal in mid-flip (#43). While docked, the scroll padding keeps a focused control above
- * it (`keepScrollPadding`).
+ * flip the state back and forth. The first measure is in the commit, a layout read this
+ * file may make: the decision draws a step behind the table's flips (`UnderTable`), and
+ * the focus that lands on it must find it docked, or it scrolls the page to it. While
+ * docked, the scroll padding keeps a focused control above it (`keepScrollPadding`).
  */
 export function useDecisionDock(
   bar: RefObject<HTMLElement | null>,
@@ -80,8 +80,8 @@ export function useDecisionDock(
       const height = dockHeight(element, element.closest("[data-decision-dock]") !== null);
       setDocked(dockFits(clearBottom(), height, document.documentElement.clientHeight));
     }
-    if (observer) observer.observe(document.body);
-    else measure();
+    measure();
+    observer?.observe(document.body);
     window.addEventListener("resize", measure);
     phone.addEventListener("change", measure);
     return () => {

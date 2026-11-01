@@ -90,6 +90,9 @@ boundary for the room's Motion components (room route 167.6 kB), or a dynamic
 `import("motion/mini")` inside the effect (3.2 kB lazy). #19's flip and #20's columns
 may use either, or the Web Animations API; whichever they pick, the budget check decides.
 
+**Amended (#43, 2026-11-01).** The whole motion spec runs on CSS and the Web Animations API:
+no component uses Motion's `m`. See ADR-019 for how a reveal is drawn.
+
 ## ADR-009: Guest-first identity with Better Auth
 
 **Decision.** Every visitor gets an anonymous Better Auth session: a real user row
@@ -268,3 +271,40 @@ the chunk has loaded (a few errors wait for it). Pinned SDKs at least two weeks 
 a hand-written envelope sender (no SDK to follow, but our own stack parsers for every
 browser); Umami's `data-before-send` hook (a global function name, so a global the page
 must expose before the tracker runs).
+
+## ADR-019: A reveal draws in steps, and a commit reads no layout (2026-11-01, #43)
+
+**Context.** #43 asks for no long task of 50 ms or more during a 16-seat reveal on a
+mid-range phone. Measured on a Pixel 7 profile at 4x CPU, the last vote's reveal ran 253 and
+137 ms. The flips were never the cost, since they are composited: the time went to a layout
+forced per card label inside the commit, between the flips' `animate()` calls (187 ms); to
+inherited custom properties on `:root`, which restyle every element; and to one commit that
+mounted the table's new state, the PO's decision and the results at once.
+
+**Decision.** Three rules. A commit on the table's side does not read layout: a measure
+that can wait takes a ResizeObserver's first delivery, which comes after the frame's layout
+(`CardValue`). Nothing changes an inherited custom property on the root for a value
+only the root needs: the docks set `scroll-padding-bottom` themselves
+(`keepScrollPadding`). What lies under the table draws a step behind it: `UnderTable` in
+`seated.tsx` gives the decision a deferred copy of the room (`useDeferredValue`), and the
+results one step later (a transition after that commit); the hand panel's disabled cards,
+dock and hint follow in the first deferred render, and the stage has `contain: layout`, so
+what changes on it relays out nothing else. `focusSoon` looks for its target for up to 30
+frames, so the PO's focus lands on "Record" when it arrives.
+`reveal-performance.spec.ts` holds the line at a speed set from a benchmark, so a slower CI
+runner tests the same phone, and it runs alone after the other specs, on a quiet machine.
+
+**Consequences.** The table answers first, and React can pause the rest for the page. The
+decision and the results arrive a few frames after the first flip, which nobody can see:
+the first flip takes 650 ms, and what follows it is timed from the settled cards. A press
+in the instant before the hand turns off goes to the server, which refuses it as any late
+press. For one frame a label that does not fit can overflow its card. The decision still
+measures its dock in its own commit, a step behind the flips: the focus that lands on it
+must find it docked, or it scrolls the page. The table and what lies under it can differ
+for those frames, so nothing under the table may be read to decide what the table shows.
+The budget is near: the reveal's worst tasks run 40 to 48 ms, so a seat or a results row
+that adds work will fail the spec. **Alternatives.** Moving
+everything into a transition (commits are not interruptible, so the frame stays long, and
+the store's `useSyncExternalStore` opts out); `content-visibility` on the panels (does not
+reach the commit, and the page's height jumps); a smaller results panel on phones (removes
+what the team came for).

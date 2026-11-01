@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./fixtures.ts";
-import { type Guest, guestsJoin, hand, handCard, sameUser } from "./support.ts";
+import { type Guest, guestsJoin, hand, handCard, sameUser, settled } from "./support.ts";
 
 // A whole round by keyboard alone (#37): create, join, start, pick and change a card,
 // reveal by R and by the button, record the final, next round, settings, history, and the
@@ -154,6 +154,9 @@ for (const viewport of [
       await page.keyboard.press("r");
       await expect(page.locator("[data-face='up']")).toHaveCount(2);
       await expect(handCard(page, "8")).toBeFocused();
+      // What the reveal adds under the table pushes the hand down a step later, and the
+      // page brings the card back: seen once the table has settled.
+      await settled(page);
       await expectSeen(page, "card 8 after R");
       const record = page.getByRole("button", { name: "Record 8" });
       await tabTo(page, record, "to the decision");

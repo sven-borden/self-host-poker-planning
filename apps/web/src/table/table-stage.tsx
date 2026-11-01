@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useId, useRef, useState } from "react";
 import { Popover, PopoverTrigger } from "../components/ui/popover.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
@@ -17,6 +17,7 @@ import {
   shownName,
   type TablePerson,
 } from "./seat.tsx";
+import { type SeatSpot, useSeatMotion } from "./seat-motion.ts";
 import { useRoomWidth } from "./use-room-width.ts";
 import "./table.css";
 
@@ -91,7 +92,8 @@ function ChangedMark({ corner }: { corner: boolean }) {
  * the people it is given and decides nothing. At a reveal the face-up cards turn over one
  * after the other in seat order, from the viewer at the bottom (`FLIP_STAGGER_MS`). A
  * card changed after the reveal carries a "changed" chip on its foot, or a corner mark on
- * a dense phone table (#29).
+ * a dense phone table (#29). Someone who joins or leaves fades in or out, and the others
+ * glide to their new places (`useSeatMotion`, #43).
  */
 export function TableStage({
   people,
@@ -112,6 +114,16 @@ export function TableStage({
   // A dense phone table's slots (20 × 28) sit too close for the word: a corner mark.
   const corner = layout.variant === "phone" && layout.dense;
   const observersId = useId();
+  const stage = useRef<HTMLDivElement>(null);
+  useSeatMotion(
+    stage,
+    seated.flatMap((person, i): SeatSpot[] => {
+      const seat = layout.seats[i];
+      const slot = layout.slots[i];
+      return seat && slot ? [{ id: person.id, seat, slot }] : [];
+    }),
+    layout.variant,
+  );
   // The nth face-up card in seat order turns n × 90 ms after the first (#19).
   let turned = 0;
   const slots = seated.map((person, i) => {
@@ -125,6 +137,7 @@ export function TableStage({
       <div
         key={person.id}
         data-slot-card
+        data-person={person.id}
         data-you={person.you || undefined}
         aria-hidden="true"
         className={cn("absolute", person.id === hiddenSlot && "invisible")}
@@ -144,11 +157,12 @@ export function TableStage({
   return (
     <div ref={roomRef} className={cn("w-full", className)}>
       <div
+        ref={stage}
         data-stage
         data-variant={layout.variant}
         // The variant whose dense geometry applies (#37: the centre's buttons read it).
         data-dense={layout.dense ? layout.variant : undefined}
-        className="pp-stage relative mx-auto w-full"
+        className="pp-stage relative mx-auto w-full contain-layout"
         style={{
           aspectRatio: layout.aspect,
           maxWidth: layout.maxWidth,

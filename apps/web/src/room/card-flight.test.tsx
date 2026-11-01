@@ -1,9 +1,9 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DROP_MS } from "../table/reveal-motion.ts";
 import {
   CardFlight,
   continueFrom,
-  DROP_MS,
   type Flight,
   flightKeyframes,
   type InAir,

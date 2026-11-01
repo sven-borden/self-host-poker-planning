@@ -160,6 +160,8 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
     hand.kind === "cards" && hand.playable && !(revealed && me.isOwner),
     handPanel,
   );
+  // Undocking restyles the whole panel: a step behind the table, as the hand turns off.
+  const handDocked = useDeferredValue(docked);
   // The table grows above a focused hand card (the results after a reveal by R, the
   // PO's decision): the card would slide out of sight, so it comes back into view, the
   // least scroll that shows it (#37, WCAG 2.4.7). The scroll padding keeps it above a dock.
@@ -239,6 +241,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           : hand.reason === "change"
             ? t("hand.hintChange")
             : t("hand.hintRevealed");
+  const laterHint = useDeferredValue(hint);
   const news = vote.news;
   const owner = [...people, ...observers].find((person) => person.owner);
   // Every popover asks; `PersonActions` shows itself to the PO only.
@@ -313,7 +316,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
         <div
           ref={handPanel}
           data-room-hand
-          data-hand-dock={docked || undefined}
+          data-hand-dock={handDocked || undefined}
           className={cn(
             // On a phone the padding clears the home indicator, docked or not, so the
             // panel measures the same in both states (`useHandDock`).
@@ -335,10 +338,10 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
             data-hand-hint
             className={cn(
               "m-0 px-4 text-center text-sm text-ink-2 phone:text-xs",
-              docked && "sr-only",
+              handDocked && "sr-only",
             )}
           >
-            {hint}
+            {laterHint}
           </p>
           {vote.error !== null && vote.error.round === (room.round?.number ?? null) ? (
             <p role="alert" className="mx-4 mt-2 flex items-start justify-center gap-2 text-sm">

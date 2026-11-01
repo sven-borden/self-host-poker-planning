@@ -5,7 +5,14 @@ import type { TFunction } from "../i18n/i18n.ts";
 import { cn } from "../lib/utils.ts";
 import { measuredEms, useLabelFonts } from "./label-width.ts";
 import type { Size } from "./layout.ts";
-import { cancelAll, fadeAway, play, prefersReducedMotion, turnUp } from "./reveal-motion.ts";
+import {
+  cancelAll,
+  fadeAway,
+  landDown,
+  play,
+  prefersReducedMotion,
+  turnUp,
+} from "./reveal-motion.ts";
 import "./table.css";
 
 // Cards (docs/03-design-brief.md, "Cards"): warm faces in both themes, wide Archivo
@@ -241,7 +248,7 @@ export function HandCard({ value, selected = false, label, className, ...props }
       className={cn(
         CARD_FACE,
         "relative grid h-[72px] w-[50px] shrink-0 cursor-pointer place-items-center rounded-[7px] p-0 text-[20px]/none shadow-sm phone:h-16 phone:w-11 phone:text-[18px]/none",
-        "transition-[translate,box-shadow,opacity] duration-200 ease-standard hover:not-disabled:not-aria-disabled:-translate-y-1.5 hover:not-disabled:not-aria-disabled:shadow-md",
+        "transition-[translate,box-shadow,opacity] duration-180 ease-standard hover:not-disabled:not-aria-disabled:-translate-y-1.5 hover:not-disabled:not-aria-disabled:shadow-md",
         "aria-pressed:-translate-y-3 aria-pressed:shadow-md aria-pressed:after:pointer-events-none aria-pressed:after:absolute aria-pressed:after:-inset-[3px] aria-pressed:after:rounded-[9px] aria-pressed:after:border-2 aria-pressed:after:border-brass",
         "disabled:cursor-default disabled:opacity-40 aria-disabled:cursor-default aria-disabled:opacity-40",
         className,
@@ -308,7 +315,9 @@ function Cover({ radius, cover }: { radius: number; cover: RefObject<HTMLDivElem
  * showing while it waits): the last vote arrives together with the reveal, so on every
  * other screen its slot was still empty, and it turns in its place in the stagger like
  * the others. One seen face down that is `gone` (an anonymous reveal) shrinks and fades.
- * Both keep their back mounted over the slot for that (`Cover`, hidden at rest). A card
+ * Both keep their back mounted over the slot for that (`Cover`, hidden at rest). An empty
+ * slot that gets its card has it land there (#43); the viewer's own lands hidden, under
+ * the flight that ends on it. A card
  * that is already up or gone when it mounts (a late joiner, a reload) shows at rest, with
  * no motion. A new face cancels the motion. A face-up card whose value changes (a vote
  * changed after the reveal, #29) turns over once more, at once, to its new value; under
@@ -330,8 +339,13 @@ export function SlotCard({ face, value, size, turnDelay = 0, className }: SlotCa
     const changes = shown === "up" && was.face === "up" && was.value !== value;
     const turns = shown === "up" && (was.face === "down" || was.face === "empty");
     const fades = shown === "gone" && was.face === "down";
-    if (!turns && !fades && !changes) return;
+    const lands = shown === "down" && was.face === "empty";
+    if (!turns && !fades && !changes && !lands) return;
     const reduced = prefersReducedMotion();
+    if (lands) {
+      const landing = play(root.current, landDown(reduced));
+      return () => cancelAll([landing]);
+    }
     if (changes) {
       if (reduced) return;
       const turn = turnUp(0, false, size.width * 6);

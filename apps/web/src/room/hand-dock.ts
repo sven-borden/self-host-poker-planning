@@ -48,6 +48,12 @@ function clearBottom(): number {
 }
 
 /**
+ * The dock the scroll padding follows. The next round docks the hand a step before the
+ * PO's decision leaves (`UnderTable`), and the leaver must not clear the padding.
+ */
+let padded: HTMLElement | null = null;
+
+/**
  * While something is docked at the bottom of the screen, whatever takes the focus or is
  * scrolled to stops above it (WCAG 2.4.11): the page's scroll padding follows `dock`'s
  * height until the returned function ends it. The dock is sticky, so it keeps its own
@@ -58,6 +64,7 @@ function clearBottom(): number {
 export function keepScrollPadding(dock: HTMLElement): () => void {
   const root = document.documentElement;
   const keep = () => {
+    padded = dock;
     root.style.scrollPaddingBottom = `${dock.offsetHeight}px`;
   };
   const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(keep);
@@ -65,6 +72,8 @@ export function keepScrollPadding(dock: HTMLElement): () => void {
   else keep();
   return () => {
     observer?.disconnect();
+    if (padded !== dock) return;
+    padded = null;
     root.style.removeProperty("scroll-padding-bottom");
   };
 }

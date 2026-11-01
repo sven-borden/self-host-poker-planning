@@ -45,6 +45,18 @@ export default defineConfig({
   retries: ci ? 1 : 0,
   workers: ci ? 2 : undefined,
   reporter: ci ? [["list"], ["html", { open: "never" }]] : "list",
+  projects: [
+    { name: "e2e", testIgnore: /reveal-performance/ },
+    // Long tasks mean nothing on a machine busy with other tests: this one runs alone,
+    // after them (#43). `--no-deps` runs it by itself.
+    {
+      name: "performance",
+      testMatch: /reveal-performance/,
+      dependencies: ["e2e"],
+      fullyParallel: false,
+      workers: 1,
+    },
+  ],
   use: {
     baseURL: `http://localhost:${PORT}`,
     // The same browser language on every machine; a test that needs another says so.

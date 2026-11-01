@@ -160,7 +160,7 @@ server sends and never decides the outcome of a round.
   and scrolls one wholly off screen the least that shows it, #37), and the bar
   ignores Enter and Space for `PLACED_FOCUS_GUARD_MS` after such a placed focus. While
   its place is out of view the bar docks at the bottom of the screen (`useDecisionDock`
-  in `decision-dock.ts`, `[data-decision-dock]`, `--decision-dock` for the scroll
+  in `decision-dock.ts`, `[data-decision-dock]`, `keepScrollPadding` for the scroll
   padding): the whole bar on a desktop, the action row alone on a phone, where the bar
   is `display: contents`; only when the result in the centre stays in sight above it.
   The #29 note ("Votes changed since you recorded 5.") has two copies:
@@ -267,7 +267,7 @@ server sends and never decides the outcome of a round.
   arrives with the reveal), its back drawn during the delay (`fill: backwards`). A card that mounts revealed (a reload, a late joiner) shows at rest.
   `TableStage` gives each face-up card a `turnDelay`: 90 ms per face-up card before it in
   seat order, from the viewer. `table/reveal-motion.ts` holds the keyframes (pure:
-  `turnUp`, `fadeAway`, `dealIn`) and `play`/`cancelAll` for `Element.animate`; a new
+  `turnUp`, `fadeAway`, `popIn`, `landDown`) and `play`/`cancelAll` for `Element.animate`; a new
   face cancels a running turn. `revealed-cards.tsx` (`RevealedCards`) lists, under the
   table after a named reveal, the "Not at the table" row (`[data-results="off-table"]`,
   items `[data-off-table]`) for every vote whose voter has no seat: no longer a
@@ -620,7 +620,22 @@ server sends and never decides the outcome of a round.
   (`<MotionFeatures layout>` when it needs layout animations): the features chunk
   (`domAnimation`, or `domMax` for layout) is fetched when the first one mounts, never at
   page load. Biome refuses `import { motion } from "motion/react"`. Every animation has a
-  reduced-motion variant (120 ms cross-fade, no travel).
+  reduced-motion variant (120 ms cross-fade, no travel, no delay).
+- A reveal's cost (#43, ADR-019): `e2e/reveal-performance.spec.ts`
+  plays the last vote of 16 seats on a Pixel 7 profile, with the CPU set from a small
+  benchmark so that every machine tests the same speed, and fails on any long task; it runs
+  alone after the other specs (`performance` project; add `--no-deps` to run it by
+  itself). Three rules keep it green. A commit on the table's side reads no layout: use a
+  ResizeObserver's first delivery (`CardValue`). Set what only the root needs on the root itself, not in
+  an inherited custom property. What lies under the table stays in `UnderTable`
+  (`seated.tsx`), a step behind it: `under` for the decision, `last` for the results; a
+  focus that lands there uses `focusSoon`, which waits for it. A reveal's table is what must
+  stay small: profile it with the Performance panel at 4x CPU before adding to a seat.
+- Seats (#43): `useSeatMotion` (`table/seat-motion.ts`) fades a newcomer's `[data-person]`
+  seat and slot in, glides the others (`translate` with `composite: "add"`, so a change in
+  mid-glide carries on), and puts a leaver's dropped element back on the stage, every
+  `data-*` stripped, `inert` and `aria-hidden`, until it has faded. A spec that measures seats right after a
+  change waits for them first (`settled` in `e2e/support.ts`).
 - Budget: `pnpm build` ends with `scripts/check-budget.ts`, which reads the Vite manifest
   and fails when the initial JavaScript of the room route or of the landing page (entry,
   route chunk and their static imports) exceeds 200 kB gzipped. Lazy chunks (Motion features, the toaster, the
@@ -674,7 +689,8 @@ server sends and never decides the outcome of a round.
   measured again on every resize of the page or the panel. `thumb:` makes it a sticky
   sheet on the bottom edge, its hint `sr-only`; the panel's bottom padding is the same
   docked or not, so the measure does not depend on the state. While docked the root's
-  `--hand-dock` holds its height, which `styles.css` uses as `scroll-padding-bottom`. A
+  `scroll-padding-bottom` follows its height (`keepScrollPadding`; set directly, never
+  through an inherited custom property, which restyles the whole page, #43). A
   vote's flight starts only when the slot is in sight (`inSight`). The hand snaps
   (`snap-x snap-mandatory`, cards `snap-center`) and centres the vote, and the card the
   arrow keys focus (`focus({ preventScroll: true })`), when it lies under a fade. `room/haptics.ts` (`voteTick`) vibrates 12 ms when `use-vote.ts`
