@@ -21,6 +21,29 @@ const GESTURES = ["pointerdown", "pointerup", "keydown", "touchend"] as const;
 
 const heard = ({ sound, afterMs, detune }: Cue) => play(sound, afterMs, detune);
 
+/**
+ * Runs work in a task of its own, in order. A snapshot arrives in the task that draws it,
+ * and a reveal's already sits at the 50 ms a mid-range phone may spend (#43, ADR-019), while
+ * laying out sixteen flicks and a chord takes 7 ms there. A message rather than a timer: a
+ * hidden tab holds its timers back by up to a second, and a hidden tab is where sound is
+ * wanted. Time lost to the wait comes off each cue, so the flicks stay with the flips.
+ */
+function taskQueue() {
+  const { port1, port2 } = new MessageChannel();
+  const waiting: Array<() => void> = [];
+  port1.onmessage = () => waiting.shift()?.();
+  return {
+    run(work: () => void) {
+      waiting.push(work);
+      port2.postMessage(null);
+    },
+    close() {
+      port1.close();
+      port2.close();
+    },
+  };
+}
+
 /** One round in one phase with one deadline: another one drops what is still to come. */
 function roundMoment() {
   const round = useRoomStore.getState().snapshot?.room.round ?? null;
@@ -54,13 +77,20 @@ export function useSoundEffects(on: boolean, volume: number) {
       if (deadline !== null) timerCues(deadline, serverTime()).forEach(heard);
     };
 
+    const tasks = taskQueue();
     const unfollow = useRoomStore.subscribe((state, before) => {
       const next = state.snapshot;
       if (!next || next === before.snapshot) return;
-      // Before the cues: a reveal takes back the ticks, never its own flicks.
-      layOut();
       const previous = before.snapshot?.room.code === next.room.code ? before.snapshot.room : null;
-      soundCues(next.room, next.causes, previous, prefersReducedMotion()).forEach(heard);
+      const arrived = performance.now();
+      tasks.run(() => {
+        // Before the cues: a reveal takes back the ticks, never its own flicks.
+        layOut();
+        const late = performance.now() - arrived;
+        for (const cue of soundCues(next.room, next.causes, previous, prefersReducedMotion())) {
+          heard({ ...cue, afterMs: Math.max(0, cue.afterMs - late) });
+        }
+      });
     });
     const unwatch = subscribeSound(() => {
       if (soundRunning()) layOut(true);
@@ -76,6 +106,7 @@ export function useSoundEffects(on: boolean, volume: number) {
       }
       unwatch();
       unfollow();
+      tasks.close();
       shut();
     };
   }, [on]);

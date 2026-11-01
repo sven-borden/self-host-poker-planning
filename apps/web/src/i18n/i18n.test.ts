@@ -154,6 +154,8 @@ describe("catalogs", () => {
       "timer.minutesSeconds",
       "timer.shortSeconds",
       "timer.shortMinutes",
+      "sound.level",
+      "sound.volume",
       "timer.add",
       // The history (#33): the same units, and "Votes" is French too.
       "history.took",
@@ -184,6 +186,7 @@ describe("catalogs", () => {
       "timer.minutesSeconds",
       "timer.shortSeconds",
       "timer.shortMinutes",
+      "sound.level",
       "timer.add",
       // The history (#33): the same units, a name and its card.
       "history.took",

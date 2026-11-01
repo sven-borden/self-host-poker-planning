@@ -33,8 +33,8 @@ const mallet = (at: number, frequency: number, gain: number, decay: number): Voi
 export const SOUNDS: Record<SoundName, readonly Voice[]> = {
   /** A card put down on felt: a low thud and a little of the card's edge. */
   card: [
-    { wave: "sine", at: 0, frequency: 170, glideTo: 100, gain: 0.26, attack: 0.002, decay: 0.09 },
-    { wave: "noise", at: 0, frequency: 1800, q: 0.8, gain: 0.22, attack: 0.002, decay: 0.05 },
+    { wave: "sine", at: 0, frequency: 170, glideTo: 100, gain: 0.2, attack: 0.002, decay: 0.09 },
+    { wave: "noise", at: 0, frequency: 1800, q: 0.8, gain: 0.16, attack: 0.002, decay: 0.05 },
   ],
   /** A card turning over: air, no pitch, so sixteen of them are a riffle and not a tune. */
   flip: [{ wave: "noise", at: 0, frequency: 3400, q: 1, gain: 0.24, attack: 0.004, decay: 0.05 }],

@@ -14,7 +14,6 @@ import { RoomView } from "../../room/room-view.tsx";
 import { RoomSettingsButton } from "../../room/settings-button.tsx";
 import { fetchRoomHeader, RoomApiError, type RoomHeader } from "../../rooms/api.ts";
 import { RoomNotFound } from "../../rooms/room-not-found.tsx";
-import { RoomSoundButton } from "../../sound/sound-button.tsx";
 import { useRoomStore } from "../../stores/room-store.ts";
 
 export const Route = createFileRoute("/r/$code")({
@@ -206,9 +205,8 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
             <RoomPresence />
           </div>
         </div>
-        {/* The header's actions: the link to share, the history (#33), the room's settings or
-            rules (#25) and the person's sound (#44). Below 360 px, a row of their own under the
-            code. */}
+        {/* The header's actions: the link to share, the history (#33) and the room's settings or
+            rules (#25). Below 360 px, a row of their own under the code. */}
         <div className="flex shrink-0 flex-wrap justify-end gap-2 phone:col-start-2 phone:row-start-1 phone:flex-nowrap narrow:col-span-2 narrow:col-start-1 narrow:row-start-3 narrow:mt-1 narrow:justify-start">
           <Button
             variant="outline"
@@ -220,7 +218,6 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
           </Button>
           <RoomHistoryButton roomName={header.name} />
           <RoomSettingsButton />
-          <RoomSoundButton />
         </div>
       </header>
       {note && (

@@ -91,6 +91,13 @@ test("the room: join screen, voting, revealed, the decision bar, settings, rules
     await audit(ben.page, "room rules, voter");
     await ben.page.keyboard.press("Escape");
 
+    await page.locator("[data-sound]").click();
+    await page.getByRole("switch", { name: "Play sound effects" }).click();
+    await audit(page, "sound panel, on");
+    await page.getByRole("switch", { name: "Play sound effects" }).click();
+    await audit(page, "sound panel, off");
+    await page.keyboard.press("Escape");
+
     await page.getByRole("button", { name: "Record 5" }).click();
     await expect(page.getByRole("button", { name: "Recorded" })).toBeVisible();
     await page.getByRole("button", { name: "Next round" }).click();

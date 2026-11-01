@@ -14,8 +14,8 @@ const PREVIEW_GAP_MS = 180;
 const running = () => soundRunning();
 
 /**
- * The person's sound effects (#44): a speaker in the room's header that opens a switch and
- * a volume. Off until they turn it on; the choice stays on this device. The switch is a
+ * The person's sound effects (#44): a speaker in the top bar that opens a switch and a
+ * volume. Off until they turn it on; the choice stays on this device. The switch is a
  * gesture, so turning it on is heard at once. After a reload a browser lets nothing play
  * before the next gesture: the button then says so, and the first click or key starts it.
  */
@@ -46,7 +46,7 @@ export default function SoundControl() {
     <Popover>
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
+          variant="ghost"
           size="icon"
           aria-label={label}
           title={label}
