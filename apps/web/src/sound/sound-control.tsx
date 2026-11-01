@@ -2,31 +2,47 @@ import { Volume2Icon, VolumeXIcon } from "lucide-react";
 import { useId, useRef, useSyncExternalStore } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover.tsx";
+import { SEGMENT } from "../components/ui/segment.ts";
 import { Switch } from "../components/ui/switch.tsx";
 import { useT } from "../i18n/hooks.ts";
-import { useSoundEffects } from "./sound-effects.ts";
-import { preview, soundRunning, subscribeSound } from "./sound-engine.ts";
-import { setSoundPrefs, useSoundPrefs } from "./sound-prefs.ts";
+import { useBackgroundMusic } from "./background-music.ts";
+import { useAudioWhile, useSoundEffects } from "./sound-effects.ts";
+import { preview, soundRunning, subscribeSound, unlock } from "./sound-engine.ts";
+import { MOODS, setSoundPrefs, useSoundPrefs } from "./sound-prefs.ts";
 
 /** A slider dragged across its length plays its preview this often, not at every step. */
 const PREVIEW_GAP_MS = 180;
+/** 44 px to touch, whatever the switch draws (design brief). */
+const SWITCH_TARGET = "relative after:absolute after:-inset-x-2 after:-inset-y-3.5";
 
 const running = () => soundRunning();
 
 /**
- * The person's sound effects (#44): a speaker in the top bar that opens a switch and a
- * volume. Off until they turn it on; the choice stays on this device. The switch is a
- * gesture, so turning it on is heard at once. After a reload a browser lets nothing play
- * before the next gesture: the button then says so, and the first click or key starts it.
+ * The person's sound (#44, #45): a speaker in the top bar that opens two switches, the sound
+ * effects and the background music, the music's mood and one volume. Off until they turn
+ * something on; the choices stay on this device. A switch is a gesture, so the effects are
+ * heard at once, and the music as soon as it is rendered, if voting is open. After a reload
+ * a browser lets nothing play before the next gesture: the button then says so, and the
+ * first click or key starts it.
  */
 export default function SoundControl() {
   const t = useT();
-  const ids = { on: useId(), hint: useId(), volume: useId() };
-  const { on, volume } = useSoundPrefs();
-  useSoundEffects(on, volume);
+  const ids = {
+    on: useId(),
+    hint: useId(),
+    music: useId(),
+    musicHint: useId(),
+    mood: useId(),
+    volume: useId(),
+  };
+  const { on, volume, music, mood } = useSoundPrefs();
+  const audible = on || music;
+  useSoundEffects(on);
+  useBackgroundMusic(music, mood);
+  useAudioWhile(audible, volume);
   const started = useSyncExternalStore(subscribeSound, running, () => false);
   const lastPreview = useRef(0);
-  const state = !on ? "off" : started ? "on" : "waiting";
+  const state = !audible ? "off" : started ? "on" : "waiting";
   const label = t(`sound.${state}`);
   const level = t("sound.level", { level: volume });
 
@@ -35,8 +51,15 @@ export default function SoundControl() {
     if (next) preview();
   }
 
+  function toggleMusic(next: boolean) {
+    setSoundPrefs({ music: next });
+    if (next) unlock();
+  }
+
   function changeVolume(next: number) {
     setSoundPrefs({ volume: next });
+    // The test of the sound is a sound effect: with only the music on, the music says it.
+    if (!on) return;
     const now = performance.now();
     if (now - lastPreview.current < PREVIEW_GAP_MS) return;
     lastPreview.current = now;
@@ -54,14 +77,14 @@ export default function SoundControl() {
           data-sound={state}
           className="shrink-0 data-[sound=waiting]:text-ink-2"
         >
-          {on && volume > 0 ? <Volume2Icon aria-hidden /> : <VolumeXIcon aria-hidden />}
+          {audible && volume > 0 ? <Volume2Icon aria-hidden /> : <VolumeXIcon aria-hidden />}
         </Button>
       </PopoverTrigger>
       <PopoverContent
         align="end"
         aria-label={t("sound.title")}
         data-sound-panel
-        className="flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-3 border-line bg-surface text-ink"
+        className="flex max-h-(--radix-popover-content-available-height) w-72 max-w-[calc(100vw-2rem)] flex-col gap-3 overflow-y-auto border-line bg-surface text-ink"
       >
         <div className="flex items-center justify-between gap-3">
           <label htmlFor={ids.on} className="font-medium">
@@ -71,14 +94,58 @@ export default function SoundControl() {
             id={ids.on}
             checked={on}
             aria-describedby={ids.hint}
-            // 44 px to touch, whatever the switch draws (design brief).
-            className="relative after:absolute after:-inset-x-2 after:-inset-y-3.5"
+            className={SWITCH_TARGET}
             onCheckedChange={toggle}
           />
         </div>
         <p id={ids.hint} className="m-0 text-sm text-ink-2">
           {t("sound.hint")}
         </p>
+        <div className="flex items-center justify-between gap-3">
+          <label htmlFor={ids.music} className="font-medium">
+            {t("sound.musicEnable")}
+          </label>
+          <Switch
+            id={ids.music}
+            checked={music}
+            aria-describedby={ids.musicHint}
+            className={SWITCH_TARGET}
+            onCheckedChange={toggleMusic}
+          />
+        </div>
+        <p id={ids.musicHint} className="m-0 text-sm text-ink-2">
+          {t("sound.musicHint")}
+        </p>
+        <div className="flex flex-col gap-1">
+          <span id={ids.mood} className="font-medium">
+            {t("sound.mood")}
+          </span>
+          <div
+            role="radiogroup"
+            aria-labelledby={ids.mood}
+            data-sound-mood
+            className="flex flex-wrap gap-2"
+          >
+            {MOODS.map((choice) => (
+              <label
+                key={choice}
+                className={`${SEGMENT} has-disabled:cursor-not-allowed has-disabled:opacity-50`}
+              >
+                <input
+                  type="radio"
+                  name={ids.mood}
+                  value={choice}
+                  checked={mood === choice}
+                  disabled={!music}
+                  onChange={() => setSoundPrefs({ mood: choice })}
+                  // The whole segment is the radio: a click or a tap lands on it.
+                  className="absolute inset-0 m-0 cursor-pointer appearance-none rounded-md opacity-0 disabled:cursor-not-allowed"
+                />
+                {t(`sound.moods.${choice}`)}
+              </label>
+            ))}
+          </div>
+        </div>
         <div className="flex flex-col">
           <div className="flex items-baseline justify-between gap-3">
             <label htmlFor={ids.volume} className="font-medium">
@@ -97,7 +164,7 @@ export default function SoundControl() {
             step={5}
             value={Math.round(volume * 100)}
             aria-valuetext={level}
-            disabled={!on}
+            disabled={!audible}
             data-sound-volume
             className="h-11 w-full cursor-pointer accent-brass disabled:cursor-not-allowed disabled:opacity-50"
             onChange={(event) => changeVolume(Number(event.target.value) / 100)}

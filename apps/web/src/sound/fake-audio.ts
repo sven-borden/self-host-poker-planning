@@ -25,6 +25,7 @@ class FakeSource extends FakeNode {
   frequency = new FakeParam();
   detune = new FakeParam();
   buffer: unknown = null;
+  loop = false;
   onended: (() => void) | null = null;
   start: Mock = vi.fn();
   stop: Mock = vi.fn();

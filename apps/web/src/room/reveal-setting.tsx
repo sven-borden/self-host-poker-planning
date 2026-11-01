@@ -1,8 +1,9 @@
 import type { WhoCanReveal } from "@pp/domain";
 import { useEffect, useId, useRef, useState } from "react";
+import { SEGMENT } from "../components/ui/segment.ts";
 import { useT } from "../i18n/hooks.ts";
 import type { ControlProps } from "./settings-panel.tsx";
-import { ARROW_SETTLE_MS, SEGMENT } from "./timer-setting.tsx";
+import { ARROW_SETTLE_MS } from "./timer-setting.tsx";
 
 const CHOICES: readonly {
   value: WhoCanReveal;

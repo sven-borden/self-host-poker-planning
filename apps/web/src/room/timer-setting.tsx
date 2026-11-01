@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
+import { SEGMENT } from "../components/ui/segment.ts";
 import { Switch } from "../components/ui/switch.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
@@ -21,10 +22,6 @@ const choiceOf = (seconds: number | null): Choice =>
  * field shows each at once, and sends the one the PO stops on for this long.
  */
 export const ARROW_SETTLE_MS = 400;
-
-/** A segment of the length picker: a 44 px label with its native radio laid over it. */
-export const SEGMENT =
-  "relative inline-flex h-11 min-w-16 flex-1 cursor-pointer items-center justify-center rounded-md border border-line bg-surface px-2 text-sm font-medium tabular-nums has-checked:border-spruce has-checked:bg-spruce has-checked:text-on-spruce has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-brass has-aria-disabled:opacity-60 forced-colors:has-checked:border-[Highlight] forced-colors:has-checked:outline-2 forced-colors:has-checked:outline-[Highlight]";
 
 /**
  * The PO's timer setting (#27), in the settings panel's "Voting and reveal" group: the
