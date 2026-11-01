@@ -1,7 +1,7 @@
 # Status — what is live, what is in flight, what only Sven can do
 
 A living page, rewritten (not appended) whenever the state changes, and kept under
-about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agreement:
+about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agreement:
 `CLAUDE.md`.
 
 ## Live
@@ -147,6 +147,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
   (`/r/:code`), never a room code; the policy gains their origins only when on. An e2e
   round proves no request leaves by default; a second e2e server runs with both on. The
   room route loads 177.4 kB; the image is 239 MB of its 250 MB budget.
+- Avatars from #42 (ADR-018): 24 original drawings on the person's own colour, optional,
+  picked by keyboard or touch on the join form and in the "You" panel, saved on the user
+  (`POST /api/me/avatar`, `user.avatar`) for the next room. One blink or bob at a time,
+  none under reduced motion or in a hidden tab; away, grey with shut eyes. A lazy 2.6 kB
+  chunk; the room route loads 178.4 kB. Live at bac3f39.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -157,7 +162,7 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- Nothing. Sven resumed with "next task" (2026-10-29): #40 is merged. Each next task
+- Nothing. Sven resumed with "resume work" (2026-11-01): #42 is merged. Each next task
   waits for his word. No worktree is open.
 - **No subagents** (Sven, 2026-10-29): the main session does each task itself, one at
   a time (see `CLAUDE.md`).
@@ -165,7 +170,7 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-10.md`). Working agre
 ## Next
 
 - W3 (#33–#41): all merged but #38 and #41, which need Sven's OQ-1 and OQ-2. Without
-  them, the next task is W4's #42.
+  them, the next task is W4's #43.
 - Image size: 239 MB of 250 MB after #40 (236 MB before; architecture section 12 still
   quotes #11's 220 MB). A dependency of more than a few MB needs a look first.
 - Chores to fold into a later issue: a lazy catalog for the panels' copy (settings and
@@ -224,6 +229,8 @@ issues are merged.
   Suggested 5." names the last voter beside the group's suggestion (no card is paired
   with a name). Also the German count "0/7 haben abgestimmt" (was "haben bisher
   abgestimmt", shortened to fit 360 px), if another wording is wanted.
+- **#19**: close the issue. PR #82 shipped it on 2026-10-27; the session's permissions
+  refused `gh issue close`.
 - **#38**: pick the Azure service (OQ-1).
 - **#41**: French and German tone (OQ-2).
 - **#56**: licence and pricing model for branding (OQ-3).
