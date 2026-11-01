@@ -184,7 +184,10 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
       const active = document.activeElement;
       if (!(active instanceof HTMLElement) || !handPanel.current?.contains(active)) return;
       const box = active.getBoundingClientRect();
-      const inView = (top: number, bottom: number) => top >= 0 && bottom <= window.innerHeight;
+      // A pixel of slack: the card's place is fractional and a scroll is not, so a card the
+      // last step of a reveal scrolled into view can end a fraction past the edge.
+      const inView = (top: number, bottom: number) =>
+        top >= -1 && bottom <= window.innerHeight + 1;
       if (!inView(box.top, box.bottom) && inView(box.top - shift, box.bottom - shift)) {
         active.scrollIntoView?.({ block: "nearest" });
       }
