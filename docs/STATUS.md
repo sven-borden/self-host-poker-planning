@@ -158,6 +158,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
   seats' labels, the decision and the hand panel a step behind, the results after them.
   `reveal-performance.spec.ts` holds it, alone after the other specs. The room route loads
   178.4 kB. Live at 2aee937.
+- Sound effects from #44 (ADR-020): a card placed, a flip, the reveal, a consensus and the
+  timer's last seconds, synthesised with the Web Audio API, off by default, saved on the
+  device. A speaker in the top bar opens the switch and the volume. No `AudioContext` before
+  a gesture; a hidden tab hears everything. A lazy chunk; the room route loads 179.3 kB. Live
+  at 4e1ae00.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -168,15 +173,17 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- Nothing. #43 is merged (2026-11-01). Each next task waits for Sven's word. No worktree
-  is open.
-- **No subagents** (Sven, 2026-10-29): the main session does each task itself, one at
-  a time (see `CLAUDE.md`).
+- W4's #45 and #46, each with an implementer agent.
+- **Agents again, issue after issue, until the end of 2026-11-02** (Sven, 2026-11-01): the
+  main session orchestrates and does not stop between issues (see `CLAUDE.md`).
 
 ## Next
 
-- W3 (#33–#41): all merged but #38 and #41, which need Sven's OQ-1 and OQ-2. Without
-  them, the next task is W4's #44.
+- W3 (#33–#41): all merged but #38 and #41, which need Sven's OQ-1 and OQ-2.
+- After W4: W5 (#47–#51), then W6 (#52–#55). W7 waits for Sven's OQ-3 (#56). #47's live
+  check needs his Google and Microsoft keys in Coolify: the code merges without them.
+- The local reveal budget fails on clean `main` since 2026-11-02 (named reveal, 1 run of 4
+  clean, worst 67 ms; #43 had 10 of 10). CI passes at the first try. Cause not looked for.
 - Image size: 239 MB of 250 MB after #40 (236 MB before; architecture section 12 still
   quotes #11's 220 MB). A dependency of more than a few MB needs a look first.
 - Chores to fold into a later issue: a lazy catalog for the panels' copy (settings and
@@ -238,6 +245,9 @@ issues are merged.
   Suggested 5." names the last voter beside the group's suggestion (no card is paired
   with a name). Also the German count "0/7 haben abgestimmt" (was "haben bisher
   abgestimmt", shortened to fit 360 px), if another wording is wanted.
+- **After #44**: turn the sound on at poker.borden.ch and listen. Nobody has heard these
+  yet; they were measured, not judged. The sounds are numbers in `sound-recipes.ts`. A real
+  iPhone is untested too.
 - **#19**: close the issue. PR #82 shipped it on 2026-10-27; the session's permissions
   refused `gh issue close`.
 - **#38**: pick the Azure service (OQ-1).

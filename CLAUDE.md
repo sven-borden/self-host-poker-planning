@@ -20,9 +20,12 @@ Code conventions live next to the code (package READMEs); do not duplicate them 
 
 ## Build process
 
-- **Since 2026-10-29 (Sven): no subagents.** The main session does each task itself,
-  one at a time (build, review, fix, merge); CI is watched with a background shell
-  command. The agent rules below stay for reference until Sven says otherwise.
+- **Until the end of 2026-11-02 (Sven, 2026-11-01): agents again, issue after issue.** The
+  main session orchestrates by the agent rules below and does not stop between issues. It
+  skips what only Sven can decide and goes on with what is unblocked. CI is watched with a
+  background shell command. After that date it stops and asks; the rule from 2026-10-29
+  (no subagents, the main session does each task itself, one at a time) was in force until
+  then.
 - Two issues may be in flight at once (Sven, 2026-10-26), when both have their "Depends
   on" issues merged and they touch different parts of the repo. Otherwise one at a time.
   One implementer agent per issue; the main session orchestrates.
