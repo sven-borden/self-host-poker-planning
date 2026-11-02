@@ -342,6 +342,28 @@ describe("the deadline", () => {
     expect(sync.deadlines.armed(idOf(store))).toBeUndefined();
   });
 
+  it("starts the next queue item at the countdown's end with no client action, once (#52)", async () => {
+    const state = play(voting(), "ub", { type: "castVote", card: "5" }, 4);
+    const revealed = play(state, "ua", { type: "reveal" }, 5);
+    const round = revealed.round;
+    if (!round) throw new Error("no round");
+    const { client, store, sync } = await start({
+      ...revealed,
+      round: { ...round, final: "5", advanceAt: Date.now() + 200 },
+      settings: { ...revealed.settings, autoAdvance: true },
+      queue: { items: [{ id: 1, title: "Next up" }], lastId: 1, rev: 1 },
+    });
+    const ada = client("ua");
+    await ada.enter(CODE);
+    expect(sync.deadlines.armed(idOf(store))).toBeDefined();
+    const seen = await ada.waitFor((s) => s.room.round?.phase === "voting", 3000);
+    expect(seen.snapshot.room.round?.subject).toEqual({ kind: "title", text: "Next up" });
+    expect(seen.snapshot.room.round?.number).toBe((round.number ?? 0) + 1);
+    expect(seen.snapshot.room.queue).toBeUndefined();
+    expect(store.commits).toBe(1);
+    expect(sync.deadlines.armed(idOf(store))).toBeUndefined();
+  });
+
   it("follows a timer started, then forgets it when the room's last socket leaves", async () => {
     const { client, store, sync } = await start(voting());
     const ada = client("ua");

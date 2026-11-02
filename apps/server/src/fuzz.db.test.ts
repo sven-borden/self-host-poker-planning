@@ -225,7 +225,7 @@ function invariantProblems(state: RoomState): string[] {
 /** A message on the wire, and what may happen to it. */
 type Message =
   /** Sent with an ack callback: must get an answer. */
-  | { kind: "ack"; event: "cmd" | "enter" | "history"; args: unknown[] }
+  | { kind: "ack"; event: "cmd" | "enter" | "history" | "queue"; args: unknown[] }
   /** Sent without a callback, or to an event the server does not know: dropped. */
   | { kind: "drop"; event: string; args: unknown[] }
   /** Over the 128 KB cap: the server closes the connection. */
@@ -355,6 +355,30 @@ function commandArb(ids: () => string[]) {
     fc.record({ type: fc.constant("kick"), payload: fc.record({ who }) }),
     fc.record({ type: fc.constant("startRound"), payload: fc.record({ subject }) }),
     fc.record({
+      type: fc.constant("queueAdd"),
+      payload: fc.record({
+        items: fc.array(
+          fc.record(
+            {
+              key: fc.oneof(fc.constantFrom("AB-1", "1234", "ab-1", "#1"), text(70)),
+              title: text(300),
+              url: fc.oneof(
+                fc.constantFrom("https://example.com/x", "javascript:alert(1)", "//x"),
+                text(300),
+              ),
+            },
+            { requiredKeys: [] },
+          ),
+          { maxLength: 8 },
+        ),
+      }),
+    }),
+    fc.record({
+      type: fc.constantFrom("queueMove", "queueRemove", "startNext"),
+      payload: fc.record({ id: roundNumber, to: roundNumber }, { requiredKeys: ["id"] }),
+    }),
+    fc.record({ type: fc.constantFrom("queueClear", "holdAdvance") }),
+    fc.record({
       type: fc.constant("castVote"),
       payload: fc.record(
         { card, round: roundNumber, restart },
@@ -474,6 +498,10 @@ function messageArb(code: () => string, ids: () => string[]): fc.Arbitrary<Messa
           junk,
         )
         .map((payload): Message => ({ kind: "ack", event: "history", args: [payload] })),
+    },
+    {
+      weight: 1,
+      arbitrary: junk.map((payload): Message => ({ kind: "ack", event: "queue", args: [payload] })),
     },
     {
       weight: 1,
