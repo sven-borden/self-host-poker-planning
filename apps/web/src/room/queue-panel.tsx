@@ -176,9 +176,12 @@ function QueueBody({ side }: { side: boolean }) {
     return () => clearTimeout(quiet.current);
   }, [fetchList]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` is what asks again.
+  // The open asked already: only a change asks again.
+  const seenKey = useRef(key);
   useEffect(() => {
-    if (asked.current > 0) refresh();
+    if (seenKey.current === key) return;
+    seenKey.current = key;
+    refresh();
   }, [key, refresh]);
 
   // The content's scroll padding follows the sticky head's height.

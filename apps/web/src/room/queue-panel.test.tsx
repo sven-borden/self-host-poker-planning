@@ -79,12 +79,13 @@ beforeEach(() => {
   mocks.requestQueue.mockReset();
   mocks.send.mockReset();
   mocks.send.mockResolvedValue({ ok: true, version: 9 });
+  useRoomStore.getState().open(CODE);
   show(roomWith(1, 3));
 });
 
 afterEach(() => {
   cleanup();
-  useRoomStore.getState().reset?.();
+  useRoomStore.getState().reset();
 });
 
 describe("the queue button", () => {
@@ -102,8 +103,9 @@ describe("the queue button", () => {
 describe("the sheet", () => {
   it("asks for the list on open and shows each item with its name", async () => {
     const dialog = await open();
-    expect(mocks.requestQueue).toHaveBeenCalledTimes(1);
     expect(titles(dialog)).toEqual(["1", "2", "3"]);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(mocks.requestQueue).toHaveBeenCalledTimes(1);
     expect(within(dialog).getByRole("link", { name: "PAY-1" }).getAttribute("rel")).toBe(
       "noopener noreferrer",
     );
