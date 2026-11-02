@@ -12,6 +12,8 @@ export interface MyRoom {
   readonly owned: boolean;
   /** The caller holds the right to delete it, which takes the PO role too (ADR-027). */
   readonly keeper: boolean;
+  /** No account holds the right to delete this room: nobody can, and it goes when idle. */
+  readonly noKeeper: boolean;
   /** The caller holds a seat. */
   readonly seated: boolean;
   /** Rounds started in the room. */
@@ -53,6 +55,7 @@ function toRoom(raw: unknown): MyRoom {
     owned: field(raw, "owned") === true,
     keeper: field(raw, "keeper") === true,
     seated: field(raw, "seated") === true,
+    noKeeper: field(raw, "noKeeper") === true,
     rounds,
     lastActiveAt,
   };

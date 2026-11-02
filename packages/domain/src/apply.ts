@@ -32,6 +32,7 @@ import {
 import { cleanSubject } from "./apply-subject.ts";
 import { isAvatarId } from "./avatars.ts";
 import type {
+  AccountRemoval,
   ApplyContext,
   ApplyResult,
   Cause,
@@ -42,6 +43,7 @@ import type {
 import { baseCards, deckCards } from "./decks.ts";
 import {
   AUTO_ADVANCE_MS,
+  heirsOf,
   keeperOf,
   MAX_MEMBERS,
   MAX_PARTICIPANTS,
@@ -94,7 +96,7 @@ const OWNER_ONLY: ReadonlySet<CommandType> = new Set<CommandType>([
  * Commands a non-participant may send: entering, the timer ping, the server's own
  * presence updates (the actor is the server; `who` names the person), the PO's password
  * (#31) and the room's name (#49), which the PO may set from outside the room too, and the
- * server's `moveGuest`.
+ * server's `moveGuest` and `removeAccount`.
  */
 const OPEN: ReadonlySet<CommandType> = new Set<CommandType>([
   "join",
@@ -104,6 +106,7 @@ const OPEN: ReadonlySet<CommandType> = new Set<CommandType>([
   "moveGuest",
   "endCountdown",
   "renameRoom",
+  "removeAccount",
 ]);
 
 export function apply(state: RoomState, command: Command, ctx: ApplyContext): ApplyResult {
@@ -277,6 +280,8 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       return moveGuest(state, command.guest, command.account);
     case "renameRoom":
       return renameRoom(state, command.name);
+    case "removeAccount":
+      return removeAccount(state, command);
     default:
       return unknownCommand(command);
   }
@@ -489,6 +494,57 @@ function morePresent(kept: Participant, other: Participant): Participant {
   const merged = { ...here, connected: kept.connected || other.connected };
   if (kept.awaySince === undefined || other.awaySince === undefined) return merged;
   return { ...merged, awaySince: Math.max(kept.awaySince, other.awaySince) };
+}
+
+/**
+ * An account is going for good (#51, ADR-029): after this the room holds nothing of `who`, and a
+ * second run changes nothing. It is a `leave`, as the table sees it, with three differences that
+ * follow from the id having to go.
+ *
+ * The right to delete, and the role with it, passes on, to the first of `heirsOf`. With nobody
+ * else seated, nothing changes: the caller deletes that room, in a statement a late join can refuse.
+ * A keeper the room's rule refuses destroys nothing (`vacate`), so their room goes on as below.
+ * With nobody allowed to take it (`mayTake`), nobody holds the room: `keeperId` becomes `vacant`, a
+ * seatless id no account's exemption covers, and so does `ownerId` if the person held it. A PO who
+ * is someone else keeps the role.
+ *
+ * The PO role of someone who does not keep the room goes back to its keeper. A keeper with no seat
+ * here holds it as a PO who left does: anyone in the room can claim it at once (`claimOwner`). The
+ * keeper's right stays, as for any claim. A keeper who may not take the role gets nothing they did
+ * not have: `ownerId` becomes `vacant`, and the role is as free.
+ *
+ * A revealed card stays on the table, under `ghost`, a new random id that nothing else names, with
+ * no name and no mark that it changed. Taken away it would say whose it was in an anonymous round,
+ * and it stands in the results of a named one. A card in a round still voting goes as a leaver's
+ * does, and `settle` then does what the room's rule says for anyone who leaves.
+ */
+function removeAccount(state: RoomState, removal: AccountRemoval): Step {
+  const { who, ghost, vacant, heir, mayTake, vacate } = removal;
+  const seat = participant(state, who);
+  const round = state.round;
+  const card = round ? ownVote(round, who) : undefined;
+  const keeper = keeperOf(state);
+  const keeps = keeper === who;
+  if (!seat && !card && !keeps && state.ownerId !== who) return done(state);
+  const participants = omit(state.participants, who);
+  if (keeps && !vacate && Object.keys(participants).length === 0) return done(state);
+  const taker = keeps ? heirsOf(state, who, { chosen: heir, mayTake })[0]?.id : undefined;
+  const roleBack = mayTake === undefined || mayTake.includes(keeper) ? keeper : vacant;
+  const owner = taker ?? (state.ownerId !== who ? state.ownerId : keeps ? vacant : roleBack);
+  const next: RoomState = {
+    ...state,
+    ownerId: owner,
+    ...(keeps && { keeperId: taker ?? vacant }),
+    participants,
+  };
+  const causes: Cause[] = [];
+  if (owner !== state.ownerId && participant(next, owner)) {
+    causes.push({ type: "ownerChanged", by: "transfer", to: owner });
+  }
+  if (seat) causes.push({ type: "left", who });
+  if (round?.phase !== "revealed" || !card) return done(next, ...causes);
+  const votes = { ...omit(round.votes, who), [ghost]: { card: card.card } };
+  return done(withRound(next, { ...round, votes }), ...causes);
 }
 
 // ---------------------------------------------------------------------------------- rounds

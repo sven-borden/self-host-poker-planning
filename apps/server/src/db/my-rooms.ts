@@ -18,7 +18,8 @@
  * account, however long the list, so a room that would refuse them says nothing here.
  */
 import type { Restriction } from "@pp/domain";
-import { and, eq, type SQL, sql } from "drizzle-orm";
+import { and, eq, inArray, type SQL, sql } from "drizzle-orm";
+import { user as userTable } from "./auth-schema.ts";
 import { guard } from "./errors.ts";
 import type { Db } from "./rooms.ts";
 import {
@@ -41,6 +42,8 @@ export interface MyRoom {
   keeper: boolean;
   /** The person holds a seat. */
   seated: boolean;
+  /** No account holds the right to delete the room: it goes when it has sat idle (ADR-029). */
+  noKeeper: boolean;
   rounds: number;
   lastActiveAt: Date;
   /** The room's rule, null without one. For the server to judge: never sent. */
@@ -90,6 +93,7 @@ interface ListRow {
   owned: boolean;
   keeper: boolean;
   seated: boolean;
+  keeper_id: string;
   rounds: number;
   micros: string;
   rule: Restriction | null;
@@ -114,34 +118,48 @@ export function myRoomsQuery(user: string, limit: number, after?: MyRoomsCursor)
       select ${room.id} as id, ${room.code} as code, ${room.name} as name,
         ${room.ownerUserId} = ${user} as owned, ${keeper} as keeper,
         coalesce(${seated}, false) as seated, ${rounds} as rounds,
-        ${room.lastActiveAt} as last_active_at, ${micros} as micros, ${ROOM_RULE} as rule
+        ${room.lastActiveAt} as last_active_at, ${micros} as micros, ${ROOM_RULE} as rule,
+        ${ROOM_KEEPER} as keeper_id
       from ${room}
       where ((${room.ownerUserId} = ${user} and ${keeper})
         or (${ROOM_PEOPLE} ? ${user} and ${seated})
         or (${KEEPER_APART} = ${user} and ${IS_KEEPER_APART}))
         ${past}
     )
-    select id, code, name, owned, keeper, seated, rounds, micros, rule from mine
+    select id, code, name, owned, keeper, seated, rounds, micros, rule,
+      keeper_id
+    from mine
     order by last_active_at desc, id desc
     limit ${limit + 1}`;
 }
 
 export function createMyRoomsStore(db: Db): MyRoomsStore {
+  /** Which of these ids are accounts or guests still here. */
+  const existing = async (ids: string[]) =>
+    (await db.select({ id: userTable.id }).from(userTable).where(inArray(userTable.id, ids))).map(
+      ({ id }) => id,
+    );
+
   return {
     list: (user, limit, after) =>
       guard("list my rooms", async () => {
         const { rows } = await db.execute<ListRow>(myRoomsQuery(user, limit, after));
         const page = rows.slice(0, limit);
         const last = page.at(-1);
+        // Only a role held apart from the right can sit on a room nobody keeps, and nearly no room
+        // is one: most lists read nothing here, and none reads `user` by the page.
+        const apart = page.filter(({ owned, keeper }) => owned && !keeper);
+        const keepers = apart.length === 0 ? [] : await existing(apart.map((r) => r.keeper_id));
         return {
-          rooms: page.map(({ id, code, name, owned, keeper, seated, rounds, micros, rule }) => ({
-            id,
-            code,
-            name,
-            owned,
-            keeper,
-            seated,
-            rounds,
+          rooms: page.map(({ micros, rule, keeper_id, ...row }) => ({
+            id: row.id,
+            code: row.code,
+            name: row.name,
+            owned: row.owned,
+            keeper: row.keeper,
+            seated: row.seated,
+            noKeeper: row.owned && !row.keeper && !keepers.includes(keeper_id),
+            rounds: row.rounds,
             lastActiveAt: new Date(Number(micros) / 1000),
             rule,
           })),

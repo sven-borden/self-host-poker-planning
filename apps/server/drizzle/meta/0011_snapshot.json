@@ -1,9 +1,52 @@
 {
-  "id": "83b200f4-5d20-47c7-9165-372d3290b4ed",
+  "id": "aefc9aaf-7172-48aa-b8cd-db0e8a964ad1",
   "prevId": "b6d2d29b-94bd-4718-b9f6-92142fe346ee",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.account_deletion": {
+      "name": "account_deletion",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "choices": {
+          "name": "choices",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "account_deletion_user_id_user_id_fk": {
+          "name": "account_deletion_user_id_user_id_fk",
+          "tableFrom": "account_deletion",
+          "tableTo": "user",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.connector_token": {
       "name": "connector_token",
       "schema": "",
@@ -32,12 +75,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "gen_random_uuid()"
-        },
-        "settings": {
-          "name": "settings",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -433,12 +470,6 @@
         "final": {
           "name": "final",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source": {
-          "name": "source",
-          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

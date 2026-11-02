@@ -469,6 +469,20 @@ describe.skipIf(!REDIS_URL)("two instances on one room (Redis)", () => {
     });
   });
 
+  describe("an account deleted (#51)", () => {
+    beforeAll(freshGuests);
+
+    it("closes the person's sockets on the other instance, and they hear why first", async () => {
+      const tab = client(bob, one());
+      await tab.enter(await insert(votingRoom()));
+      const heard: string[] = [];
+      tab.socket.on("accountDeleted", () => heard.push("accountDeleted"));
+      tab.socket.on("disconnect", () => heard.push("closed"));
+      syncOf(two()).dropAccount(bob.id);
+      await vi.waitFor(() => expect(heard).toEqual(["accountDeleted", "closed"]));
+    });
+  });
+
   describe("the deadline", () => {
     beforeAll(freshGuests);
 

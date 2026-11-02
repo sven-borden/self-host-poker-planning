@@ -1,3 +1,4 @@
+export { ACCOUNT_DELETE_WORDS, ACCOUNT_EXPORT_VERSION, isAccountDeleteWord } from "./account.ts";
 export {
   COMMAND_ID_PATTERN,
   COMMAND_TYPES,

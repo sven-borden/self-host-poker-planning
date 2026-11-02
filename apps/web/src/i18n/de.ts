@@ -610,7 +610,11 @@ export const de: Catalog = {
         "Die Anmeldung wurde nicht abgeschlossen. Versuchen Sie es erneut oder machen Sie ohne Konto weiter.",
       stillMoving:
         "Sie sind angemeldet. Einige Ihrer Räume werden noch in Ihr Konto übertragen. Öffnen Sie sie gleich noch einmal.",
+      accountGoing: "Ihr Konto wird gelöscht. Danach beginnt eine Anmeldung ein neues Konto.",
     },
+  },
+  account: {
+    title: "Konto",
   },
   restriction: {
     title: "Dieser Raum ist bestimmten Konten vorbehalten",
@@ -685,6 +689,10 @@ export const de: Catalog = {
     claimed: "Sie sind Product Owner",
     claimedWhy:
       "Mit dieser Rolle leiten Sie den Raum und können ihn umbenennen. Löschen kann ihn nur die Person, der er gehört: Die Rolle zu übernehmen oder übergeben zu bekommen, gibt dieses Recht nicht.",
+    noKeeperWhy_one:
+      "Mit dieser Rolle leiten Sie den Raum und können ihn umbenennen. Löschen kann ihn niemand: Das Recht dazu ist mit dem Konto verschwunden, das es hielt. Er verschwindet nach {{count, number}} Tag ohne Aktivität.",
+    noKeeperWhy_other:
+      "Mit dieser Rolle leiten Sie den Raum und können ihn umbenennen. Löschen kann ihn niemand: Das Recht dazu ist mit dem Konto verschwunden, das es hielt. Er verschwindet nach {{count, number}} Tagen ohne Aktivität.",
     kept: "Ihr Raum, mit einem anderen Product Owner",
     keptWhy:
       "Jemand anderes hat die Rolle des Product Owners übernommen. Holen Sie sich die Rolle im Raum zurück, dann können Sie ihn löschen.",
@@ -977,7 +985,9 @@ export const de: Catalog = {
     not_participant:
       "Sie sind nicht mehr in diesem Raum. Laden Sie die Seite neu, um wieder beizutreten.",
     not_owner: "Nur der Product Owner kann das tun.",
-    not_keeper: "Nur die Person, der dieser Raum gehört, kann ihn löschen.",
+    not_keeper: "Sie können diesen Raum nicht löschen: Dieses Recht liegt nicht bei Ihnen.",
+    sign_in_again: "Melden Sie sich zuerst erneut an: Das erfordert eine aktuelle Anmeldung.",
+    bad_confirmation: "Das ist nicht das verlangte Wort. Nichts wurde gelöscht.",
     already_joined: "Sie sind bereits in diesem Raum.",
     bad_avatar: "Dieser Avatar ist nicht verfügbar. Wählen Sie einen anderen.",
     bad_name: "Ein Name hat {{min, number}} bis {{max, number}} Zeichen. Wählen Sie einen anderen.",

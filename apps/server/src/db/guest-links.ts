@@ -7,11 +7,12 @@
  * rounds: `votes` has a GIN index for containment. So a sign-in reads index entries, however
  * many rooms the instance holds, and an instance's rounds and rooms are never scanned.
  */
-import { and, eq, exists, sql } from "drizzle-orm";
+import { and, eq, exists, notExists, type SQL, sql } from "drizzle-orm";
 import { session, user } from "./auth-schema.ts";
 import { guard } from "./errors.ts";
 import type { Db } from "./rooms.ts";
 import {
+  accountDeletion,
   guestLink,
   IS_KEEPER_APART,
   KEEPER_APART,
@@ -29,7 +30,10 @@ export interface GuestLinkStore {
    * and keeps its sessions.
    */
   begin(guest: string, account: string): Promise<void>;
-  /** Where a guest is moving and since when, or null when no move is pending. */
+  /**
+   * Where a guest is moving and since when, or null when no move is pending. An account on its
+   * way out takes no more (#51, ADR-029): its deletion deals with the guest's rooms itself.
+   */
   linkOf(guest: string): Promise<{ account: string; since: Date } | null>;
   /** The guests still moving to this account. One read by index. */
   guestsOf(account: string): Promise<string[]>;
@@ -53,6 +57,19 @@ export interface GuestRoom {
   code: string;
 }
 
+/**
+ * A room that names `who`: as owner, in a seat, by a vote on the table or as a keeper apart. Each
+ * side has its index, as long as `ROOM_PEOPLE`, `KEEPER_APART` and `IS_KEEPER_APART` are spelled
+ * exactly.
+ */
+export const namesPerson = (who: string): SQL =>
+  sql`${room.ownerUserId} = ${who} or ${ROOM_PEOPLE} ? ${who}
+    or (${KEEPER_APART} = ${who} and ${IS_KEEPER_APART})`;
+
+/** What finds a person's named rounds, through `round_history_votes_idx`. */
+export const namedRoundsOf = (who: string): string =>
+  JSON.stringify({ kind: "named", votes: [{ who }] });
+
 export function createGuestLinkStore(db: Db): GuestLinkStore {
   return {
     begin: (guest, account) =>
@@ -72,10 +89,14 @@ export function createGuestLinkStore(db: Db): GuestLinkStore {
 
     linkOf: (guest) =>
       guard("read guest link", async () => {
+        const going = db
+          .select({ id: accountDeletion.userId })
+          .from(accountDeletion)
+          .where(eq(accountDeletion.userId, guestLink.accountUserId));
         const rows = await db
           .select({ account: guestLink.accountUserId, since: guestLink.createdAt })
           .from(guestLink)
-          .where(eq(guestLink.guestUserId, guest));
+          .where(and(eq(guestLink.guestUserId, guest), notExists(going)));
         return rows[0] ?? null;
       }),
 
@@ -96,13 +117,7 @@ export function createGuestLinkStore(db: Db): GuestLinkStore {
 
     roomsOf: (guest) =>
       guard("find guest rooms", () =>
-        db
-          .select({ id: room.id, code: room.code })
-          .from(room)
-          .where(
-            sql`${room.ownerUserId} = ${guest} or ${ROOM_PEOPLE} ? ${guest}
-              or (${KEEPER_APART} = ${guest} and ${IS_KEEPER_APART})`,
-          ),
+        db.select({ id: room.id, code: room.code }).from(room).where(namesPerson(guest)),
       ),
 
     complete: (guest, account) =>
@@ -123,7 +138,7 @@ export function createGuestLinkStore(db: Db): GuestLinkStore {
           // Only a named round says who; an anonymous round's cards have nobody to move, and the
           // containment below cannot match one. A round both of them played keeps both entries:
           // it is a record, and the stats beside it were counted from both.
-          const named = JSON.stringify({ kind: "named", votes: [{ who: guest }] });
+          const named = namedRoundsOf(guest);
           await tx.execute(sql`
             update ${roundHistory} h set votes = jsonb_set(h.votes, '{votes}', (
               select jsonb_agg(

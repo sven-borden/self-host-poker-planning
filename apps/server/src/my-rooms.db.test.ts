@@ -405,6 +405,7 @@ describe("the list", () => {
       "keeper",
       "lastActiveAt",
       "name",
+      "noKeeper",
       "owned",
       "rounds",
       "seated",

@@ -82,8 +82,15 @@
     {
       "idx": 11,
       "version": "7",
-      "when": 1793610678699,
-      "tag": "0011_add_connector_settings_and_round_source",
+      "when": 1793610026197,
+      "tag": "0011_add_account_deletion",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793615090166,
+      "tag": "0012_add_connector_settings_and_round_source",
       "breakpoints": true
     }
   ]

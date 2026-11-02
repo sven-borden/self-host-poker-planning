@@ -423,14 +423,12 @@ export const fr: Catalog<"many"> = {
     remove: "Retirer de la salle",
     handOverVoter: "Confier le rôle de product owner à {{name}} ? Vous devenez votant.",
     handOverStayVoter: "Confier le rôle de product owner à {{name}} ? Vous restez votant.",
-    handOverObserver:
-      "Confier le rôle de product owner à {{name}} ? Vous restez observateur.",
+    handOverObserver: "Confier le rôle de product owner à {{name}} ? Vous restez observateur.",
     handOverNoVote:
       "Le product owner ne vote pas dans cette salle : {{name}} cessera donc de voter.",
     handOver: "Confier le rôle",
     handingOver: "Transmission…",
-    removeQuestion:
-      "Retirer {{name}} de la salle ? Cette personne pourra revenir avec le lien.",
+    removeQuestion: "Retirer {{name}} de la salle ? Cette personne pourra revenir avec le lien.",
     removeConfirm: "Retirer",
     removing: "Retrait…",
     cancel: "Annuler",
@@ -618,15 +616,19 @@ export const fr: Catalog<"many"> = {
       cancelled: "Connexion annulée. Vous pouvez continuer sans compte.",
       accountExists:
         "Cette adresse e-mail a déjà un compte, ouvert d’une autre façon. Connectez-vous de cette autre façon.",
-      noEmail:
-        "Votre compte n’a pas transmis d’adresse e-mail : la connexion n’a pas pu aboutir.",
+      noEmail: "Votre compte n’a pas transmis d’adresse e-mail : la connexion n’a pas pu aboutir.",
       tenantNotAllowed:
         "Ce site n’accepte pas ce compte Microsoft. Essayez-en un autre, ou continuez sans compte.",
       rateLimited: "Trop de tentatives de connexion. Attendez une minute, puis réessayez.",
       failed: "La connexion n’a pas abouti. Réessayez, ou continuez sans compte.",
       stillMoving:
         "Votre compte est connecté. Certaines de vos salles sont encore en cours de transfert : rouvrez-les dans un instant.",
+      accountGoing:
+        "Votre compte est en cours de suppression. Une fois terminé, une connexion en crée un nouveau.",
     },
+  },
+  account: {
+    title: "Compte",
   },
   restriction: {
     title: "Cette salle est réservée à certains comptes",
@@ -707,6 +709,12 @@ export const fr: Catalog<"many"> = {
     claimed: "Vous êtes product owner",
     claimedWhy:
       "Ce rôle vous permet d’animer cette salle et de la renommer. La supprimer reste réservé à la personne à qui elle appartient : reprendre le rôle ou le recevoir ne donne pas ce droit.",
+    noKeeperWhy_one:
+      "Ce rôle vous permet d’animer cette salle et de la renommer. Personne ne peut la supprimer : ce droit a disparu avec le compte qui le détenait. Elle disparaît après {{count, number}} jour sans activité.",
+    noKeeperWhy_many:
+      "Ce rôle vous permet d’animer cette salle et de la renommer. Personne ne peut la supprimer : ce droit a disparu avec le compte qui le détenait. Elle disparaît après {{count, number}} de jours sans activité.",
+    noKeeperWhy_other:
+      "Ce rôle vous permet d’animer cette salle et de la renommer. Personne ne peut la supprimer : ce droit a disparu avec le compte qui le détenait. Elle disparaît après {{count, number}} jours sans activité.",
     kept: "Votre salle, avec un autre product owner",
     keptWhy:
       "Quelqu’un d’autre a repris le rôle de product owner. Récupérez ce rôle dans la salle, et vous pourrez la supprimer.",
@@ -825,14 +833,10 @@ export const fr: Catalog<"many"> = {
     keysCopied_one: "{{count, number}} ligne copiée pour Jira ou Azure DevOps.",
     keysCopied_many: "{{count, number}} lignes copiées pour Jira ou Azure DevOps.",
     keysCopied_other: "{{count, number}} lignes copiées pour Jira ou Azure DevOps.",
-    keysSkipped_one:
-      "{{count, number}} tour ignoré : pas de clé ou pas d’estimation finale.",
-    keysSkipped_many:
-      "{{count, number}} tours ignorés : pas de clé ou pas d’estimation finale.",
-    keysSkipped_other:
-      "{{count, number}} tours ignorés : pas de clé ou pas d’estimation finale.",
-    noKeys:
-      "Rien n’a été copié : aucun tour n’a à la fois une clé et une estimation finale.",
+    keysSkipped_one: "{{count, number}} tour ignoré : pas de clé ou pas d’estimation finale.",
+    keysSkipped_many: "{{count, number}} tours ignorés : pas de clé ou pas d’estimation finale.",
+    keysSkipped_other: "{{count, number}} tours ignorés : pas de clé ou pas d’estimation finale.",
+    noKeys: "Rien n’a été copié : aucun tour n’a à la fois une clé et une estimation finale.",
     refused:
       "Le navigateur n’a pas autorisé la copie. Le texte est sélectionné ci-dessous : copiez-le avec Ctrl+C, ou ⌘C sur un Mac.",
     field: "Texte à copier",
@@ -929,8 +933,7 @@ export const fr: Catalog<"many"> = {
       "Un champ numérique de ce site. La suggestion se fonde sur son nom : vérifiez-la avant d’enregistrer.",
     fieldSave: "Enregistrer le champ",
     fieldChange: "Changer de champ",
-    fieldNone:
-      "Ce site n’a aucun champ numérique : les estimations ne peuvent pas y retourner.",
+    fieldNone: "Ce site n’a aucun champ numérique : les estimations ne peuvent pas y retourner.",
     importFrom: "Importer depuis",
     bySprint: "Un sprint",
     byJql: "Une recherche JQL",
@@ -991,8 +994,7 @@ export const fr: Catalog<"many"> = {
         "Ce ticket appartient à un autre site {{system}} que celui auquel vous êtes connecté.",
       connector_no_source: "Ce ticket ne vient pas de {{system}}.",
       connector_no_final: "Enregistrez d’abord une estimation finale.",
-      connector_not_numeric:
-        "Seul un nombre part vers {{system}} : cette estimation reste ici.",
+      connector_not_numeric: "Seul un nombre part vers {{system}} : cette estimation reste ici.",
       connector_rate_limited: "{{system}} demande de ralentir. Réessayez dans un instant.",
       connector_rate_limited_wait:
         "{{system}} demande de ralentir. Réessayez dans {{seconds, number}} s.",
@@ -1018,7 +1020,9 @@ export const fr: Catalog<"many"> = {
     not_participant:
       "Vous ne faites plus partie de cette salle. Rechargez la page pour la rejoindre à nouveau.",
     not_owner: "Seul le product owner peut faire cela.",
-    not_keeper: "Seule la personne à qui cette salle appartient peut la supprimer.",
+    not_keeper: "Vous ne pouvez pas supprimer cette salle : ce droit ne vous appartient pas.",
+    sign_in_again: "Reconnectez-vous d’abord : cette action demande une connexion récente.",
+    bad_confirmation: "Ce n’est pas le mot demandé. Rien n’a été supprimé.",
     already_joined: "Vous êtes déjà dans cette salle.",
     bad_avatar: "Cet avatar n’est pas disponible. Choisissez-en un autre.",
     bad_name:

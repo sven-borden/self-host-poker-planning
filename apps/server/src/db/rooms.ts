@@ -68,6 +68,13 @@ export interface AccessWrite {
    * that moves their seat, so a kick lands on one or the other, never on neither.
    */
   moveGrant?: { from: UserId; to: UserId };
+  /**
+   * The commit needs this account to exist (#51, ADR-029): a guest's move must not land on an
+   * account whose deletion finished. The row is read `for share` in the commit's transaction, so
+   * the deletion's last step, which locks it, comes wholly before or after, and after it finds
+   * this seat. Without the row nothing is written, and the runner says `password_required`.
+   */
+  requireAccount?: UserId;
 }
 
 /** A room's password, for the access check: its id and hash (null: none). */
@@ -194,7 +201,7 @@ function inColumns({ queue, name, ...live }: RoomState): {
   return { live, queue: queue ?? null, name };
 }
 
-/** Thrown inside a commit's transaction to roll it back: the grant it needs is gone. */
+/** Thrown inside a commit's transaction to roll it back: the grant or account it needs is gone. */
 const NO_GRANT = Symbol("no grant");
 
 export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore {
@@ -342,6 +349,12 @@ export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore 
                     and(eq(roomAccess.roomId, id), eq(roomAccess.userId, access.requireGrant)),
                   );
                 if (held.length === 0) throw NO_GRANT;
+              }
+              if (access?.requireAccount !== undefined) {
+                const { rows } = await tx.execute(
+                  sql`select 1 from "user" u where u.id = ${access.requireAccount} for share`,
+                );
+                if (rows.length === 0) throw NO_GRANT;
               }
               if (history) {
                 const row = historyRow(id, ended);

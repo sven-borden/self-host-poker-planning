@@ -2,9 +2,12 @@
  * The `setup` hook `main.ts` hands to `run()`: the database (#7), then identity (#10) on
  * its pool, then Redis when `REDIS_URL` is set (#39, several instances), the room API
  * (#14) and the room sync (#15) on its runner, the retention job (#35), whose first run
- * comes a few minutes later, a guest's way to an account (#48), between identity and the
- * room sync, "My rooms" (#49) and the trackers' connectors (#54). Opens nothing at import time.
+ * comes a few minutes later, a guest's way to an account (#48) and an account's deletion (#51),
+ * between identity and the room sync, "My rooms" (#49), the account page (#51) and the
+ * trackers' connectors (#54). Opens nothing at import time.
  */
+import { registerAccountApi } from "./account.ts";
+import { type AccountDeletions, createAccountDeletions } from "./account-deletion.ts";
 import {
   cookieNaming,
   createAuth,
@@ -18,6 +21,8 @@ import { createJiraConnector } from "./connectors/jira.ts";
 import { createOAuthStateStore } from "./connectors/oauth-state.ts";
 import { registerConnectorApi } from "./connectors/routes.ts";
 import { type Database, setupDatabase } from "./database.ts";
+import { createAccountDataStore } from "./db/account-data.ts";
+import { createAccountDeletionStore } from "./db/account-deletions.ts";
 import { createGuestLinkStore } from "./db/guest-links.ts";
 import { createMyRoomsStore } from "./db/my-rooms.ts";
 import { createGuestLinks, type GuestLinks } from "./guest-link.ts";
@@ -26,7 +31,7 @@ import { registerMyRoomsApi } from "./my-rooms.ts";
 import { memoryRateLimit, type RateLimitRule } from "./rate-limit.ts";
 import { type Retention, startRetention } from "./retention.ts";
 import { registerPasswordApi } from "./room-password.ts";
-import { createRoomRules } from "./room-rule.ts";
+import { createRoomRules, type RoomRules } from "./room-rule.ts";
 import { registerRestrictionApi } from "./room-rule-api.ts";
 import { registerRoomApi } from "./rooms.ts";
 import type { Setup } from "./run.ts";
@@ -62,6 +67,8 @@ export async function setupServer(
     auth: ReturnType<typeof createAuth>;
     retention: Retention;
     links: GuestLinks;
+    deletions: AccountDeletions;
+    rules: RoomRules;
   }
 > {
   const opened = await setupDatabase(config, logger, signal);
@@ -79,9 +86,20 @@ export async function setupServer(
     },
     logger,
   });
+  const rules = createRoomRules(database.db, config);
+  const deletions = createAccountDeletions({
+    store: createAccountDeletionStore(database.db),
+    rules,
+    rooms: {
+      removeAccount: (room, removal) => sync.removeAccount(room, removal),
+      roomDeleted: (id) => sync.roomDeleted(id),
+      dropAccount: (who) => sync.dropAccount(who),
+    },
+    logger,
+  });
   let auth: ReturnType<typeof createAuth>;
   try {
-    auth = createAuth(config, database.db, logger, limiter, links);
+    auth = createAuth(config, database.db, logger, limiter, links, deletions);
   } catch (error) {
     await database.close();
     throw error;
@@ -96,7 +114,6 @@ export async function setupServer(
     }
   }
   const { runner, store, db, retention: retentionStore } = database;
-  const rules = createRoomRules(db, config);
   sync = createRoomSync({
     limiter,
     runner,
@@ -107,7 +124,7 @@ export async function setupServer(
     logger,
     sessionAlive: sessionChecker(db),
     touchRoom: (roomId) => retentionStore.touchRoom(roomId, config.roomTtlDays),
-    settleLinks: (account) => links.settle(account),
+    settleLinks: (account) => Promise.all([links.settle(account), deletions.resume(account)]),
     ...(tuning.ruleChangeLimit !== undefined && { ruleChangeLimit: tuning.ruleChangeLimit }),
     ...(tuning.presenceGraceMs !== undefined && { presenceGraceMs: tuning.presenceGraceMs }),
     ...(tuning.presenceRestartGraceMs !== undefined && {
@@ -126,7 +143,10 @@ export async function setupServer(
     ttlDays: config.roomTtlDays,
     logger,
     occupied: () => sync.occupiedRooms(),
-    beforePurge: () => links.sweep(),
+    beforePurge: async () => {
+      await links.sweep();
+      await deletions.sweep();
+    },
     ...(tuning.retentionStartDelayMs !== undefined && {
       startDelayMs: tuning.retentionStartDelayMs,
       jitterMs: 0,
@@ -138,6 +158,8 @@ export async function setupServer(
     auth,
     retention,
     links,
+    deletions,
+    rules,
     deps: {
       ...opened.deps,
       registerApi: (app) => {
@@ -153,6 +175,15 @@ export async function setupServer(
           config,
           limiter,
           rules,
+        });
+        registerAccountApi(app, {
+          auth,
+          data: createAccountDataStore(db, rules),
+          tokens: database.connectorTokens,
+          deletions,
+          links,
+          config,
+          limiter,
         });
         // Dark without its keys, the vault and a way to sign in: nothing is registered.
         if (config.jira && connectorNames(config).includes("jira")) {

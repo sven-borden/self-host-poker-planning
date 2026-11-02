@@ -78,8 +78,12 @@ function lookup(catalog: object | undefined, key: string): string | undefined {
   return typeof node === "string" ? node : undefined;
 }
 
-function message(language: Language, key: string, count: unknown): string | undefined {
-  const catalog = catalogs[language];
+function message(
+  catalog: object | undefined,
+  language: Language,
+  key: string,
+  count: unknown,
+): string | undefined {
   if (typeof count !== "number") {
     return lookup(catalog, key);
   }
@@ -124,7 +128,28 @@ function parseNumberFormat(format: string): Intl.NumberFormatOptions | undefined
 }
 
 function translate(language: Language, key: string, values: Values | undefined): string {
-  const text = message(language, key, values?.count) ?? message("en", key, values?.count) ?? key;
+  const count = values?.count;
+  const text =
+    message(catalogs[language], language, key, count) ??
+    message(catalogs.en, "en", key, count) ??
+    key;
+  return fill(language, text, values);
+}
+
+/**
+ * `t` for words a lazy chunk brings along (#51), which the budget of the room route keeps out of
+ * the catalogs. The same rules; the chunk holds every language, so there is nothing to wait for.
+ */
+export function translateIn(
+  languages: Readonly<Record<Language, object>>,
+  language: Language,
+  key: string,
+  values?: Values,
+): string {
+  return fill(language, message(languages[language], language, key, values?.count) ?? key, values);
+}
+
+function fill(language: Language, text: string, values: Values | undefined): string {
   if (!values) {
     return text;
   }

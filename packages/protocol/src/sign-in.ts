@@ -30,7 +30,8 @@ export const SIGN_IN_ERROR_PARAM = "sign_in_error";
  * email (`no_email`), this install does not admit that Microsoft account's tenant
  * (`tenant_not_allowed`), too many tries (`rate_limited`), or anything else (`failed`). The one
  * that is no failure: the person is signed in, and some of the guest's rooms have yet to move
- * (`still_moving`, #48). Each visit to a room tries again.
+ * (`still_moving`, #48). Each visit to a room tries again. And `account_going` (#51, ADR-029): this
+ * account is being deleted, it comes to no session, and once it is gone a sign-in starts afresh.
  */
 export const SIGN_IN_ERROR_CODES = [
   "cancelled",
@@ -40,6 +41,7 @@ export const SIGN_IN_ERROR_CODES = [
   "rate_limited",
   "failed",
   "still_moving",
+  "account_going",
 ] as const;
 export type SignInErrorCode = (typeof SIGN_IN_ERROR_CODES)[number];
 

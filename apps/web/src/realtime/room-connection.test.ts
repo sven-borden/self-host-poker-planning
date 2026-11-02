@@ -218,6 +218,22 @@ describe("openRoom", () => {
     expect(fake.socket.connect).not.toHaveBeenCalled();
   });
 
+  it("after accountDeleted, reloads once as a new guest and connects no more (#51)", async () => {
+    const reload = vi.fn();
+    const fake = fakeSocket(() => ({ ok: true, snapshot: snapshot(1) }));
+    openRoom(CODE, { socket: fake.socket, connect: () => () => {}, delay: () => 0, reload });
+    fake.up();
+    await settle();
+
+    fake.fire("accountDeleted");
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(useRoomStore.getState().status).toBe("reconnecting");
+    fake.fire("disconnect", "io server disconnect");
+    fake.fire("accountDeleted");
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(fake.socket.connect).not.toHaveBeenCalled();
+  });
+
   it("after kicked, connects again and enters as someone not in the room (#30)", async () => {
     let version = 1;
     const fake = fakeSocket(() => ({ ok: true, snapshot: snapshot(version) }));
