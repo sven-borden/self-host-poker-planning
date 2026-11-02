@@ -325,8 +325,10 @@ is, and not in the top bar, which is full at 320 px.
   "You" panel is the only change. The table hears nothing: a sign-in is nobody's business there,
   though a seat's colour changes, since colours come from ids. Only when rooms are still on their
   way is there a toast, without an error icon: the person is signed in.
-- **Another tab** of that guest reloads into the account after two seconds, showing "Reconnecting"
-  meanwhile, and never a join form.
+- **Another tab** of that guest shows "Reconnecting" until the tab that signed in has landed, then
+  reloads into the account. While the rooms move it shows no join form, however long they take. If
+  the tab that signed in is gone, it waits ten seconds, and reloads with what the browser holds.
+  A room that could not move shows the form in every tab, as it does in the first (ADR-025).
 - **Signing out** reloads the same page as a fresh guest: in a room, the join form, empty.
 
 ## Phones

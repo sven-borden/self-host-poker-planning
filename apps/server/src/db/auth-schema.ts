@@ -21,10 +21,10 @@ export const user = pgTable("user", {
   /** The display name; "" until the person picks one (#16). Cleaned by the domain's rules. */
   name: text("name").notNull(),
   /**
-   * A placeholder for a guest (`…@anonymous…`) and for a Microsoft account (`<oid>@<tid>
-   * .microsoft.invalid`, #48), never shown and never mailed. A Google account's address: shown
-   * to its owner only, and in no room's snapshot. Unique, so only an address a provider proves
-   * may stand here: see `account.claimed_email`.
+   * A placeholder for a guest (`…@anonymous…`) and for a Microsoft account
+   * (`sha256(tid:oid)@microsoft.invalid`, #48), never shown and never mailed. A Google account's
+   * address: shown to its owner only, and in no room's snapshot. Unique, so only an address a
+   * provider proves may stand here: see `account.claimed_email`.
    */
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").notNull().default(false),

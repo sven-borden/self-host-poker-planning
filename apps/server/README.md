@@ -300,7 +300,12 @@ keeps (#35).
   the `guest_link` row must stay a plain error, not an `APIError`, which would send the cookie.
   Anything keyed by a person in `live` must stay visible to `ROOM_PEOPLE`, the expression behind
   `room_people_idx`; any query must spell that expression exactly, or it scans. `StepResult.quiet`
-  commits without touching `last_active_at` or history: only for what nobody in a room did.
+  commits without touching `last_active_at` or history: only for what nobody in a room did, and
+  a step that ended a round is not quiet whatever it says. A log line of a move says a room's id
+  and an error's code and class, never more, and turns to `error` once the link is a day old:
+  ADR-025 says what an operator does then. Better Auth's adapter runs with `transaction: true`, so
+  a user and its account land together. A `join` always re-reads its session, whatever the 60 s
+  cache of other commands says: a seat outlives its socket.
 - The room password (#31) lives in `room-password.ts` (the three routes),
   `password.ts` (NFC and bounds, argon2id PHC hashing with `crypto.argon2`, the
   constant-time check against its own parameters only, the hash gate: 2 at once, 32 in

@@ -673,9 +673,13 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
     named rounds and the guest's row go. A room that fails does not stop the others. Everything
     past the row runs again at the account's next `enter` and before every purge, and changes
     nothing once done. The callback waits 5 s for it, then lets the person go on with a quiet
-    `still_moving`. `disableDeleteAnonymousUser` stays on, as the plugin's delete would ignore how
-    the move went. A person's rooms are found by `room_people_idx`, a GIN index on seats and votes,
-    and named rounds by `round_history_votes_idx`.
+    `still_moving`. Until the callback answers the browser holds a cookie with no session, so a tab
+    that heard `signedIn` holds the `pp-identity` lock, and no tab reads the session, until the
+    page the sign-in came back to says so on the `pp-sign-in` `BroadcastChannel`, or 10 s pass.
+    `disableDeleteAnonymousUser` stays on, as the plugin's delete would ignore how the move went.
+    A person's rooms are found by `room_people_idx`, a GIN index on seats and votes, and named
+    rounds by `round_history_votes_idx`. A user and its account row are written in one
+    transaction (`transaction: true`).
   - **No seam**: nothing configures a provider's address; tests replace `fetch` in their own
     process (`fake-oidc.ts`, not in the image).
   - **Sign-out**: `POST /api/auth/sign-out`, then a reload, which makes a new guest on the page.
