@@ -109,6 +109,8 @@ const roundFields = {
   voted: z.array(userIdSchema),
   /** The viewer's own card; nobody else's card is ever here. */
   yourVote: cardSchema.optional(),
+  /** For the PO alone: the tracker this round's item came from (#54). */
+  system: z.enum(["jira", "ado"]).optional(),
 };
 
 const revealedFields = {

@@ -28,6 +28,8 @@
  * view's `name`, the `roomRenamed` cause and the `deleted` event (#49): an older page takes a
  * rename's snapshot as any other, as it ignores a cause it does not know and the name it does not
  * read, and keeps showing the old name until a reload; it ignores `deleted` and shows the
- * connection lost, and a reload shows the room gone. `keeperId` (#49) is in no message at all.
+ * connection lost, and a reload shows the room gone. `keeperId` (#49) is in no message at all. Nor is
+ * `queueImport` (#54), a server command no client sends, which reaches a page as the
+ * `queueChanged` it knows, or the PO's round view's `system`, an optional outbound field.
  */
 export const PROTOCOL_VERSION = 6;

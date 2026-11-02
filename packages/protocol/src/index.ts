@@ -14,6 +14,7 @@ export {
   type WireCommandInput,
   wireCommandSchema,
 } from "./commands.ts";
+export * from "./connector.ts";
 export {
   ACK_ERROR_CODES,
   type AckErrorCode,
