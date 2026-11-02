@@ -66,7 +66,9 @@ describe("the room's sound", () => {
   });
   beforeEach(() => {
     fakeAudio();
-    renderLoop.mockClear();
+    // A reset, not a clear: a held render a test never reached stays queued through a clear,
+    // and the next test's first render would wait for it for ever.
+    renderLoop.mockReset();
     window.localStorage.clear();
     reloadSoundPrefs();
     useRoomStore.setState({ snapshot: null, status: "live" });
