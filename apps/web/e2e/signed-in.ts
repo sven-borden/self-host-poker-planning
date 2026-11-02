@@ -33,6 +33,7 @@ export const SIGN_IN_ENV = {
   JIRA_CLIENT_SECRET: "fake-jira-secret",
   // Not secret, and not used anywhere else: 32 bytes for this run's throwaway rows.
   POKER_VAULT_KEY: "ZTJlLW9ubHktdmF1bHQta2V5LW5vdC1mb3ItdXNlLTA=",
+  AZURE_DEVOPS_CONNECTOR: "on",
   FAKE_JIRA_PORT: String(JIRA_FAKE_PORT),
   FAKE_AZURE_PORT: String(AZURE_FAKE_PORT),
 };

@@ -19,6 +19,7 @@ import {
   connectAzure,
   disconnect,
   fetchSavedQueries,
+  fetchSites,
   fetchTypeFields,
   fetchTypes,
   importItems,
@@ -32,6 +33,7 @@ import {
   problemOf,
   returnFocus,
   SitePicker,
+  TOKEN_REFUSED,
   useConnection,
 } from "./connector-parts.tsx";
 
@@ -53,14 +55,30 @@ const tokensPage = (organization: string) =>
  * the field each item's type carries, and imports. The token goes to this server once, in a body,
  * is cleared from the page at that moment, and never comes back: the server holds it sealed, and
  * every other answer here is a name or a number.
+ *
+ * A saved token Azure DevOps refuses stays saved: a fresh sign-in there may bring it back, and its
+ * value cannot be seen twice. So the refusal stands with both ways on, "Try again" and a new paste,
+ * above the connection, which stays as it was with Disconnect in it.
  */
 export function AzureSection() {
   const t = useT();
   const signedIn = useIdentityStore(isSignedIn);
   const code = useRoomStore((state) => state.snapshot?.room.code);
-  const { connection, problem, setProblem, report, change, load } = useConnection(NAME, signedIn);
+  const { connection, problem, refused, setProblem, report, change, load, accepted } =
+    useConnection(NAME, signedIn);
   const section = useRef<HTMLElement>(null);
   const returnTo = (selector: string) => returnFocus(section.current, selector);
+  /** Each time the token works again: what it could not read is read once more. */
+  const [attempt, setAttempt] = useState(0);
+  const stuck = refused && connection?.connected === true;
+  const shown = problem ?? (stuck ? { code: TOKEN_REFUSED } : null);
+
+  function welcomeBack() {
+    accepted();
+    setProblem(null);
+    setAttempt((count) => count + 1);
+    returnTo("select, [data-connector-site-change]");
+  }
 
   return (
     <section
@@ -69,9 +87,9 @@ export function AzureSection() {
       className="flex flex-col gap-3 border-b border-line px-4 py-3"
     >
       <h3 className="m-0 text-base font-semibold">{SYSTEM}</h3>
-      {problem === null ? null : (
-        <ConnectorAlert data-connector-problem={problem.code}>
-          {connectorMessage(t, problem.code, NAME, problem.retryAfter)}
+      {shown === null ? null : (
+        <ConnectorAlert data-connector-problem={shown.code}>
+          {connectorMessage(t, shown.code, NAME, shown.retryAfter)}
         </ConnectorAlert>
       )}
       {!signedIn ? (
@@ -87,28 +105,95 @@ export function AzureSection() {
           }}
         />
       ) : (
-        <Connected
-          code={code}
-          connection={connection}
-          change={change}
-          onProblem={report}
-          returnTo={returnTo}
-        />
+        <>
+          {stuck ? (
+            <RefusedToken
+              organization={connection.organization ?? ""}
+              onProblem={report}
+              onBack={welcomeBack}
+              onReplaced={async () => {
+                await load();
+                welcomeBack();
+              }}
+            />
+          ) : null}
+          <Connected
+            code={code}
+            connection={connection}
+            attempt={attempt}
+            change={change}
+            onProblem={report}
+            onImported={accepted}
+            returnTo={returnTo}
+          />
+        </>
       )}
     </section>
   );
 }
 
+/** The two ways on from a refused token. The saved token stays until a new one replaces it. */
+function RefusedToken({
+  organization,
+  onProblem,
+  onBack,
+  onReplaced,
+}: {
+  organization: string;
+  onProblem: (problem: Problem | null) => void;
+  onBack: () => void;
+  onReplaced: () => Promise<void>;
+}) {
+  const t = useT();
+  const [trying, setTrying] = useState(false);
+  const pending = useRef(false);
+
+  // The smallest call the saved token can make. What was refused is shown again by what asks for it.
+  async function tryAgain() {
+    if (pending.current) return;
+    pending.current = true;
+    setTrying(true);
+    onProblem(null);
+    try {
+      await fetchSites(NAME);
+      onBack();
+    } catch (error) {
+      onProblem(problemOf(error));
+    } finally {
+      pending.current = false;
+      setTrying(false);
+    }
+  }
+
+  return (
+    <div data-connector-refused className="flex flex-col gap-3">
+      <Button
+        variant="outline"
+        data-connector-token-retry
+        aria-disabled={trying || undefined}
+        className="self-start"
+        onClick={() => void tryAgain()}
+      >
+        {trying ? t("connector.azure.checking") : t("connector.write.retry")}
+      </Button>
+      <TokenForm organization={organization} onProblem={onProblem} onConnected={onReplaced} />
+    </div>
+  );
+}
+
 function TokenForm({
+  organization: known,
   onProblem,
   onConnected,
 }: {
+  /** The connection's own organisation, when this token is to replace a refused one. */
+  organization?: string;
   onProblem: (problem: Problem | null) => void;
   onConnected: () => Promise<void>;
 }) {
   const t = useT();
   const ids = { organization: useId(), token: useId(), place: useId(), scope: useId() };
-  const [organization, setOrganization] = useState("");
+  const [organization, setOrganization] = useState(known ?? "");
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
@@ -145,7 +230,7 @@ function TokenForm({
 
   return (
     <form noValidate data-connector-token onSubmit={send} className="flex flex-col gap-2">
-      <p className={HINT}>{t("connector.azure.lede")}</p>
+      {known === undefined ? <p className={HINT}>{t("connector.azure.lede")}</p> : null}
       <label htmlFor={ids.organization} className={LABEL}>
         {t("connector.azure.organization")}
       </label>
@@ -172,7 +257,7 @@ function TokenForm({
         data-connector-pat
         type="password"
         value={token}
-        autoComplete="off"
+        autoComplete="new-password"
         autoCapitalize="none"
         spellCheck={false}
         aria-describedby={ids.scope}
@@ -201,7 +286,11 @@ function TokenForm({
         aria-disabled={busy || undefined}
         className="self-start"
       >
-        {t("connector.connect", { system: SYSTEM })}
+        {busy
+          ? t("connector.azure.checking")
+          : known === undefined
+            ? t("connector.connect", { system: SYSTEM })
+            : t("connector.azure.tokenReplace")}
       </Button>
     </form>
   );
@@ -210,12 +299,23 @@ function TokenForm({
 interface ConnectedProps {
   code: string | undefined;
   connection: ConnectionView;
+  /** A new number when the token works again: what it could not read is read once more. */
+  attempt: number;
   change: (act: () => Promise<void>) => Promise<boolean>;
   onProblem: (problem: Problem | null) => void;
+  onImported: () => void;
   returnTo: (selector: string) => void;
 }
 
-function Connected({ code, connection, change, onProblem, returnTo }: ConnectedProps) {
+function Connected({
+  code,
+  connection,
+  attempt,
+  change,
+  onProblem,
+  onImported,
+  returnTo,
+}: ConnectedProps) {
   const t = useT();
   const [changing, setChanging] = useState(false);
   const { site, organization = "" } = connection;
@@ -226,6 +326,7 @@ function Connected({ code, connection, change, onProblem, returnTo }: ConnectedP
       </p>
       {site === undefined || changing ? (
         <SitePicker
+          key={attempt}
           name={NAME}
           current={site?.id}
           words={{
@@ -255,14 +356,20 @@ function Connected({ code, connection, change, onProblem, returnTo }: ConnectedP
       {site === undefined || changing ? null : (
         <>
           <FieldChoice
-            key={site.id}
+            key={`${site.id}/${attempt}`}
             current={connection.field}
             change={change}
             onProblem={onProblem}
             returnTo={returnTo}
           />
           {code === undefined ? null : (
-            <ImportForm key={`import-${site.id}`} code={code} onProblem={onProblem} />
+            <ImportForm
+              key={`import-${site.id}`}
+              code={code}
+              attempt={attempt}
+              onProblem={onProblem}
+              onImported={onImported}
+            />
           )}
         </>
       )}
@@ -468,10 +575,14 @@ type ImportMode = "saved" | "wiql";
 
 function ImportForm({
   code,
+  attempt,
   onProblem,
+  onImported,
 }: {
   code: string;
+  attempt: number;
   onProblem: (problem: Problem | null) => void;
+  onImported: () => void;
 }) {
   const t = useT();
   const ids = { wiql: useId(), hint: useId(), mode: useId() };
@@ -498,6 +609,7 @@ function ImportForm({
     onProblem(null);
     try {
       setReport(importReport(t, await importItems(NAME, code, query)));
+      onImported();
     } catch (error) {
       onProblem(problemOf(error));
     } finally {
@@ -524,7 +636,7 @@ function ImportForm({
         ))}
       </fieldset>
       {mode === "saved" ? (
-        <SavedPicker onPick={setSaved} onProblem={onProblem} />
+        <SavedPicker key={attempt} value={saved} onPick={setSaved} onProblem={onProblem} />
       ) : (
         <>
           <label htmlFor={ids.wiql} className={LABEL}>
@@ -563,9 +675,11 @@ function ImportForm({
 }
 
 function SavedPicker({
+  value,
   onPick,
   onProblem,
 }: {
+  value: string;
   onPick: (id: string) => void;
   onProblem: (problem: Problem | null) => void;
 }) {
@@ -573,8 +687,8 @@ function SavedPicker({
   const id = useId();
   const [queries, setQueries] = useState<readonly ConnectorSiteView[] | null>(null);
   const [more, setMore] = useState(false);
-  const report = useRef({ onPick, onProblem });
-  report.current = { onPick, onProblem };
+  const report = useRef({ value, onPick, onProblem });
+  report.current = { value, onPick, onProblem };
 
   useEffect(() => {
     let live = true;
@@ -583,7 +697,9 @@ function SavedPicker({
         if (!live) return;
         setQueries(found.queries);
         setMore(found.more);
-        report.current.onPick(found.queries[0]?.id ?? "");
+        // Read again after a refusal, the query a person had picked stays picked.
+        const picked = found.queries.some(({ id: each }) => each === report.current.value);
+        if (!picked) report.current.onPick(found.queries[0]?.id ?? "");
       })
       .catch((error: unknown) => {
         if (live) report.current.onProblem(problemOf(error));
@@ -604,6 +720,7 @@ function SavedPicker({
         id={id}
         data-connector-saved
         className={FIELD}
+        value={value}
         onChange={(event) => report.current.onPick(event.target.value)}
       >
         {queries.map((query) => (

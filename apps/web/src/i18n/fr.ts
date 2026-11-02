@@ -998,7 +998,9 @@ export const fr: Catalog<"many"> = {
         "Créez-en un pour cette seule organisation, avec une seule autorisation cochée\u{202f}: Work Items, Read & write.",
       tokenLink: "Créer un jeton",
       tokenUse:
-        "Il sert uniquement à lire ce que vous importez et à écrire vos estimations. Il reste ici, chiffré, jusqu’à son expiration ou votre déconnexion\u{202f}: donnez-lui la durée la plus courte qui vous convient.",
+        "Il sert uniquement à lire ce que vous importez et à écrire vos estimations. Chez Microsoft, il cesse de fonctionner à sa date d’expiration\u{202f}: donnez-lui la durée la plus courte qui vous convient. Ici, il reste chiffré jusqu’à ce que vous vous déconnectiez, en colliez un autre ou supprimiez votre compte.",
+      tokenReplace: "Utiliser ce jeton",
+      checking: "Vérification du jeton…",
       project: "Projet",
       projectIs: "Projet\u{202f}: {{project}}",
       projectSave: "Utiliser ce projet",
@@ -1044,11 +1046,15 @@ export const fr: Catalog<"many"> = {
       connector_bad_token:
         "{{system}} n’a pas accepté ce jeton. Il est peut-être mal saisi, expiré ou créé pour une autre organisation.",
       connector_no_access:
-        "Le compte de ce jeton n’atteint pas cette organisation. Vérifiez son nom, et que vous en êtes membre.",
+        "{{system}} n’a pas laissé ce jeton entrer dans cette organisation. Il est peut-être erroné, expiré ou sans l’autorisation voulue, ou son compte n’en est pas membre. Vérifiez le nom et le jeton.",
+      connector_no_projects:
+        "Ce jeton fonctionne mais ne peut pas lister les projets de cette organisation\u{202f}: rien n’a été enregistré. Cochez aussi Project and Team, Read dans {{system}}, puis réessayez.",
       connector_scope:
         "Il manque à ce jeton la seule autorisation nécessaire\u{202f}: Work Items, Read & write. Modifiez-le ou créez-en un autre.",
       connector_no_organization: "{{system}} n’a aucune organisation de ce nom.",
       connector_reconnect: "{{system}} n’accepte plus cette connexion. Connectez-le de nouveau.",
+      connector_token_refused:
+        "{{system}} a refusé ce jeton ou demandé une connexion. Il a peut-être expiré, été révoqué, ou il faut vous reconnecter à {{system}}. Réessayez ensuite, ou collez un nouveau jeton dans la file.",
       connector_setup:
         "{{system}} a refusé alors que la connexion venait d’être renouvelée : la refaire ne changera rien. La personne qui gère ce serveur doit vérifier les autorisations de son application {{system}}.",
       connector_no_site: "Choisissez d’abord un site {{system}} dans la file.",

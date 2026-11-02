@@ -997,7 +997,9 @@ export const en = {
         "Make one for this organisation alone, with a single scope ticked: Work Items, Read & write.",
       tokenLink: "Make a token",
       tokenUse:
-        "It is used only to read what you import and to write your estimates. It stays here, encrypted, until it expires or you disconnect, so give it the shortest life that suits you.",
+        "It is used only to read what you import and to write your estimates. It stops working at its expiry date at Microsoft, so give it the shortest life that suits you. Here it stays, encrypted, until you disconnect, paste another or delete your account.",
+      tokenReplace: "Use this token",
+      checking: "Testing the token…",
       project: "Project",
       projectIs: "Project: {{project}}",
       projectSave: "Use this project",
@@ -1042,11 +1044,15 @@ export const en = {
       connector_bad_token:
         "{{system}} did not take this token. It may be mistyped, expired, or made for another organisation.",
       connector_no_access:
-        "This token’s account cannot reach that organisation. Check its name, and that you are a member.",
+        "{{system}} did not let this token into that organisation. The token may be wrong, expired or short of a scope, or its account may not be a member. Check the name and the token.",
+      connector_no_projects:
+        "This token works but cannot list this organisation’s projects, so nothing was saved. Tick Project and Team, Read as well, at {{system}}, and try again.",
       connector_scope:
         "This token lacks the one scope needed: Work Items, Read & write. Edit it, or make another.",
       connector_no_organization: "{{system}} has no organisation of that name.",
       connector_reconnect: "{{system}} no longer accepts this connection. Connect again.",
+      connector_token_refused:
+        "{{system}} refused this token or asked for a sign-in. It may have expired, been revoked, or need a fresh sign-in at {{system}}. Try again after that, or paste a new token in the queue.",
       connector_setup:
         "{{system}} refused this although the connection was just renewed, so connecting again will not help. Whoever runs this server should check the scopes of its {{system}} app.",
       connector_no_site: "Pick a {{system}} site in the queue first.",

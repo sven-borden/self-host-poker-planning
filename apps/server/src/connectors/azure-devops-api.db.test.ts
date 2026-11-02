@@ -872,6 +872,8 @@ describe("the field", () => {
       fields: [
         { id: STORY_POINTS, name: "Story Points" },
         { id: CUSTOM_POINTS, name: "Points" },
+        { id: "Custom.Grade", name: "Grade" },
+        { id: "Custom.Band", name: "Band" },
       ],
       guess: STORY_POINTS,
     });

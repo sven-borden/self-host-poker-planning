@@ -21,6 +21,9 @@ export const FIELD =
 export const LABEL = "text-sm font-medium";
 export const HINT = "m-0 text-sm text-ink-2";
 
+/** A saved token the tracker refused: the row stays, and two ways on stand open (ADR-031). */
+export const TOKEN_REFUSED = "connector_token_refused";
+
 /** A refusal: its code, and how long the tracker asked to wait. */
 export interface Problem {
   code: string;
@@ -69,6 +72,8 @@ export function importReport(t: TFunction, view: ConnectorImportView): string {
 export function useConnection(name: ConnectorName, signedIn: boolean) {
   const [connection, setConnection] = useState<ConnectionView | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
+  /** A saved token was refused, and nothing has worked since: outlasts `problem`, which moves on. */
+  const [refused, setRefused] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -87,15 +92,20 @@ export function useConnection(name: ConnectorName, signedIn: boolean) {
     (found: Problem | null) => {
       setProblem(found);
       if (found?.code === "connector_reconnect") void load();
+      if (found?.code === TOKEN_REFUSED) setRefused(true);
     },
     [load],
   );
+
+  /** Something the token did went through, or the token is another one. */
+  const accepted = useCallback(() => setRefused(false), []);
 
   /** A change at the server, then a fresh look at the connection. True when it went through. */
   async function change(act: () => Promise<void>): Promise<boolean> {
     setProblem(null);
     try {
       await act();
+      accepted();
       await load();
       return true;
     } catch (error) {
@@ -104,7 +114,7 @@ export function useConnection(name: ConnectorName, signedIn: boolean) {
     }
   }
 
-  return { connection, problem, setProblem, load, report, change };
+  return { connection, problem, refused, setProblem, load, report, change, accepted };
 }
 
 export function SitePicker({

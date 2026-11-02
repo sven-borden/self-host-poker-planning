@@ -145,7 +145,7 @@ test("connects with a token, imports a saved query, and the final reaches Azure 
   await page.locator("[data-queue-open]").click();
 
   await expect(patField(page)).toHaveAttribute("type", "password");
-  await expect(patField(page)).toHaveAttribute("autocomplete", "off");
+  await expect(patField(page)).toHaveAttribute("autocomplete", "new-password");
   await fillToken(page, "fabrikam", TOKEN);
   await expect(section(page).getByText("Connected to fabrikam")).toBeVisible();
 
@@ -196,9 +196,10 @@ test("says what is wrong with a token by its code, and clears the field each tim
   await poInRoom(page);
   await page.locator("[data-queue-open]").click();
   for (const [organization, token, signIn, code, words] of [
+    ["fabrikam", "e2e-no-such-token", "observed", "connector_bad_token", "did not take this token"],
     ["fabrikam", "e2e-no-such-token", "203", "connector_bad_token", "did not take this token"],
     ["fabrikam", "e2e-no-such-token", "302", "connector_bad_token", "did not take this token"],
-    ["fabrikam", "e2e-other-organisation", "203", "connector_no_access", "cannot reach"],
+    ["fabrikam", "e2e-other-organisation", "203", "connector_no_access", "did not let this token"],
     ["fabrikam", "e2e-code-only", "203", "connector_scope", "Work Items, Read & write"],
     ["no-such-org", TOKEN, "203", "connector_no_organization", "no organisation of that name"],
     ["evil.example", TOKEN, "203", "connector_bad_organization", "no organisation’s name"],
@@ -209,6 +210,40 @@ test("says what is wrong with a token by its code, and clears the field each tim
     if (code !== "connector_bad_organization") await expect(patField(page)).toHaveValue("");
   }
   expect((await fakeState()).calls).not.toContain("GET /_signin");
+  await context.close();
+});
+
+test("a token that cannot list projects is refused, says what to tick, and nothing is saved", async ({
+  browser,
+}) => {
+  await control({ projectScope: "own" });
+  const { context, page } = await newPerson(browser);
+  await atStandIn(context);
+  await poInRoom(page);
+  await page.locator("[data-queue-open]").click();
+  await fillToken(page, "fabrikam", TOKEN);
+  await expect(problem(page, "connector_no_projects")).toContainText("Project and Team");
+  await page.reload();
+  await page.locator("[data-queue-open]").click();
+  await expect(patField(page)).toBeVisible();
+  await expect(section(page).getByText("Connected to fabrikam")).toHaveCount(0);
+  await context.close();
+});
+
+test("an organisation typed in another case connects, and its items write back", async ({
+  browser,
+}) => {
+  const { context, page } = await newPerson(browser);
+  await atStandIn(context);
+  await poInRoom(page);
+  await page.locator("[data-queue-open]").click();
+  await fillToken(page, "FabriKam", TOKEN);
+  await expect(section(page).getByText("Connected to fabrikam")).toBeVisible();
+  await importSaved(page);
+  await expect(page.locator("[data-queue-item]")).toHaveCount(3);
+  await closeSheet(page);
+  await estimateNext(page, "Start voting", "5");
+  await expect(page.locator("[data-write-line=written]")).toBeVisible();
   await context.close();
 });
 
@@ -319,9 +354,7 @@ async function importSaved2(page: Page) {
   await expect(section(page).locator("[data-connector-report]")).toContainText("added");
 }
 
-test("a WIQL query the tracker refuses keeps the box and says so; a token found dead asks again", async ({
-  browser,
-}) => {
+test("a WIQL query the tracker refuses keeps the box and says so", async ({ browser }) => {
   const { context, page } = await newPerson(browser);
   await atStandIn(context);
   await poInRoom(page);
@@ -332,13 +365,86 @@ test("a WIQL query the tracker refuses keeps the box and says so; a token found 
   await section(page).locator("[data-connector-run]").click();
   await expect(problem(page, "connector_bad_query")).toContainText("could not run this query");
   await expect(box).toHaveValue("bad wiql");
+  await context.close();
+});
+
+test("a token Azure DevOps refuses stays, with both ways on, and the same token goes on", async ({
+  browser,
+}) => {
+  const { context, page } = await newPerson(browser);
+  await atStandIn(context);
+  await poInRoom(page);
+  await connected(page);
+  await section(page).getByRole("radio", { name: "A WIQL query" }).check();
+  const box = section(page).getByRole("textbox", { name: "WIQL query" });
+  await box.fill("Select [System.Id] From WorkItems");
   await control({
     fail: [{ match: "/wiql", status: 203, text: "<html>", contentType: "text/html" }],
   });
-  await box.fill("Select [System.Id] From WorkItems");
   await section(page).locator("[data-connector-run]").click();
-  await expect(problem(page, "connector_reconnect")).toBeVisible();
+  await expect(problem(page, "connector_token_refused")).toContainText("asked for a sign-in");
   await expect(patField(page)).toBeVisible();
+  await expect(section(page).getByRole("button", { name: "Disconnect" })).toBeVisible();
+  await expect(box).toHaveValue("Select [System.Id] From WorkItems");
+
+  await control({
+    fail: [{ match: "/_apis/projects", status: 302, location: "https://example.invalid/" }],
+  });
+  await section(page).getByRole("button", { name: "Try again" }).click();
+  await expect(problem(page, "connector_token_refused")).toBeVisible();
+  await expect(patField(page)).toBeVisible();
+
+  await section(page).getByRole("button", { name: "Try again" }).click();
+  await expect(problem(page, "connector_token_refused")).toHaveCount(0);
+  await expect(patField(page)).toHaveCount(0);
+  await expect(box).toHaveValue("Select [System.Id] From WorkItems");
+  await section(page).locator("[data-connector-run]").click();
+  await expect(section(page).locator("[data-connector-report]")).toContainText("added");
+  await page.reload();
+  await page.locator("[data-queue-open]").click();
+  await expect(section(page).getByText("Connected to fabrikam")).toBeVisible();
+  await context.close();
+});
+
+test("a new paste replaces a refused token, and a write goes out with it", async ({ browser }) => {
+  const NEW_TOKEN = "e2e-pat-replacement-0123456789abcdefghijklmnopqrstuvwxyz012";
+  await control({
+    tokens: { [NEW_TOKEN]: { organizations: ["fabrikam"], scopes: ["vso.work_write"] } },
+  });
+  const { context, page } = await newPerson(browser);
+  await atStandIn(context);
+  await poInRoom(page);
+  await connected(page);
+  await importSaved(page);
+  await expect(page.locator("[data-queue-item]")).toHaveCount(3);
+  await closeSheet(page);
+  await control({
+    fail: [
+      { match: "/_apis/wit/workitems/1", method: "PATCH", status: 401, times: 2 },
+      { match: "/_apis/wit/fields/System.Title", status: 401, times: 2 },
+    ],
+  });
+  await estimateNext(page, "Start voting", "5");
+  const line = page.locator("[data-write-line=failed]");
+  await expect(line).toContainText("#1: 5 did not reach Azure DevOps.");
+  await expect(line).toContainText("paste a new token in the queue");
+  await page.locator("[data-write-retry]").click();
+  await expect(line).toContainText("asked for a sign-in");
+
+  await page.locator("[data-queue-open]").click();
+  await section(page).locator("[data-connector-saved]").waitFor();
+  await control({ reset: false, fail: [{ match: "/_apis/wit/queries", status: 401 }] });
+  await section(page).getByRole("radio", { name: "A WIQL query" }).check();
+  await section(page).getByRole("radio", { name: "A saved query" }).check();
+  await expect(problem(page, "connector_token_refused")).toBeVisible();
+  await patField(page).fill(NEW_TOKEN);
+  await section(page).getByRole("button", { name: "Use this token" }).click();
+  await expect(problem(page, "connector_token_refused")).toHaveCount(0);
+  await expect(patField(page)).toHaveCount(0);
+  await closeSheet(page);
+  await page.locator("[data-write-retry]").click();
+  await expect(page.locator("[data-write-line=written]")).toBeVisible();
+  expect((await fakeState()).writes.at(-1)?.token).toBe(NEW_TOKEN);
   await context.close();
 });
 
@@ -468,6 +574,13 @@ test("axe finds nothing at 320 px, in every state of the section", async ({ brow
   await audit(page);
   await page.locator("[data-write-retry]").click();
   await expect(page.locator("[data-write-line=written]")).toBeVisible();
+  await audit(page);
+  await page.locator("[data-queue-open]").click();
+  await control({ fail: [{ match: "/wiql", status: 401 }] });
+  await section(page).getByRole("radio", { name: "A WIQL query" }).check();
+  await section(page).getByRole("textbox", { name: "WIQL query" }).fill("Select");
+  await section(page).locator("[data-connector-run]").click();
+  await expect(problem(page, "connector_token_refused")).toBeVisible();
   await audit(page);
   await context.close();
 });

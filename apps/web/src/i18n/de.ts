@@ -960,7 +960,9 @@ export const de: Catalog = {
         "Erstellen Sie eines nur für diese Organisation, mit einem einzigen angehakten Bereich: Work Items, Read & write.",
       tokenLink: "Token erstellen",
       tokenUse:
-        "Es dient nur dazu, das Importierte zu lesen und Ihre Schätzungen zu schreiben. Es bleibt verschlüsselt hier, bis es abläuft oder Sie die Verbindung trennen. Geben Sie ihm also die kürzeste Laufzeit, die für Sie passt.",
+        "Es dient nur dazu, das Importierte zu lesen und Ihre Schätzungen zu schreiben. Bei Microsoft endet es an seinem Ablaufdatum, geben Sie ihm also die kürzeste Laufzeit, die für Sie passt. Hier bleibt es verschlüsselt, bis Sie die Verbindung trennen, ein anderes einfügen oder Ihr Konto löschen.",
+      tokenReplace: "Dieses Token verwenden",
+      checking: "Token wird geprüft…",
       project: "Projekt",
       projectIs: "Projekt: {{project}}",
       projectSave: "Dieses Projekt verwenden",
@@ -1005,7 +1007,9 @@ export const de: Catalog = {
       connector_bad_token:
         "{{system}} hat dieses Token nicht angenommen. Es ist vielleicht falsch eingegeben, abgelaufen oder für eine andere Organisation erstellt.",
       connector_no_access:
-        "Das Konto dieses Tokens erreicht diese Organisation nicht. Prüfen Sie den Namen und ob Sie Mitglied sind.",
+        "{{system}} hat dieses Token nicht in diese Organisation gelassen. Das Token ist vielleicht falsch, abgelaufen oder ohne den nötigen Bereich, oder sein Konto ist kein Mitglied. Prüfen Sie den Namen und das Token.",
+      connector_no_projects:
+        "Dieses Token funktioniert, kann aber die Projekte dieser Organisation nicht auflisten, daher wurde nichts gespeichert. Haken Sie bei {{system}} zusätzlich Project and Team, Read an und versuchen Sie es erneut.",
       connector_scope:
         "Diesem Token fehlt der einzige nötige Bereich: Work Items, Read & write. Bearbeiten Sie es oder erstellen Sie ein anderes.",
       connector_no_organization: "{{system}} hat keine Organisation mit diesem Namen.",
@@ -1013,6 +1017,8 @@ export const de: Catalog = {
         "{{system}} hat abgelehnt, obwohl die Verbindung gerade erneuert wurde: Neu verbinden hilft nicht. Wer diesen Server betreibt, sollte die Berechtigungen der {{system}}-App prüfen.",
       connector_reconnect:
         "{{system}} akzeptiert diese Verbindung nicht mehr. Verbinden Sie es erneut.",
+      connector_token_refused:
+        "{{system}} hat dieses Token abgelehnt oder eine Anmeldung verlangt. Es ist vielleicht abgelaufen, widerrufen oder braucht eine neue Anmeldung bei {{system}}. Versuchen Sie es danach erneut, oder fügen Sie in der Warteschlange ein neues Token ein.",
       connector_no_site: "Wählen Sie zuerst eine {{system}}-Website in der Warteschlange.",
       connector_no_field: "Wählen Sie zuerst das Feld für die Schätzung in der Warteschlange.",
       connector_bad_site: "Diese Website steht nicht mehr auf Ihrer {{system}}-Liste.",

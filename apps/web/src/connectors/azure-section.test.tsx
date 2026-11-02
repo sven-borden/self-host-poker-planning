@@ -34,6 +34,9 @@ const TOKEN = "a-token-that-must-not-stay";
 const PROJECT = { id: "fabrikam/guid", name: "Fabrikam Fiber" };
 const CONNECTED = { connected: true, organization: "fabrikam", site: PROJECT };
 const t = fixedT("en");
+const REFUSED = "connector_token_refused";
+const REFUSED_WORDS =
+  "Azure DevOps refused this token or asked for a sign-in. It may have expired, been revoked, or need a fresh sign-in at Azure DevOps. Try again after that, or paste a new token in the queue.";
 
 beforeAll(async () => {
   await changeLanguage("en");
@@ -121,7 +124,7 @@ describe("the section before a connection", () => {
     await shownForm();
     const input = field("Personal access token");
     expect(input.type).toBe("password");
-    expect(input.autocomplete).toBe("off");
+    expect(input.autocomplete).toBe("new-password");
     expect(field("Organisation").autocomplete).toBe("off");
   });
 
@@ -130,8 +133,9 @@ describe("the section before a connection", () => {
     const text = document.body.textContent ?? "";
     expect(text).toContain("a single scope ticked: Work Items, Read & write");
     expect(text).toContain("only to read what you import and to write your estimates");
-    expect(text).toContain("until it expires or you disconnect");
+    expect(text).toContain("It stops working at its expiry date at Microsoft");
     expect(text).toContain("the shortest life that suits you");
+    expect(text).toContain("until you disconnect, paste another or delete your account");
   });
 
   it("links to where tokens are made, in the organisation typed", async () => {
@@ -157,7 +161,9 @@ describe("the section before a connection", () => {
     connect();
     expect(api.connectAzure).toHaveBeenCalledWith("fabrikam", TOKEN);
     expect(field("Personal access token").value).toBe("");
-    connect();
+    const button = screen.getByRole("button", { name: "Testing the token…" });
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(button);
     expect(api.connectAzure).toHaveBeenCalledTimes(1);
     api.fetchConnection.mockResolvedValue(CONNECTED);
     await act(async () => finish());
@@ -343,17 +349,17 @@ describe("the section when connected", () => {
     await screen.findByText("Some folders were not read, so this list is not complete.");
   });
 
-  it("shows a refused import, and a token found dead goes back to the form", async () => {
+  it("shows a refused import and keeps the query", async () => {
     render(<AzureSection />);
     await screen.findByRole("combobox", { name: "Saved query" });
-    await waitFor(() => expect(api.fetchSavedQueries).toHaveBeenCalled());
-    api.importItems.mockRejectedValue(new RoomApiError("connector_reconnect"));
-    api.fetchConnection.mockResolvedValue({ connected: false });
+    fireEvent.click(screen.getByRole("radio", { name: "A WIQL query" }));
+    fireEvent.change(field("WIQL query"), { target: { value: "bad wiql" } });
+    api.importItems.mockRejectedValue(new RoomApiError("connector_bad_query"));
     fireEvent.click(screen.getByRole("button", { name: "Import" }));
-    await screen.findByLabelText("Personal access token");
-    expect(screen.getByRole("alert").textContent).toBe(
-      "Azure DevOps no longer accepts this connection. Connect again.",
-    );
+    await screen.findByRole("alert");
+    expect(field("WIQL query").value).toBe("bad wiql");
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(screen.queryByLabelText("Personal access token")).toBeNull();
   });
 
   it("disconnects, says the token lives on at Microsoft, and where to revoke it", async () => {
@@ -373,6 +379,196 @@ describe("the section when connected", () => {
   });
 });
 
+describe("a saved token Azure DevOps refuses", () => {
+  const refusal = () => new RoomApiError(REFUSED);
+  const shown = () =>
+    document.querySelector("[data-connector-problem]")?.getAttribute("data-connector-problem");
+  const again = () => screen.findByRole("button", { name: "Try again" });
+
+  async function refusedImport() {
+    render(<AzureSection />);
+    await screen.findByRole("combobox", { name: "Saved query" });
+    api.importItems.mockRejectedValueOnce(refusal());
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    return again();
+  }
+
+  beforeEach(() => {
+    api.fetchConnection.mockResolvedValue(CONNECTED);
+  });
+
+  it.each([
+    [
+      "the list of projects",
+      async () => {
+        api.fetchConnection.mockResolvedValue({ connected: true, organization: "fabrikam" });
+        api.fetchSites.mockRejectedValue(refusal());
+        render(<AzureSection />);
+      },
+    ],
+    [
+      "the saved queries",
+      async () => {
+        api.fetchSavedQueries.mockRejectedValue(refusal());
+        render(<AzureSection />);
+      },
+    ],
+    [
+      "a project's types",
+      async () => {
+        api.fetchTypes.mockRejectedValue(refusal());
+        render(<AzureSection />);
+        fireEvent.click(await screen.findByRole("button", { name: "Choose a field" }));
+      },
+    ],
+    [
+      "a type's fields",
+      async () => {
+        api.fetchTypeFields.mockRejectedValue(refusal());
+        render(<AzureSection />);
+        fireEvent.click(await screen.findByRole("button", { name: "Choose a field" }));
+      },
+    ],
+    [
+      "the choice of a project",
+      async () => {
+        api.chooseSite.mockRejectedValue(refusal());
+        render(<AzureSection />);
+        fireEvent.click(await screen.findByRole("button", { name: "Change project" }));
+        fireEvent.click(await screen.findByRole("button", { name: "Use this project" }));
+      },
+    ],
+    [
+      "the choice of a field",
+      async () => {
+        api.chooseTypedField.mockRejectedValue(refusal());
+        render(<AzureSection />);
+        fireEvent.click(await screen.findByRole("button", { name: "Choose a field" }));
+        fireEvent.click(await screen.findByRole("button", { name: "Save the field" }));
+      },
+    ],
+    ["an import", refusedImport],
+  ])("offers both ways on, from %s, and Disconnect stays", async (_, arrive) => {
+    await arrive();
+    await again();
+    expect(screen.getByRole("alert").textContent).toBe(REFUSED_WORDS);
+    expect(shown()).toBe(REFUSED);
+    expect(field("Personal access token").value).toBe("");
+    expect(screen.getByRole("button", { name: "Use this token" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Disconnect" })).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/connect again/i);
+    expect(api.fetchConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives the organisation it knows to the new paste, without the lede", async () => {
+    await refusedImport();
+    expect(field("Organisation").value).toBe("fabrikam");
+    expect(document.body.textContent).not.toContain("Import a saved query or a WIQL query");
+  });
+
+  it("goes on when the saved token works again, and reads again what it could not", async () => {
+    api.fetchSavedQueries.mockRejectedValueOnce(refusal());
+    render(<AzureSection />);
+    const press = await again();
+    expect(screen.queryByRole("combobox", { name: "Saved query" })).toBeNull();
+    fireEvent.click(press);
+    await screen.findByRole("combobox", { name: "Saved query" });
+    expect(api.fetchSites).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByLabelText("Personal access token")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  it("stands as it was when the token is refused again, with what was typed", async () => {
+    const press = await refusedImport();
+    fireEvent.change(field("Personal access token"), { target: { value: "half typed" } });
+    api.fetchSites.mockRejectedValueOnce(refusal());
+    fireEvent.click(press);
+    await waitFor(() => expect(api.fetchSites).toHaveBeenCalledTimes(1));
+    await again();
+    expect(screen.getByRole("alert").textContent).toBe(REFUSED_WORDS);
+    expect(field("Personal access token").value).toBe("half typed");
+  });
+
+  it("says what else went wrong on the way, and keeps both ways on", async () => {
+    const press = await refusedImport();
+    api.fetchSites.mockRejectedValueOnce(new RoomApiError("connector_timeout"));
+    fireEvent.click(press);
+    await waitFor(() => expect(shown()).toBe("connector_timeout"));
+    expect(await again()).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Use this token" })).toBeTruthy();
+  });
+
+  it("presses once, and shows words while it tries", async () => {
+    const press = await refusedImport();
+    let finish = (_: unknown) => {};
+    api.fetchSites.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    fireEvent.click(press);
+    expect(press.textContent).toBe("Testing the token…");
+    fireEvent.click(press);
+    expect(api.fetchSites).toHaveBeenCalledTimes(1);
+    await act(async () => finish([PROJECT]));
+  });
+
+  it("replaces the token with a new paste, and asks for nothing else", async () => {
+    await refusedImport();
+    fill("fabrikam", TOKEN);
+    fireEvent.click(screen.getByRole("button", { name: "Use this token" }));
+    expect(api.connectAzure).toHaveBeenCalledWith("fabrikam", TOKEN);
+    await waitFor(() => expect(screen.queryByLabelText("Personal access token")).toBeNull());
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(document.body.innerHTML).not.toContain(TOKEN);
+  });
+
+  it("keeps both ways on when the new paste is refused too, and says why", async () => {
+    await refusedImport();
+    api.connectAzure.mockRejectedValue(new RoomApiError("connector_bad_token"));
+    fill("fabrikam", TOKEN);
+    fireEvent.click(screen.getByRole("button", { name: "Use this token" }));
+    await waitFor(() => expect(shown()).toBe("connector_bad_token"));
+    expect(field("Personal access token").value).toBe("");
+    expect(await again()).toBeTruthy();
+  });
+
+  it("disconnects from there, and the plain form comes back", async () => {
+    await refusedImport();
+    api.disconnect.mockResolvedValue(undefined);
+    api.fetchConnection.mockResolvedValue({ connected: false });
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+    await screen.findByRole("button", { name: "Connect Azure DevOps" });
+    expect(api.disconnect).toHaveBeenCalledWith("azure-devops");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  it("forgets the refusal when the next import works", async () => {
+    await refusedImport();
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    await screen.findByText("2 items added.");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByLabelText("Personal access token")).toBeNull();
+  });
+
+  it("keeps the saved query a person had picked through Try again", async () => {
+    const press = await refusedImport();
+    fireEvent.change(screen.getByRole("combobox", { name: "Saved query" }), {
+      target: { value: "q2" },
+    });
+    fireEvent.click(press);
+    await waitFor(() => expect(api.fetchSavedQueries).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    await screen.findByText("2 items added.");
+    expect(api.importItems).toHaveBeenLastCalledWith("azure-devops", CODE, { saved: "q2" });
+  });
+});
+
 describe("words", () => {
   it.each([
     ["connector_no_site", "Pick an Azure DevOps project in the queue first."],
@@ -389,6 +585,21 @@ describe("words", () => {
     ],
   ])("says %s in Azure DevOps' own terms", (code, words) => {
     expect(connectorMessage(t, code, "azure-devops")).toBe(words);
+  });
+
+  it("says what is true of every way a token can be refused", () => {
+    const message = connectorMessage(t, REFUSED, "azure-devops");
+    expect(message).toBe(REFUSED_WORDS);
+    expect(message).not.toMatch(/connect again/i);
+    expect(connectorMessage(t, "connector_no_access", "azure-devops")).toBe(
+      "Azure DevOps did not let this token into that organisation. The token may be wrong, expired or short of a scope, or its account may not be a member. Check the name and the token.",
+    );
+  });
+
+  it("names what to tick for a token that cannot list projects", () => {
+    expect(connectorMessage(t, "connector_no_projects", "azure-devops")).toBe(
+      "This token works but cannot list this organisation’s projects, so nothing was saved. Tick Project and Team, Read as well, at Azure DevOps, and try again.",
+    );
   });
 
   it("leaves Jira's words alone", () => {
@@ -445,6 +656,19 @@ describe("the lines of a round from Azure DevOps", () => {
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
 
+  it("says a token was refused, offers Try again, and the same press goes on", async () => {
+    api.writeBack.mockRejectedValueOnce(new RoomApiError(REFUSED));
+    api.writeBack.mockResolvedValue({ key: "1", value: 5 });
+    render(<WriteBackLines code={CODE} round={round} name="azure-devops" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Write to Azure DevOps" }));
+    const again = await screen.findByRole("button", { name: "Try again" });
+    expect(screen.getByRole("alert").textContent).toBe(
+      `#1: 5 did not reach Azure DevOps. ${REFUSED_WORDS}`,
+    );
+    fireEvent.click(again);
+    await screen.findByText("#1: 5 is in Azure DevOps.");
+  });
+
   it("loads the lines in the room for this tracker alone", async () => {
     const tag = document.createElement("meta");
     tag.name = CONNECTOR_META;
@@ -469,5 +693,21 @@ describe("the lines of a round from Azure DevOps", () => {
     fireEvent.click(screen.getByRole("button", { name: "Write to Azure DevOps" }));
     await screen.findByText("Written to Azure DevOps.");
     expect(api.writeBack).toHaveBeenCalledWith("azure-devops", CODE, 2);
+  });
+
+  it("says a token was refused on a past round too, and can be pressed again", async () => {
+    const tag = document.createElement("meta");
+    tag.name = CONNECTOR_META;
+    tag.content = "azure-devops";
+    document.head.append(tag);
+    api.writeBack.mockRejectedValueOnce(new RoomApiError(REFUSED));
+    api.writeBack.mockResolvedValue({ key: "1", value: 5 });
+    const past = { number: 2, final: "8", system: "ado" } as never;
+    render(<HistoryWrite round={past} />);
+    const press = screen.getByRole("button", { name: "Write to Azure DevOps" });
+    fireEvent.click(press);
+    await screen.findByText(REFUSED_WORDS);
+    fireEvent.click(press);
+    await screen.findByText("Written to Azure DevOps.");
   });
 });
