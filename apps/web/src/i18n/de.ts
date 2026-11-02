@@ -503,6 +503,7 @@ export const de: Catalog = {
     queueAddedPlain_other: "{{count, number}} Einträge zur Warteschlange hinzugefügt.",
     advanceSoon: "Als Nächstes, in {{seconds, number}} Sekunden: {{item}}.",
     advanceHeld: "Der Raum bleibt bei dieser Runde.",
+    roomRenamed: "Der Raum heißt jetzt {{name}}.",
     poVotesOn: "Der Product Owner stimmt jetzt mit ab.",
     poVotesOff: "Der Product Owner stimmt nicht mehr mit ab.",
     observersCountOn: "Beobachter belegen jetzt einen der {{max, number}} Plätze.",
@@ -603,6 +604,50 @@ export const de: Catalog = {
       stillMoving:
         "Sie sind angemeldet. Einige Ihrer Räume werden noch in Ihr Konto übertragen. Öffnen Sie sie gleich noch einmal.",
     },
+  },
+  myRooms: {
+    title: "Meine Räume",
+    intro:
+      "Die Räume, die Ihnen gehören, und die Räume, in denen Sie gerade einen Platz haben. Wenn Sie einen Raum verlassen oder daraus entfernt werden, verschwindet er aus dieser Liste.",
+    retention_one:
+      "Ihre eigenen Räume bleiben, bis Sie sie löschen. Ein Raum, dem Sie nur beigetreten sind, verschwindet nach {{count, number}} Tag ohne Aktivität.",
+    retention_other:
+      "Ihre eigenen Räume bleiben, bis Sie sie löschen. Ein Raum, dem Sie nur beigetreten sind, verschwindet nach {{count, number}} Tagen ohne Aktivität.",
+    signedOut:
+      "Melden Sie sich an, um die Räume zu sehen, die Ihnen gehören und in denen Sie einen Platz haben. Was Sie als Gast getan haben, kommt mit.",
+    loading: "Ihre Räume werden geladen…",
+    moving:
+      "Einige Ihrer Räume sind noch unterwegs zu Ihrem Konto. Versuchen Sie es gleich noch einmal.",
+    emptyTitle: "Noch keine Räume",
+    emptyBody: "Räume, die Sie angemeldet erstellen oder betreten, erscheinen hier.",
+    owned: "Ihr Raum",
+    joined: "Sie haben einen Platz",
+    lastActive: "Aktiv {{when}}",
+    rounds_one: "{{count, number}} Runde",
+    rounds_other: "{{count, number}} Runden",
+    showMore: "Mehr Räume anzeigen",
+    cancel: "Abbrechen",
+    rename: "Umbenennen",
+    renameNamed: "{{name}} umbenennen",
+    renameTitle: "Diesen Raum umbenennen",
+    nameLabel: "Raumname",
+    save: "Speichern",
+    renamed: "Raum umbenannt.",
+    delete: "Löschen",
+    deleteNamed: "{{name}} löschen",
+    deleteTitle: "{{name}} löschen?",
+    deleteBody:
+      "Der Raum verschwindet für alle: seine Runden, sein Verlauf, seine Warteschlange und alle Zugänge. Das lässt sich nicht rückgängig machen.",
+    deleteLive: "Wer gerade im Raum ist, sieht sofort, dass er nicht mehr da ist.",
+    deleteConfirm: "Diesen Raum löschen",
+    deleted: "Raum gelöscht.",
+    leave: "Diesen Raum verlassen",
+    leaveNamed: "{{name}} verlassen",
+    leaveTitle: "{{name}} verlassen?",
+    leaveBody:
+      "Ihr Platz wird frei, und der Raum verschwindet aus dieser Liste. Über den Link des Raums können Sie wieder beitreten.",
+    left: "Sie haben den Raum verlassen.",
+    gone: "Diesen Raum gibt es nicht mehr.",
   },
   password: {
     label: "Passwort",

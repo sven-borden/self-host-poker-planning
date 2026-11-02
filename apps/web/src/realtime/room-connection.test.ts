@@ -201,6 +201,23 @@ describe("openRoom", () => {
     expect(seen.some((entry) => entry.includes("error") || entry.includes("offline"))).toBe(false);
   });
 
+  it("after deleted, shows the room gone at once and stays away (#49)", async () => {
+    const fake = fakeSocket(() => ({ ok: true, snapshot: snapshot(1) }));
+    open(fake);
+    fake.up();
+    await settle();
+    expect(useRoomStore.getState().status).toBe("live");
+
+    fake.fire("deleted");
+
+    expect(useRoomStore.getState()).toMatchObject({ status: "error", error: "room_not_found" });
+    expect(fake.socket.disconnect).toHaveBeenCalled();
+    // The server's own close that follows changes nothing, and nothing connects again.
+    fake.fire("disconnect", "io server disconnect");
+    expect(useRoomStore.getState()).toMatchObject({ status: "error", error: "room_not_found" });
+    expect(fake.socket.connect).not.toHaveBeenCalled();
+  });
+
   it("after kicked, connects again and enters as someone not in the room (#30)", async () => {
     let version = 1;
     const fake = fakeSocket(() => ({ ok: true, snapshot: snapshot(version) }));

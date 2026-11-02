@@ -19,7 +19,7 @@ export function signInProviders(): SignInProvider[] {
   return SIGN_IN_PROVIDERS.filter((id) => named.includes(id));
 }
 
-/** The app's path to come back to: the server takes `/` or a room's. */
+/** The app's path to come back to: the server takes `/`, `/rooms` or a room's. */
 export function returnPath(): string {
   return window.location.pathname.replace(/\/+$/, "") || "/";
 }

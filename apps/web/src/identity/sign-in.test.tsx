@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useIdentityStore } from "../stores/identity-store.ts";
 import { fetchSession, IdentityError, signOut, startSignIn } from "./identity.ts";
@@ -11,6 +12,15 @@ import {
   takeSignInError,
 } from "./sign-in.ts";
 import { SignInRow } from "./sign-in-row.tsx";
+
+// The row is alone here, without a router: its one link is a plain one.
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ to, children, className }: { to: string; children: ReactNode; className: string }) => (
+    <a href={to} className={className}>
+      {children}
+    </a>
+  ),
+}));
 
 function meta(content?: string) {
   document.head.querySelector('meta[name="pp-sign-in"]')?.remove();
@@ -198,6 +208,33 @@ describe("the calls", () => {
 });
 
 describe("SignInRow", () => {
+  it("leads an account to its rooms, and a guest nowhere", () => {
+    meta("google");
+    asGuest();
+    const { unmount } = render(<SignInRow />);
+    expect(screen.queryByRole("link", { name: "My rooms" })).toBeNull();
+    unmount();
+    useIdentityStore.getState().setIdentity({
+      userId: "account",
+      name: "Ada",
+      email: "ada@example.com",
+      provider: "google",
+    });
+    render(<SignInRow />);
+    expect(screen.getByRole("link", { name: "My rooms" }).getAttribute("href")).toBe("/rooms");
+  });
+
+  it("knows a Microsoft account whose token claimed no address for an account", () => {
+    meta("microsoft");
+    useIdentityStore
+      .getState()
+      .setIdentity({ userId: "account", name: "Ada", provider: "microsoft" });
+    render(<SignInRow />);
+    expect(screen.getByRole("link", { name: "My rooms" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Sign in with Microsoft" })).toBeNull();
+  });
+
   it("shows nothing on an install without keys", () => {
     asGuest();
     const { container } = render(<SignInRow />);

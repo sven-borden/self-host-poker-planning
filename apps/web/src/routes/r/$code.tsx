@@ -123,6 +123,11 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
       : null,
   );
   const locked = useRoomStore((state) => state.code === header.code && state.status === "locked");
+  // The room's name: the live snapshot's word once there is one, so a rename shows at once (#49).
+  const renamed = useRoomStore((state) =>
+    state.code === header.code ? state.snapshot?.room.name : undefined,
+  );
+  const name = renamed ?? header.name;
   const hasPassword = live ?? (header.hasPassword || locked);
   // The join form's password block is a lazy chunk: fetched now, it is there when asked.
   useEffect(() => {
@@ -172,11 +177,7 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
         <div className="min-w-0 phone:contents">
           {/* overflow-hidden: whatever the name stacks above or below its letters stays inside. */}
           <h1 className="overflow-hidden py-1 text-3xl font-[760] break-words [font-stretch:110%] sm:text-4xl squat:text-2xl phone:col-start-1 phone:row-start-1 phone:py-0.5 phone:text-xl narrow:col-span-2">
-            {header.name !== null ? (
-              <bdi>{header.name}</bdi>
-            ) : (
-              t("room.title", { code: header.code })
-            )}
+            {name !== null ? <bdi>{name}</bdi> : t("room.title", { code: header.code })}
             {hasPassword ? (
               // A lock beside the name, named for screen readers (#31).
               <span
@@ -216,7 +217,7 @@ function RoomHeaderView({ header }: { header: RoomHeader }) {
             <LinkIcon aria-hidden />
             <span className="phone:sr-only">{t("room.copyLink")}</span>
           </Button>
-          <RoomHistoryButton roomName={header.name} />
+          <RoomHistoryButton roomName={name} />
           <RoomSettingsButton />
         </div>
       </header>

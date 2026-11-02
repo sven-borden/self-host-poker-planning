@@ -547,6 +547,7 @@ export const en = {
     queueAddedPlain_other: "{{count, number}} items added to the queue.",
     advanceSoon: "Next in {{seconds, number}} seconds: {{item}}.",
     advanceHeld: "The room stays on this round.",
+    roomRenamed: "The room is now called {{name}}.",
     poVotesOn: "The product owner now votes too.",
     poVotesOff: "The product owner no longer votes.",
     observersCountOn: "Observers now take one of the {{max, number}} places.",
@@ -644,6 +645,49 @@ export const en = {
       stillMoving:
         "You are signed in. Some of your rooms are still moving to your account: open them again in a moment.",
     },
+  },
+  myRooms: {
+    title: "My rooms",
+    intro:
+      "The rooms you own, and the rooms where you hold a seat now. Leave a room or get removed from it, and it goes from this list.",
+    retention_one:
+      "Rooms you own stay until you delete them. A room you only joined goes after {{count, number}} day without activity.",
+    retention_other:
+      "Rooms you own stay until you delete them. A room you only joined goes after {{count, number}} days without activity.",
+    signedOut:
+      "Sign in to see the rooms you own and the rooms where you hold a seat. What you did as a guest comes with you.",
+    loading: "Loading your rooms…",
+    moving: "Some of your rooms are still on their way to your account. Try again in a moment.",
+    emptyTitle: "No rooms yet",
+    emptyBody: "Rooms you create or join while signed in show up here.",
+    owned: "You own this room",
+    joined: "You hold a seat",
+    lastActive: "Active {{when}}",
+    rounds_one: "{{count, number}} round",
+    rounds_other: "{{count, number}} rounds",
+    showMore: "Show more rooms",
+    cancel: "Cancel",
+    rename: "Rename",
+    renameNamed: "Rename {{name}}",
+    renameTitle: "Rename this room",
+    nameLabel: "Room name",
+    save: "Save",
+    renamed: "Room renamed.",
+    delete: "Delete",
+    deleteNamed: "Delete {{name}}",
+    deleteTitle: "Delete {{name}}?",
+    deleteBody:
+      "This removes the room for everyone: its rounds, its history, its queue and who may enter it. It cannot be undone.",
+    deleteLive: "Anyone in the room right now sees at once that it is gone.",
+    deleteConfirm: "Delete this room",
+    deleted: "Room deleted.",
+    leave: "Leave this room",
+    leaveNamed: "Leave {{name}}",
+    leaveTitle: "Leave {{name}}?",
+    leaveBody:
+      "Your seat goes, and the room goes from this list. The room’s link lets you join again.",
+    left: "You left the room.",
+    gone: "That room is no longer there.",
   },
   password: {
     label: "Password",

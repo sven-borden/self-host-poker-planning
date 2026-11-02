@@ -612,6 +612,13 @@ describe("the queue (#52)", () => {
     expect(said(held)).toBe("The room stays on this round.");
   });
 
+  it("says the room's new name (#49)", () => {
+    const renamed = { ...roomOf("ana", queue), name: "Sprint 12" };
+    expect(said(liveEvents(renamed, [{ type: "roomRenamed" }], null))).toBe(
+      "The room is now called Sprint 12.",
+    );
+  });
+
   it("keeps the last word of a countdown armed and held in one batch", () => {
     const armed = liveEvents(roomOf("ana", queue), [{ type: "advanceArmed" }], null);
     const held = liveEvents(roomOf("ana", queue), [{ type: "advanceHeld" }], null);

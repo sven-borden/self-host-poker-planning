@@ -38,11 +38,11 @@ async function json(response: Response): Promise<unknown> {
   }
 }
 
-function field(value: unknown, key: string): unknown {
+export function field(value: unknown, key: string): unknown {
   return typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined;
 }
 
-async function call(path: string, init: RequestInit = {}): Promise<unknown> {
+export async function call(path: string, init: RequestInit = {}): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(path, { credentials: "same-origin", ...init });
@@ -105,7 +105,7 @@ export async function fetchRoomHeader(code: string): Promise<RoomHeader> {
   };
 }
 
-const jsonInit = (method: string, body?: object): RequestInit => ({
+export const jsonInit = (method: string, body?: object): RequestInit => ({
   method,
   ...(body !== undefined && {
     headers: { "content-type": "application/json" },
