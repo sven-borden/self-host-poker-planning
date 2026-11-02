@@ -38,11 +38,23 @@ export type RoomSettings = {
    * countdown has run (#52, ADR-024). Absent in a room stored before it: off.
    */
   autoAdvance: boolean;
+  /** Only these accounts may enter (#50, ADR-028). Absent: anyone holding the link. */
+  restriction?: Restriction;
 };
 
-/** What `updateSettings` accepts: any subset of the settings, `timer` merged one level deep. */
-export type SettingsPatch = Partial<Omit<RoomSettings, "timer">> & {
+/**
+ * A room limited to accounts (#50, ADR-028): a person passes by either list. `domains` hold what
+ * `cleanDomain` gives, `tenants` what `cleanTenant` gives; a rule holds at least one entry.
+ */
+export type Restriction = { domains: string[]; tenants: string[] };
+
+/**
+ * What `updateSettings` accepts: any subset of the settings, `timer` merged one level deep, and
+ * `restriction` replaced whole, or removed by null.
+ */
+export type SettingsPatch = Partial<Omit<RoomSettings, "timer" | "restriction">> & {
   timer?: Partial<TimerSettings>;
+  restriction?: Restriction | null;
 };
 
 export type Participant = {
@@ -203,6 +215,11 @@ export const MAX_TIMER_SECONDS = 3600;
 export const MIN_PASSWORD_LENGTH = 6;
 /** … up to this many. Never trimmed: a space is a character like any other. */
 export const MAX_PASSWORD_LENGTH = 128;
+/**
+ * Entries in each list of a room's rule (#50): a real rule names a few, and every snapshot
+ * carries the domains.
+ */
+export const MAX_RESTRICTION_ENTRIES = 20;
 /** Anyone in the room can claim the PO role once the PO has been away this long. */
 export const OWNER_CLAIM_AFTER_MS = 120_000;
 /**
