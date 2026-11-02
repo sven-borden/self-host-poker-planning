@@ -82,8 +82,9 @@ from the bundled database; to use your own Postgres, run the image alone with
   - turn on "Advanced > Build > Source commit availability: Available during build",
     otherwise `/api/health` reports `commit: unknown`;
   - set "Build arguments" to "Managed manually in Dockerfile" (no injected build
-    arguments), and for `DATABASE_URL` and `BETTER_AUTH_SECRET` uncheck "Available at
-    Buildtime": a build argument in scope of a `RUN` stays readable in `docker history`.
+    arguments), and for `DATABASE_URL`, `BETTER_AUTH_SECRET`, `POKER_VAULT_KEY` and
+    `POKER_VAULT_OLD_KEYS` uncheck "Available at Buildtime": a build argument in scope of a
+    `RUN` stays readable in `docker history`.
     The Dockerfile declares no `ARG` that could carry a secret, so keep secrets at runtime;
   - leave Coolify's own HTTP health check off: it runs curl or wget inside the container
     and the image has neither. The image's `HEALTHCHECK` is used;
@@ -163,7 +164,8 @@ With two proxies that takes both steps: the second must trust the first, and the
 The Jira and Azure DevOps connectors, still to come (#54, #55), keep each person's token encrypted
 with AES-256-GCM, under a key that lives in the environment and never in the database. A guest
 holds no token. Without a key the server runs as usual and the connectors stay off. To turn it
-on, set a key and restart:
+on, set a key and recreate the container (`docker compose up -d`: `restart` does not read
+`.env` again):
 
 ```bash
 openssl rand -base64 32   # POKER_VAULT_KEY in .env, or in Coolify's variables; runtime only
@@ -175,22 +177,35 @@ bytes of base64, and a key listed twice, naming the variable and never the value
 **Changing the key** needs no downtime, no code change and no maintenance window. Every token
 stays readable at every step:
 
+0. Optional, and worth it: run the command of step 2 once now and note the `keyId` in its line.
+   It is the id of the key you are about to replace.
 1. Generate a new key. Make it `POKER_VAULT_KEY`, put the previous key in
-   `POKER_VAULT_OLD_KEYS` (commas between several, no spaces), and restart or redeploy.
+   `POKER_VAULT_OLD_KEYS` (commas between several, no spaces, no line break), and **recreate**
+   the container: `docker compose up -d`, or redeploy in Coolify. `docker compose restart` is
+   not enough: it starts the old container again with the values it was created with, and only
+   `up -d` reads `.env` again.
 2. Re-encrypt what is stored, in the running container:
    `docker compose exec app node dist/main.mjs vault:rotate`, or `node dist/main.mjs vault:rotate`
-   in Coolify's terminal. It logs one line of counts and exits 0 when every token is on the new
-   key. It is safe to run again, and alongside people using the app. Tokens also move by themselves
-   when they are used.
-3. Remove the previous key from `POKER_VAULT_OLD_KEYS` and restart.
+   in Coolify's terminal. It logs one line of counts and exits 0 only when every token is on the
+   new key. It is safe to run again, and alongside people using the app. Tokens also move by
+   themselves when they are used. **Check the line**: `keyId` must be a different id from step 0
+   (the same id means the container still has the old key: do step 1 again), `rotated` is the
+   number of connected people on the first run, and `offKey`, `unknownKey` and `corrupt` are 0.
+3. Remove the previous key from `POKER_VAULT_OLD_KEYS` and recreate the container again
+   (`docker compose up -d`). Not before step 2 has exited 0.
 
-With several instances, first add the new key to `POKER_VAULT_OLD_KEYS` everywhere and restart
-them, then do step 1: otherwise an instance that has not restarted yet meets tokens it cannot
+With several instances, first add the new key to `POKER_VAULT_OLD_KEYS` everywhere and recreate
+them, then do step 1: otherwise an instance that has not been recreated yet meets tokens it cannot
 open, and asks those people to connect again until it has.
 
-If the command exits 1 with `unreadable` above 0, some tokens cannot be opened: a key is missing
-from the variables (add it and run again) or the row was changed. Rows are never deleted for this.
-Those people connect again, which replaces the row, and until then the count stays.
+If the command exits 1, read the counts. `unknownKey` above 0: a token was sealed with a key
+that is not in the variables; add it to `POKER_VAULT_OLD_KEYS` and run again. `corrupt` above 0:
+the row does not verify, because it was changed, copied to another account, or written by a
+format this version does not know; the server never writes one, so ask who can write to the
+database. `offKey` above 0 with the others at 0: some tokens are not on the new key yet, because
+another instance still runs with an older one and keeps writing there; recreate it with the new
+key and run again. Rows are never deleted for this. For `unknownKey` and `corrupt` the person
+connects again, which replaces the row, and until then the count stays.
 
 **Backups**: a dump holds these tokens encrypted, and a dump alone opens nothing. To restore them
 you must also keep `POKER_VAULT_KEY`, and any older key that was in use when the dump was taken,

@@ -1070,6 +1070,10 @@ format version, 8 hex digits of key id, then in base64url a fresh random 96-bit 
 encryption, the 128-bit tag and the ciphertext. A random IV is safe far past anything this table
 will see (2^32 encryptions under one key is the limit for 96 bits). The ciphertext has the
 token's length: nothing pads it, since a length tells nothing useful about an opaque token.
+Only the spelling `seal` writes opens: base64url has spare bits in a last character, so other
+spellings decode to the same bytes, and `open` refuses a part that does not encode back to
+itself. The tag is held to 16 bytes twice, by the pattern and by `authTagLength` on the
+decipher, since Node takes a 4-byte tag without that option; one test for each.
 
 **A value is bound to its row.** The additional authenticated data is the JSON array of the
 format, the key id, the user and the connector. JSON quotes each, so ids cannot run together. A
@@ -1097,40 +1101,85 @@ stays readable from then on. `node dist/main.mjs vault:rotate`, one-off in the r
 then re-encrypts every row to the current key, and the old key can go. With several instances the
 new key goes into `POKER_VAULT_OLD_KEYS` everywhere first, so that no instance meets a value it
 cannot open while the others restart. A subcommand of `main.mjs` means one bundle and no new
-path in the image. It reads the server's variables, so it cannot run with other keys, and opens a
-one-connection pool of its own; it does not migrate, since the running image already has. It logs
-one line of counts and exits 0 when every row is on the current key, 1 otherwise.
+path in the image. It reads the variables of the container it runs in, which are those the
+container was created with: after editing `.env`, `docker compose restart` starts the old
+container again with the old values, and only `up -d` makes a new one. So the command can run
+with the old key and report nothing wrong, and the next `up -d` would then make every row
+`unknown_key`. The line therefore carries `keyId`, the id of the key it ran with, and the steps
+(README) have the operator compare it with the id from a run before the change. It opens a
+one-connection pool of its own and does not migrate, since the running image already has.
+
+**What exit 0 proves.** Every row is on the current key and none is unreadable. A scan alone
+cannot say that: a row saved behind it is never seen, and an instance still on an old key
+re-encrypts what it reads to its own current key, which can move a row back. So the run ends by
+asking Postgres how many rows are not on the current key (`split_part(sealed_token, '.', 2) <> id`,
+`offKey`), scans again while that is above 0 and nothing is unreadable, up to three passes, and
+exits 1 if any remain, with a message that names an instance on an older key. A compare lost to a
+newer write counts as `changed`, never as `current`, whatever key the winner used. The counts
+are those of the last pass. A row that is unreadable ends the run with 1 at once: more passes
+could not change the verdict.
 
 **Rotating is safe to repeat.** Each row is one `update` that compares the sealed value it read,
 and no two seals are alike. So a token saved while the run reads is never overwritten by the older
 one, no lock is needed against the server or a second run, and a run stopped halfway has lost
 nothing. A read that finds a token on an old key does the same on the way out, ignoring a failed
 write: the token is already open, and the command picks up what this misses. Neither moves
-`updated_at`, which says when the token last changed.
+`updated_at` or `version`, which say when and in what state the token last changed.
+
+**A refresh is a compare-and-set too.** A connector refreshes a token it read, and the refresh
+takes time and runs on any instance, so a lock in one process does not span them. With an
+unconditional upsert, a refresh that finished after the person disconnected would store a
+working token again, and two refreshes of Atlassian's rotating refresh tokens would end with
+the older stored and the connection dead. `connector_token.version` is a random uuid, new at
+every save and replacement. `readToken` returns it, opaque, and `replaceToken` writes only over
+it: `replaced`, `gone` (the row is not there: drop the new token) or `changed` (another write was
+first: read again). It never inserts. A random value, not a counter, because a row that is
+deleted and connected again must not look like the state a stale refresh read. Not the sealed
+value, because a re-encryption changes that without changing the token, and a refresh that lost
+to it would then drop a refresh token the provider has already retired. `saveToken` stays what
+the person's own connecting does, replacing whatever is there; a refresh never calls it.
 
 **A failed decryption is a state.** `readToken` answers `unreadable` with `unknown_key` (its key is
 not among the server's) or `corrupt` (changed, moved, or a format this version cannot read). A
 caller shows "connect again" for both, and connecting again overwrites the row. The row is never
 deleted: a key that was dropped too soon can come back and everything opens again. The rotation
-leaves such rows as they are, counts them and exits 1.
+leaves such rows as they are, counts them apart (`unknownKey`: add the key back; `corrupt`: the
+row was changed, copied or written by a format this version does not know, and the store never
+writes one of those) and exits 1. Counts only: no id, no value. The store itself logs nothing,
+so a tampered row shows in the run and nowhere else; a caller that meets `corrupt` should log
+the class and the user's id.
 
 **Who may hold one is decided in the statement.** The `insert` selects from `user` where
 `is_anonymous is not true`, the purge's own reading, so a guest gets `no_account` with no check to
 race. The store refuses because no page exists yet to do so, and a page should not be what
 stands between a guest and the table.
 
-**Only the store's small API is public.** `saveToken`, `readToken`, `deleteToken`,
-`listConnections` and `enabled` on `database.connectorTokens`. A token is opaque text up to
+**The store trusts the id it is given.** The sealed value is bound to the id that opens it, so
+`readToken` for a victim's id returns the victim's token and nothing below can tell. The methods
+take an `AccountId`, a branded string that only `accountOf(user)` makes, from the `SocketUser`
+that `sessionUser` reads from the cookie, and that is `undefined` for a guest. That fits how the
+server passes people (`socket.data.user`, `sessionUser`), and it makes an id from a request body,
+a query or a room's seats a type error. It is not a security boundary: `as AccountId` compiles,
+and a review must refuse it. The connector name is checked at run time against `CONNECTORS`,
+and a name outside it throws, with a message that does not repeat the name.
+
+**Only the store's small API is public.** `saveToken`, `replaceToken`, `readToken`,
+`deleteToken`, `listConnections` and `enabled` on `database.connectorTokens`. A token is opaque text up to
 16 KiB, so a connector seals what it needs (access token, refresh token, expiry, site) as one
-JSON text. The row has no other column about it: a site's name is no secret, but no column is
-kept for a screen that does not exist.
+JSON text. The row has no other column about it but its `version`: a site's name is no secret,
+but no column is kept for a screen that does not exist.
 
 **Nothing prints.** `Secret` and `Vault` keep their values in private fields, and print a fixed
 text to `pino`, `JSON.stringify`, `util.inspect` and a template string; a `KeyObject` holds the
 key. Only ciphertext reaches a query, so only ciphertext could reach a driver error, and `guard`
-strips those too. `open` catches what Node throws and returns its state. `logger.ts` adds `token`,
-`accessToken`, `refreshToken` and `vaultKey` to the redact list, for a plain string logged by
-mistake. The store logs nothing, and the rotation logs no user.
+strips those too. `open` catches what Node throws and returns its state. A `Secret` prints
+`[secret]` wherever it sits, whatever the depth or the name. For a plain string logged by
+mistake, `logger.ts` redacts a list of names (`token`, `accessToken`, `access_token`,
+`refresh_token`, `id_token`, `client_secret`, `apiToken`, `pat`, `sealed_token`, the vault
+variables, headers in either case, and more) at the top level and up to three keys deep
+(`a.b.token`, `list[0].token`), since pino's `*` covers one level. A secret under another name,
+or deeper, prints. So a provider's response goes into a `Secret` at once, and nothing logs a
+response whole. The store logs nothing, and the rotation logs no user.
 
 **Backups.** A dump holds ciphertext, and the key is in the environment: that split is the whole
 point, so they are kept apart. Restoring tokens takes the dump and every key its rows were sealed
@@ -1145,5 +1194,6 @@ rotation inside the server at start: every instance would run it, and it would h
 got. Re-encrypting on use alone: a row nobody reads would keep the old key alive forever.
 
 **Not tested.** `pg_dump` itself: the test reads every row of every table through SQL, which sees
-the same values. A rotation across a real rolling deploy of several instances. No key has been set
-on Sven's instance, and nothing uses the vault until #54.
+the same values. A rotation across a real rolling deploy of several instances: the races are
+injected between statements of one process, with a second store for the instance on the old
+key. No key has been set on Sven's instance, and nothing uses the vault until #54.

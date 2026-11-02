@@ -36,6 +36,8 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 - `src/vault.ts`: the vault (#53, ADR-026). `Vault` seals and opens with AES-256-GCM, binding a
   value to its user and connector; `Secret` holds a token and prints `[secret]`. `src/db/connector-tokens.ts`:
   `createConnectorTokenStore(pool, vault)`, on `database.connectorTokens`, and `rotateTokens`.
+  The store takes an `AccountId` (`accountOf(user)`, never an id from a request); `saveToken` is
+  for the person connecting, a refresh is `readToken` then `replaceToken` with its `version`.
   `src/vault-rotation.ts`: `runVaultRotation(env, destination?)`, what `node dist/main.mjs
   vault:rotate` runs; it answers with an exit code.
 - `src/auth.ts`: identity. `createAuth(config, db, logger)` builds Better Auth (Drizzle
@@ -130,7 +132,9 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 - Never read, log or print a secret or a vote value. Log lines carry ids (request,
   connection, room code), never bodies, cookies, auth headers, query strings or client
   addresses. The logger also redacts cookies, auth headers and `auth` payloads of an
-  object logged whole (a handshake), as a second line of defence.
+  object logged whole (a handshake), and plain strings under the names of secrets (`token`,
+  `access_token`, `refresh_token`, `client_secret`, `pat`, ...) at the top level and up to three
+  keys deep, as a second line of defence. A provider's response goes into a `Secret` at once.
 - The server answers with codes (`{ code: "not_found" }`, ack codes), never sentences.
 - Socket payloads are `unknown` at runtime: `parseEnter` and `toDomainCommand` run on
   every message, junk answers `bad_payload`, a missing ack callback is fine, a throwing
