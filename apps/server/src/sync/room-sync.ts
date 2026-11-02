@@ -66,6 +66,7 @@
  * presence, finds no room and does the same, and a socket that reconnects finds no room to enter.
  */
 import {
+  type AccountRemoval,
   type ApplyResult,
   apply,
   type Cause,
@@ -250,13 +251,13 @@ export interface RoomSync extends RealtimeHandlers {
    */
   dropGuest(guest: string, account: string): void;
   /**
-   * The account `who` goes from the room (#51), through the room's queue and the compare-and-set.
-   * `ghost` takes over a revealed card; `heir` is whom the person chose for a room they keep.
+   * An account goes from the room (#51), through the room's queue and the compare-and-set:
+   * `AccountRemoval` says who, and the new ids and the choices it comes with.
    * `failed` as for `moveGuest`, and safe to run again. A run that moves no right is quiet: a
    * deletion elsewhere is nothing the room's people did. A hand-over counts as activity, so
    * a guest who takes a room gets the whole of `ROOM_TTL_DAYS` from here.
    */
-  removeAccount(room: RoomRef, who: string, ghost: string, heir?: string): Promise<ServerRun>;
+  removeAccount(room: RoomRef, removal: AccountRemoval): Promise<ServerRun>;
   /** The person's sockets, on every instance, hear `accountDeleted` and are closed (#51). */
   dropAccount(who: string): void;
   /**
@@ -1652,20 +1653,11 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     if (watched.has(id) && !isHere(id, account)) graces.start(id, account);
   }
 
-  async function removeAccount(
-    room: RoomRef,
-    who: string,
-    ghost: string,
-    heir?: string,
-  ): Promise<ServerRun> {
+  async function removeAccount(room: RoomRef, removal: AccountRemoval): Promise<ServerRun> {
+    const { who } = removal;
     try {
       const outcome = await runner.run(room.code, (state) => {
-        const command: Command = {
-          type: "removeAccount",
-          who,
-          ghost,
-          ...(heir !== undefined && { heir }),
-        };
+        const command: Command = { type: "removeAccount", ...removal };
         const result = apply(state, command, { actor: SERVER_ACTOR, now: now() });
         return result.state === state
           ? result

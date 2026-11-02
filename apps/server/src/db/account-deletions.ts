@@ -11,7 +11,14 @@ import { session, user } from "./auth-schema.ts";
 import { guard } from "./errors.ts";
 import { type GuestRoom, namedRoundsOf, namesPerson } from "./guest-links.ts";
 import type { Db } from "./rooms.ts";
-import { accountDeletion, guestLink, ROOM_KEEPER, type RoomChoice, room } from "./schema.ts";
+import {
+  accountDeletion,
+  connectorToken,
+  guestLink,
+  ROOM_KEEPER,
+  type RoomChoice,
+  room,
+} from "./schema.ts";
 
 /** Named rounds rewritten in one statement: no statement holds many row locks for long. */
 export const ROUNDS_BATCH = 200;
@@ -20,9 +27,10 @@ export type RoomChoices = Readonly<Record<string, RoomChoice>>;
 
 export interface AccountDeletionStore {
   /**
-   * Writes that `account` is going, and ends its sessions, in one transaction: from here nobody
-   * acts as this person, and the deletion can always be run again. The first request's choices
-   * stand. A guest gets no row, and keeps its sessions.
+   * Writes that `account` is going, ends its sessions and deletes its connectors' tokens, in one
+   * transaction: from here nobody acts as this person, nothing needs the tokens, and the deletion
+   * can always be run again. The first request's choices stand. A guest gets no row, and keeps its
+   * sessions.
    */
   begin(account: string, choices: RoomChoices): Promise<void>;
   /** What the person chose and since when, or null when no deletion is pending. */
@@ -93,6 +101,10 @@ export function createAccountDeletionStore(db: Db): AccountDeletionStore {
             delete from ${session} s
             where s.user_id = ${account} and exists (
               select 1 from ${accountDeletion} d where d.user_id = s.user_id)`);
+          await tx.execute(sql`
+            delete from ${connectorToken} c
+            where c.user_id = ${account} and exists (
+              select 1 from ${accountDeletion} d where d.user_id = c.user_id)`);
         }),
       ),
 
@@ -165,20 +177,25 @@ export function createAccountDeletionStore(db: Db): AccountDeletionStore {
     finish: (account) =>
       guard("finish account deletion", () =>
         db.transaction(async (tx) => {
+          const lock = (ids: readonly string[]) =>
+            tx.execute<{ id: string; email: string }>(sql`
+              select id, email from "user"
+              where id in (${sql.join(
+                ids.map((id) => sql`${id}`),
+                sql`, `,
+              )})
+              for update`);
+          // A statement of its own: a lock taken inside a read does not make it read again, and
+          // what follows must see any commit that held this lock: a seat (`requireAccount`), or a
+          // guest's link, which takes this row too, and which the cascade would otherwise cut.
+          const { rows: found } = await lock([account]);
           const guests = await tx
             .select({ id: guestLink.guestUserId })
             .from(guestLink)
             .where(eq(guestLink.accountUserId, account));
-          const people = [account, ...guests.map(({ id }) => id)];
-          // A statement of its own: a lock taken inside a read does not make it read again, and
-          // the reads below must see any commit that held this lock (`requireAccount`).
-          const { rows: found } = await tx.execute<{ id: string; email: string }>(sql`
-            select id, email from "user"
-            where id in (${sql.join(
-              people.map((id) => sql`${id}`),
-              sql`, `,
-            )})
-            for update`);
+          const others = guests.map(({ id }) => id);
+          if (others.length > 0) found.push(...(await lock(others)).rows);
+          const people = [account, ...others];
           for (const who of people) {
             // No `limit`: it would pull the plan off the indexes, on reads that usually find nothing.
             const named = await tx.execute(sql`select id from room where ${namesPerson(who)}`);
@@ -193,7 +210,6 @@ export function createAccountDeletionStore(db: Db): AccountDeletionStore {
               where strpos(value, ${id}) > 0 or strpos(identifier, ${id}) > 0
                 or strpos(value, ${email}) > 0 or strpos(identifier, ${email}) > 0`);
           }
-          const others = people.filter((id) => id !== account);
           if (others.length > 0) {
             await tx.delete(user).where(and(inArray(user.id, others), eq(user.isAnonymous, true)));
           }

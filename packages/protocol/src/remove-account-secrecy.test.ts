@@ -3,7 +3,8 @@
  * table may learn which card was the person's, then or later. So a third person's frames, before
  * and after it, must not depend on who held what: deal the same cards differently among everyone
  * but that viewer, and the frames come out byte for byte the same, whether the person is seated
- * or gone, holds a card or not, is the PO, the keeper or neither, and whoever takes over.
+ * or gone, holds a card or not, is the PO, the keeper or neither, whoever takes over, and whether
+ * a room's rule lets anyone take it at all.
  */
 import { apply, type Command, createRoom, type RoomState } from "@pp/domain";
 import fc from "fast-check";
@@ -15,6 +16,7 @@ const WHO = "person";
 const VIEWER = "ben";
 const FILLERS = ["cleo", "dan"];
 const GHOST = "a-new-random-id";
+const VACANT = "another-new-random-id";
 const CARDS = ["1", "2", "3", "5", "8", "13"] as const;
 
 interface Side {
@@ -38,10 +40,12 @@ function revealedRoom(
   owner: string,
   poVotes: boolean,
   dealt: Record<string, string>,
+  keeper = owner,
 ): RoomState {
   let state = createRoom({ ownerId: owner });
   state = {
     ...state,
+    keeperId: keeper,
     settings: { ...state.settings, revealNames: false, revealWhenAllVoted: false, poVotes },
   };
   const everyone = [VIEWER, ...FILLERS, WHO];
@@ -78,12 +82,14 @@ function redealt(state: RoomState, order: readonly number[]): RoomState {
 }
 
 /** What the viewer's socket gets before the deletion and after it, as the bytes it gets. */
-function frames(state: RoomState, heir?: string): string {
+function frames(state: RoomState, heir?: string, mayTake?: readonly string[]): string {
   const command: Command = {
     type: "removeAccount",
     who: WHO,
     ghost: GHOST,
+    vacant: VACANT,
     ...(heir !== undefined && { heir }),
+    ...(mayTake !== undefined && { mayTake }),
   };
   const gone = apply(state, command, { actor: ":server", now: T0 + 5 });
   const meta = { code: "ROOM", version: 1, now: T0 };
@@ -95,8 +101,10 @@ function frames(state: RoomState, heir?: string): string {
 
 const deal = fc.record({
   owner: fc.constantFrom(VIEWER, "dan", WHO),
+  keeper: fc.constantFrom(VIEWER, "dan", WHO),
   poVotes: fc.boolean(),
   heir: fc.option(fc.constantFrom(VIEWER, "cleo", "dan"), { nil: undefined }),
+  mayTake: fc.option(fc.subarray([VIEWER, "cleo", "dan"]), { nil: undefined }),
   dealt: fc.record(
     Object.fromEntries([VIEWER, ...FILLERS, WHO].map((who) => [who, fc.constantFrom(...CARDS)])),
   ),
@@ -110,13 +118,13 @@ describe("an anonymous reveal, through an account's deletion", () => {
     it(`shows a third person nothing of who held what: ${name}`, () => {
       let dealtDifferently = 0;
       fc.assert(
-        fc.property(deal, ({ owner, poVotes, heir, dealt, order }) => {
-          const state = revealedRoom(person, owner, poVotes, dealt);
+        fc.property(deal, ({ owner, keeper, poVotes, heir, mayTake, dealt, order }) => {
+          const state = revealedRoom(person, owner, poVotes, dealt, keeper);
           const other = redealt(state, order);
           if (JSON.stringify(other.round?.votes) !== JSON.stringify(state.round?.votes)) {
             dealtDifferently += 1;
           }
-          expect(frames(other, heir)).toBe(frames(state, heir));
+          expect(frames(other, heir, mayTake)).toBe(frames(state, heir, mayTake));
         }),
         { numRuns: 120 },
       );

@@ -31,6 +31,7 @@ import {
 import { cleanSubject } from "./apply-subject.ts";
 import { isAvatarId } from "./avatars.ts";
 import type {
+  AccountRemoval,
   ApplyContext,
   ApplyResult,
   Cause,
@@ -41,6 +42,7 @@ import type {
 import { baseCards, deckCards } from "./decks.ts";
 import {
   AUTO_ADVANCE_MS,
+  heirsOf,
   keeperOf,
   MAX_MEMBERS,
   MAX_PARTICIPANTS,
@@ -271,7 +273,7 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
     case "renameRoom":
       return renameRoom(state, command.name);
     case "removeAccount":
-      return removeAccount(state, command.who, command.ghost, command.heir);
+      return removeAccount(state, command);
     default:
       return unknownCommand(command);
   }
@@ -491,37 +493,44 @@ function morePresent(kept: Participant, other: Participant): Participant {
  * second run changes nothing. It is a `leave`, as the table sees it, with three differences that
  * follow from the id having to go.
  *
- * The right to delete, and the role with it, passes on: to `heir` when the person chose someone
- * still seated, otherwise to whoever has sat here longest. With nobody to take a room `who` keeps,
- * nothing changes: the caller deletes that room, in a statement a late join can refuse.
+ * The right to delete, and the role with it, passes on, to the first of `heirsOf`. With nobody
+ * else seated, nothing changes: the caller deletes that room, in a statement a late join can refuse.
+ * With others seated and none of them allowed (`mayTake`), nobody holds the room: `ownerId` and
+ * `keeperId` become `vacant`, a seatless PO anyone allowed can claim, and no account's exemption
+ * covers it.
  *
  * The PO role of someone who does not keep the room goes back to its keeper. A keeper with no seat
  * here holds it as a PO who left does: anyone in the room can claim it at once (`claimOwner`). The
- * keeper's right stays, as for any claim.
+ * keeper's right stays, as for any claim. A keeper who may not take the role gets nothing they did
+ * not have: `ownerId` becomes `vacant`, and the role is as free.
  *
  * A revealed card stays on the table, under `ghost`, a new random id that nothing else names, with
  * no name and no mark that it changed. Taken away it would say whose it was in an anonymous round,
  * and it stands in the results of a named one. A card in a round still voting goes as a leaver's
  * does, and `settle` then does what the room's rule says for anyone who leaves.
  */
-function removeAccount(state: RoomState, who: UserId, ghost: UserId, heir?: UserId): Step {
+function removeAccount(state: RoomState, removal: AccountRemoval): Step {
+  const { who, ghost, vacant, heir, mayTake } = removal;
   const seat = participant(state, who);
   const round = state.round;
   const card = round ? ownVote(round, who) : undefined;
-  const keeps = keeperOf(state) === who;
+  const keeper = keeperOf(state);
+  const keeps = keeper === who;
   if (!seat && !card && !keeps && state.ownerId !== who) return done(state);
-  const others = Object.entries(state.participants)
-    .filter(([id]) => id !== who)
-    .sort(([a, p], [b, q]) => p.joinedAt - q.joinedAt || (a < b ? -1 : 1))
-    .map(([id]) => id);
-  const taker = heir !== undefined && others.includes(heir) ? heir : others[0];
-  if (keeps && taker === undefined) return done(state);
-  const owner = keeps ? (taker as UserId) : state.ownerId === who ? keeperOf(state) : state.ownerId;
+  const participants = omit(state.participants, who);
+  if (keeps && Object.keys(participants).length === 0) return done(state);
+  const owner = keeps
+    ? (heirsOf(state, who, { chosen: heir, mayTake })[0]?.id ?? vacant)
+    : state.ownerId !== who
+      ? state.ownerId
+      : mayTake === undefined || mayTake.includes(keeper)
+        ? keeper
+        : vacant;
   const next: RoomState = {
     ...state,
     ownerId: owner,
     ...(keeps && { keeperId: owner }),
-    participants: omit(state.participants, who),
+    participants,
   };
   const causes: Cause[] = [];
   if (owner !== state.ownerId && participant(next, owner)) {

@@ -60,10 +60,23 @@ export type Command =
   /** The PO renames the room, from "My rooms" (#49): a room's name is not a socket's business. */
   | { type: "renameRoom"; name: string }
   /**
-   * An account is going for good (#51, ADR-029). `ghost` is a new random id that takes over a
-   * revealed card; `heir` is whom the person chose for a room they keep. Both come from the server.
+   * An account is going for good (#51, ADR-029). All of it comes from the server. `ghost` is a new
+   * random id that takes over a revealed card. `vacant` is another, for a role nobody may take: a
+   * seatless `ownerId`, free to claim; never `ghost`, as `ownerId` goes out on the wire and would
+   * say whose that card was. `heir` is whom the person chose for a room they keep. `mayTake` is who
+   * may take the PO role here (a room's rule, ADR-028); left out, everyone may.
    */
-  | { type: "removeAccount"; who: UserId; ghost: UserId; heir?: UserId };
+  | {
+      type: "removeAccount";
+      who: UserId;
+      ghost: UserId;
+      vacant: UserId;
+      heir?: UserId;
+      mayTake?: readonly UserId[];
+    };
+
+/** The server's words when an account goes from a room. */
+export type AccountRemoval = Omit<Extract<Command, { type: "removeAccount" }>, "type">;
 
 export type CommandType = Command["type"];
 

@@ -7,12 +7,13 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { apply } from "./apply.ts";
 import type { Command } from "./commands.ts";
-import { AUTO_ADVANCE_MS, createRoom, keeperOf, type RoomState } from "./room.ts";
+import { AUTO_ADVANCE_MS, createRoom, heirsOf, keeperOf, type RoomState } from "./room.ts";
 
 const SERVER = ":server";
 const T0 = 1_700_000_000_000;
 const WHO = "leaving-person";
 const GHOST = "ghost-id";
+const VACANT = "vacant-id";
 
 function act(state: RoomState, actor: string, command: Command, now = T0): RoomState {
   const result = apply(state, command, { actor, now });
@@ -20,12 +21,22 @@ function act(state: RoomState, actor: string, command: Command, now = T0): RoomS
   return result.state;
 }
 
-const remove = (state: RoomState, heir?: string, now = T0) =>
+const remove = (state: RoomState, heir?: string, now = T0, mayTake?: readonly string[]) =>
   apply(
     state,
-    { type: "removeAccount", who: WHO, ghost: GHOST, ...(heir !== undefined && { heir }) },
+    {
+      type: "removeAccount",
+      who: WHO,
+      ghost: GHOST,
+      vacant: VACANT,
+      ...(heir !== undefined && { heir }),
+      ...(mayTake !== undefined && { mayTake }),
+    },
     { actor: SERVER, now },
   );
+
+const away = (state: RoomState, who: string, now = T0) =>
+  act(state, SERVER, { type: "presence", who, connected: false }, now);
 
 /** A room with these people, the first its PO and keeper; each joins a ms after the last. */
 function room(people: readonly string[], settings: Partial<RoomState["settings"]> = {}): RoomState {
@@ -44,6 +55,55 @@ const vote = (state: RoomState, who: string, card: string) =>
   act(state, who, { type: "castVote", card });
 
 const revealed = (state: RoomState) => act(state, state.ownerId, { type: "reveal" });
+
+describe("who is next in line", () => {
+  const seat = (joinedAt: number, connected = true) => ({ joinedAt, connected });
+  const ids = (heirs: readonly { id: string }[]) => heirs.map(({ id }) => id);
+
+  it("reads the person chosen, the PO who is here, the people here, the people away", () => {
+    const participants = {
+      [WHO]: seat(0),
+      po: seat(5),
+      early: seat(3),
+      late: seat(4),
+      gone: seat(1, false),
+      chosen: seat(9, false),
+    };
+    expect(heirsOf({ ownerId: "po", participants }, WHO, { chosen: "chosen" })).toEqual([
+      { id: "chosen", why: "chosen" },
+      { id: "po", why: "runsTheRoom" },
+      { id: "early", why: "here" },
+      { id: "late", why: "here" },
+      { id: "gone", why: "away" },
+    ]);
+  });
+
+  it("does not put a PO who is away first", () => {
+    const participants = { po: seat(5, false), ann: seat(7), ben: seat(1, false) };
+    expect(heirsOf({ ownerId: "po", participants }, WHO)).toEqual([
+      { id: "ann", why: "here" },
+      { id: "ben", why: "away" },
+      { id: "po", why: "away" },
+    ]);
+  });
+
+  it("takes nobody a rule refuses, not even the person chosen or the PO", () => {
+    const participants = { po: seat(1), ann: seat(2), ben: seat(3) };
+    const allowed = { chosen: "ann", mayTake: ["ben"] };
+    expect(ids(heirsOf({ ownerId: "po", participants }, WHO, allowed))).toEqual(["ben"]);
+    expect(heirsOf({ ownerId: "po", participants }, WHO, { mayTake: [] })).toEqual([]);
+  });
+
+  it("never names the person going, chosen or not", () => {
+    const participants = { [WHO]: seat(0), ann: seat(1) };
+    expect(ids(heirsOf({ ownerId: WHO, participants }, WHO, { chosen: WHO }))).toEqual(["ann"]);
+  });
+
+  it("breaks a tie by id", () => {
+    const participants = { zed: seat(1), amy: seat(1) };
+    expect(ids(heirsOf({ ownerId: WHO, participants }, WHO))).toEqual(["amy", "zed"]);
+  });
+});
 
 describe("a room the person keeps", () => {
   it("goes to whoever sat here longest, role and right, when the person chose nobody", () => {
@@ -84,19 +144,48 @@ describe("a room the person keeps", () => {
     expect(result.state.keeperId).toBe("ann");
   });
 
-  it("takes both from a claimer, as the default says", () => {
+  it("leaves a room with whoever runs it, who now holds the right too", () => {
     let state = room([WHO, "ann", "ben"]);
-    state = act(state, SERVER, { type: "presence", who: WHO, connected: false }, T0);
+    state = away(state, WHO);
     state = act(state, "ben", { type: "claimOwner" }, T0 + 200_000);
     expect(keeperOf(state)).toBe(WHO);
     const result = remove(state);
+    expect(result.state.ownerId).toBe("ben");
+    expect(result.state.keeperId).toBe("ben");
+    expect(result.causes).toEqual([{ type: "left", who: WHO }]);
+  });
+
+  it("gives a person chosen both, over whoever runs the room", () => {
+    let state = room([WHO, "ann", "ben"]);
+    state = away(state, WHO);
+    state = act(state, "ben", { type: "claimOwner" }, T0 + 200_000);
+    const result = remove(state, "ann");
     expect(result.state.ownerId).toBe("ann");
     expect(result.state.keeperId).toBe("ann");
+    expect(result.causes[0]).toEqual({ type: "ownerChanged", by: "transfer", to: "ann" });
+  });
+
+  it("does not leave it with a claimer who is away: someone here goes first", () => {
+    let state = room([WHO, "ann", "ben"]);
+    state = away(state, WHO);
+    state = act(state, "ben", { type: "claimOwner" }, T0 + 200_000);
+    state = away(state, "ben", T0 + 200_000);
+    expect(remove(state).state.keeperId).toBe("ann");
+  });
+
+  it("takes someone here over someone who sat longer and is away", () => {
+    const state = away(room([WHO, "ann", "ben"]), "ann");
+    expect(remove(state).state.keeperId).toBe("ben");
+  });
+
+  it("takes someone away when nobody is here, seated longest first", () => {
+    const state = away(away(room([WHO, "ann", "ben"]), "ben"), "ann");
+    expect(remove(state).state.keeperId).toBe("ann");
   });
 
   it("moves the right alone when the taker already holds the role", () => {
     let state = room([WHO, "ann"]);
-    state = act(state, SERVER, { type: "presence", who: WHO, connected: false }, T0);
+    state = away(state, WHO);
     state = act(state, "ann", { type: "claimOwner" }, T0 + 200_000);
     const result = remove(state);
     expect(result.state.ownerId).toBe("ann");
@@ -119,6 +208,66 @@ describe("a room the person keeps", () => {
   });
 });
 
+describe("a room whose rule refuses someone", () => {
+  it("never gives it to a person the rule refuses, chosen or next in line", () => {
+    const state = room([WHO, "ann", "ben"]);
+    expect(remove(state, "ann", T0, ["ben"]).state.keeperId).toBe("ben");
+    expect(remove(state, undefined, T0, ["ben"]).state.ownerId).toBe("ben");
+  });
+
+  it("leaves it with nobody when nobody seated is allowed, and anyone allowed can claim", () => {
+    let state = started(room([WHO, "ann", "ben"]));
+    state = revealed(vote(state, WHO, "5"));
+    const result = remove(state, "ann", T0, []);
+    expect(result.ok).toBe(true);
+    expect(result.state.ownerId).toBe(VACANT);
+    expect(result.state.keeperId).toBe(VACANT);
+    expect(Object.keys(result.state.participants)).toEqual(["ann", "ben"]);
+    expect(result.causes).toEqual([{ type: "left", who: WHO }]);
+    expect(JSON.stringify(result.state)).not.toContain(WHO);
+    const after = act(result.state, "ben", { type: "claimOwner" }, T0 + 1);
+    expect(after.ownerId).toBe("ben");
+    expect(after.keeperId).toBe(VACANT);
+  });
+
+  it("frees the role under an id no card sits under: a card must not point at the PO", () => {
+    const state = revealed(vote(started(room([WHO, "ann"])), WHO, "5"));
+    const result = remove(state, undefined, T0, []);
+    expect(result.state.ownerId).toBe(VACANT);
+    expect(Object.keys(result.state.round?.votes ?? {})).toEqual([GHOST]);
+  });
+
+  it("gives a keeper the rule refuses nothing: a claimed role goes free, and the right stays", () => {
+    let state = room(["ann", WHO, "ben"]);
+    state = away(state, "ann");
+    state = act(state, WHO, { type: "claimOwner" }, T0 + 200_000);
+    const result = remove(state, undefined, T0 + 200_000, ["ben"]);
+    expect(result.state.ownerId).toBe(VACANT);
+    expect(result.state.keeperId).toBe("ann");
+    expect(result.causes).toEqual([{ type: "left", who: WHO }]);
+  });
+
+  it("gives a claimed role back to a keeper the rule allows", () => {
+    let state = room(["ann", WHO, "ben"]);
+    state = away(state, "ann");
+    state = act(state, WHO, { type: "claimOwner" }, T0 + 200_000);
+    const result = remove(state, undefined, T0 + 200_000, ["ann"]);
+    expect(result.state.ownerId).toBe("ann");
+    expect(result.causes[0]).toEqual({ type: "ownerChanged", by: "transfer", to: "ann" });
+  });
+
+  it("leaves a PO alone whom the rule refuses, when the person only had a seat", () => {
+    const result = remove(room(["ann", WHO]), undefined, T0, []);
+    expect(result.state.ownerId).toBe("ann");
+    expect(result.state.keeperId).toBe("ann");
+  });
+
+  it("still changes nothing when nobody else is seated: the caller deletes the room", () => {
+    const state = room([WHO]);
+    expect(remove(state, undefined, T0, []).state).toBe(state);
+  });
+});
+
 describe("a room someone else keeps", () => {
   it("loses the seat, and nothing moves", () => {
     const result = remove(room(["ann", WHO, "ben"]));
@@ -131,7 +280,7 @@ describe("a room someone else keeps", () => {
   /** `ann` keeps the room, and the person took the role while `ann` was away. */
   function claimed(people: readonly string[]): RoomState {
     let state = room(people);
-    state = act(state, SERVER, { type: "presence", who: "ann", connected: false }, T0);
+    state = away(state, "ann");
     return act(state, WHO, { type: "claimOwner" }, T0 + 200_000);
   }
 
@@ -216,7 +365,7 @@ describe("the round on the table", () => {
     state = revealed(vote(state, "ann", "3"));
     state = act(state, WHO, { type: "setFinal", card: "3" });
     expect(state.round?.advanceAt).toBe(T0 + AUTO_ADVANCE_MS);
-    state = act(state, SERVER, { type: "presence", who: "ann", connected: false });
+    state = away(state, "ann");
     const result = remove(state);
     expect(result.state.round?.advanceAt).toBeUndefined();
   });
@@ -233,6 +382,8 @@ describe("in any room", () => {
     fc.constant({ who: "", type: "round" as const }),
     fc.constant({ who: "", type: "reveal" as const }),
   );
+
+  const mayTake = fc.option(fc.subarray(["ann", "ben", "cleo"]), { nil: undefined });
 
   function played(steps: readonly { who: string; type: string }[], anonymous: boolean): RoomState {
     let state = room(["ann"], { revealNames: !anonymous, allowChangeAfterReveal: true });
@@ -256,27 +407,35 @@ describe("in any room", () => {
 
   it("leaves nothing of the id, keeps every revealed card, and does nothing the second time", () => {
     fc.assert(
-      fc.property(fc.array(step, { maxLength: 24 }), fc.boolean(), (steps, anonymous) => {
-        const state = played(steps, anonymous);
-        const result = remove(state, undefined, T0 + 10_000_000);
-        const others = Object.keys(state.participants).filter((id) => id !== WHO);
-        if (keeperOf(state) === WHO && others.length === 0) {
-          expect(result.state).toBe(state);
-          return;
-        }
-        expect(JSON.stringify(result.state)).not.toContain(WHO);
-        expect(JSON.stringify(result.state)).not.toContain(`Name of ${WHO}`);
-        const round = state.round;
-        if (round?.phase === "revealed") {
-          const cards = (votes: Record<string, { card: string }> | undefined) =>
-            Object.values(votes ?? {})
-              .map(({ card }) => card)
-              .sort();
-          expect(cards(result.state.round?.votes)).toEqual(cards(round.votes));
-        }
-        const again = remove(result.state, undefined, T0 + 10_000_000);
-        expect(again.state).toBe(result.state);
-      }),
+      fc.property(
+        fc.array(step, { maxLength: 24 }),
+        fc.boolean(),
+        mayTake,
+        (steps, hidden, may) => {
+          const state = played(steps, hidden);
+          const result = remove(state, undefined, T0 + 10_000_000, may);
+          const others = Object.keys(state.participants).filter((id) => id !== WHO);
+          if (keeperOf(state) === WHO && others.length === 0) {
+            expect(result.state).toBe(state);
+            return;
+          }
+          expect(JSON.stringify(result.state)).not.toContain(WHO);
+          expect(JSON.stringify(result.state)).not.toContain(`Name of ${WHO}`);
+          const round = state.round;
+          if (round?.phase === "revealed") {
+            const cards = (votes: Record<string, { card: string }> | undefined) =>
+              Object.values(votes ?? {})
+                .map(({ card }) => card)
+                .sort();
+            expect(cards(result.state.round?.votes)).toEqual(cards(round.votes));
+          }
+          const again = remove(result.state, undefined, T0 + 10_000_000, may);
+          expect(again.state).toBe(result.state);
+          if (result.state.ownerId === VACANT || may === undefined) return;
+          const taken = result.state.ownerId !== state.ownerId;
+          if (taken) expect(may).toContain(result.state.ownerId);
+        },
+      ),
       { numRuns: 300 },
     );
   });

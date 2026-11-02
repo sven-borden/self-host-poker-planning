@@ -3,17 +3,19 @@
  * undone, so it runs in an order that leaves nobody half deleted, whatever fails and whenever a
  * process dies, following a guest's way to an account (`guest-link.ts`):
  *
- * 1. `begin`: the marker is written and the person's sessions end, in one transaction. A failure
- *    here changes nothing, and the person is told so. From here on nobody acts as this person:
- *    a sign-in to the account is refused (`refuses`), and it starts the deletion again.
- * 2. The person's sockets hear `accountDeleted` and close, on every instance.
+ * 1. `begin`: the marker is written, the person's sessions end and the connectors' tokens go, in
+ *    one transaction. A failure here changes nothing, and the person is told so. From here on nobody
+ *    acts as this person: a sign-in to the account is refused (`refuses`), and it starts the
+ *    deletion again.
+ * 2. The sockets of the person and of any guest on its way here hear `accountDeleted` and close,
+ *    on every instance.
  * 3. Every room that names the person is dealt with, one at a time. Deleted when the person chose
  *    that or nobody can take it, by a statement; otherwise through its runner (`removeAccount`), so
- *    its people see a `leave` or a hand-over. A room that fails does not stop the others. The rooms
+ *    its people see a `leave` or a hand-over. A room that fails stops nothing but step 5. The rooms
  *    are looked up again until none is left, for a command that was in flight.
- * 4. Every named round loses the person, keeping the card.
- * 5. `finish`, in one transaction, the `user` row last. Its cascade takes the marker, the
- *    sessions, the accounts, the grants, the guest links and the connectors' tokens.
+ * 4. Every named round loses the person, keeping the card, whatever came of the rooms.
+ * 5. `finish`, in one transaction, the `user` row last, and only if every room was dealt with. Its
+ *    cascade takes the marker, the sessions, the accounts, the grants and the guest links.
  *
  * Guests still on their way to the account (#48) are the same person: they go with it, and their
  * moves stop at `begin`, as `linkOf` then finds nothing to do.
@@ -28,6 +30,7 @@
  * (`DELETION_STUCK_MS`); nothing here gives it up, and ADR-029 says what ends it.
  */
 import { randomBytes } from "node:crypto";
+import type { AccountRemoval } from "@pp/domain";
 import { MOVE_WAIT_MS } from "@pp/protocol";
 import type { AccountDeletionStore, RoomChoices } from "./db/account-deletions.ts";
 import { errorCode } from "./db/errors.ts";
@@ -41,11 +44,11 @@ export const MAX_PASSES = 4;
 /** A deletion older than this has seen a daily sweep fail: someone should look. */
 export const DELETION_STUCK_MS = 24 * 60 * 60 * 1000;
 
-/** A new id for a revealed card: the shape of a user's, and nothing else names it. */
+/** A new id for a revealed card or a free role: the shape of a user's, and nothing else names it. */
 const newGhost = () => randomBytes(16).toString("hex");
 
 export interface AccountRooms {
-  removeAccount(room: GuestRoom, who: string, ghost: string, heir?: string): Promise<ServerRun>;
+  removeAccount(room: GuestRoom, removal: AccountRemoval): Promise<ServerRun>;
   roomDeleted(id: string): void;
   dropAccount(who: string): void;
 }
@@ -104,8 +107,13 @@ export function createAccountDeletions(options: AccountDeletionOptions): Account
           rooms.roomDeleted(room.id);
           continue;
         }
-        const heir = wish !== undefined && "to" in wish ? wish.to : undefined;
-        if ((await rooms.removeAccount(room, who, newGhost(), heir)) === "failed") failed += 1;
+        const removal: AccountRemoval = {
+          who,
+          ghost: newGhost(),
+          vacant: newGhost(),
+          ...(wish !== undefined && "to" in wish && { heir: wish.to }),
+        };
+        if ((await rooms.removeAccount(room, removal)) === "failed") failed += 1;
       } catch (error) {
         failed += 1;
         log[level](
@@ -129,16 +137,22 @@ export function createAccountDeletions(options: AccountDeletionOptions): Account
     try {
       await store.endSessions(account);
       rooms.dropAccount(account);
+      for (const guest of await store.guestsOf(account)) rooms.dropAccount(guest);
       for (let done = 0; done < MAX_PASSES; done++) {
         const people = [account, ...(await store.guestsOf(account))];
         let found = 0;
+        let failed = false;
         for (const who of people) {
           const cleared = await clearRooms(who, marker.choices, level);
-          if (cleared === "failed") return false;
-          found += cleared;
+          if (cleared === "failed") failed = true;
+          else found += cleared;
         }
+        // A room that fails holds up the last step alone: everything else goes now.
+        if (failed || found === 0) {
+          for (const who of people) await store.anonymiseRounds(who);
+        }
+        if (failed) return false;
         if (found > 0) continue;
-        for (const who of people) await store.anonymiseRounds(who);
         if (await store.finish(account)) {
           log.info("account deletion finished");
           return true;

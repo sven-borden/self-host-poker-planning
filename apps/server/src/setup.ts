@@ -80,7 +80,7 @@ export async function setupServer(
   const deletions = createAccountDeletions({
     store: createAccountDeletionStore(database.db),
     rooms: {
-      removeAccount: (room, who, ghost, heir) => sync.removeAccount(room, who, ghost, heir),
+      removeAccount: (room, removal) => sync.removeAccount(room, removal),
       roomDeleted: (id) => sync.roomDeleted(id),
       dropAccount: (who) => sync.dropAccount(who),
     },

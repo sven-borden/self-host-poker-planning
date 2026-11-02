@@ -1152,9 +1152,9 @@ describe("what fails, and how it comes out", () => {
     await me.sit(room.code);
     await other.sit(room.code);
     const real = sync.removeAccount;
-    vi.spyOn(sync, "removeAccount").mockImplementation(async (found, who, ghost, heir) => {
+    vi.spyOn(sync, "removeAccount").mockImplementation(async (found, removal) => {
       await admin.query("delete from room where id = $1", [found.id]);
-      return real(found, who, ghost, heir);
+      return real(found, removal);
     });
     expect(await (await me.remove()).json()).toEqual({ finished: true });
   });

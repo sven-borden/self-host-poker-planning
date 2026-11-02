@@ -126,9 +126,10 @@ export function registerAccountApi(
     const id = accountOf(me.user);
     if (id === undefined) return c.json({ code: "not_allowed" }, 403);
     const settled = await links.settle(id, EXPORT_SETTLE_MS);
-    const [person, rooms, votes, connections] = await Promise.all([
+    const [person, rooms, grants, votes, connections] = await Promise.all([
       data.profile(id),
       data.rooms(id),
+      data.grants(id),
       data.votes(id),
       tokens.listConnections(id),
     ]);
@@ -140,6 +141,7 @@ export function registerAccountApi(
       ...(!settled && { incomplete: true }),
       ...person,
       rooms,
+      grants,
       votes,
       connections: connections.map(({ connector }) => connector),
     };

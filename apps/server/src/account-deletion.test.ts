@@ -88,14 +88,19 @@ describe("a deletion", () => {
     await deletions.start(ME, store.markerOf as never);
     expect(deleteKept).toHaveBeenCalledWith(ROOM_A.id, ME);
     expect(calls).toContain("deleted id-a");
-    expect(rooms.removeAccount).toHaveBeenCalledWith(ROOM_B, ME, expect.any(String), "heir");
+    expect(rooms.removeAccount).toHaveBeenCalledWith(
+      ROOM_B,
+      expect.objectContaining({ who: ME, heir: "heir" }),
+    );
   });
 
   it("gives each card its own new id, which is no hash of anything", async () => {
     const { deletions, rooms } = harness();
     await deletions.start(ME, {});
-    const ghosts = vi.mocked(rooms.removeAccount).mock.calls.map(([, , ghost]) => ghost);
-    expect(new Set(ghosts).size).toBe(2);
+    const ghosts = vi
+      .mocked(rooms.removeAccount)
+      .mock.calls.flatMap(([, { ghost, vacant }]) => [ghost, vacant]);
+    expect(new Set(ghosts).size).toBe(4);
     for (const ghost of ghosts) expect(ghost).toMatch(/^[0-9a-f]{32}$/);
   });
 
@@ -122,14 +127,36 @@ describe("a deletion", () => {
     expect(calls.at(-1)).toBe("finish");
   });
 
-  it("stops short of the row when a room fails, and reaches no later step", async () => {
+  it("does everything but the last step when a room fails", async () => {
     const { calls, deletions, rooms, logs } = harness();
     vi.mocked(rooms.removeAccount).mockResolvedValueOnce("failed");
     await expect(deletions.start(ME, {})).resolves.toBe(false);
-    expect(calls).not.toContain("rounds");
-    expect(calls).not.toContain("finish");
-    expect(calls).toContain("remove room-b");
+    expect(calls).toEqual(["begin", "sessions", "drop", "remove room-b", "rounds"]);
     expect(logs.raw.join("\n")).not.toContain(ME);
+  });
+
+  it("goes on to everyone else's rooms and rounds when one person's room fails", async () => {
+    const guestRoom = { id: "id-guest", code: "room-guest" };
+    const cleared: string[] = [];
+    const { calls, deletions, rooms } = harness({
+      guestsOf: async () => ["guest"],
+      roomsOf: async (who) => (who === ME ? [ROOM_A] : [guestRoom]),
+      anonymiseRounds: async (who) => void cleared.push(who),
+    });
+    vi.mocked(rooms.removeAccount).mockRejectedValueOnce(new Error("a room nobody can read"));
+    await expect(deletions.start(ME, {})).resolves.toBe(false);
+    expect(calls).toContain("remove room-guest");
+    expect(cleared).toEqual([ME, "guest"]);
+    expect(calls).not.toContain("finish");
+  });
+
+  it("closes the sockets of a guest on the way here too", async () => {
+    const { deletions, rooms } = harness({
+      guestsOf: async () => ["guest"],
+      roomsOf: async () => [],
+    });
+    await deletions.start(ME, {});
+    expect(vi.mocked(rooms.dropAccount).mock.calls).toEqual([[ME], ["guest"]]);
   });
 
   it("counts a room whose state cannot be read as failed, naming it by its id", async () => {
