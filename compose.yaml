@@ -30,6 +30,13 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-false}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ROOM_TTL_DAYS: ${ROOM_TTL_DAYS:-90}
+      # The Content Security Policy's two settings, off while empty (README, "Security").
+      CSP_REPORT_ONLY: ${CSP_REPORT_ONLY:-}
+      CSP_EXTRA_SOURCES: ${CSP_EXTRA_SOURCES:-}
+      # Opt-in error reports and page views, off while empty (README, "Privacy").
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      UMAMI_URL: ${UMAMI_URL:-}
+      UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
       # Sign-in with Google and Microsoft, off while empty (README, "Self-hosting").
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
