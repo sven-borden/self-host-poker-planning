@@ -44,7 +44,10 @@ export interface Composition {
   bpm: number;
   /** How long the loop is, in beats. */
   beats: number;
-  /** Brings the mood's loudest sample to about the same place as the others'. */
+  /**
+   * Scales the whole mood. It brings its loudest sample to about 0.095 at full volume, under
+   * the quietest sound effect's peak (the tick's 0.11), with `e2e/sound.spec.ts` watching.
+   */
   level: number;
   parts: readonly Part[];
 }

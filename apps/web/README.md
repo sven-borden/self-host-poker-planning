@@ -642,6 +642,14 @@ server sends and never decides the outcome of a round.
   `liveEvents` so a sound follows a sentence's rules. Never make an `AudioContext` outside
   `unlock()`, and never queue a sound for later: `play` drops it unless the context runs.
   Unit tests use `fake-audio.ts`; `e2e/sound.spec.ts` writes down the real context's voices.
+- Music (#45, ADR-021): a mood is notes in `music-moods.ts`, rendered once by `renderLoop`
+  (`music-render.ts`, a lazy chunk behind the control's) into a buffer that `startLoop` plays
+  in a circle. `useBackgroundMusic` follows the round's phase. To change a mood, change its
+  notes and bring its `level` back so the peak stays near 0.095: `e2e/sound.spec.ts` reads the
+  real buffers and fails on a peak over 0.11 or a seam that steps. Anything that can ring
+  longer must count in `leadSeconds`, or the seam drops. Never stop a loop at once, and
+  leave with `release()`, not `shut()`: both are clicks. `useAudioWhile` comes after the
+  hooks that play, since effects clean up in order.
 - Budget: `pnpm build` ends with `scripts/check-budget.ts`, which reads the Vite manifest
   and fails when the initial JavaScript of the room route or of the landing page (entry,
   route chunk and their static imports) exceeds 200 kB gzipped. Lazy chunks (Motion features, the toaster, the

@@ -123,7 +123,6 @@ export default function SoundControl() {
           <div
             role="radiogroup"
             aria-labelledby={ids.mood}
-            data-sound-mood
             className="flex flex-wrap gap-2"
           >
             {MOODS.map((choice) => (

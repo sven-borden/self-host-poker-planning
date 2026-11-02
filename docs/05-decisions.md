@@ -348,3 +348,65 @@ setting on the user (a person's phone and laptop want different answers).
 **Not heard yet.** The recipes were checked by rendering them offline (no clipping, every
 voice ends in silence, the reveal stronger than a card), not by ear. They are numbers in
 one file.
+
+## ADR-021: Background music rendered once, then looped, off by default (2026-11-02, #45)
+
+**Decision.** Three original moods, written as data (`sound/music-moods.ts`: notes, tones, no
+sample, nothing to license). Each is rendered once by an `OfflineAudioContext`
+(`sound/music-render.ts`), on its own thread, into a stereo `AudioBuffer` of 48 seconds that an
+`AudioBufferSourceNode` then plays with `loop = true`. That gives a sample-exact loop and next
+to no work while it plays, with no file, no CSP change and no worklet. Off by default, on or
+off and the mood in `pp-sound`, beside the effects: one store, one volume, per device.
+
+**The seam.** What rings past the end must also sound at the start. A second pass that adds
+the tail to the start after rendering would work for notes, but not for the state of the room
+(a convolver) and it spends main-thread time. So the render starts with a lead-in as long as
+anything can ring, the note and the room after it, in which the loop's own last bars play.
+What crosses the seam is then already ringing when the kept part starts. Rendered on past
+its end, each loop repeats itself to within 3 in 100 million, against a peak of 0.06.
+
+**24 kHz, whatever the device runs at.** The music has nothing above 6 kHz. Rendering at
+48 kHz took twice as long (3.5 to 4.5 s here, so a phone's wait would be long) and twice the
+memory, and it made the peak depend on the device's rate (0.25 or 0.21 for one mood). At
+24 kHz a loop is 4.6 MB, takes 1.3 to 2 s here, and comes out the same for everyone. The
+source node converts it as it plays; the seam is checked after that conversion too.
+
+**The audio's life.** Effects and music are independent switches, so the context lives while
+either is on: `useAudioWhile`, called after the hooks that play, because effects clean up in
+order and the music has to start falling away first. `release()`, not `shut()`, is the way
+out: a context closed under a loop is a click, so it waits for the last loop's `ended`, an
+event of the audio thread and not a timer that a hidden tab would hold back. `shut()` stays
+as the hard end. The gesture rule holds: `unlock()` is the only place an `AudioContext` is
+made, and `startLoop` drops a buffer unless the context runs. An `OfflineAudioContext` makes
+no sound, so the rule does not reach it, but it too waits for a running context: a page
+nobody touched does no work.
+
+**Fades.** Every fade is `setTargetAtTime`, which takes over from wherever the last one had
+got to, so a fade turned back halfway cannot jump, as a ramp cancelled halfway does. Rounds
+and moods share one path: a new source fades in, the old one falls away under it and stops
+twice its fade later. Each round goes on from where the last stopped.
+
+**When it plays.** While the round the viewer sees is in voting. It follows the store's phase
+in a task of its own, off a reveal's commit (ADR-019). It keeps playing in a hidden tab, since
+the person opted in, and a timer is no reason to stop.
+
+**Lazy.** `music-render.ts` and the compositions are a chunk behind the control's chunk, asked
+for once music is on and the context runs. The room route stays at 179.3 kB. A failed load
+costs the music, never the page.
+
+**Consequences.** Turning it on during a vote takes a second or two here, longer on a phone
+(not measured), before the fade starts. Rendering again on each change of mood keeps one
+buffer in memory rather than three. A person's two tabs of a room both play, as the effects
+do. Measured in headed Edge on a desktop i7-11700F with the music audible at 60 %: 0.6 to
+1.9 % of one core for the whole browser, no different from the same room in silence (0.5 to
+1.9 %), or 0.12 % of the machine.
+
+**Alternatives.** Live oscillators (a CPU cost for as long as it plays, and a loop only as
+exact as the scheduling); audio files built ahead (bytes, `media-src` in the CSP, and the
+issue allows it but the render needs neither); adding the tail after rendering (see above); a
+fourth mood (three carry the range, and each one is more to judge by ear); keeping the source
+running silently through the reveal (work for nothing, and "off" would not mean stopped).
+
+**Not heard yet.** Nobody has listened to this: the compositions were written and checked as
+numbers. Whether they sound good, and whether the level is right, is Sven's ear; both are
+numbers in one file.

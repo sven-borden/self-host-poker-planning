@@ -57,6 +57,11 @@ async function listen(page: Page) {
     for (const proto of [AudioScheduledSourceNode.prototype, AudioBufferSourceNode.prototype]) {
       const start = proto.start as (this: Source, ...args: number[]) => void;
       proto.start = function (this: Source, ...args: number[]) {
+        // A render is no voice: it plays to a buffer, not to anyone.
+        if (!(this.context instanceof Real)) {
+          start.apply(this, args);
+          return;
+        }
         const entry = {
           ahead: (args[0] ?? 0) - this.context.currentTime,
           state: this.context.state,
