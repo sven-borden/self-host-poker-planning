@@ -105,6 +105,55 @@ describe("a refused refresh", () => {
   });
 });
 
+describe("a token refused after a refresh", () => {
+  const refused = async (): Promise<Outcome<string>> => ({
+    ok: false,
+    code: "connector_reconnect",
+  });
+
+  function renewing() {
+    let n = 0;
+    return vi.fn(async (): Promise<Outcome<Grant>> => {
+      n += 1;
+      return success(grant(`new-${n}`));
+    });
+  }
+
+  it("is the app's setup: the row stays, and later calls spend no rotation", async () => {
+    const { row, store } = memoryStore(sealGrant(grant("live")));
+    const refresh = renewing();
+    const access = createConnectorAccess(store, { name: "jira", refresh }, { now: () => NOW });
+    const setup = { ok: false, code: "connector_setup" };
+    await expect(access.withToken(ME, refused)).resolves.toEqual(setup);
+    await expect(access.withToken(ME, refused)).resolves.toEqual(setup);
+    await expect(access.withToken(ME, refused)).resolves.toEqual(setup);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(row.token).not.toBeNull();
+  });
+
+  it("is forgotten once the token works, so a later refusal gets its refresh", async () => {
+    const { store } = memoryStore(sealGrant(grant("live")));
+    const refresh = renewing();
+    const access = createConnectorAccess(store, { name: "jira", refresh }, { now: () => NOW });
+    await access.withToken(ME, refused);
+    await expect(access.withToken(ME, useToken)).resolves.toMatchObject({ ok: true });
+    await access.withToken(ME, refused);
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not stand for one that a refresh cures", async () => {
+    const { store } = memoryStore(sealGrant(grant("live")));
+    const refresh = renewing();
+    const access = createConnectorAccess(store, { name: "jira", refresh }, { now: () => NOW });
+    const firstRefused = vi.fn(useToken);
+    firstRefused.mockImplementationOnce(refused as never);
+    await expect(access.withToken(ME, firstRefused)).resolves.toEqual({
+      ok: true,
+      value: "access-new-1",
+    });
+  });
+});
+
 describe("a row it cannot use", () => {
   it("counts as not connected when the sealed value is not a grant", async () => {
     for (const value of ["not json", "{}", '{"a":"x"}']) {

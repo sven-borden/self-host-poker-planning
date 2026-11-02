@@ -9,6 +9,7 @@ import { randomBytes } from "node:crypto";
 import { createRoom, MAX_QUEUE_ITEMS, type RoomState } from "@pp/domain";
 import type { ConnectionView, ConnectorImportView } from "@pp/protocol";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { createAccountDeletionStore } from "../db/account-deletions.ts";
 import { type AccountId, accountOf } from "../db/connector-tokens.ts";
 import { createTestDatabase, type TestDatabase, testClient } from "../db/test-db.ts";
 import {
@@ -16,6 +17,8 @@ import {
   FAKE_CLOUD,
   FAKE_CLOUD_TWO,
   FAKE_JIRA_CLIENT,
+  FAKE_SCOPES,
+  type FakeBoard,
   type FakeJira,
   fakeIssues,
   routeAtlassianTo,
@@ -37,7 +40,7 @@ import { collectLogs, testConfig, VALID_ENV } from "../test-support.ts";
 import { createConnectorAccess } from "./access.ts";
 import { createJiraConnector, JIRA_SCOPES } from "./jira.ts";
 import { createOAuthStateStore, STATE_TTL_MS } from "./oauth-state.ts";
-import { CONNECTOR_IMPORT_LIMIT, CONNECTOR_WRITE_LIMIT } from "./routes.ts";
+import { CONNECTOR_CHANGE_LIMIT, CONNECTOR_IMPORT_LIMIT, CONNECTOR_WRITE_LIMIT } from "./routes.ts";
 
 const ORIGIN = VALID_ENV.BASE_URL;
 const KEYS = {
@@ -50,6 +53,12 @@ const KEYS = {
 const ACME = { id: FAKE_CLOUD, name: "Acme", url: "https://acme.atlassian.net" };
 const GLOBEX = { id: FAKE_CLOUD_TWO, name: "Globex", url: "https://globex.atlassian.net" };
 const STORY_POINTS = "customfield_10016";
+
+const BOARDS: readonly FakeBoard[] = [
+  { id: 1, name: "Acme board" },
+  { id: 2, name: "Platform board" },
+  { id: 3, name: "Support kanban", type: "kanban" },
+];
 
 const logs = collectLogs("trace");
 const open: TestClient[] = [];
@@ -94,6 +103,10 @@ beforeEach(() => {
   jira.expiresIn = 3600;
   jira.strictRotation = false;
   jira.beforeRefresh = async () => {};
+  jira.beforeExchange = async () => {};
+  jira.boards = [...BOARDS];
+  jira.scopes = [...FAKE_SCOPES];
+  jira.grantRefusal = "invalid_grant";
   delete jira.pageFailure;
 });
 
@@ -237,6 +250,26 @@ class Browser {
   }
 }
 
+/** What the stand-in holds until a test lets it go, and how the test knows it got there. */
+function held() {
+  let arrived = () => {};
+  let release = () => {};
+  const there = new Promise<void>((resolve) => {
+    arrived = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const hold = async () => {
+    arrived();
+    await gate;
+  };
+  return { hold, there, release };
+}
+
+const tokenRows = async (id: string) =>
+  (await admin.query("select 1 from connector_token where user_id = $1", [id])).rowCount;
+
 async function must(ack: Promise<{ ok: boolean }>) {
   await expect(ack).resolves.toMatchObject({ ok: true });
 }
@@ -301,7 +334,7 @@ async function estimate(po: TestClient, id: number, card: string, others: TestCl
 }
 
 describe("the dance", () => {
-  it("connects: minimum scopes, the app's address, no room code, the room back", async () => {
+  it("connects: the scopes it asks for, the app's address, no room code, the room back", async () => {
     const { browser, id } = await account();
     const { code } = await roomOf(id);
     const url = await browser.startConnect(code);
@@ -410,14 +443,68 @@ describe("the dance", () => {
     const late = await states.issue("session-a", "room-id");
     const onTime = await states.issue("session-a", "room-id");
     now = start + STATE_TTL_MS - 1000;
-    await expect(states.take(onTime, "session-a")).resolves.toEqual({ room: "room-id" });
+    await expect(states.take(onTime, "session-a")).resolves.toEqual({
+      room: "room-id",
+      expired: false,
+    });
     now = start + STATE_TTL_MS + 1000;
+    const stolen = await states.issue("session-a", "room-id");
+    now += STATE_TTL_MS + 1000;
+    await expect(states.take(stolen, "session-b")).resolves.toBeNull();
+    await expect(states.take(late, "session-a")).resolves.toEqual({
+      room: "room-id",
+      expired: true,
+    });
     await expect(states.take(late, "session-a")).resolves.toBeNull();
     const fresh = await states.issue("session-a", null);
     const { rows } = await admin.query("select identifier, value from verification");
     expect(JSON.stringify(rows)).not.toContain(fresh);
     expect(JSON.stringify(rows)).not.toContain("session-a");
     await expect(states.take("not the shape", "session-a")).resolves.toBeNull();
+  });
+
+  it("goes back to the room and says so when the tracker's screen stood open too long", async () => {
+    const { browser, id } = await account();
+    const { code } = await roomOf(id);
+    const url = await browser.startConnect(code);
+    await admin.query(
+      "update verification set expires_at = now() - interval '1 minute' where identifier like 'connector-state:%'",
+    );
+    const exchanges = jira.tokenRequests.length;
+    const back = await browser.finishConnect(url);
+    expect(back.headers.get("location")).toBe(`/r/${code}?connector=expired`);
+    expect(jira.tokenRequests).toHaveLength(exchanges);
+    expect((await browser.status()).connected).toBe(false);
+  });
+
+  it("holds the way back to the limit on changes, before a state is spent", async () => {
+    const { browser, id } = await account();
+    const { code } = await roomOf(id);
+    const url = await browser.startConnect(code);
+    for (let change = 1; change < CONNECTOR_CHANGE_LIMIT.max; change++) {
+      await browser.send("PUT", "/api/connectors/jira/site", {});
+    }
+    const exchanges = jira.tokenRequests.length;
+    const back = await browser.finishConnect(url);
+    expect(back.headers.get("location")).toBe("/?connector=failed");
+    expect(jira.tokenRequests).toHaveLength(exchanges);
+    expect((await browser.status()).connected).toBe(false);
+  });
+
+  it("answers no-store on every route that reads a person's connection", async () => {
+    const { browser, code } = await connectedPo();
+    const reads = [
+      browser.go("/api/connectors/jira"),
+      browser.go("/api/connectors/jira/sites"),
+      browser.go("/api/connectors/jira/fields"),
+      browser.go("/api/connectors/jira/boards"),
+      browser.go("/api/connectors/jira/boards/1/sprints"),
+      browser.import(code, { jql: "project = X" }),
+      new Browser().go("/api/connectors/jira"),
+    ];
+    for (const answer of await Promise.all(reads)) {
+      expect(answer.headers.get("cache-control")).toBe("no-store");
+    }
   });
 
   it("says failed when the code does not turn into a token, and stores nothing", async () => {
@@ -596,10 +683,7 @@ describe("import", () => {
     await browser.sit(code, "Pia");
     const boards = await (await browser.go("/api/connectors/jira/boards")).json();
     expect(boards).toEqual({
-      boards: [
-        { id: 1, name: "Acme board" },
-        { id: 2, name: "Platform board" },
-      ],
+      boards: BOARDS.map(({ id, name }) => ({ id, name })),
       more: false,
     });
     const named = await (await browser.go("/api/connectors/jira/boards?name=plat")).json();
@@ -616,6 +700,40 @@ describe("import", () => {
     expect(await answer.json()).toMatchObject({ added: 2 });
     const { state } = await loadedRoom(code);
     expect(state.queue?.items.map(({ key }) => key)).toEqual(["ABC-3", "ABC-4"]);
+  });
+
+  it("takes a Kanban board's refusal for a board with no sprint to pick", async () => {
+    const { browser } = await connectedPo();
+    const answer = await browser.go("/api/connectors/jira/boards/3/sprints");
+    expect(answer.status).toBe(200);
+    expect(await answer.json()).toEqual({ sprints: [] });
+  });
+
+  it("cuts a typed board name and caps the list, whatever Jira sends", async () => {
+    jira.boards = Array.from({ length: 150 }, (_, n) => ({ id: n + 1, name: `Board ${n + 1}` }));
+    const { browser } = await connectedPo();
+    const all = (await (await browser.go("/api/connectors/jira/boards")).json()) as {
+      boards: unknown[];
+    };
+    expect(all.boards).toHaveLength(100);
+    await browser.go(`/api/connectors/jira/boards?name=${"b".repeat(150)}`);
+    expect(jira.boardNames.at(-1)).toBe("b".repeat(100));
+  });
+
+  it("reads ten pages at most, whatever a query keeps finding", async () => {
+    // No key here is a key, so nothing fills the queue and only the cap ends the search.
+    jira.issues = Array.from({ length: 1500 }, (_, n) => ({
+      id: String(20_000 + n),
+      key: `abc-${n}`,
+      summary: "Not a key",
+    }));
+    const { browser, code } = await connectedPo();
+    await browser.sit(code, "Pia");
+    const before = jira.calls.length;
+    const answer = await browser.import(code, { jql: "project = X" });
+    expect(await answer.json()).toMatchObject({ added: 0, leftOut: 1000, beyond: 500 });
+    const pages = jira.calls.slice(before).filter((call) => call.endsWith("/search/jql"));
+    expect(pages).toHaveLength(10);
   });
 
   it("pages through a long list", async () => {
@@ -810,6 +928,15 @@ describe("failures of the tracker", () => {
     expect((await browser.writeBack(room, round)).status).toBe(200);
   });
 
+  it("waits an hour at most, however long Jira asks, and says the same twice", async () => {
+    const po = await connectedPo();
+    jira.fail = [{ match: "/search/jql", status: 429, retryAfter: "999999" }];
+    const answer = await po.browser.import(po.code, { jql: "project = X" });
+    expect(answer.status).toBe(429);
+    expect(answer.headers.get("retry-after")).toBe("3600");
+    expect(await answer.json()).toMatchObject({ retryAfter: 3600 });
+  });
+
   it("a query Jira refuses is the person's to fix, and its text comes back from nowhere", async () => {
     const { browser, code } = await connectedPo();
     const answer = await browser.import(code, { jql: "bad jql with A very private ticket" });
@@ -872,6 +999,60 @@ describe("the token's life", () => {
       id,
     ]);
     expect(rowCount).toBe(0);
+  });
+
+  it.each(["invalid_grant", "unauthorized_client"] as const)(
+    "a dead grant answered with %s takes the row, and asks to connect again",
+    async (error) => {
+      const { browser, id, code } = await connectedPo();
+      const last = jira.issued.at(-1);
+      if (!last) throw new Error("no token");
+      jira.revoked.add(last.access);
+      jira.revokeGrants();
+      jira.grantRefusal = error;
+      const answer = await browser.import(code, { jql: "project = X" });
+      expect(answer.status).toBe(409);
+      expect(await codeOf(answer)).toBe("connector_reconnect");
+      expect(await browser.status()).toEqual({ connected: false });
+      expect(await tokenRows(id)).toBe(0);
+    },
+  );
+
+  it("a token refused after a refresh is the app's setup: the row stays, and costs no more rotations", async () => {
+    const { browser, id, code } = await connectedPo();
+    jira.scopes = FAKE_SCOPES.filter((scope) => scope !== "read:board-scope:jira-software");
+    const issued = jira.issued.length;
+    for (let call = 0; call < 3; call++) {
+      const answer = await browser.go("/api/connectors/jira/boards");
+      expect(answer.status).toBe(403);
+      expect(await codeOf(answer)).toBe("connector_setup");
+    }
+    expect(jira.issued).toHaveLength(issued + 1);
+    expect(await tokenRows(id)).toBe(1);
+    expect((await browser.status()).connected).toBe(true);
+    await browser.sit(code, "Pia");
+    expect((await browser.import(code, { jql: "project = X" })).status).toBe(200);
+    jira.scopes = [...FAKE_SCOPES];
+    expect((await browser.go("/api/connectors/jira/boards")).status).toBe(200);
+  });
+
+  it("a 429 at the token address is a wait: the row stays", async () => {
+    const { browser, id, code } = await connectedPo();
+    const last = jira.issued.at(-1);
+    if (!last) throw new Error("no token");
+    jira.revoked.add(last.access);
+    jira.fail = [
+      {
+        match: "/oauth/token",
+        status: 429,
+        retryAfter: "20",
+        body: { error: "invalid_grant" },
+      },
+    ];
+    const answer = await browser.import(code, { jql: "project = X" });
+    expect(answer.status).toBe(429);
+    expect(await answer.json()).toEqual({ code: "connector_rate_limited", retryAfter: 20 });
+    expect(await tokenRows(id)).toBe(1);
   });
 
   it("a bad minute at the token address costs no connection", async () => {
@@ -964,6 +1145,34 @@ describe("the token's life", () => {
       code: "connector_not_connected",
     });
     expect((await browser.status()).connected).toBe(false);
+  });
+
+  it("a connection that finishes after an account's deletion began saves no token", async () => {
+    const { browser, id } = await account();
+    const { code } = await roomOf(id);
+    const url = await browser.startConnect(code);
+    const { hold, there, release } = held();
+    jira.beforeExchange = hold;
+    const finishing = browser.finishConnect(url);
+    await there;
+    await createAccountDeletionStore(setup.database.db).begin(id, {});
+    release();
+    const back = await finishing;
+    expect(back.headers.get("location")).toBe(`/r/${code}?connector=failed`);
+    expect(await tokenRows(id)).toBe(0);
+  });
+
+  it("a refresh under way when an account's deletion begins brings nothing back", async () => {
+    const { me } = await nearItsEnd();
+    const [one] = twoInstances();
+    const { hold, there, release } = held();
+    jira.beforeRefresh = hold;
+    const refreshing = one?.withToken(me, useToken);
+    await there;
+    await createAccountDeletionStore(setup.database.db).begin(me, {});
+    release();
+    await expect(refreshing).resolves.toEqual({ ok: false, code: "connector_not_connected" });
+    expect(await tokenRows(me)).toBe(0);
   });
 
   it("two people refreshing on one instance each get their own token", async () => {
@@ -1102,6 +1311,22 @@ describe("write-back", () => {
     expect(jira.calls).toHaveLength(before);
   });
 
+  it("refuses a round whose item came from another tracker", async () => {
+    const { browser, code } = await connectedPo();
+    const po = await browser.sit(code, "Pia");
+    await browser.import(code, { jql: "project = X" });
+    const round = await estimate(po, 1, "5");
+    const room = await loadedRoom(code);
+    await admin.query(
+      `update round_history set source = jsonb_set(source, '{system}', '"ado"')
+       where room_id = $1 and number = $2`,
+      [room.id, round],
+    );
+    const writes = jira.writes.length;
+    expect(await codeOf(await browser.writeBack(code, round))).toBe("connector_no_source");
+    expect(jira.writes).toHaveLength(writes);
+  });
+
   it("asks for the field first", async () => {
     const { browser, id } = await account();
     const { code } = await roomOf(id);
@@ -1220,13 +1445,24 @@ describe("what other people see", () => {
 
 describe("dark without its keys", () => {
   const WITHOUT = [
-    ["no client id or secret", { JIRA_CLIENT_ID: "", JIRA_CLIENT_SECRET: "" }],
-    ["no vault", { POKER_VAULT_KEY: "" }],
+    ["no client id or secret", { JIRA_CLIENT_ID: "", JIRA_CLIENT_SECRET: "" }, []],
+    ["no vault", { POKER_VAULT_KEY: "" }, ["POKER_VAULT_KEY"]],
+    [
+      "no way to sign in",
+      { GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "" },
+      ["GOOGLE_CLIENT_ID", "MICROSOFT_CLIENT_ID"],
+    ],
   ] as const;
 
-  it.each(WITHOUT)("%s: every route answers as absent", async (_, off) => {
+  it.each(WITHOUT)("%s: every route answers as absent", async (_, off, missing) => {
     const config = testConfig({ DATABASE_URL: t.url, TRUST_PROXY: "1", ...KEYS, ...off });
+    const logged = logs.lines.length;
     const dark = await setupServer(config, logs.logger);
+    // Keys that do nothing say why at the start, by the variable's name and never a value.
+    const said = logs.lines
+      .slice(logged)
+      .filter(({ msg }) => String(msg).includes("connector off"));
+    expect(said.map((line) => line.missing)).toEqual(missing.length === 0 ? [] : [missing]);
     const darkServer = createServer(config, { ...dark.deps, logger: logs.logger });
     await darkServer.listen();
     const base = urlOf(darkServer);

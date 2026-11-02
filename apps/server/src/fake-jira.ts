@@ -58,6 +58,8 @@ export interface FakeJiraControl {
   issues?: FakeIssue[];
   /** The total the approximate count reports; the matching issues by default. */
   approximate?: number;
+  /** What the app was granted; a call needing another scope gets Atlassian's 401. */
+  scopes?: string[];
 }
 
 export interface FakeJiraState {
@@ -80,9 +82,16 @@ const FIELDS = [
   { id: "customfield_10016", name: "Story Points", schema: { type: "number" } },
 ];
 
-const BOARDS = [
+export interface FakeBoard {
+  id: number;
+  name: string;
+  type?: "kanban";
+}
+
+const BOARDS: FakeBoard[] = [
   { id: 1, name: "Acme board" },
   { id: 2, name: "Platform board" },
+  { id: 3, name: "Support kanban", type: "kanban" },
 ];
 
 const SPRINTS = [
@@ -90,6 +99,16 @@ const SPRINTS = [
   { id: 8, name: "Sprint 8", state: "future" },
   { id: 6, name: "Sprint 6", state: "closed" },
 ];
+
+/** What each call needs, as Atlassian's documentation lists it for the app's scopes. */
+const NEEDED_SCOPES: readonly (readonly [RegExp, string])[] = [
+  [/^\/rest\/agile\/1\.0\/board$/, "read:board-scope:jira-software"],
+  [/^\/rest\/agile\/1\.0\/board\/\d+\/sprint$/, "read:sprint:jira-software"],
+  [/^\/rest\/api\/3\/(search|field)/, "read:jira-work"],
+  [/^\/rest\/api\/3\/issue\//, "write:jira-work"],
+];
+
+export const FAKE_SCOPES = [...new Set(NEEDED_SCOPES.map(([, scope]) => scope))];
 
 export const fakeIssues = (count: number, sprint = 7, from = 1): FakeIssue[] =>
   Array.from({ length: count }, (_, n) => ({
@@ -124,6 +143,18 @@ export interface FakeJira extends FakeJiraState, FakeJiraControl {
   pageFailure?: { page: number; status: number };
   /** Called while the token address holds a refresh, so a test can make two overlap. */
   beforeRefresh: () => Promise<void>;
+  /** Called while the token address holds a code, so a test can act in between. */
+  beforeExchange: () => Promise<void>;
+  /** The boards it lists, whatever `maxResults` says. */
+  boards: FakeBoard[];
+  /** Each `name` the list of boards was asked for. */
+  boardNames: string[];
+  /** What the app was granted. */
+  scopes: string[];
+  /** The `error` of a refused refresh token. */
+  grantRefusal: "invalid_grant" | "unauthorized_client";
+  /** Every refresh token stops working, as after the person removed the app. */
+  revokeGrants(): void;
   /** Refresh tokens it would still accept. */
   liveRefreshTokens(): string[];
   close(): Promise<void>;
@@ -173,7 +204,17 @@ export async function startFakeJira(port = 0): Promise<FakeJira> {
     expiresIn: 3600,
     strictRotation: false,
     beforeRefresh: async () => {},
+    beforeExchange: async () => {},
+    boards: [...BOARDS],
+    boardNames: [] as string[],
+    scopes: [...FAKE_SCOPES],
+    grantRefusal: "invalid_grant" as FakeJira["grantRefusal"],
     liveRefreshTokens: () => [...liveRefresh],
+    revokeGrants: () => {
+      liveRefresh.clear();
+      spentRefresh.clear();
+      refreshSites.clear();
+    },
   };
 
   function issue(sites: FakeSite[]): Tokens {
@@ -212,6 +253,7 @@ export async function startFakeJira(port = 0): Promise<FakeJira> {
         json(response, 403, { error: "invalid_grant", error_description: "bad code" });
         return;
       }
+      await fake.beforeExchange();
       granted(response, issue(fake.sites));
       return;
     }
@@ -222,8 +264,11 @@ export async function startFakeJira(port = 0): Promise<FakeJira> {
       await fake.beforeRefresh();
       if (sites === undefined || !live || (fake.strictRotation && !liveRefresh.has(old))) {
         json(response, 403, {
-          error: "invalid_grant",
-          error_description: "Unknown or invalid refresh token.",
+          error: fake.grantRefusal,
+          error_description:
+            fake.grantRefusal === "invalid_grant"
+              ? "Unknown or invalid refresh token."
+              : "refresh_token is invalid",
         });
         return;
       }
@@ -307,6 +352,11 @@ export async function startFakeJira(port = 0): Promise<FakeJira> {
     url: URL,
   ) {
     const method = request.method;
+    const needed = NEEDED_SCOPES.find(([address]) => address.test(path))?.[1];
+    if (needed !== undefined && !fake.scopes.includes(needed)) {
+      json(response, 401, { code: 401, message: "Unauthorized; scope does not match" });
+      return;
+    }
     if (method === "POST" && path === "/rest/api/3/search/jql") {
       await search(request, response);
     } else if (method === "POST" && path === "/rest/api/3/search/approximate-count") {
@@ -315,10 +365,17 @@ export async function startFakeJira(port = 0): Promise<FakeJira> {
     } else if (method === "GET" && path === "/rest/api/3/field") {
       json(response, 200, FIELDS);
     } else if (method === "GET" && path === "/rest/agile/1.0/board") {
-      const name = url.searchParams.get("name")?.toLowerCase();
-      const boards = BOARDS.filter((each) => !name || each.name.toLowerCase().includes(name));
+      const asked = url.searchParams.get("name") ?? undefined;
+      if (asked !== undefined) fake.boardNames.push(asked);
+      const name = asked?.toLowerCase();
+      const boards = fake.boards.filter((each) => !name || each.name.toLowerCase().includes(name));
       json(response, 200, { values: boards, isLast: true, maxResults: 100, startAt: 0 });
     } else if (method === "GET" && /^\/rest\/agile\/1\.0\/board\/\d+\/sprint$/.test(path)) {
+      const id = Number(/\/board\/(\d+)\//.exec(path)?.[1]);
+      if (fake.boards.some((each) => each.id === id && each.type === "kanban")) {
+        json(response, 400, { errorMessages: ["The board does not support sprints"] });
+        return;
+      }
       const state = url.searchParams.get("state")?.split(",") ?? [];
       json(response, 200, {
         values: SPRINTS.filter((each) => state.includes(each.state)),
@@ -363,6 +420,7 @@ export async function startFakeJira(port = 0): Promise<FakeJira> {
       if (control.sites) fake.sites = control.sites;
       if (control.issues) fake.issues = control.issues;
       if (control.approximate !== undefined) fake.approximate = control.approximate;
+      if (control.scopes) fake.scopes = control.scopes;
       json(response, 200, {});
       return;
     }

@@ -97,6 +97,7 @@ type Settings = z.output<typeof settingsSchema>;
 const STATUS_OF: Record<Failure["code"], 401 | 403 | 404 | 409 | 422 | 429 | 502 | 504> = {
   connector_not_connected: 409,
   connector_reconnect: 409,
+  connector_setup: 403,
   connector_rate_limited: 429,
   connector_forbidden: 403,
   connector_not_found: 404,
@@ -152,10 +153,12 @@ export function registerConnectorApi(app: Hono<AppEnv>, deps: ConnectorApiDeps):
   /** A `Failure` as an answer. The log says what kind, and nothing of the tracker's words. */
   function failed(c: Context<AppEnv>, failure: Failure) {
     c.var.log.info({ connector: name, code: failure.code }, "connector call refused");
-    const { code, retryAfter } = failure;
-    if (retryAfter !== undefined) {
-      c.header("Retry-After", String(Math.min(retryAfter, MAX_RETRY_AFTER_S)));
-    }
+    const { code } = failure;
+    const retryAfter =
+      failure.retryAfter === undefined
+        ? undefined
+        : Math.min(failure.retryAfter, MAX_RETRY_AFTER_S);
+    if (retryAfter !== undefined) c.header("Retry-After", String(retryAfter));
     return c.json(
       { code, ...(retryAfter === undefined ? {} : { retryAfter }) },
       STATUS_OF[failure.code],
@@ -268,6 +271,7 @@ export function registerConnectorApi(app: Hono<AppEnv>, deps: ConnectorApiDeps):
     if (!allowed.allowed) return backTo(c, null, "failed");
     const taken = await states.take(state, session.sessionId);
     if (taken === null) return backTo(c, null, "failed");
+    if (taken.expired) return backTo(c, taken.room, "expired");
     const code = c.req.query("code");
     if (c.req.query("error") !== undefined || code === undefined) {
       return backTo(c, taken.room, "cancelled");
@@ -440,7 +444,8 @@ export function registerConnectorApi(app: Hono<AppEnv>, deps: ConnectorApiDeps):
       const count = await access.withToken(me.account, (token) =>
         connector.count(token, settings.site.id, query),
       );
-      beyond = count.ok ? Math.max(0, count.value - found.entries.length) : null;
+      const read = found.entries.length + found.unreadable;
+      beyond = count.ok ? Math.max(0, count.value - read) : null;
     }
     const view: ConnectorImportView = {
       added: fit.length,

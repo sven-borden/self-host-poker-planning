@@ -117,13 +117,24 @@ const countSchema = z.object({ count: z.number().int().nonnegative() });
 /** The token address's error body: only `error` is ever read. */
 const grantErrorSchema = z.object({ error: z.string() });
 
+/**
+ * What the token address says of a dead refresh token. `invalid_grant` is its documented word;
+ * `unauthorized_client` with "refresh_token is invalid" is what people report from the field. Both
+ * are believed the same way, by the wait and the compare-and-set in `access.ts`.
+ */
+const DEAD_GRANT_ERRORS: ReadonlySet<string> = new Set(["invalid_grant", "unauthorized_client"]);
+
 /** Seconds to wait, from a `Retry-After` of seconds. A date form counts as nothing said. */
 export function retryAfterOf(header: string | null): number | undefined {
   if (header === null || !/^[0-9]{1,9}$/.test(header.trim())) return undefined;
   return Number(header.trim());
 }
 
-/** What an answer that is not a success means. `bad`: what this call makes of a 400. */
+/**
+ * What an answer that is not a success means. `bad`: what this call makes of a 400. A 401 reads
+ * as `connector_reconnect` here, and `access.ts` decides what it was: it refreshes once, and a
+ * token refused again after that is `connector_setup`.
+ */
 export function failureOf(response: Response, bad: UpstreamCode): Failure {
   const { status } = response;
   if (status === 429) {
@@ -173,6 +184,15 @@ async function send(url: string, init: RequestInit): Promise<Outcome<Response>> 
 
 const UNREADABLE: Failure = { ok: false, code: "connector_unavailable" };
 
+/** A JSON body. The timeout goes on while it arrives, so a stalled one is a timeout too. */
+async function jsonOf(response: Response): Promise<Outcome<unknown>> {
+  try {
+    return success(await response.json());
+  } catch (error) {
+    return fetchFailure(error);
+  }
+}
+
 /** A JSON answer through its schema. Anything else is a tracker that is not itself. */
 async function read<T>(
   answer: Outcome<Response>,
@@ -182,7 +202,9 @@ async function read<T>(
   if (!answer.ok) return answer;
   const response = answer.value;
   if (!response.ok) return failureOf(response, bad);
-  const parsed = schema.safeParse(await response.json().catch(() => undefined));
+  const body = await jsonOf(response);
+  if (!body.ok) return body;
+  const parsed = schema.safeParse(body.value);
   return parsed.success ? success(parsed.data) : UNREADABLE;
 }
 
@@ -227,15 +249,19 @@ function itemsOf(
 async function grantFrom(answer: Outcome<Response>, now: number): Promise<Outcome<Grant>> {
   if (!answer.ok) return answer;
   const response = answer.value;
+  // Slow down is not a dead grant: the wait goes through, and the row stays.
+  if (response.status === 429) return failureOf(response, "connector_unavailable");
+  const body = await jsonOf(response);
   if (!response.ok) {
     // Atlassian answers a dead refresh token with 403; a fresh code gone stale with 400 or 403.
-    const body = grantErrorSchema.safeParse(await response.json().catch(() => undefined));
-    if (body.success && body.data.error === "invalid_grant") {
+    const refused = grantErrorSchema.safeParse(body.ok ? body.value : undefined);
+    if (refused.success && DEAD_GRANT_ERRORS.has(refused.data.error)) {
       return { ok: false, code: "connector_reconnect" };
     }
-    return UNREADABLE;
+    return body.ok ? UNREADABLE : body;
   }
-  const parsed = tokenSchema.safeParse(await response.json().catch(() => undefined));
+  if (!body.ok) return body;
+  const parsed = tokenSchema.safeParse(body.value);
   if (!parsed.success) return UNREADABLE;
   return success({
     accessToken: new Secret(parsed.data.access_token),
@@ -350,8 +376,13 @@ export function createJiraConnector(
       });
       const url = apiUrl(site, `/rest/agile/1.0/board/${board}/sprint?${query}`);
       if (url === null) return NOT_FOUND;
-      const page = await read(await send(url, { headers: bearer(token) }), sprintsSchema);
-      if (!page.ok) return page;
+      const page = await read(
+        await send(url, { headers: bearer(token) }),
+        sprintsSchema,
+        "connector_bad_query",
+      );
+      // A Kanban board answers 400, "The board does not support sprints": nothing to pick.
+      if (!page.ok) return page.code === "connector_bad_query" ? success([]) : page;
       return success(
         page.value.values.flatMap(({ id, name, state }) =>
           state === "active" || state === "future" ? [{ id, name, state }] : [],

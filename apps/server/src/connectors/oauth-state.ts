@@ -8,7 +8,7 @@
  * whose it is. `take` is one `delete … returning`, so two callbacks with one `state` get one row.
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { and, eq, gt } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { verification } from "../db/auth-schema.ts";
 import { guard } from "../db/errors.ts";
 import type { Db } from "../db/rooms.ts";
@@ -23,9 +23,11 @@ export interface OAuthStateStore {
   issue(sessionId: string, room: string | null): Promise<string>;
   /**
    * Spends `state`: it never works twice, whoever brought it. The room it was issued for, or
-   * `null` when it is unknown, expired, or was issued to another session.
+   * `null` when it is unknown or was issued to another session. `expired`: it ran out, and
+   * connects nothing. Its own session may still go back to the room: a consent screen can stand
+   * open past ten minutes, and the retention job may have swept the row by then, which is unknown.
    */
-  take(state: string, sessionId: string): Promise<{ room: string | null } | null>;
+  take(state: string, sessionId: string): Promise<{ room: string | null; expired: boolean } | null>;
 }
 
 interface Stored {
@@ -53,18 +55,14 @@ export function createOAuthStateStore(db: Db, now: () => number = Date.now): OAu
       const rows = await guard("take connector state", () =>
         db
           .delete(verification)
-          .where(
-            and(
-              eq(verification.identifier, identifierOf(state)),
-              gt(verification.expiresAt, new Date(now())),
-            ),
-          )
-          .returning({ value: verification.value }),
+          .where(eq(verification.identifier, identifierOf(state)))
+          .returning({ value: verification.value, expiresAt: verification.expiresAt }),
       );
       const row = rows[0];
       if (row === undefined) return null;
       const stored = JSON.parse(row.value) as Stored;
-      return stored.session === hash(sessionId) ? { room: stored.room } : null;
+      if (stored.session !== hash(sessionId)) return null;
+      return { room: stored.room, expired: row.expiresAt.getTime() <= now() };
     },
   };
 }

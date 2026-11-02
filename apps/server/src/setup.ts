@@ -15,7 +15,7 @@ import {
   sessionChecker,
   sessionMiddleware,
 } from "./auth.ts";
-import { type Config, connectorNames } from "./config.ts";
+import { type Config, connectorGaps, connectorNames } from "./config.ts";
 import { createConnectorAccess } from "./connectors/access.ts";
 import { createJiraConnector } from "./connectors/jira.ts";
 import { createOAuthStateStore } from "./connectors/oauth-state.ts";
@@ -71,6 +71,9 @@ export async function setupServer(
     rules: RoomRules;
   }
 > {
+  // A keyed connector that stays dark looks like a bug from outside: the start says why.
+  const missing = connectorGaps(config);
+  if (missing.length > 0) logger.warn({ missing }, "jira connector off: variables missing");
   const opened = await setupDatabase(config, logger, signal);
   const { database } = opened;
   // Building the auth instance queries nothing; if it throws, release the pool first.

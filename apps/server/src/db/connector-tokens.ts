@@ -128,11 +128,15 @@ export interface ConnectorTokenStore {
 
 /**
  * `is_anonymous` as the purge reads it: anything but true is an account. One statement, so a
- * guest cannot slip in between a check and the write. A new `version` marks the new state.
+ * guest cannot slip in between a check and the write, and an account on its way out, whose
+ * connection finished after its deletion began (ADR-029), saves nothing. A new `version` marks the
+ * new state.
  */
 const SAVE_TOKEN = `
   insert into connector_token (user_id, connector, sealed_token)
-  select u.id, $2, $3 from "user" u where u.id = $1 and u.is_anonymous is not true
+  select u.id, $2, $3 from "user" u
+  where u.id = $1 and u.is_anonymous is not true
+    and not exists (select 1 from account_deletion d where d.user_id = u.id)
   on conflict (user_id, connector)
   do update set sealed_token = excluded.sealed_token, version = gen_random_uuid(),
                 updated_at = now()`;

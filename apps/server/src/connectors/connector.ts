@@ -16,6 +16,7 @@ import type { Secret } from "../vault.ts";
 export type UpstreamCode = Extract<
   ConnectorErrorCode,
   | "connector_reconnect"
+  | "connector_setup"
   | "connector_rate_limited"
   | "connector_forbidden"
   | "connector_not_found"
@@ -91,7 +92,7 @@ export interface BacklogConnector {
   /** Where the browser goes to grant access. Holds `state` and no room code. */
   authorizeUrl(state: string, redirectUri: string): string;
   exchangeCode(code: string, redirectUri: string): Promise<Outcome<Grant>>;
-  /** `connector_reconnect` means the grant is gone: the provider said `invalid_grant`. */
+  /** `connector_reconnect` means the provider said the grant is gone. */
   refresh(refreshToken: Secret): Promise<Outcome<Grant>>;
   /** The person's own sites, as the tracker lists them for this token. */
   sites(token: Secret): Promise<Outcome<readonly Site[]>>;

@@ -187,6 +187,21 @@ describe("what a failure says", () => {
     await expect(jira.sites(TOKEN)).resolves.toEqual({ ok: false, code: "connector_timeout" });
   });
 
+  it("is connector_timeout when a body stalls past the signal", async () => {
+    const stalled = () =>
+      new Response(
+        new ReadableStream({
+          start: (body) => body.error(new DOMException("api.atlassian.com/x", "TimeoutError")),
+        }),
+      );
+    answer = async () => stalled();
+    await expect(jira.sites(TOKEN)).resolves.toEqual({ ok: false, code: "connector_timeout" });
+    await expect(jira.refresh(new Secret("old"))).resolves.toEqual({
+      ok: false,
+      code: "connector_timeout",
+    });
+  });
+
   it("is connector_unavailable for a network failure or an answer that is not Jira's", async () => {
     answer = () => Promise.reject(new TypeError("fetch failed"));
     await expect(jira.sites(TOKEN)).resolves.toEqual({ ok: false, code: "connector_unavailable" });
@@ -245,6 +260,25 @@ describe("the grant", () => {
         code: "connector_reconnect",
       });
     }
+  });
+
+  it("believes unauthorized_client as well: people report it for a dead refresh token", async () => {
+    answer = async () =>
+      json({ error: "unauthorized_client", error_description: "refresh_token is invalid" }, 403);
+    await expect(jira.refresh(new Secret("old"))).resolves.toEqual({
+      ok: false,
+      code: "connector_reconnect",
+    });
+  });
+
+  it("reads a 429 of the token address as a wait, whatever its body says", async () => {
+    answer = async () =>
+      Response.json({ error: "invalid_grant" }, { status: 429, headers: { "retry-after": "20" } });
+    await expect(jira.refresh(new Secret("old"))).resolves.toEqual({
+      ok: false,
+      code: "connector_rate_limited",
+      retryAfter: 20,
+    });
   });
 
   it("does not take a failure of the token address for a dead grant", async () => {
@@ -310,6 +344,20 @@ describe("sites", () => {
 });
 
 describe("sprints", () => {
+  it("takes a 400 for a board with no sprints, and nothing else for that", async () => {
+    answer = async () => json({ errorMessages: ["The board does not support sprints"] }, 400);
+    await expect(jira.sprints(TOKEN, CLOUD, 4)).resolves.toEqual({ ok: true, value: [] });
+    for (const [status, code] of [
+      [401, "connector_reconnect"],
+      [403, "connector_forbidden"],
+      [404, "connector_not_found"],
+      [500, "connector_unavailable"],
+    ] as const) {
+      answer = async () => json({}, status);
+      await expect(jira.sprints(TOKEN, CLOUD, 4)).resolves.toEqual({ ok: false, code });
+    }
+  });
+
   it("lists what can still be estimated, from the active and future ones", async () => {
     answer = async () =>
       json({

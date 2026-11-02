@@ -20,8 +20,11 @@ export const CONNECTOR_META = "pp-connectors";
 /** The query parameter a connection comes back to the room with. Read once, then removed. */
 export const CONNECTOR_RESULT_PARAM = "connector";
 
-/** How a connection ended: done, the person went back at the tracker, or anything else. */
-export const CONNECTOR_RESULTS = ["connected", "cancelled", "failed"] as const;
+/**
+ * How a connection ended: done, the person went back at the tracker, its `state` ran out while
+ * the tracker's screen stood open, or anything else.
+ */
+export const CONNECTOR_RESULTS = ["connected", "cancelled", "expired", "failed"] as const;
 export type ConnectorResult = (typeof CONNECTOR_RESULTS)[number];
 
 export function isConnectorResult(value: unknown): value is ConnectorResult {
@@ -45,8 +48,13 @@ export const CONNECTOR_ERROR_CODES = [
   /** A guest: only an account connects a tracker. */
   "connector_sign_in",
   "connector_not_connected",
-  /** The grant is gone (`invalid_grant`, or a refused token): the person connects again. */
+  /** The grant is gone: the row went with it, and the person connects again. */
   "connector_reconnect",
+  /**
+   * The tracker refused a token it had just renewed, so connecting again would change nothing:
+   * the app's scopes do not fit what the call asks. The connection stays.
+   */
+  "connector_setup",
   "connector_no_site",
   "connector_no_field",
   /** Not a site of this person's own list, or a field not of this site's. */

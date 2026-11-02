@@ -101,6 +101,20 @@ export function connectorNames(
   return config.jira === undefined ? [] : ["jira"];
 }
 
+/**
+ * What keeps a tracker with keys dark, as the variables that are missing: `connectorNames`'s
+ * reasons, for one line at the start. Names only.
+ */
+export function connectorGaps(
+  config: Pick<Config, "jira" | "vault" | "socialProviders">,
+): readonly string[] {
+  if (config.jira === undefined) return [];
+  return [
+    ...(config.vault === undefined ? ["POKER_VAULT_KEY"] : []),
+    ...(socialProviderIds(config).length === 0 ? ["GOOGLE_CLIENT_ID", "MICROSOFT_CLIENT_ID"] : []),
+  ];
+}
+
 /** The providers `config` has keys for, in the order the page shows them. */
 export function socialProviderIds(config: Pick<Config, "socialProviders">): SignInProvider[] {
   return SIGN_IN_PROVIDERS.filter((id) => config.socialProviders[id] !== undefined);
