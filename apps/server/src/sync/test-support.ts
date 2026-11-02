@@ -175,7 +175,10 @@ export function testClient(url: string, options: ClientOptions = {}): TestClient
       const raw = socket as unknown as {
         timeout(ms: number): { emitWithAck(event: string, ...args: unknown[]): Promise<unknown> };
       };
-      const message = payload === undefined ? { id, type } : { id, type, payload };
+      // A page sends the round on its table with a start: so does this client, unless told.
+      const round = received.at(-1)?.snapshot.room.round?.number ?? 0;
+      const sent = type === "startRound" ? { round, ...payload } : payload;
+      const message = sent === undefined ? { id, type } : { id, type, payload: sent };
       return cmdAckSchema.parse(await raw.timeout(5000).emitWithAck("cmd", message));
     },
     history: async (request = {}) => {

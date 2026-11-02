@@ -417,7 +417,9 @@ describe("the table's centre", () => {
     await renderRoom(owner);
     fireEvent.click(screen.getByRole("button", { name: "Start voting" }));
     await waitFor(() => expect(centre()).toBe("0/3 voted so far"));
-    expect(sent).toEqual([{ type: "startRound", payload: { subject: { kind: "none" } } }]);
+    expect(sent).toEqual([
+      { type: "startRound", payload: { subject: { kind: "none" }, round: 0 } },
+    ]);
     // The button is gone: the focus goes to the hand's tab stop.
     await waitFor(() => expect(document.activeElement).toBe(card("0")));
     run(ME, { type: "reveal" });
@@ -482,7 +484,7 @@ describe("the next round with a subject (#21)", () => {
     expect(sent).toEqual([
       {
         type: "startRound",
-        payload: { subject: { kind: "title", text: "Split invoices by currency" } },
+        payload: { subject: { kind: "title", text: "Split invoices by currency" }, round: 0 },
       },
     ]);
     expect(subjectLine()).toBe("Round 1Split invoices by currency");
@@ -511,7 +513,7 @@ describe("the next round with a subject (#21)", () => {
     expect(sent.filter((command) => command.type === "startRound")).toHaveLength(2);
     expect(sent.at(-1)).toEqual({
       type: "startRound",
-      payload: { subject: { kind: "link", url } },
+      payload: { subject: { kind: "link", url }, round: 1 },
     });
     // The server read the key: the chip shows it, the votes are cleared.
     const link = await screen.findByRole("link", { name: "PAY-482 (opens in a new tab)" });

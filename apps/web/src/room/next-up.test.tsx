@@ -105,8 +105,33 @@ describe("useNextRound with a queue", () => {
     await act(() => result.current.start());
     expect(mocks.send).toHaveBeenCalledWith({
       type: "startRound",
-      payload: { subject: { kind: "title", text: "By hand" } },
+      payload: { subject: { kind: "title", text: "By hand" }, round: 0 },
     });
+  });
+
+  it("sends the round on the table, so a press never replaces a round it did not see", async () => {
+    const { result } = renderHook(() => useNextRound(nothing, null, 4));
+    await act(() => result.current.start());
+    expect(mocks.send).toHaveBeenCalledWith({
+      type: "startRound",
+      payload: { subject: { kind: "none" }, round: 4 },
+    });
+  });
+
+  it("stays quiet when a countdown started the next item under the press", async () => {
+    const onFailure = vi.fn();
+    const { result } = renderHook(() => useNextRound(onFailure, 7));
+    mocks.send.mockResolvedValue({ ok: false, code: "not_revealed" });
+    await act(() => result.current.start());
+    act(() => result.current.setDraft("By hand"));
+    mocks.send.mockResolvedValue({ ok: false, code: "round_changed" });
+    await act(() => result.current.start());
+    expect(onFailure.mock.calls.flat()).toEqual([null, null]);
+    expect(result.current.draft).toBe("By hand");
+    mocks.send.mockResolvedValue({ ok: false, code: "unknown_item" });
+    act(() => result.current.setDraft(""));
+    await act(() => result.current.start());
+    expect(onFailure).toHaveBeenLastCalledWith("unknown_item");
   });
 
   it("counts blanks as an empty field", () => {
@@ -121,7 +146,7 @@ describe("useNextRound with a queue", () => {
     await act(() => result.current.start());
     expect(mocks.send).toHaveBeenCalledWith({
       type: "startRound",
-      payload: { subject: { kind: "none" } },
+      payload: { subject: { kind: "none" }, round: 0 },
     });
   });
 });

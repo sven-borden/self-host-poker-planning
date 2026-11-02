@@ -15,6 +15,10 @@ import type { QueueEntry, Role, RoomState, Round, SettingsPatch, Subject, UserId
  * number (#26), and a vote for the old deck must not land in the new one. The wire
  * requires `round`; `restart` is optional there (a tab from before #26 sends none), and
  * the web app always sends it. The domain checks each whenever it is given.
+ *
+ * `startRound` carries `round` too (#52): the number of the round on the table when the PO
+ * pressed, 0 in the lobby. A countdown may start the next queue item under that press, and
+ * the press must not replace it: the item would have left the queue and never been a round.
  */
 export type Command =
   | { type: "join"; name: string; role: Role; avatar?: string }
@@ -24,7 +28,7 @@ export type Command =
   | { type: "setAvatar"; avatar: string | null }
   | { type: "setRole"; role: Role }
   | { type: "kick"; who: UserId }
-  | { type: "startRound"; subject: Subject }
+  | { type: "startRound"; subject: Subject; round?: number }
   /** A whole paste as one command (#52): all of it or, past the limit, none of it. */
   | { type: "queueAdd"; items: QueueEntry[] }
   /** `to`: the item's place in the queue afterwards, from 0; past the end, the end. */

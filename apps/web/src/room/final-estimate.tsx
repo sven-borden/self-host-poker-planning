@@ -104,6 +104,14 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
       }
     };
   }, []);
+  /**
+   * A refusal, unless the bar left while the command was out: a countdown started the next
+   * item under the press (#52). The answer follows that snapshot, and a line would stay
+   * under the new round, about nothing.
+   */
+  const report = (code: string) => {
+    if (bar.current !== null) onFailure(code);
+  };
   /** A round is on its way: nothing may start another, or record on the old one. */
   const starting = next.busy || revoting;
 
@@ -116,7 +124,7 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
     try {
       const ack = await commandSender()({ type: "setFinal", payload: { card: selected } });
       if (ack.ok) setPicked(null);
-      else onFailure(ack.code);
+      else report(ack.code);
     } finally {
       pending.current.record = false;
       setRecording(false);
@@ -132,7 +140,7 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
       const ack = await commandSender()({ type: "revote" });
       // The bar leaves with the revealed round: the focus goes to the hand, as after "Next round".
       if (ack.ok) focusSoon("[data-hand] [tabindex='0']", "[data-centre-status='voting']");
-      else onFailure(ack.code);
+      else report(ack.code);
     } finally {
       pending.current.revote = false;
       setRevoting(false);

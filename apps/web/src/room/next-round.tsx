@@ -16,6 +16,12 @@ import { draftSubject, itemName, problemMessage, type SubjectProblem } from "./s
 // With a queue (#52) an empty field means its next item, and anything typed wins: the
 // queue never locks the PO out of the field, and a typed subject leaves it as it is.
 
+/**
+ * Refusals that only say a countdown started the next item under the press. The answer
+ * follows that round's snapshot, so a line would stay under the new round, about nothing.
+ */
+const RACED: readonly string[] = ["round_changed", "not_revealed"];
+
 /** The draft, its problem, and the start that both the field and the centre's button use. */
 export interface NextRound {
   draft: string;
@@ -35,11 +41,15 @@ export interface NextRound {
  * under the field and takes the focus there; any other refusal goes to `onFailure`, the
  * line under the table. A started round clears the draft; a start from the field keeps
  * the focus in it, a start from the centre's button moves it to the hand (or the centre's
- * status for a PO without a hand). `nextItem`: the id of the queue's next item, if any.
+ * status for a PO without a hand). `nextItem`: the id of the queue's next item, if any;
+ * `round`: the number of the round on the table, 0 in the lobby. A countdown may start the
+ * next item under the press (#52): the round on screen is the answer, and a typed subject
+ * stays in the field for the round after it.
  */
 export function useNextRound(
   onFailure: (code: string | null) => void,
   nextItem: number | null = null,
+  round = 0,
 ): NextRound {
   const [draft, setDraftState] = useState("");
   const [problem, setProblem] = useState<SubjectProblem | null>(null);
@@ -71,7 +81,7 @@ export function useNextRound(
       const ack = await send(
         fromQueue && nextItem !== null
           ? { type: "startNext", payload: { id: nextItem } }
-          : { type: "startRound", payload: { subject: parsed.subject } },
+          : { type: "startRound", payload: { subject: parsed.subject, round } },
       );
       if (ack.ok) {
         setDraftState("");
@@ -83,14 +93,14 @@ export function useNextRound(
       } else if (ack.code === "bad_subject") {
         setProblem("bad_subject");
         field.current?.focus();
-      } else {
+      } else if (!RACED.includes(ack.code)) {
         onFailure(ack.code);
       }
     } finally {
       pending.current = false;
       setBusy(false);
     }
-  }, [draft, onFailure, fromQueue, nextItem]);
+  }, [draft, onFailure, fromQueue, nextItem, round]);
 
   return { draft, setDraft, problem, busy, fromQueue, start, field };
 }

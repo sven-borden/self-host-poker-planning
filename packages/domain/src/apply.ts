@@ -148,6 +148,10 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       if (!participant(state, command.who)) return refuse("unknown_participant");
       return done(removeParticipant(state, command.who), { type: "kicked", who: command.who });
     case "startRound": {
+      // Pressed for a round that is gone: a countdown started the next item under the press.
+      if (command.round !== undefined && command.round !== (state.round?.number ?? 0)) {
+        return refuse("round_changed");
+      }
       const subject = cleanSubject(command.subject);
       return subject ? startRound(state, subject, now) : refuse("bad_subject");
     }

@@ -380,6 +380,46 @@ describe("auto-advance", () => {
     }
   });
 
+  describe("a start pressed as the countdown ends", () => {
+    const typed: Command = {
+      type: "startRound",
+      subject: { kind: "title", text: "Typed" },
+      round: 1,
+    };
+    const at = T0 + AUTO_ADVANCE_MS;
+
+    it("is refused when it lands first: the item starts, and stays a round", () => {
+      const state = finalized(revealed(queued(auto(room()), "a", "b"))).state;
+      const result = apply(state, typed, { actor: PO, now: at });
+      expect(result).toMatchObject({ ok: false, error: "round_changed" });
+      expect(result.state.round?.number).toBe(2);
+      expect(result.state.round?.subject).toEqual({ kind: "title", text: "a" });
+      expect(titles(result.state)).toEqual(["b"]);
+      expect(result.ended).toBe(state.round);
+    });
+
+    it("is refused when the server's timeout landed first", () => {
+      const state = finalized(revealed(queued(auto(room()), "a", "b"))).state;
+      const started = must(state, { type: "timeUp" }, ":server", at).state;
+      const result = apply(started, typed, { actor: PO, now: at + 30 });
+      expect(result).toMatchObject({ ok: false, error: "round_changed" });
+      expect(result.state).toBe(started);
+    });
+
+    it("still replaces the round it was pressed for, before the deadline", () => {
+      const state = finalized(revealed(queued(auto(room()), "a"))).state;
+      const started = must(state, typed, PO, at - 1);
+      expect(started.state.round?.subject).toEqual({ kind: "title", text: "Typed" });
+      expect(titles(started.state)).toEqual(["a"]);
+    });
+
+    it("counts the lobby as round 0", () => {
+      const subject = { kind: "none" } as const;
+      expect(refusal(room(), { type: "startRound", subject, round: 3 })).toBe("round_changed");
+      expect(must(room(), { type: "startRound", subject, round: 0 }).state.round?.number).toBe(1);
+    });
+  });
+
   it("ends quietly on a state whose queue went missing", () => {
     const state = finalized(revealed(queued(auto(room()), "a"))).state;
     const { queue: _, ...stale } = state;

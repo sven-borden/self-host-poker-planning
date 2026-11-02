@@ -254,6 +254,19 @@ describe("the final estimate (#32)", () => {
     await waitFor(() => expect(centreFinal()?.getAttribute("data-centre-final")).toBe("8"));
   });
 
+  it("says nothing of a final refused because the round left under the press (#52)", async () => {
+    await renderRoom(revealedRound(["3", "8"]));
+    let answer = (_: unknown) => {};
+    mocks.commandSender.mockImplementation(
+      () => () => new Promise((resolve) => (answer = resolve)),
+    );
+    fireEvent.click(recordButton() as HTMLElement);
+    run("po", { type: "startRound", subject: { kind: "none" } });
+    await waitFor(() => expect(recordButton()).toBeNull());
+    await act(async () => answer({ ok: false, code: "not_revealed" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("shows a refused final under the table", async () => {
     await renderRoom(revealedRound(["3", "8"]));
     // The round moved on elsewhere (another tab of the PO's): the server refuses.

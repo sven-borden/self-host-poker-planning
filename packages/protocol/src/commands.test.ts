@@ -164,12 +164,24 @@ describe("wire commands", () => {
       {
         id: "1",
         type: "startRound",
-        payload: { subject: { kind: "link", url: "https://x.test", key: "AB-1" } },
+        payload: { round: 0, subject: { kind: "link", url: "https://x.test", key: "AB-1" } },
       },
     ],
     [
       "an unknown field on a title subject",
-      { id: "1", type: "startRound", payload: { subject: { kind: "title", text: "a", x: 1 } } },
+      {
+        id: "1",
+        type: "startRound",
+        payload: { round: 0, subject: { kind: "title", text: "a", x: 1 } },
+      },
+    ],
+    [
+      "a start without the round it was pressed for",
+      { id: "1", type: "startRound", payload: { subject: { kind: "none" } } },
+    ],
+    [
+      "a start for a round that cannot be",
+      { id: "1", type: "startRound", payload: { round: -1, subject: { kind: "none" } } },
     ],
     ["an unknown type", { id: "1", type: "dropTable" }],
     [
@@ -239,7 +251,7 @@ describe("wire commands", () => {
     ],
     [
       "an unknown subject kind",
-      { id: "1", type: "startRound", payload: { subject: { kind: "jira" } } },
+      { id: "1", type: "startRound", payload: { round: 0, subject: { kind: "jira" } } },
     ],
     [
       "an unknown special",

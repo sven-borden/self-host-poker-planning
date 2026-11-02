@@ -103,6 +103,9 @@ export const settingsPatchSchema = z.strictObject({
 /** A round's number, as the snapshot gave it (rounds count from 1). */
 const roundNumberSchema = z.number().int().min(1).max(WIRE_LIMITS.roundNumber);
 
+/** The round on the table when the PO pressed "Next round" (#52), 0 in the lobby. */
+const pressedForSchema = z.number().int().min(0).max(WIRE_LIMITS.roundNumber);
+
 /** How many times the round had restarted when the press was made (#26), 0 for none. */
 const restartSchema = z.number().int().min(0).max(WIRE_LIMITS.roundNumber);
 
@@ -137,7 +140,7 @@ const payloads = {
   setAvatar: z.strictObject({ avatar: avatarSchema.nullable() }),
   setRole: z.strictObject({ role: roleSchema }),
   kick: z.strictObject({ who: userIdSchema }),
-  startRound: z.strictObject({ subject: wireSubjectSchema }),
+  startRound: z.strictObject({ subject: wireSubjectSchema, round: pressedForSchema }),
   queueAdd: z.strictObject({
     items: z.array(wireQueueItemSchema).min(1).max(WIRE_LIMITS.queueBatch),
   }),
