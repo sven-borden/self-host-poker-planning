@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import { EmptyTable } from "../components/shell/empty-table.tsx";
+import { NoSuchPage } from "../components/shell/no-such-page.tsx";
 import { usePageTitle } from "../components/shell/use-page-title.ts";
 import { Button, buttonVariants } from "../components/ui/button.tsx";
 import {
@@ -85,27 +86,6 @@ function PageTitle() {
   const t = useT();
   usePageTitle(t("myRooms.title"));
   return null;
-}
-
-/**
- * What the root's `NotFoundPage` shows, in this chunk's own lines: importing that component here
- * makes the bundler split the entry chunk around it, which costs every page 1.8 kB.
- */
-function NoSuchPage() {
-  const t = useT();
-  usePageTitle(t("notFound.title"));
-  return (
-    <section className="max-w-2xl">
-      <EmptyTable />
-      <h1 className="mt-6 text-3xl font-[760] [font-stretch:110%] sm:text-4xl">
-        {t("notFound.title")}
-      </h1>
-      <p className="mt-4 text-ink-2">{t("notFound.body")}</p>
-      <Link to="/" className={buttonVariants({ variant: "outline", className: "mt-8" })}>
-        {t("room.backHome")}
-      </Link>
-    </section>
-  );
 }
 
 function Heading({ children }: { children: ReactNode }) {

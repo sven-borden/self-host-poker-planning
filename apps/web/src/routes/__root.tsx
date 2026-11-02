@@ -128,6 +128,7 @@ const SIGN_IN_FAILURES = {
   rate_limited: "signIn.errors.rateLimited",
   failed: "signIn.errors.failed",
   still_moving: "signIn.errors.stillMoving",
+  account_going: "signIn.errors.accountGoing",
 } as const satisfies Record<SignInErrorCode, MessageKey>;
 
 /**

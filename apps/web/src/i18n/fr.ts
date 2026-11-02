@@ -617,7 +617,12 @@ export const fr: Catalog<"many"> = {
       failed: "La connexion n’a pas abouti. Réessayez, ou continuez sans compte.",
       stillMoving:
         "Votre compte est connecté. Certaines de vos salles sont encore en cours de transfert : rouvrez-les dans un instant.",
+      accountGoing:
+        "Votre compte est en cours de suppression. Une fois terminé, une connexion en crée un nouveau.",
     },
+  },
+  account: {
+    title: "Compte",
   },
   myRooms: {
     title: "Mes salles",
@@ -855,6 +860,8 @@ export const fr: Catalog<"many"> = {
       "Vous ne faites plus partie de cette salle. Rechargez la page pour la rejoindre à nouveau.",
     not_owner: "Seul le product owner peut faire cela.",
     not_keeper: "Seule la personne à qui cette salle appartient peut la supprimer.",
+    sign_in_again: "Reconnectez-vous d’abord : cette action demande une connexion récente.",
+    bad_confirmation: "Ce n’est pas le mot demandé. Rien n’a été supprimé.",
     already_joined: "Vous êtes déjà dans cette salle.",
     bad_avatar: "Cet avatar n’est pas disponible. Choisissez-en un autre.",
     bad_name:

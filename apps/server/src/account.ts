@@ -109,6 +109,7 @@ export function registerAccountApi(
     const { alone, seats, shared } = await data.overview(me.user.id);
     return c.json({
       recent: me.recent,
+      retentionDays: config.roomTtlDays,
       alone,
       seats,
       shared: shared.map((room) => ({

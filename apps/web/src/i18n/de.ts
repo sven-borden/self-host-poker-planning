@@ -604,7 +604,11 @@ export const de: Catalog = {
         "Die Anmeldung wurde nicht abgeschlossen. Versuchen Sie es erneut oder machen Sie ohne Konto weiter.",
       stillMoving:
         "Sie sind angemeldet. Einige Ihrer Räume werden noch in Ihr Konto übertragen. Öffnen Sie sie gleich noch einmal.",
+      accountGoing: "Ihr Konto wird gelöscht. Danach beginnt eine Anmeldung ein neues Konto.",
     },
+  },
+  account: {
+    title: "Konto",
   },
   myRooms: {
     title: "Meine Räume",
@@ -830,6 +834,8 @@ export const de: Catalog = {
       "Sie sind nicht mehr in diesem Raum. Laden Sie die Seite neu, um wieder beizutreten.",
     not_owner: "Nur der Product Owner kann das tun.",
     not_keeper: "Nur die Person, der dieser Raum gehört, kann ihn löschen.",
+    sign_in_again: "Melden Sie sich zuerst erneut an: Das erfordert eine aktuelle Anmeldung.",
+    bad_confirmation: "Das ist nicht das verlangte Wort. Nichts wurde gelöscht.",
     already_joined: "Sie sind bereits in diesem Raum.",
     bad_avatar: "Dieser Avatar ist nicht verfügbar. Wählen Sie einen anderen.",
     bad_name: "Ein Name hat {{min, number}} bis {{max, number}} Zeichen. Wählen Sie einen anderen.",

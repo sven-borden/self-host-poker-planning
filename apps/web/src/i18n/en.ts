@@ -13,6 +13,8 @@ const errors = {
   not_participant: "You are no longer in this room. Reload the page to join again.",
   not_owner: "Only the product owner can do that.",
   not_keeper: "Only the person this room belongs to can delete it.",
+  sign_in_again: "Sign in again first: this takes a recent sign-in.",
+  bad_confirmation: "That is not the word asked for. Nothing was deleted.",
   already_joined: "You are already in this room.",
   bad_avatar: "That avatar is not available. Choose another one.",
   bad_name: "A name needs {{min, number}} to {{max, number}} characters. Choose another one.",
@@ -646,7 +648,12 @@ export const en = {
       failed: "Sign-in did not finish. Try again, or carry on without an account.",
       stillMoving:
         "You are signed in. Some of your rooms are still moving to your account: open them again in a moment.",
+      accountGoing:
+        "Your account is being deleted. Once that is done, signing in starts a new one.",
     },
+  },
+  account: {
+    title: "Account",
   },
   myRooms: {
     title: "My rooms",

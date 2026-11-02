@@ -64,6 +64,14 @@ describe("a room the person keeps", () => {
     expect(remove(state, "ben").state.ownerId).toBe("ben");
   });
 
+  it("breaks a tie on when people sat down by id, the same on every instance", () => {
+    let state = createRoom({ ownerId: WHO });
+    for (const who of ["zed", "amy"]) {
+      state = act(state, who, { type: "join", name: who, role: "voter" });
+    }
+    expect(remove(state).state.keeperId).toBe("amy");
+  });
+
   it("falls back on the longest seated when the chosen person has left", () => {
     expect(remove(room([WHO, "ann", "ben"]), "cleo").state.keeperId).toBe("ann");
     expect(remove(room([WHO, "ann", "ben"]), WHO).state.keeperId).toBe("ann");
