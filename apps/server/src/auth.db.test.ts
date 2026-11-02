@@ -561,6 +561,7 @@ describe("the auth tables (AC 3)", () => {
     );
     expect(rows.map((r) => r.table_name)).toEqual([
       "account",
+      "account_deletion",
       "connector_token",
       "guest_link",
       "room",

@@ -23,8 +23,8 @@ import {
   cleanDomain,
   type Restriction,
   type RestrictionRefusal,
-  type RoomState,
   RULE_SESSION_MAX_AGE_DAYS,
+  type RuledRoom,
   type RuleProviders,
   restrictionRefusal,
   roomRefusal,
@@ -75,7 +75,7 @@ export const sessionTooOld = (startedAt: number | undefined, now: number): boole
  * and it says yes or no: the reason is not for whoever is asking about someone else.
  */
 export function mayHoldRole(
-  state: RoomState,
+  state: RuledRoom,
   who: UserId,
   { identity, startedAt }: RoleCandidate,
   providers: RuleProviders,
@@ -86,8 +86,29 @@ export function mayHoldRole(
   return roomRefusal(state, who, identity, providers) === null;
 }
 
-export const identityOf = async (rules: RoomRules, who: UserId): Promise<AccessIdentity | null> =>
-  (await rules.identitiesOf([who])).get(who) ?? null;
+/** A room as a row reads it, for `mayHoldRole`: the rule is null with none. */
+export const ruledRoom = (room: { ownerId: UserId; rule: Restriction | null }): RuledRoom => ({
+  ownerId: room.ownerId,
+  settings: room.rule === null ? {} : { restriction: room.rule },
+});
+
+/**
+ * What the role asks of someone deleting their account (#51, ADR-029): their account as it stands,
+ * and no age. Their sessions ended with their own deletion, which took a sign-in minutes old, so
+ * "no live session" says nothing of them here, however long the deletion runs.
+ */
+export const goingCandidate = async (
+  rules: Pick<RoomRules, "identitiesOf">,
+  who: UserId,
+): Promise<RoleCandidate> => ({
+  identity: await identityOf(rules, who),
+  startedAt: undefined,
+});
+
+export const identityOf = async (
+  rules: Pick<RoomRules, "identitiesOf">,
+  who: UserId,
+): Promise<AccessIdentity | null> => (await rules.identitiesOf([who])).get(who) ?? null;
 
 /** Characters a URL parser ends a host at, or reads as something else: as the panel's guard. */
 const NOT_OF_A_HOST = /[/\\@:?#%[\]]/;

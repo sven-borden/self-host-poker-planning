@@ -4,6 +4,7 @@ export { cleanQueueItem, itemSubject, queueBytes, queueIdentity } from "./apply-
 export { ADO_ID, cleanSubject, JIRA_KEY, keyLabel, linkKey } from "./apply-subject.ts";
 export { AVATAR_IDS, type AvatarId, isAvatarId } from "./avatars.ts";
 export type {
+  AccountRemoval,
   ApplyContext,
   ApplyResult,
   Cause,
@@ -44,6 +45,7 @@ export {
   type RestrictionRefusal,
   type RestrictionRequirement,
   RULE_SESSION_MAX_AGE_DAYS,
+  type RuledRoom,
   type RuleProviders,
   requirementOf,
   restrictionRefusal,
@@ -54,6 +56,10 @@ export {
   AUTO_ADVANCE_MS,
   createRoom,
   DEFAULT_SETTINGS,
+  type Heir,
+  type HeirReason,
+  type HeirSeat,
+  heirsOf,
   keeperOf,
   MAX_ITEM_TITLE_BYTES,
   MAX_LINK_LENGTH,

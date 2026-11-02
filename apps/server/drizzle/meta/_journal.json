@@ -78,6 +78,13 @@
       "when": 1793602504700,
       "tag": "0010_add_account_hosted_domain",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793610026197,
+      "tag": "0011_add_account_deletion",
+      "breakpoints": true
     }
   ]
 }

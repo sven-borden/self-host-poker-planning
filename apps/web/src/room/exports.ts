@@ -2,6 +2,7 @@ import { cardValue } from "@pp/domain";
 import { formatDate, formatNumber } from "../i18n/format.ts";
 import type { TFunction } from "../i18n/i18n.ts";
 import type { Language } from "../i18n/language.ts";
+import { saveFile } from "../lib/save-file.ts";
 import { shortDuration, splitSeconds, votingTime } from "./history-view.ts";
 import { keyLabel, safeHref, shortUrl } from "./subject.ts";
 import { type ExportRound, type Range, type Summary, summarize, voteCount } from "./summary.ts";
@@ -355,18 +356,6 @@ export function keyLines(rounds: readonly ExportRound[]): KeyLines {
     lines.push(`${key} ${value === null ? round.final : String(value)}`);
   }
   return { text: lines.join("\n"), lines: lines.length, skipped };
-}
-
-/** Saves `text` as a file named `name`, through a link the page never shows. */
-export function saveFile(text: string, name: string, type: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  link.rel = "noopener";
-  link.click();
-  // Some browsers start the download after the click returns.
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 /** The CSV file, saved. */

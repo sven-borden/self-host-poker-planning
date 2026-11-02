@@ -260,6 +260,52 @@ export function keeperOf({ keeperId, ownerId }: Pick<RoomState, "keeperId" | "ow
   return keeperId ?? ownerId;
 }
 
+/** What `heirsOf` reads of a seat. */
+export type HeirSeat = Pick<Participant, "joinedAt" | "connected">;
+
+/** Why someone stands where they do in `heirsOf`. */
+export type HeirReason = "chosen" | "runsTheRoom" | "here" | "away";
+
+export interface Heir {
+  id: UserId;
+  why: HeirReason;
+}
+
+const HEIR_LINE: readonly HeirReason[] = ["chosen", "runsTheRoom", "here", "away"];
+
+/**
+ * Who takes a room `who` leaves for good (#51, ADR-029), first in line first: the person chosen,
+ * if still seated and allowed; whoever else holds the PO role now, if seated and here, as the person
+ * running the room keeps running it; then the people here, and then the people away, each seated
+ * longest first, by id on a tie. Left out, `mayTake` allows everyone. Empty when nobody seated may
+ * take it. `apply` and the account page both read this, so what a page calls the default is what the
+ * server does.
+ */
+export function heirsOf(
+  { ownerId, participants }: { ownerId: UserId; participants: Record<UserId, HeirSeat> },
+  who: UserId,
+  {
+    chosen,
+    mayTake,
+  }: { chosen?: UserId | undefined; mayTake?: readonly UserId[] | undefined } = {},
+): Heir[] {
+  const reason = (id: UserId, { connected }: HeirSeat): HeirReason => {
+    if (id === chosen) return "chosen";
+    if (!connected) return "away";
+    return id === ownerId ? "runsTheRoom" : "here";
+  };
+  return Object.entries(participants)
+    .filter(([id]) => id !== who && (mayTake === undefined || mayTake.includes(id)))
+    .map(([id, seat]) => ({ id, why: reason(id, seat), joinedAt: seat.joinedAt }))
+    .sort(
+      (a, b) =>
+        HEIR_LINE.indexOf(a.why) - HEIR_LINE.indexOf(b.why) ||
+        a.joinedAt - b.joinedAt ||
+        (a.id < b.id ? -1 : 1),
+    )
+    .map(({ id, why }) => ({ id, why }));
+}
+
 /** A new room: default settings, nobody inside (the PO enters through `join` too), no round. */
 export function createRoom({ ownerId }: { ownerId: UserId }): RoomState {
   return {

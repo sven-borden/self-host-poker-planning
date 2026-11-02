@@ -36,6 +36,7 @@ const ROOM_B = {
   rounds: 1,
 };
 const page = (rooms: unknown[], extra: object = {}) => ({ rooms, retentionDays: 90, ...extra });
+const CLAIMED = { ...ROOM_B, owned: true };
 
 type Route = (init?: RequestInit) => Response;
 
@@ -409,7 +410,7 @@ describe("deleting", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Delete Sprint planning" }));
     fireEvent.click(await screen.findByRole("button", { name: "Delete this room" }));
     await screen.findByText("You are the product owner");
-    expect(screen.getByText("Only the person this room belongs to can delete it.")).toBeTruthy();
+    expect(screen.getByText("You cannot delete this room: that right is not yours.")).toBeTruthy();
   });
 
   it("keeps the dialog on a failure that can be tried again", async () => {
@@ -459,6 +460,24 @@ describe("leaving", () => {
     await screen.findByText("You left the room.");
     expect(rowCount()).toBe(1);
     expect(screen.queryByRole("button", { name: "Leave this room: Sprint planning" })).toBeNull();
+  });
+});
+
+describe("a room nobody holds (#51)", () => {
+  it("says what a room with no keeper comes to, and that one with a keeper has one", async () => {
+    asAccount();
+    serve({
+      "GET /api/my-rooms": () => json(page([{ ...CLAIMED, noKeeper: true }], { retentionDays: 1 })),
+    });
+    await renderRooms();
+    expect(await screen.findByText(/Nobody can delete it/)).toBeTruthy();
+    expect(screen.getByText(/goes after 1 day without activity/)).toBeTruthy();
+    expect(screen.queryByText(/the person it belongs to/)).toBeNull();
+    cleanup();
+    serve({ "GET /api/my-rooms": () => json(page([{ ...CLAIMED, noKeeper: false }])) });
+    await renderRooms();
+    expect(await screen.findByText(/the person it belongs to/)).toBeTruthy();
+    expect(screen.queryByText(/Nobody can delete it/)).toBeNull();
   });
 });
 

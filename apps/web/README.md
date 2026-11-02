@@ -32,8 +32,8 @@ server sends and never decides the outcome of a round.
 - "My rooms" (#49, ADR-027): `routes/rooms.tsx` is a lazy route; `rooms/my-rooms-page.tsx` holds
   the page and `rooms/my-rooms-api.ts` its calls, so nothing of it joins the landing page's or the
   room's JavaScript. Who sees what comes from the identity store (`isSignedIn`, which an account
-  with no address passes too) and `signInProviders()`: an install without keys gets the
-  page's own `NoSuchPage`, as importing `NotFoundPage` into this lazy chunk splits the entry chunk
+  with no address passes too) and `signInProviders()`: an install without keys gets
+  `NoSuchPage`, as importing `NotFoundPage` into this lazy chunk splits the entry chunk
   and costs every page 1.8 kB. A row's `owned` is the PO role and `keeper` the right to delete
   (ADR-027): the two can part, and the buttons follow them. Dialogs give the focus back through
   `onCloseAutoFocus`, since Radix drops it on `<body>` without a `DialogTrigger`; jsdom has no
@@ -41,6 +41,16 @@ server sends and never decides the outcome of a round.
   snapshot once there is one, and the socket's `deleted` ends the connection with
   `room_not_found`, so `RoomNotFound` shows at once. Copy: `myRooms.*`. Tests:
   `rooms/my-rooms-page.test.tsx`, `e2e/my-rooms.spec.ts`.
+- The account page (#51, ADR-029): `routes/account.tsx` is a lazy route; `account/account-page.tsx`
+  holds the page, `account/account-api.ts` its calls and `account/account-copy.ts` its words, in all
+  three languages, as `en.ts` loads with every page. `translateIn` reads them by the rules of `t`,
+  `useAccountT` is that page's `t`, and `i18n.test.ts` holds them to everything it holds the catalogs
+  to. Only `account.title`, the link's word, is in the catalogs, and `errors.*` for the two new codes.
+  `NoSuchPage` is shared with "My rooms", in `components/shell/no-such-page.tsx`. What the page says
+  after a deletion comes from the server's answer alone: `finished: true` is "deleted", `false` is
+  "being deleted", and a failure that says nothing reads the session again before it says anything.
+  A room's socket hears `accountDeleted` and reloads. Tests: `account/account-page.test.tsx`,
+  `e2e/account.spec.ts`.
 - `src/rooms/`: the room API (#14). `api.ts`: `createRoom({ name, deck })` (identity
   first, one session renewal on `unauthenticated`, a blank name left out) and
   `fetchRoomHeader(code)`; both reject with `RoomApiError` carrying the server's code or

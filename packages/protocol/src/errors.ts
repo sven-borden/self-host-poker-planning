@@ -22,6 +22,13 @@ export const PROTOCOL_ERROR_CODES = [
    */
   "not_keeper",
   /**
+   * `POST /api/account/delete` (#51, ADR-029): the session is older than the 15 minutes a
+   * deletion allows, and the person signs in again first. HTTP only.
+   */
+  "sign_in_again",
+  /** `POST /api/account/delete`: the confirmation typed is not the word asked for. HTTP only. */
+  "bad_confirmation",
+  /**
    * The room has a password and this person may not enter without it (#31): not in the
    * room, not its PO, and no access granted to them by a correct password.
    */

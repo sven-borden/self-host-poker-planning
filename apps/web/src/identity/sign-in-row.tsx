@@ -17,7 +17,7 @@ const PROVIDERS = {
   microsoft: { label: "signIn.microsoft", logo: microsoftLogo, brand: "Microsoft" },
 } as const;
 
-const busyClass = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
+export const busyClass = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
 
 /**
  * Signing in, quietly, wherever a person has a moment for it (#47): the "You" panel, the join
@@ -25,10 +25,10 @@ const busyClass = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
  * when it has none; sign-in is never required. It is a full-page navigation, so the provider's
  * page opens in this tab and comes back here. Someone signed in sees which provider, their name
  * and "Sign out", which starts a fresh guest on this same page: a reload, as the old session's
- * socket cannot carry on, and "My rooms" (#49), which has no other way in: the top bar is full at
- * 320 px. A room may be on a shared screen, so the address shows only where a page asks for it
- * (`showAddress`): the landing page, and nowhere in a room. `only` (#50): a room limited to
- * accounts offers the providers that can pass it, and needs no word that this is optional.
+ * socket cannot carry on, and "My rooms" (#49) and "Account" (#51), which have no other way in: the
+ * top bar is full at 320 px. A room may be on a shared screen, so the address shows only where a
+ * page asks for it (`showAddress`): the landing page, and nowhere in a room. `only` (#50): a room
+ * limited to accounts offers the providers that can pass it, and needs no word that this is optional.
  */
 export function SignInRow({
   className,
@@ -92,6 +92,13 @@ export function SignInRow({
           <div className="flex flex-wrap gap-2 sm:shrink-0">
             <Link to="/rooms" data-my-rooms-link className={buttonVariants({ variant: "outline" })}>
               {t("myRooms.title")}
+            </Link>
+            <Link
+              to="/account"
+              data-account-link
+              className={buttonVariants({ variant: "outline" })}
+            >
+              {t("account.title")}
             </Link>
             <Button
               variant="outline"

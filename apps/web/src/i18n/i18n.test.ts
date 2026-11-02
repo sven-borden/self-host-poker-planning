@@ -1,5 +1,6 @@
 import { ACK_ERROR_CODES, PROTOCOL_ERROR_CODES } from "@pp/protocol";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { ACCOUNT_COPY } from "../account/account-copy.ts";
 import { de } from "./de.ts";
 import { en } from "./en.ts";
 import { errorMessage, isKnownErrorCode } from "./errors.ts";
@@ -24,7 +25,12 @@ import {
 // The catalog checks run on the objects at run time, so they hold even if a catalog ever
 // bypasses the type check (a JSON import, a cast).
 
-const CATALOGS: Record<Language, unknown> = { en, fr, de };
+// The account page's words (#51) live in its chunk, and meet every rule the catalogs meet.
+const CATALOGS: Record<Language, unknown> = {
+  en: { ...en, accountPage: ACCOUNT_COPY.en },
+  fr: { ...fr, accountPage: ACCOUNT_COPY.fr },
+  de: { ...de, accountPage: ACCOUNT_COPY.de },
+};
 const PLURAL = /_(zero|one|two|few|many|other)$/;
 
 /** Every leaf as [dotted key, value]; a value that is not a string is kept to fail later. */
@@ -56,7 +62,7 @@ function placeholders(text: string): string[] {
 }
 
 describe("catalogs", () => {
-  const english = baseKeys(en);
+  const english = baseKeys(CATALOGS.en);
 
   it.each(LANGUAGES)("%s holds only non-empty strings", (language) => {
     for (const [key, value] of leaves(CATALOGS[language])) {
@@ -98,7 +104,7 @@ describe("catalogs", () => {
       }
       return map;
     };
-    const reference = byBase(en);
+    const reference = byBase(CATALOGS.en);
     for (const language of LANGUAGES) {
       for (const [key, set] of byBase(CATALOGS[language])) {
         expect([...set].sort(), `${language}: ${key}`).toEqual(
@@ -121,7 +127,7 @@ describe("catalogs", () => {
   });
 
   it("puts a narrow no-break space before French high punctuation, so it never wraps alone", () => {
-    for (const [key, value] of leaves(fr)) {
+    for (const [key, value] of leaves(CATALOGS.fr)) {
       // Placeholders keep their own syntax, such as "number(maximumFractionDigits: 1)".
       const text = String(value).replace(/{{[^}]*}}/g, "{{}}");
       expect(text, `fr: ${key}`).not.toMatch(/[ \u00a0][:;!?]/);
@@ -205,7 +211,7 @@ describe("catalogs", () => {
   it.each(["fr", "de"] as const)(
     "translates every %s string that is not allowlisted",
     (language) => {
-      const english = new Map(leaves(en));
+      const english = new Map(leaves(CATALOGS.en));
       const same = leaves(CATALOGS[language])
         .filter(([key, value]) => english.get(key) === value)
         .map(([key]) => key);
@@ -223,7 +229,7 @@ describe("catalogs", () => {
   });
 
   it("puts a narrow no-break space inside French guillemets", () => {
-    for (const [key, value] of leaves(fr)) {
+    for (const [key, value] of leaves(CATALOGS.fr)) {
       const text = String(value);
       expect(text, `fr: ${key}`).not.toMatch(/«(?! )|(?<! )»/);
       expect(text, `fr: ${key}: use « » in French`).not.toMatch(/[“”„]/);
@@ -231,7 +237,7 @@ describe("catalogs", () => {
   });
 
   it("quotes German as „so“", () => {
-    for (const [key, value] of leaves(de)) {
+    for (const [key, value] of leaves(CATALOGS.de)) {
       const text = String(value);
       expect(text, `de: ${key}: use „…“ in German`).not.toMatch(/[”«»]/);
       const opening = text.match(/„/g)?.length ?? 0;

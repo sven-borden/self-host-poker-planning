@@ -263,12 +263,21 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
     reloadOnceSignedIn(reload);
   };
 
+  /** This person's account is going (#51): the page reloads as a new guest. */
+  const onAccountDeleted = () => {
+    if (stopped || signedIn) return;
+    signedIn = true;
+    store().setStatus("reconnecting");
+    reload();
+  };
+
   socket.on("connect", onConnect);
   socket.on("snapshot", onSnapshot);
   socket.on("kicked", onKicked);
   socket.on("locked", onLocked);
   socket.on("signedIn", onSignedIn);
   socket.on("deleted", onDeleted);
+  socket.on("accountDeleted", onAccountDeleted);
   listenForSignIn();
   if (others) {
     others.onmessage = (event: MessageEvent<unknown>) => {
@@ -318,6 +327,7 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
     socket.off("locked", onLocked);
     socket.off("signedIn", onSignedIn);
     socket.off("deleted", onDeleted);
+    socket.off("accountDeleted", onAccountDeleted);
     others?.close();
     settle("offline");
     socket.disconnect();
