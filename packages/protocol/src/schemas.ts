@@ -285,7 +285,7 @@ export const enterAckSchema = z.union([
   z.object({
     ok: z.literal(false),
     code: ackErrorCodeSchema,
-    /** With the three codes of a room's rule (#50): what the join screen asks for. */
+    /** With the four codes of a room's rule (#50): what the join screen asks for. */
     requirement: requirementSchema.optional(),
   }),
 ]);

@@ -1454,8 +1454,9 @@ are the same bytes. A grant from before the rule does not pass it. Someone who p
 still needs the password. So a refused person learns nothing of the password, and a person with
 the password but the wrong account is refused.
 
-**What a refused person learns.** Three codes: `sign_in_required` (a guest), `account_not_allowed`
-and `restriction_unavailable`, the last with a word of its own below. The refused `enter` carries
+**What a refused person learns.** Four codes: `sign_in_required` (a guest), `account_not_allowed`,
+`session_too_old` and `restriction_unavailable`, the last two with a word of their own below. The
+refused `enter` carries
 `requirement: { domains, organisation }`, so the join screen says what would pass: the domains, by
 name, and "your organisation" for a tenant, never a GUID. Domains are shown to anyone holding the
 link: that is what lets them choose the right account, and the panel's hint says so to the PO. A
@@ -1490,10 +1491,20 @@ needs neither, so a rule can always come off.
 **A person the rule refuses never becomes PO.** The PO passes every rule, so the role would be a
 way around it: anyone seated before a rule could claim it once the PO is away, then enter for ever
 and remove the rule. So `transferOwner` and `claimOwner` answer `owner_not_allowed` for someone
-it refuses, seated or not, and a claim on a sign-in too old for the rule is refused the same way.
+it refuses, seated or not, and for a sign-in too old for the rule, as the role is exempt from the
+age too: refused at the door after 31 days and handed the role, the same session would walk in as PO
+and take the rule off (PO's decision, from the review). A claim goes by the claimer's socket. A
+hand-over goes by the newest live `session.created_at` of the person named, from the server's row,
+and someone with no live session is refused as well; `candidateOf` reads that in the statement that
+reads their account, so a hand-over reads once, rule or no rule. `mayHoldRole` in `room-rule.ts` is
+the one test, and #113's hand-over at an account's deletion uses it.
 That costs a sliver of privacy, and it stays (PO's decision): a refused hand-over is one bit, about a
-person the PO names, for each rule tried: that they would not pass, not why. The PO will see the same
-when that person next reloads, and the rule's integrity is worth more.
+person the PO names, for each rule tried: that they would not pass, not why. It goes by the stored
+rule and stores nothing, so another rule still costs a commit and `RULE_CHANGE_LIMIT` caps it as
+before. The age adds what the count does not hold: someone the count passes and a hand-over refuses
+has an old sign-in or none. That is the same one code and one bit, the same for every rule, and only
+time moves it, so the limit does not cap it. The PO will see the same when that person next reloads,
+and the rule's integrity is worth more.
 
 **People already seated stay, and a reload is the end of that.** A rule applies to entering and
 joining from then on. Nobody is kicked by the rule itself: the socket stays and keeps playing, seat
@@ -1524,11 +1535,14 @@ on. Anyone removed hears the removal, and is refused at the door if they come ba
 **What a rule tells the PO, and what caps it.** A commit does not test one guess: a rule holds up to
 40 entries, each a guess about everyone seated, read back by the count and by a refused hand-over. A
 list of 20 domains and the bisection that follows found a person's employer in 2 commits in the
-review. So committing a rule is limited: **5 commits an hour per person** (`RULE_CHANGE_LIMIT`, on
-each instance), so 200 entries an hour and at most 5 answers about one person. A commit that stored
-nothing gives its place back, a resend is not counted twice, and taking a rule off is free, as it
-tests nothing and a rule can always come off. It cannot be made nothing: a short list of candidates
-needs few commits, and a PO who sets `gmail.com` and reads the count learns something about the two
+review. So committing a rule is capped: **5 commits an hour per account** (`RULE_CHANGE_LIMIT`, on
+each instance, in a fixed window), so 200 entries an hour and at most 5 answers about one person, for
+one account. It is a cap and no more: the role handed to a second account gets 5 more, and up to 10
+fit around a window's end. A run that stored nothing gives its place back, whether it was refused or
+the rule was already there and the version did not move; a resend is not counted twice, and taking a
+rule off is free, as it tests nothing and a rule can always come off. It cannot be made nothing: a
+short list of candidates needs few commits, and a PO who sets `gmail.com` and reads the count learns
+something about the two
 people in a room of two. The count reads the stored rule only (60 reads in 10 minutes), and there is
 no preview of a candidate rule (PO's decision): a preview would test guesses with no commit, which
 nobody hears. No address, provider or tenant ever comes back.
@@ -1552,7 +1566,8 @@ read at once.
 on each, on the state it loaded: nothing about a socket crosses Redis. The instance that commits
 tells the others the causes, and each reads its own visitors, or the tabs of whoever left, when the
 signal comes. A signal that is lost is met at the next version, which goes out `blind`, reading every
-visitor; until then that instance sends nothing, so nothing leaks. A seat refused at `enter` on one
+visitor; a visitor whose read began before it reads again, as that read may have found a grant the
+lost change dropped, and gets nothing until the fresh read ends. A seat refused at `enter` on one
 instance is a `leave` every instance hears.
 
 **Sign-in, checked against #48.** A refused guest has no seat, signs in from the screen, comes
@@ -1570,7 +1585,8 @@ A session slides, a day at a time, so someone who left a company would pass for 
 every 90 days. Only a new sign-in asks the provider whether the person is still there. So in a room
 with a rule, a session older than `RULE_SESSION_MAX_AGE_DAYS` (30) by `session.created_at`, which
 never moves, is refused with `session_too_old` at every door the rule has: `enter`, `join`, a claim,
-`/access`, the header, and a visitor read again. The screen says why, and the way is "Sign out", then
+`/access`, the header, and a visitor read again; a hand-over answers `owner_not_allowed`, above. The
+screen says why, and the way is "Sign out", then
 sign in. The seat stays: a new sign-in brings the person back to it, unlike a refusal of the account,
 which goes first and takes the seat. The PO is exempt, as from every rule. A socket already seated
 stays while it stays, like any seat; this is a door. The list hides these rooms until then, and says
@@ -1621,6 +1637,10 @@ for these refusals and would strand on the generic error, so it is told to reloa
 - A provider's word is read at sign-in, and `user.email` is not updated on a later one. So someone
   removed from a tenant or a domain passes for up to 30 days in a room with a rule, and a socket that
   stays seated for longer. A room is not a company's identity system.
+- A visitor with no seat keeps the feed past 30 days too: age is not in `gateOf`, so nothing reads
+  them again until a `join`, a new socket or a change of the rule.
+- A frame of a state from before a rule can reach someone after the rule landed, for as long as that
+  instance's read takes. It is never a frame of a state under the rule.
 - `outsiders` can be read as a test of a guess, and a refused hand-over as one bit, as said above.
 - A stranger who claims a room and sets a rule that shuts its keeper out is not answered: the keeper
   has no delete, as said above, and the room survives with the right waiting.

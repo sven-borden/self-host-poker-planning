@@ -893,7 +893,8 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   - **Who passes**: its PO, always. A seat does not pass: someone seated before the rule stays while
     the socket does, and at the next `enter` is refused and loses the seat, through `apply`. The
     rule kicks nobody; the PO's "Remove everyone who would not pass" does, one `kick` each. Nobody it
-    refuses becomes PO: `transferOwner` and `claimOwner` answer `owner_not_allowed`.
+    refuses becomes PO, nor anyone on a sign-in too old or none: `transferOwner` and `claimOwner`
+    answer `owner_not_allowed` (`mayHoldRole`).
   - **The one invariant**: `broadcast` is the only place a room's frames leave, and no socket with
     no seat and no PO role gets one unless it was judged against the gate in that frame's state
     (`admitted` keeps it; `gateOf` is the rule and whether there is a password). One that was not
@@ -983,7 +984,7 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   | Wrong passwords (database, every instance) | brute force | room | 50 in 10 min |
   | Password changes (`PUT`, `DELETE`) | hashing on demand | person (PO) | 30 in 10 min |
   | The rule's count (`GET /api/rooms/:code/restriction`) | reading seats' accounts, testing guesses | person (PO) | 60 in 10 min |
-  | Commits that set a rule (`updateSettings` with a rule) | testing guesses: up to 40 entries each, read back by the count and a refused hand-over | person, each instance | 5 an hour, so 200 entries; a commit that stored nothing does not count, and taking a rule off is free. No preview |
+  | Commits that set a rule (`updateSettings` with a rule) | testing guesses: up to 40 entries each, read back by the count and a refused hand-over | account, each instance | 5 an hour, so 200 entries; a commit that stored nothing does not count, and taking a rule off is free. No preview |
   | Removing those who would not pass (`POST .../remove-outsiders`) | a kick per seat | person (PO) | 10 in 10 min |
   | "My rooms" reads (`GET /api/my-rooms`) | a query per page | person | 60 a minute |
   | "My rooms" changes (rename, delete, leave) | broadcasts and deletes in a loop | person | 30 a minute |
