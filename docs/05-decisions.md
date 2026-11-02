@@ -422,8 +422,9 @@ new `vibrate` stops the last one, so the vote that ends a round, whose confirmat
 after the reveal's snapshot, gives way to the beats. The same guards as the vote's tick apply.
 On by default, on this device (`pp-haptics`), and only a saved "off" turns it off. The switch
 sits in the speaker's popover, with the device's other preferences, and shows only where the
-call exists, the main pointer is a finger, and motion is allowed: Chromium has `vibrate` on a
-desktop too, with no motor behind it, and under reduced motion the switch would do nothing.
+call exists, a touch screen is among the pointers (`any-pointer: coarse`, so a phone with a mouse
+paired keeps its switch), and motion is allowed: Chromium has `vibrate` on a desktop too, with no
+motor behind it, and under reduced motion the switch would do nothing.
 
 **Alternatives.** Caching `index.html` as the shell (fast and offline-capable, but it freezes the
 head tags, and a stale shell is what a real room cannot afford); a `vite-plugin-pwa` manifest

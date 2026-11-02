@@ -17,20 +17,34 @@ const read = () => {
 
 let current: boolean | null = null;
 const listeners = new Set<() => void>();
+let watching = false;
+
+/**
+ * Listens for another tab's change for the page's life, from the first use on: a tab whose
+ * popover was never opened must stop vibrating too when the switch is turned off elsewhere.
+ */
+function watch() {
+  if (watching || typeof window === "undefined") return;
+  watching = true;
+  window.addEventListener("storage", onStorage);
+}
 
 export const hapticsOn = () => {
+  watch();
   current ??= read();
   return current;
 };
 
 /** Reads the device's preference again, as another tab just changed it. */
 export function reloadHapticsOn() {
+  watch();
   current = read();
   for (const listener of listeners) listener();
 }
 
 /** Changes the preference and saves it. Storage errors are ignored: it lasts for this page. */
 export function setHapticsOn(on: boolean) {
+  watch();
   current = on;
   try {
     window.localStorage.setItem(HAPTICS_STORAGE_KEY, on ? "on" : "off");
@@ -46,11 +60,10 @@ function onStorage(event: StorageEvent) {
 }
 
 function subscribe(listener: () => void) {
-  if (listeners.size === 0) window.addEventListener("storage", onStorage);
+  watch();
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
-    if (listeners.size === 0) window.removeEventListener("storage", onStorage);
   };
 }
 
@@ -59,13 +72,15 @@ export const useHapticsOn = () => useSyncExternalStore(subscribe, hapticsOn, () 
 
 /**
  * True where the switch means something. Chromium has `navigator.vibrate` on a desktop too,
- * with no motor behind it, so a mouse rules it out; and under reduced motion nothing vibrates.
+ * with no motor behind it, so it needs a touch screen among the pointers (`any-pointer`: a
+ * phone with a mouse paired still vibrates, and its switch must not vanish); and under
+ * reduced motion nothing vibrates.
  */
 export function canVibrate(nav: Pick<Navigator, "vibrate"> | undefined = globalThis.navigator) {
   return (
     typeof nav?.vibrate === "function" &&
     typeof window.matchMedia === "function" &&
-    window.matchMedia("(pointer: coarse)").matches &&
+    window.matchMedia("(any-pointer: coarse)").matches &&
     !prefersReducedMotion()
   );
 }

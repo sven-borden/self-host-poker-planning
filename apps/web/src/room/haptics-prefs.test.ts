@@ -78,6 +78,14 @@ describe("canVibrate", () => {
     expect(canVibrate(undefined)).toBe(false);
   });
 
+  it("asks about any pointer, as a phone with a mouse paired still vibrates", () => {
+    const query = media((q) => q.includes("coarse"));
+    canVibrate(nav);
+    expect(query).toHaveBeenCalledWith("(any-pointer: coarse)");
+    media((q) => q === "(pointer: coarse)");
+    expect(canVibrate(nav)).toBe(false);
+  });
+
   it("is false with a mouse, where Chromium has the call and no motor", () => {
     media(() => false);
     expect(canVibrate(nav)).toBe(false);

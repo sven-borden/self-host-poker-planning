@@ -95,4 +95,21 @@ describe("the switch", () => {
     expect(revealTick({ vibrate })).toBe(false);
     expect(vibrate).not.toHaveBeenCalled();
   });
+
+  it("follows another tab that turned it off, with no popover ever opened", () => {
+    reducedMotion(false);
+    // Long after any earlier reveal's beats, which would hold a vote's tick back.
+    vi.spyOn(performance, "now").mockReturnValue(1_000_000);
+    const vibrate = vi.fn(() => true);
+    expect(voteTick({ vibrate })).toBe(true);
+    // What another tab does: the saved value changes, and this page hears a storage event.
+    localStorage.setItem(HAPTICS_STORAGE_KEY, "off");
+    window.dispatchEvent(new StorageEvent("storage", { key: HAPTICS_STORAGE_KEY }));
+    expect(voteTick({ vibrate })).toBe(false);
+    expect(revealTick({ vibrate })).toBe(false);
+    expect(vibrate).toHaveBeenCalledOnce();
+    localStorage.setItem(HAPTICS_STORAGE_KEY, "on");
+    window.dispatchEvent(new StorageEvent("storage", { key: HAPTICS_STORAGE_KEY }));
+    expect(voteTick({ vibrate })).toBe(true);
+  });
 });
