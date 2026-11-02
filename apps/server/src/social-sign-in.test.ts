@@ -36,9 +36,9 @@ const redirect = (location: string, status = 302) =>
 describe("socialRoutes", () => {
   it("adds nothing without keys, and each provider's callback by its keys", () => {
     expect(socialRoutes(testConfig())).toEqual([]);
-    expect(socialRoutes(testConfig({ MICROSOFT_CLIENT_ID: "a", MICROSOFT_CLIENT_SECRET: "b" }))).toEqual(
-      ["POST /sign-in/social", "GET /callback/microsoft"],
-    );
+    expect(
+      socialRoutes(testConfig({ MICROSOFT_CLIENT_ID: "a", MICROSOFT_CLIENT_SECRET: "b" })),
+    ).toEqual(["POST /sign-in/social", "GET /callback/microsoft"]);
     expect(socialRoutes(config)).toEqual([
       "POST /sign-in/social",
       "GET /callback/google",
@@ -240,9 +240,7 @@ describe("the provider addresses", () => {
       codeVerifier: "v",
       redirectURI: `${BASE}/x`,
     });
-    expect(url?.pathname).toBe(
-      "/11111111-2222-3333-4444-555555555555/oauth2/v2.0/authorize",
-    );
+    expect(url?.pathname).toBe("/11111111-2222-3333-4444-555555555555/oauth2/v2.0/authorize");
   });
 
   it("reads no variable that names an address beyond the ones it always had", () => {

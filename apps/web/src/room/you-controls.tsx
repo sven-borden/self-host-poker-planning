@@ -21,6 +21,7 @@ import { AvatarPicker } from "../avatars/avatar-picker.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { useT } from "../i18n/hooks.ts";
+import { SignInRow } from "../identity/sign-in-row.tsx";
 import { type CommandResult, commandSender, sendCommand } from "../realtime/room-connection.ts";
 import { Avatar, type AvatarLook, avatarColour } from "../table/avatar.tsx";
 import { shownName } from "../table/seat.tsx";
@@ -328,6 +329,7 @@ export function YouControls({
           {failure.message}
         </p>
       )}
+      <SignInRow className="mt-4 border-t border-line pt-4" />
     </section>
   );
 }

@@ -14,6 +14,7 @@ import { errorMessage } from "../i18n/errors.ts";
 import { useT } from "../i18n/hooks.ts";
 import type { MessageKey, TFunction } from "../i18n/i18n.ts";
 import { COOKIES_BLOCKED } from "../identity/identity.ts";
+import { SignInRow } from "../identity/sign-in-row.tsx";
 import { cn } from "../lib/utils.ts";
 import { createRoom } from "./api.ts";
 
@@ -175,6 +176,7 @@ export function CreateRoomCard({ className }: { className?: string }) {
           {busy ? t("createRoom.creating") : t("createRoom.submit")}
         </Button>
       </form>
+      <SignInRow className="mt-6 border-t border-line pt-5" />
     </section>
   );
 }

@@ -522,7 +522,11 @@ describe("signing in", () => {
   });
 
   it("sets a state cookie that is __Host- on https, and needs it on the way back", async () => {
-    const https = testConfig({ DATABASE_URL: t.url, BASE_URL: "https://poker.example.com", ...KEYS });
+    const https = testConfig({
+      DATABASE_URL: t.url,
+      BASE_URL: "https://poker.example.com",
+      ...KEYS,
+    });
     const auth = createAuth(https, setup.database.db, logs.logger);
     const response = await auth.handler(
       new Request("https://poker.example.com/api/auth/sign-in/social", {

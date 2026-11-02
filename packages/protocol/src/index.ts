@@ -71,7 +71,6 @@ export {
   type VotingRoundView,
   votingRoundViewSchema,
 } from "./schemas.ts";
-export { PROTOCOL_VERSION } from "./version.ts";
 export {
   isSignInErrorCode,
   SIGN_IN_ERROR_CODES,
@@ -81,3 +80,4 @@ export {
   type SignInErrorCode,
   type SignInProvider,
 } from "./sign-in.ts";
+export { PROTOCOL_VERSION } from "./version.ts";
