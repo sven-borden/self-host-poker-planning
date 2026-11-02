@@ -1263,6 +1263,17 @@ describe("what an account proves", () => {
     await browser.sit(room.code, "Books");
   });
 
+  it("a tenant only from a Microsoft account, whatever another account's row holds", async () => {
+    const { id: po } = await signedInPo();
+    const room = await roomOf(po, TENANT_RULE);
+    const browser = new Browser();
+    const id = await browser.signIn("google", person());
+    await admin.query("update account set tenant_id = $1 where user_id = $2", [TENANT, id]);
+    expect(await browser.socket().enter(room.code)).toEqual(
+      refused("account_not_allowed", [], true),
+    );
+  });
+
   it("stores Google's `hd` beside the account, and no rule reads it", async () => {
     const { id: po } = await signedInPo();
     const room = await roomOf(po, DOMAIN_RULE);
@@ -1402,6 +1413,24 @@ describe("removing everyone who would not pass", () => {
     expect(Object.keys(state.participants).sort()).toEqual([po, colleague].sort());
     expect(Object.hasOwn(state.participants, guest)).toBe(false);
     expect((await poBrowser.panel(room.code)).body.outsiders).toBe(0);
+  });
+
+  it("spares someone a rule taken off while the removal was on its way", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const outsider = new Browser();
+    const guest = await outsider.guest();
+    await outsider.sit(room.code, "An outsider");
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    const hold = holdLoad(room.code);
+    const removing = poBrowser.post(`/api/rooms/${room.code}/restriction/remove-outsiders`, {});
+    await hold.reading;
+    await must(owner.cmd("updateSettings", { patch: { restriction: null } }));
+    hold.release();
+    expect(await (await removing).json()).toEqual({ removed: 0 });
+    hold.restore();
+    expect((await loaded(room.code)).state.participants[guest]?.name).toBe("An outsider");
   });
 
   it("is the PO's, from the page's origin, with nobody to remove in a room with no rule", async () => {
