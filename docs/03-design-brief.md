@@ -1154,6 +1154,59 @@ then French uses vous and German uses Sie.
   and typographic apostrophes (’); guillemets as « x » with U+202F inside. German quotes
   as „x“. Unit tests check these rules and reject straight quotes and "..." everywhere.
 
+## My rooms
+
+A list a person scans to get back to the right room, not a dashboard (#49, ADR-027). Only an
+account has one.
+
+- **Where.** "My rooms" stands beside "Sign out" in the signed-in row, so on the landing page, on
+  the join form and in the "You" panel, never in the top bar, which is full at 320 px. The page is
+  `/rooms`, a lazy route: nothing of it loads for anyone who does not go there.
+- **The page.** The title, then two plain lines of `--ink-2`: who is on the list ("The rooms you
+  own, and the rooms where you hold a seat now. Leave a room or get removed from it, and it goes
+  from this list."), and what stays ("Rooms you own stay until you delete them. Any other room on
+  this list can go after 90 days without activity."), with the server's number.
+- **A row.** The room's name in semibold as a link to `/r/<code>`, in `<bdi>`, breaking anywhere,
+  so a long name never widens the page; a room with no name reads "Room <code>", as the room's page
+  does. Under it, in `--ink-2`: whose it is, how long ago it was active, the date in the title, and
+  the rounds started. Rows are parted by `--line`, with no card and no fill. The owner has "Rename"
+  and "Delete"; someone with a seat has "Leave this room". All are outline buttons at 44 px, named
+  with the room for a screen reader. On a phone they stand under the text. Nothing says who else
+  is in the room.
+- **A role taken over (ADR-027).** Someone who claimed the PO role, or was passed it by someone who
+  did, reads "You are the product owner", has "Rename" and "Leave this room", and a plain line says
+  why there is no "Delete": the role runs the room, and deleting it stays with the person it belongs
+  to. That person's row reads "Your room, with another product owner", says how to get the role
+  back, and has "Leave this room" with a seat, or only the link without one. Their room stays on
+  the list after they leave it, and the dialog says so. The missing button is the truth, not a
+  disabled one: there is nothing to press until the role is back.
+- **Reopen** is that link, and a room with a password asks for it as ever, unless the person
+  holds a grant.
+- **Rename** is a dialog with the name field and "Save". What the server refuses is said under
+  the field, and the dialog stays.
+- **Delete** asks first, in a dialog titled with the room's name: what goes (the rounds, the
+  history, the queue, who may enter), that it cannot be undone, and that anyone in the room right
+  now sees at once that it is gone. Only this button is `--bad`. After it, the row goes and a line
+  says "Room deleted.".
+- **Focus after a dialog.** Back to the button that opened it, when that is still there; otherwise
+  to the page's title, as after a delete or a list read again, never to `<body>`.
+- **Leave** asks in the same dialog, with a plain button: the seat goes, and the room's link lets
+  the person join again.
+- **In the room.** A rename reaches everyone at once: the heading changes, and a screen reader
+  hears the new name. A deletion replaces the room with the page of a missing room, with no error
+  in between. That page names it, as a third thing that may have happened, after a mistyped link
+  and a long idle time, as the server keeps no trace of which.
+- **States.** Loading says so in a line. No rooms: the empty table, "No rooms yet", and a link to
+  create one. A failed load says why, with "Try again" and the way home. Someone signed out reads
+  what the page is for, with the sign-in buttons, and comes back here; a session that ended while
+  the page was open is read again first, so nobody sees "Sign in" beside "Sign out". An install
+  without keys has no such page: `/rooms` is the page of an unknown address, and nothing leads to it. Rooms a guest
+  still has on the way to the account: a line that says so, with "Try again".
+- **A list out of date.** A room someone else deleted, or a PO role lost since the page loaded: a
+  line says so and the list loads again, instead of an error in a dialog that can do nothing. That
+  line is a status region there from the page's start, as a line added with its words in it is not
+  announced, and the title stays through the new load.
+
 ## Landing, missing rooms and errors
 
 - **Landing page** (`/`): one screen that says what the tool is and how a round goes:

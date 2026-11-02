@@ -250,6 +250,11 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
     if (stopped) return;
     enter();
   };
+  /** The room's owner deleted it (#49): the same answer as a code that names no room. */
+  const onDeleted = () => {
+    if (stopped || signedIn) return;
+    stop("room_not_found");
+  };
   /** This browser's guest signed in, in another tab (#48). */
   const onSignedIn = () => {
     if (stopped || signedIn) return;
@@ -263,6 +268,7 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
   socket.on("kicked", onKicked);
   socket.on("locked", onLocked);
   socket.on("signedIn", onSignedIn);
+  socket.on("deleted", onDeleted);
   listenForSignIn();
   if (others) {
     others.onmessage = (event: MessageEvent<unknown>) => {
@@ -311,6 +317,7 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
     socket.off("kicked", onKicked);
     socket.off("locked", onLocked);
     socket.off("signedIn", onSignedIn);
+    socket.off("deleted", onDeleted);
     others?.close();
     settle("offline");
     socket.disconnect();

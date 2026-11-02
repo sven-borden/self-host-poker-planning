@@ -144,7 +144,10 @@ describe("POST /api/rooms", () => {
     expect(code).toMatch(ROOM_CODE_PATTERN);
 
     const stored = await database.store.loadRoom(code);
-    expect(stored?.state).toEqual(createRoom({ ownerId: me.id }));
+    expect(stored?.state).toEqual({
+      ...createRoom({ ownerId: me.id }),
+      name: "Sprint 42 refinement",
+    });
     expect(stored?.state.ownerId).toBe(me.id);
     expect(stored?.state.settings.deck).toEqual({ kind: "preset", id: "fib" });
     expect(await roomRow(code)).toEqual({

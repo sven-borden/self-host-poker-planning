@@ -52,6 +52,7 @@ describe("page views (#40)", () => {
   it("name a page after its route, never its code", () => {
     expect(viewedPath("/")).toBe("/");
     expect(viewedPath("/r/$code")).toBe("/r/:code");
+    expect(viewedPath("/rooms")).toBe("/rooms");
     expect(viewedPath("/dev/table")).toBe("/dev/table");
     expect(viewedPath("__root__")).toBe("/not-found");
     expect(viewedPath(undefined)).toBe("/not-found");

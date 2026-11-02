@@ -12,10 +12,15 @@ export const PROTOCOL_ERROR_CODES = [
   "protocol_mismatch",
   "room_not_found",
   /**
-   * `POST /api/rooms`: the room name is blank, too long or holds hidden characters. HTTP
-   * only, never in a socket ack, so adding it changed no socket message.
+   * `POST /api/rooms` and renaming a room (#49): the room name is blank, too long or holds
+   * hidden characters. HTTP only, never in a socket ack, so adding it changed no socket message.
    */
   "bad_room_name",
+  /**
+   * `DELETE /api/my-rooms/:id` (#49, ADR-027): this person holds the PO role, but the right to
+   * delete the room stayed with someone else. HTTP only, so adding it changed no socket message.
+   */
+  "not_keeper",
   /**
    * The room has a password and this person may not enter without it (#31): not in the
    * room, not its PO, and no access granted to them by a correct password.

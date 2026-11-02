@@ -24,6 +24,10 @@
  * socket. Nor is a new client event with its own ack, such as `history` (#33): no message
  * an older peer sends or reads changes, and a client and its server ship together. Nor
  * is the `avatar` of `join`, the `setAvatar` command or their `avatarChanged` cause (#42):
- * a page reads only the causes it knows, and an older one never sends them.
+ * a page reads only the causes it knows, and an older one never sends them. Nor are the room
+ * view's `name`, the `roomRenamed` cause and the `deleted` event (#49): an older page takes a
+ * rename's snapshot as any other, as it ignores a cause it does not know and the name it does not
+ * read, and keeps showing the old name until a reload; it ignores `deleted` and shows the
+ * connection lost, and a reload shows the room gone. `keeperId` (#49) is in no message at all.
  */
 export const PROTOCOL_VERSION = 6;

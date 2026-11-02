@@ -57,7 +57,9 @@ export type Command =
   /** A guest signed in: their place in this room becomes the account's (#48, ADR-025). */
   | { type: "moveGuest"; guest: UserId; account: UserId }
   /** The PO's last socket left during a countdown, or the room's: it ends, and nothing starts. */
-  | { type: "endCountdown" };
+  | { type: "endCountdown" }
+  /** The PO renames the room, from "My rooms" (#49): a room's name is not a socket's business. */
+  | { type: "renameRoom"; name: string };
 
 export type CommandType = Command["type"];
 
@@ -66,10 +68,16 @@ export type CommandType = Command["type"];
  * and the grace period passed, or when they come back; `password` (#31), when the PO
  * sets, changes or removes the room's password over HTTP (the password itself never
  * enters a command); `moveGuest` (#48), when a guest signs in; `endCountdown` (#52), when the
- * PO or the whole room left during a countdown. The wire protocol has no schema for them, so a
- * client that sends one gets `bad_payload` before `apply` runs.
+ * PO or the whole room left during a countdown; `renameRoom` (#49), when the PO renames the room
+ * over HTTP. The wire protocol has no schema for them, so a client that sends one gets
+ * `bad_payload` before `apply` runs.
  */
-export type ServerCommandType = "presence" | "password" | "moveGuest" | "endCountdown";
+export type ServerCommandType =
+  | "presence"
+  | "password"
+  | "moveGuest"
+  | "endCountdown"
+  | "renameRoom";
 /** What a client may send: every command except the server's own. */
 export type ClientCommand = Exclude<Command, { type: ServerCommandType }>;
 export type ClientCommandType = ClientCommand["type"];
@@ -113,7 +121,9 @@ export type Cause =
   /** The next item starts by itself at the round's `advanceAt` (#52). */
   | { type: "advanceArmed" }
   /** It will not: the PO stayed or left, or the queue or the setting no longer allows it. */
-  | { type: "advanceHeld" };
+  | { type: "advanceHeld" }
+  /** The room has a new name (#49): the snapshot's `room.name`. */
+  | { type: "roomRenamed" };
 
 /**
  * What a `password` command did (#31): a first password, a new one in place of the old,
@@ -155,6 +165,7 @@ export type ErrorCode =
   | "bad_restriction"
   | "owner_not_allowed"
   | RestrictionRefusal
+  | "bad_room_name"
   | CustomDeckErrorCode;
 
 /**

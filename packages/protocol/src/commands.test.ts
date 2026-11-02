@@ -196,6 +196,14 @@ describe("wire commands", () => {
       "the server's own move of a guest (#48)",
       { id: "1", type: "moveGuest", payload: { guest: "a", account: "b" } },
     ],
+    [
+      "the server's rename of a room (#49)",
+      { id: "1", type: "renameRoom", payload: { name: "x" } },
+    ],
+    [
+      "a claim that names a keeper (#49)",
+      { id: "1", type: "claimOwner", payload: { keeperId: "a" } },
+    ],
     ["a prototype key as type", { id: "1", type: "__proto__" }],
     ["an inherited key as type", { id: "1", type: "toString" }],
     ["a payload that is not an object", { id: "1", type: "reveal", payload: 5 }],

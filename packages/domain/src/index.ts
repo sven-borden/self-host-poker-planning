@@ -53,6 +53,7 @@ export {
   AUTO_ADVANCE_MS,
   createRoom,
   DEFAULT_SETTINGS,
+  keeperOf,
   MAX_ITEM_TITLE_BYTES,
   MAX_LINK_LENGTH,
   MAX_MEMBERS,

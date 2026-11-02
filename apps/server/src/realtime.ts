@@ -83,6 +83,8 @@ export interface InterServerEvents {
   occupied(answer: (rooms: string[]) => void): void;
   /** A guest signed in (#48): their sockets, wherever they are, hear `signedIn` and close. */
   guestLinked(guest: unknown, account: unknown): void;
+  /** A room (by id) was deleted (#49): its sockets, wherever they are, hear it and close. */
+  roomDeleted(room: unknown): void;
 }
 
 export type RealtimeServer = Server<

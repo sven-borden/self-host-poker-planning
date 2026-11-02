@@ -65,6 +65,7 @@ describe("socialRoutes", () => {
 describe("isReturnPath", () => {
   it("takes the landing page and a room's path, spelled exactly", () => {
     expect(isReturnPath("/")).toBe(true);
+    expect(isReturnPath("/rooms")).toBe(true);
     expect(isReturnPath(`/r/${CODE}`)).toBe(true);
     for (const path of [
       "",

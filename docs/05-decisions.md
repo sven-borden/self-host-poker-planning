@@ -165,7 +165,8 @@ milestone per wave. **Alternatives.** A single package.
 
 **Decision.** Rooms, their history and orphan guest users are deleted after 90 days
 without activity (`ROOM_TTL_DAYS`). Rooms owned by signed-in users stay until deleted
-(W5). No analytics or tracking by default; Sentry and Umami are opt-in.
+(W5; since ADR-027, "owned" means the room's keeper, so a claim of the PO role moves nothing
+here). No analytics or tracking by default; Sentry and Umami are opt-in.
 
 ## ADR-015: Paid branding decided in W7
 
@@ -550,7 +551,7 @@ refuses it; a popup would need `Cross-Origin-Opener-Policy` loosened. Navigating
 directive at all, so neither the policy nor COOP changed, and `e2e/fixtures.ts` holds that over
 the whole flow.
 
-**A room's code never travels.** `returnTo` is `/` or `/r/<code>` and nothing else, checked by
+**A room's code never travels.** `returnTo` is `/`, `/r/<code>` or, since #49, `/rooms`, and nothing else, checked by
 the domain's own pattern, so no spelling leaves the site. Better Auth keeps it in the
 `verification` row with the PKCE verifier (`storeStateStrategy: "database"`, set explicitly). The
 provider gets a random `state`, and `redirect_uri` is the fixed callback. This was read in
@@ -830,8 +831,9 @@ roles, votes, grants and named history. Better Auth makes a new user and calls `
 and `guest-link.ts` does the rest. The guest's row goes only after a complete move. This is what
 makes production keys safe to set (ADR-023).
 
-**What moves, keyed by the user id, the whole list.** In `room.live`: `ownerId`, the key of
-`participants` (name, role, avatar, join time, presence), the key of `round.votes` (a seated
+**What moves, keyed by the user id, the whole list.** In `room.live`: `ownerId`, `keeperId`
+(ADR-027, on its own: a guest can hold the right to delete a room with no role and no seat, so
+`roomsOf` finds those rooms through `room_keeper_apart_idx`), the key of `participants` (name, role, avatar, join time, presence), the key of `round.votes` (a seated
 voter's, or a departed voter's kept card and name). `room.owner_user_id`, by the commit.
 `room_access.user_id`. `round_history.votes` for named rounds, each `who`. `user.avatar` and
 `user.name`, only where the account has none. Ends with the guest: `session.user_id`, and the
@@ -966,6 +968,9 @@ Cases the rules did not name:
 - **A guest with a card and no seat** (left after a named reveal): the card, with its kept name,
   becomes the account's, so the next history row names the account.
 - **A room the guest owns but left:** `ownerId` moves, and no seat appears.
+- **A room the guest keeps while someone else holds the role (ADR-027):** `keeperId` moves alone,
+  and the account's list shows the room as theirs. A guest who took the role by claim moves the
+  role and no right.
 - **A role claimed while the person was at the provider.** After 120 s away anyone can claim the
   PO role, and then the guest holds no role to move. A sign-in through MFA can take that long.
 - **Two sign-ins of one guest at once:** the first account wins the link. The second finds no
@@ -1197,6 +1202,191 @@ got. Re-encrypting on use alone: a row nobody reads would keep the old key alive
 the same values. A rotation across a real rolling deploy of several instances: the races are
 injected between statements of one process, with a second store for the instance on the old
 key. No key has been set on Sven's instance, and nothing uses the vault until #54.
+
+## ADR-027: My rooms: an account's list, a name through `apply`, and a delete every instance hears (2026-11-02, #49)
+
+**Decision.** A signed-in person has a list of their rooms at `/rooms`, over `/api/my-rooms`. It
+shows the rooms they own and the rooms where they hold a seat now; they can reopen any, rename a room
+whose PO they are, delete one that is theirs (see *The keeper*), and leave the others. A guest has no list: the server refuses a guest on
+every route, not only the page. On an install without provider keys nothing of this shows, and
+`/rooms` is the page of an unknown address.
+
+**What "joined" means.** A seat now, in `live.participants`, or the room being theirs (the PO who
+is also the keeper, or the keeper). Someone who left or was removed does not see the room, and the
+page says so in those words. So a PO by claim who gave up the seat is off the list as well: there
+is nothing left to leave, and the role is free for anyone in the room. A record of every room a
+person ever sat in would need a table, and would keep a link between a person and a room that
+nobody asked to keep. The voter who left with a card on the table is the trap: `ROOM_PEOPLE` still
+names them, so a row the index finds is checked again against `participants`.
+
+**The query.** One person's rows come out of a `BitmapOr` of `room_owner_user_id_idx`,
+`room_people_idx` and `room_keeper_apart_idx`, inside `with mine as materialized (...)`, cursor
+included, and are then sorted and limited to 100 by `(last_active_at, id)`. The CTE is the point.
+Written plainly, a person with 2,000 or more rooms older than most others got an `Index Scan
+Backward` on `room_last_active_at_idx`: the `limit` made walking everyone's rooms look cheap, it
+threw away 105,000 rows, took 150 to 170 ms and grew with the instance. There is an index for the
+order, then, and the query must keep away from it. On about 118,000 rooms of 16 seats each, the
+filter and sort take 0.6 ms and the request 6 ms for a person with 100 rooms, 13 ms and 17 ms for
+5,000, the same for 5,000 rooms older than everyone's as for the 5,000 newest. So a list costs in
+proportion to a person's own rooms, and never to the instance's. A test runs the real statement
+(`myRoomsQuery`) on rooms older than 20,000 others, and holds the median request under the 300 ms
+of the issue. One odd `round.number` reads as 0 and fails no list.
+
+**Rounds are a number the room already holds.** `live.round.number` counts rounds started, the one
+on the table included; a restart keeps its number. A count of `round_history` would read a room's
+whole history per row, and a stored count would need a backfill on a live database. It differs from
+the history panel by the round on the table and by rounds abandoned before a reveal, which is what
+"rounds" means to someone scanning a list.
+
+**A room's name goes through `apply`.** It was a column no command touched, and the page read it once,
+so a rename would have stayed invisible in a live room. `renameRoom` is a server command: no socket
+can send it, the PO alone may, from outside the room too, and `apply` holds the name to
+`cleanRoomName`. Like the queue, the name is part of the state `apply` sees and has a column of its
+own: `loadRoom` puts it in, `commitRoom` writes it, and `live` never holds it, so a header still
+reads no state, and no migration or backfill was needed. An instance still on the old code in a
+deploy reads no name and writes none. A snapshot carries `room.name`, optional, and a rename has its
+cause and its line for a screen reader. Protocol version stays 5: an older page takes that snapshot as
+any other, ignores the cause it does not know and the name it does not read, and shows the old name
+until a reload.
+
+**The keeper: claiming the role carries the room's use, not the right to destroy it (PO's decision).**
+A claim exists so that a meeting can go on when the PO has gone. Anyone with the link can reach it, at
+once from an owner with no seat, after 120 s from one who is away, and a room emptied by closing tabs
+is there in about 3 minutes. It must not hand out something that cannot be undone. A review ran
+it: a stranger joined by the code, claimed, deleted the room and its history, and the real owner's
+list came back empty with no trace. So `live.keeperId` says who holds the right, and what the role and
+the right do:
+
+| What happens | The PO role | The right to delete (`keeperId`) |
+|---|---|---|
+| A room is created | the creator | the creator |
+| The keeper hands the role over | moves | moves with it: it is the keeper's own act |
+| Anyone else hands the role over | moves | stays: nobody can pass on what they do not hold |
+| Someone claims the role | moves | stays |
+| The keeper gets the role back, by a claim or from whoever holds it | moves | stays, and they can delete again |
+| A guest signs in (`moveGuest`, ADR-025) | moves if the guest held it | moves if the guest held it, on its own |
+| Kick, leave, rename | stays | stays |
+
+A delete needs the person to be the PO **and** the keeper, in the statement. Rename stays with the
+PO: it can be undone, and a meeting that goes on may want it. The field is server-held. No command
+sets it, the strict wire schemas refuse it, `updateSettings` cannot reach it, and `toSnapshot` picks
+its fields, so no frame carries it, which a test asserts; the list says `keeper` to that person alone.
+The list and the page tell the truth: a role that came by a claim or from a claimer shows "You are
+the product owner" with rename and leave and the reason in plain words, and no delete button; the
+keeper's row says the room is theirs and how to get the role back. The server refuses all the same
+(`not_keeper`, 403, an HTTP-only code). A row's `owned`, `keeper` and `seated` speak of the asker
+alone.
+
+*A room from before the field* has no `keeperId`, and `keeperOf` reads its PO. Every claim writes the
+keeper down before it moves the role, so after the deploy no claim can be read as a right. What
+this cannot see is a claim made **before** the deploy: that PO reads as the keeper. Refusing instead
+until a hand-over was the alternative, and it is worse. A hand-over needs a second person present, so
+someone alone with their own room could never delete it, and production's rooms have owners who are
+guests: the rooms such a guest brings along by signing in later, months on, would be undeletable,
+exempt from the purge, for ever. The fallback is exploitable only by a claim already made while the
+delete did not exist, on a code the claimer already holds; nothing done after the deploy can use it.
+For a guest owner the fallback changes nothing but this: a claim on that room writes the guest down,
+and the guest's sign-in moves the right. In a rolling deploy an old instance can still run a claim
+without writing it down, for the seconds both run; that room reads like a pre-deploy claim.
+
+*`room_keeper_apart_idx`* (`0009`) is a partial btree on `live ->> 'keeperId'`, only for rooms whose
+keeper is not their PO. A keeper with no seat is in no other index, and the list and `roomsOf` must
+find that person: without it, the reviewer's stranger could no longer delete the room, yet the real
+owner's list would still come back empty. Nearly no row is in it, so the migration builds next to nothing, in the moment a table scan
+takes, and a commit pays nothing. The alternative, adding the keeper to `ROOM_PEOPLE`, rebuilds a big
+GIN index and puts a read of it on every vote.
+
+*What the keeper rule does not do.* Getting the role back needs the PO to be away or gone, by the
+same rule as any claim, and a seat, which takes the room's password like anyone's. So a PO by claim
+who sets a password and kicks the keeper shuts the keeper out until someone gives them the password:
+the room survives and stays on the keeper's list, and nobody can delete it. Letting a keeper past
+the password touches the enter path and the commit's grant check, for a case that destroys nothing,
+so it stays out of #49. That is the price of the role being the room's use.
+
+**A delete is one statement, and every instance hears it.** `delete from room where id = ? and
+owner_user_id = ? and coalesce(live ->> 'keeperId', owner_user_id) = ?`, judged on the row's latest
+version. So the role and the right are read fresh without a lock: a claim or a hand-over that commits
+first refuses the delete, and any commit after it loses its compare-and-set,
+loads nothing and answers `room_not_found`. The cascades take `round_history` and `room_access` in
+that statement, and a test lists every foreign key to `room`, so a later table cannot be forgotten.
+Then `roomDeleted` tells every instance, and each closes the room's sockets after `deleted`, those
+still entering included. The last close ends the room's timers (`forgetIfEmpty`). If Redis loses
+the word, the next run on the room finds nothing and does the same. A room with a password loses its
+grants with it. Not removed, on purpose: rate-limit counters, which run out; and a sign-in's return
+path in `verification`, which runs out in ten minutes and then finds no room.
+
+**A code stays out of addresses.** These routes name a room by its id, which logs already use. The
+list gives codes to people already in those rooms, in the body of a `no-store` answer. Umami sees
+`/rooms`, a fixed route.
+
+**An id says nothing to a stranger.** Someone with no seat in a room and no right to it hears 404
+`room_not_found` on all three routes, as for an unknown id, and nothing reaches `apply`: `apply`
+resolves a passed deadline even for a command it refuses, so a refused rename could reveal a round
+and move `last_active_at`. Someone who knows the room, by a seat or a right, hears why (`not_owner`,
+`not_keeper`, `not_participant`), with no command run either: their page may be out of date, and
+"no longer there" would be false. `apply` stays the fresh judge of whoever passes. The second of two
+deletes at once reads the row again and hears 404, not that the room is someone else's.
+
+**Settle first, within a second.** A guest's move can still be pending (ADR-025), and someone who
+enters no room would wait for the next purge. So a list runs `settle` first: one read by index when
+nothing is pending, at most a second otherwise. The move goes on; a list that could not wait says
+`moving`, and the page offers to look again. A failing move never fails a list.
+
+**Retention.** ADR-014's "owned by signed-in users" now reads the keeper, not the PO:
+`coalesce(live ->> 'keeperId', owner_user_id)`, in a statement that reads `live` only for rows
+already past the cutoff. Read by the PO it failed both ways. A guest's claim would have ended a
+person's exemption with no act by that person, and the room would have gone after `ROOM_TTL_DAYS`.
+An account's claim would have made a guest's room stay for ever, with nobody able to delete it. So a
+claim moves no exemption: a person's room stays when a guest claims the role, and a guest's room
+goes though an account claimed it, even from that account's list, so the page says any other room
+"can go". Hand-overs still count, as they are the keeper's own act: a keeper who hands the role to a
+guest ends the exemption, and one who hands it to an account gives it. A room moved from a guest is
+the account's once its commit lands, and is held by the link until then. A room the person only
+joined follows its keeper.
+
+An abandoned room whose role was claimed: nobody but the keeper can delete it. A keeper with an
+account sees it on the list, comes back, takes the free role and deletes it, or it stays, as that
+person's room does. A guest keeper, or one gone: it follows the 90 days. A guest keeper's row can be
+purged while the room lives on (`DELETE_GUESTS` reads the owner), since a guest with no session can
+never come back; `keeperId` then names nobody, which reads as no exemption.
+
+**Leaving** is the `leave` command as that person, through the room's queue, so the room hears it as
+ever. It was cheap: `commandAs` is the room sync's own `execute`. The grant stays, as for a `leave`
+over a socket.
+
+**Considered and dropped.**
+- *A `room_member` table, to order and page by index:* it would write on every join and leave, for a
+  list of a few dozen rows.
+- *A rename beside `apply`, writing the column and sending a signal:* a second write path, and the
+  name could change under a command in flight.
+- *Delete through the runner, as a step that ends the room:* the statement is already atomic, and the
+  runner would grow a case for one caller. Its compare-and-set gives the same answer to everyone else.
+- *Disconnecting without `deleted`:* a socket the server closes does not reconnect by itself, so the
+  page would show the connection lost instead of the room gone.
+- *A new `account_required` code:* the page knows who is a guest, and `not_allowed` says enough to a
+  client that got here by hand.
+- *Showing whether a room has a password:* the list has no need of it, and says nothing it need not.
+- *Refusing delete to a role taken by claim by reading how it came:* a claim leaves no trace but a
+  cause in a snapshot, and a claimer's hand-over would launder it.
+- *A column for the keeper, beside `owner_user_id`:* a commit and a migration more, and a backfill, for
+  what `live` and a partial index already give.
+- *A backfill of `keeperId`:* it rewrites every room for what the fallback gives, and would only
+  narrow a window of seconds. It cannot tell a claimed PO from a real one either.
+- *`room_not_found` for everyone but the PO:* false for a person with a seat whose page is out of
+  date, who would read "no longer there" about a room they are in.
+
+**For #51.** `deleteOwned` and `roomDeleted` are what deleting an owned room needs. An account that goes
+leaves its seats in rooms it does not own: the list reads `live`, and `round.votes` can name it too.
+It also has rooms it keeps without being their PO, and rooms it is the PO of without keeping them, and
+`deleteOwned` refuses both. Find the first through `room_keeper_apart_idx` (`roomsOf` spells the
+query). They need a decision of their own, as the person is leaving: delete them by `id` alone with
+`roomDeleted`, since the right is that person's to use, even with someone else in the role, or set
+`keeperId` to the PO so the room lives on. Do not leave it to name a deleted account: the purge would
+take a room people still use once idle, and nobody could delete it before. In the second kind the
+room is someone else's: run the account's seat out with a `leave` and hand the role on or leave it
+free for a claim. A guest's sign-in never needs this: `moveGuest` moves both.
+
+**Not tested.** Real Google and Microsoft sign-ins, as for #47.
 
 ## ADR-028: A room limited to accounts goes by what a provider proves (2026-11-02, #50)
 

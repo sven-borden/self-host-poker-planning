@@ -428,6 +428,47 @@ describe.skipIf(!REDIS_URL)("two instances on one room (Redis)", () => {
     });
   });
 
+  describe("a room its owner deletes (#49)", () => {
+    beforeAll(freshGuests);
+
+    it("closes its sockets on the other instance, whose timer ends too", async () => {
+      const code = await insert(withDeadline(votingRoom(), Date.now() + 60_000));
+      const here = client(ada, one());
+      const there = client(bob, two());
+      const bystander = client(cy, two());
+      const other = await insert(votingRoom());
+      await Promise.all([here.enter(code), there.enter(code), bystander.enter(other)]);
+      const { rows } = await admin.query("select id from room where code = $1", [code]);
+      const id = (rows[0] as { id: string }).id;
+      expect(syncOf(two()).deadlines.armed(id)).toBeDefined();
+      const heard = [here, there].map((tab) => {
+        const events: string[] = [];
+        tab.socket.on("deleted", () => events.push("deleted"));
+        tab.socket.on("disconnect", () => events.push("closed"));
+        return events;
+      });
+
+      await admin.query("delete from room where id = $1", [id]);
+      syncOf(one()).roomDeleted(id);
+
+      const both = ["deleted", "closed"];
+      await vi.waitFor(() => expect(heard).toEqual([both, both]));
+      expect(syncOf(two()).deadlines.armed(id)).toBeUndefined();
+      expect(bystander.socket.connected).toBe(true);
+    });
+
+    it("ignores a room that is no id on the bus", async () => {
+      const code = await insert(votingRoom());
+      const a = client(ada, two());
+      await a.enter(code);
+      publisher ??= await redisClient();
+      const request = { uid: "another-instance", type: 6, data: ["roomDeleted", { id: 1 }] };
+      await publisher.publish(REQUESTS, JSON.stringify(request));
+      await sleep(100);
+      expect(a.socket.connected).toBe(true);
+    });
+  });
+
   describe("the deadline", () => {
     beforeAll(freshGuests);
 

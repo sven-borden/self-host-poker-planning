@@ -179,16 +179,16 @@ export function responseHeaders(config: Config): Readonly<Record<string, string>
 
 /** A room code's shape in any case: 10 letters and digits, which no static route has. */
 const CODE_SHAPED = /^[0-9a-z]{10}$/i;
-/** The routes whose next segment is a room code, in lower case. */
-const ROOM_ROUTES: readonly string[] = ["r", "api/rooms"];
+/** The routes whose next segment names a room, by its code or its id, in lower case. */
+const ROOM_ROUTES: readonly string[] = ["r", "api/rooms", "api/my-rooms"];
 
 /**
  * A request path as it is logged. A room code is a bearer capability: it never reaches a
  * log (a room is named by its id). Where a route matched, its pattern is logged
  * (`/r/:code`), never the raw path. The web app's history fallback and the 404 match
  * only a wildcard, so the raw path is normalised instead: percent-encoding decoded, `//`
- * collapsed, the trailing slash dropped, and the segment after `/r` or `/api/rooms` (any
- * case) and every code-shaped segment (anywhere, any case) becomes `:code`.
+ * collapsed, the trailing slash dropped, and the segment after `/r`, `/api/rooms` or
+ * `/api/my-rooms` (any case) and every code-shaped segment (anywhere, any case) becomes `:code`.
  */
 export function loggedPath(path: string, route?: string): string {
   if (route && !route.includes("*")) return route;

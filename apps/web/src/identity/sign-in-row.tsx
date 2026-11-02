@@ -1,11 +1,12 @@
 import type { SignInProvider } from "@pp/protocol";
+import { Link } from "@tanstack/react-router";
 import { OctagonXIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Button } from "../components/ui/button.tsx";
+import { Button, buttonVariants } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
 import { codeOf, failureMessage } from "../room/failure.ts";
-import { useIdentityStore } from "../stores/identity-store.ts";
+import { isSignedIn, useIdentityStore } from "../stores/identity-store.ts";
 import googleLogo from "./google.svg";
 import { signOut, startSignIn } from "./identity.ts";
 import microsoftLogo from "./microsoft.svg";
@@ -24,10 +25,10 @@ const busyClass = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
  * when it has none; sign-in is never required. It is a full-page navigation, so the provider's
  * page opens in this tab and comes back here. Someone signed in sees which provider, their name
  * and "Sign out", which starts a fresh guest on this same page: a reload, as the old session's
- * socket cannot carry on. A room may be on a shared screen, so the address shows only where a
- * page asks for it (`showAddress`): the landing page, and nowhere in a room. `only` (#50): a room
- * limited to accounts offers the providers that can pass it, and needs no word that this is
- * optional.
+ * socket cannot carry on, and "My rooms" (#49), which has no other way in: the top bar is full at
+ * 320 px. A room may be on a shared screen, so the address shows only where a page asks for it
+ * (`showAddress`): the landing page, and nowhere in a room. `only` (#50): a room limited to
+ * accounts offers the providers that can pass it, and needs no word that this is optional.
  */
 export function SignInRow({
   className,
@@ -43,6 +44,7 @@ export function SignInRow({
   const email = useIdentityStore((state) => state.email);
   const name = useIdentityStore((state) => state.name);
   const provider = useIdentityStore((state) => state.provider);
+  const signedIn = useIdentityStore(isSignedIn);
   const [offered] = useState(signInProviders);
   const providers = only ? offered.filter((id) => only.includes(id)) : offered;
   const [busy, setBusy] = useState<SignInProvider | "out" | null>(null);
@@ -71,11 +73,11 @@ export function SignInRow({
     }
   }
 
-  if (email === null && (status !== "ready" || providers.length === 0)) return null;
+  if (!signedIn && (status !== "ready" || providers.length === 0)) return null;
   const shown = showAddress ? email : name;
   return (
     <div data-sign-in className={cn("flex flex-col gap-3", className)}>
-      {email !== null ? (
+      {signedIn ? (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="m-0 flex min-w-0 flex-col text-sm text-ink-2">
             {provider === null
@@ -87,19 +89,24 @@ export function SignInRow({
               </bdi>
             )}
           </p>
-          <Button
-            variant="outline"
-            className={busyClass}
-            aria-disabled={busy !== null || undefined}
-            onClick={() =>
-              run("out", async () => {
-                await signOut();
-                window.location.reload();
-              })
-            }
-          >
-            {busy === "out" ? t("signIn.signingOut") : t("signIn.signOut")}
-          </Button>
+          <div className="flex flex-wrap gap-2 sm:shrink-0">
+            <Link to="/rooms" data-my-rooms-link className={buttonVariants({ variant: "outline" })}>
+              {t("myRooms.title")}
+            </Link>
+            <Button
+              variant="outline"
+              className={busyClass}
+              aria-disabled={busy !== null || undefined}
+              onClick={() =>
+                run("out", async () => {
+                  await signOut();
+                  window.location.reload();
+                })
+              }
+            >
+              {busy === "out" ? t("signIn.signingOut") : t("signIn.signOut")}
+            </Button>
+          </div>
         </div>
       ) : (
         <>

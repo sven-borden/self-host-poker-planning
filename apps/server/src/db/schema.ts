@@ -40,14 +40,30 @@ const instant = (name: string) => timestamp(name, { withTimezone: true, mode: "d
 export const ROOM_PEOPLE = sql`((live -> 'participants') || coalesce(live #> '{round,votes}', '{}'::jsonb))`;
 
 /**
+ * Who holds a room's right to delete it (#49, ADR-027): `live.keeperId`, or the PO in a room
+ * stored before the field (`keeperOf` in the domain).
+ */
+export const ROOM_KEEPER = sql`coalesce(live ->> 'keeperId', owner_user_id)`;
+
+/**
+ * A room whose keeper is not its PO: someone claimed the role. Nearly no room is one, so its
+ * index stays small and costs a commit nothing. It is how a keeper with no seat is found: by the
+ * list, a guest's move and, one day, an account's deletion. A query must spell the two exactly,
+ * or it scans. A keeper who is the PO is found by `room_owner_user_id_idx`.
+ */
+export const KEEPER_APART = sql`(live ->> 'keeperId')`;
+export const IS_KEEPER_APART = sql`(live ->> 'keeperId') <> owner_user_id`;
+
+/**
  * One row per room. `live` is the room's whole state (settings, people, the round) and
  * the single source of truth for it; every change goes through `apply` and a
- * compare-and-set on `version`. `name`, `password_hash` and the timestamps live beside
- * it because no command changes them through `apply`, and the hash must never reach a
- * snapshot. `owner_user_id` copies `live.ownerId` on every commit, for queries such as
- * "my rooms" (W5). `queue` is the one part of the state outside `live` (#52, ADR-024): a
- * full queue is hundreds of kB at worst, and a commit that leaves it alone does not write
- * it, so a vote stays the small write it always was.
+ * compare-and-set on `version`. `password_hash` and the timestamps live beside it because
+ * no command changes them through `apply`, and the hash must never reach a snapshot.
+ * `owner_user_id` copies `live.ownerId` on every commit, for queries such as "my rooms"
+ * (W5). `queue` is a part of the state outside `live` (#52, ADR-024): a full queue is
+ * hundreds of kB at worst, and a commit that leaves it alone does not write it, so a vote
+ * stays the small write it always was. `name` is the other (#49, ADR-027): `apply` changes
+ * it (`renameRoom`), and a room's header reads it without loading the state.
  */
 export const room = pgTable(
   "room",
@@ -56,7 +72,7 @@ export const room = pgTable(
     code: text("code").notNull().unique(),
     name: text("name"),
     ownerUserId: text("owner_user_id").notNull(),
-    live: jsonb("live").$type<Omit<RoomState, "queue">>().notNull(),
+    live: jsonb("live").$type<Omit<RoomState, "queue" | "name">>().notNull(),
     queue: jsonb("queue").$type<Queue>(),
     version: integer("version").notNull(),
     passwordHash: text("password_hash"),
@@ -70,12 +86,13 @@ export const room = pgTable(
     lastActiveAt: instant("last_active_at").notNull().defaultNow(),
   },
   // The retention purge (ROOM_TTL_DAYS) deletes by `last_active_at`, and keeps a room
-  // whose owner is signed in; "my rooms" (W5) reads by owner too.
+  // whose keeper is signed in; "my rooms" (W5) reads by owner too.
   (t) => [
     index("room_last_active_at_idx").on(t.lastActiveAt),
     index("room_owner_user_id_idx").on(t.ownerUserId),
     // A guest who signs in (#48) and "my rooms" (W5) find a person's seats through this.
     index("room_people_idx").using("gin", ROOM_PEOPLE),
+    index("room_keeper_apart_idx").on(KEEPER_APART).where(IS_KEEPER_APART),
   ],
 );
 

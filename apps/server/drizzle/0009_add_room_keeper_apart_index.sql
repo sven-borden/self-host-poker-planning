@@ -1,0 +1,1 @@
+CREATE INDEX "room_keeper_apart_idx" ON "room" USING btree ((live ->> 'keeperId')) WHERE (live ->> 'keeperId') <> owner_user_id;

@@ -94,7 +94,8 @@ export function cleanName(raw: unknown): string | null {
 
 /**
  * A room name, cleaned, or `null` (`bad_room_name`). The name is set when the room is
- * created (`POST /api/rooms`) and lives beside `RoomState`, not in it.
+ * created (`POST /api/rooms`) and changed by `renameRoom` (#49). It is part of `RoomState`,
+ * with a column of its own, and never in `live`.
  */
 export function cleanRoomName(raw: unknown): string | null {
   return cleanText(raw, MAX_ROOM_NAME_LENGTH);

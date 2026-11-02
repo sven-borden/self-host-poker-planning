@@ -4,7 +4,7 @@
  *
  * - **In.** The page posts `{ provider, returnTo }`. Nothing else in Better Auth's body
  *   (`idToken`, `scopes`, `additionalData`, `errorCallbackURL` …) can come from a request:
- *   `signInRequest` builds it. A return target is `/` or a room's path, so it cannot leave
+ *   `signInRequest` builds it. A return target is `isReturnPath`, so it cannot leave
  *   the site, and it stays in the `verification` row: only a random `state` goes to the
  *   provider, never a room's code.
  * - **Providers.** Their addresses are the ones in Better Auth's code. No variable, header or
@@ -154,9 +154,12 @@ export function socialRoutes(config: Config): string[] {
   return ["POST /sign-in/social", ...ids.map((id) => `GET /callback/${id}`)];
 }
 
-/** Where a sign-in may return to: the landing page or a room, as a path of this site. */
+/**
+ * Where a sign-in may return to, as a path of this site: the landing page, "My rooms" (#49) or
+ * a room.
+ */
 export function isReturnPath(path: string): boolean {
-  return path === "/" || (path.startsWith("/r/") && isRoomCode(path.slice(3)));
+  return path === "/" || path === "/rooms" || (path.startsWith("/r/") && isRoomCode(path.slice(3)));
 }
 
 /**

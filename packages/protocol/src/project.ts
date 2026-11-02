@@ -53,6 +53,7 @@ export function toSnapshot(state: RoomState, viewer: UserId, meta: SnapshotMeta)
     serverNow: meta.now,
     room: {
       code: meta.code,
+      ...(state.name === undefined ? {} : { name: state.name }),
       ownerId: state.ownerId,
       ...ownerClaimable(state),
       settings: settingsView(state, viewer),
@@ -129,6 +130,7 @@ function causeView(cause: Cause, hideVoter: boolean): CauseView | null {
         ? { type: cause.type }
         : { type: cause.type, added: cause.added };
     case "advanceArmed":
+    case "roomRenamed":
     case "advanceHeld":
       return { type: cause.type };
     default:
