@@ -1,0 +1,17 @@
+# Builds the image inside Azure Container Registry, for a machine without Docker
+# (docs/07-self-hosting-azure.md, "Without Docker"). Not `az acr build`: that uses the classic
+# builder, and the Dockerfile's RUN --mount needs BuildKit, which only this file can ask for.
+#   az acr run --registry <registry> --file infra/acr-task.yaml --timeout 3000 \
+#     --set tag=<tag> --set commit=<commit> --set version=<version> .
+version: v1.1.0
+stepTimeout: 2700
+steps:
+  - build: >-
+      -t $Registry/poker-planning:{{.Values.tag}}
+      --build-arg GIT_COMMIT={{.Values.commit}}
+      --build-arg APP_VERSION={{.Values.version}}
+      .
+    env:
+      - DOCKER_BUILDKIT=1
+  - push:
+      - $Registry/poker-planning:{{.Values.tag}}

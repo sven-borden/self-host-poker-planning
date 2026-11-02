@@ -34,6 +34,20 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The Azure template (#38, ADR-032): the runner's own Bicep compiles and lints it, with no
+      # sign-in and no request to Azure, so that it cannot rot. The parameters file needs its
+      # variables to exist; these are stand-ins, not secrets.
+      - name: Bicep build and lint
+        env:
+          POKER_NAME: poker-ci
+          POKER_REGISTRY: pokerci
+          POKER_IMAGE_TAG: ci
+          POKER_POSTGRES_PASSWORD: stand-in-for-a-compile
+          POKER_BETTER_AUTH_SECRET: stand-in-for-a-compile-of-the-template
+        run: |
+          bicep build infra/main.bicep --stdout > /dev/null
+          bicep lint infra/main.bicep
+          bicep build-params infra/main.bicepparam --stdout > /dev/null
       # Dependency audit (#36): a high or critical advisory in a production dependency
       # fails the job; when npm's audit endpoint cannot be reached it warns and passes
       # (scripts/audit.mjs). Every advisory, dev-only ones included, is listed without failing.
