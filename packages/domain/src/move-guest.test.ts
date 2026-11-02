@@ -7,7 +7,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { apply } from "./apply.ts";
 import type { Command } from "./commands.ts";
-import { createRoom, type RoomState } from "./room.ts";
+import { createRoom, OWNER_CLAIM_AFTER_MS, type RoomState } from "./room.ts";
 
 const SERVER = ":server";
 const T0 = 1_700_000_000_000;
@@ -150,6 +150,48 @@ describe("both the guest and the account in the room", () => {
     expect(move(voting(before)).state.participants[ACCOUNT]?.role).toBe("observer");
   });
 
+  it("is present when either seat is: an old away of the account says nothing now", () => {
+    const stale = act(room([GUEST, ACCOUNT, "ben"]), SERVER, {
+      type: "presence",
+      who: ACCOUNT,
+      connected: false,
+    });
+    const later = T0 + 24 * 60 * 60 * 1000;
+    const { state } = move(stale, later);
+    expect(state.participants[ACCOUNT]).toMatchObject({
+      connected: true,
+      name: `Name of ${ACCOUNT}`,
+    });
+    expect(state.participants[ACCOUNT]).not.toHaveProperty("awaySince");
+    expect(apply(state, { type: "claimOwner" }, { actor: "ben", now: later + 1 })).toMatchObject({
+      ok: false,
+      error: "owner_present",
+    });
+  });
+
+  it("is present when only the account's seat is, whatever away the guest's left", () => {
+    const stale = act(room(["ben", ACCOUNT, GUEST]), SERVER, {
+      type: "presence",
+      who: GUEST,
+      connected: false,
+    });
+    const { state } = move(stale, T0 + 500_000);
+    expect(state.participants[ACCOUNT]?.connected).toBe(true);
+    expect(state.participants[ACCOUNT]).not.toHaveProperty("awaySince");
+  });
+
+  it("takes the later away when both seats are away, and the claim waits for it", () => {
+    let before = room([GUEST, ACCOUNT, "ben"]);
+    const away = (state: RoomState, who: string, now: number) =>
+      act(state, SERVER, { type: "presence", who, connected: false }, now);
+    before = away(away(before, ACCOUNT, T0 + 10), GUEST, T0 + 90_000);
+    const { state } = move(before, T0 + 100_000);
+    expect(state.participants[ACCOUNT]).toMatchObject({ connected: false, awaySince: T0 + 90_000 });
+    const claim = (now: number) => apply(state, { type: "claimOwner" }, { actor: "ben", now });
+    expect(claim(T0 + 150_000)).toMatchObject({ ok: false, error: "owner_present" });
+    expect(claim(T0 + 90_000 + OWNER_CLAIM_AFTER_MS)).toMatchObject({ ok: true });
+  });
+
   it("drops a card of the seat that becomes a PO who does not vote, as a hand-over does", () => {
     const before = vote(voting(room([GUEST, ACCOUNT, "ben"], { poVotes: false })), ACCOUNT, "8");
     const { state, causes } = move(before);
@@ -268,12 +310,16 @@ describe("what the move never does", () => {
         const seated = others.includes(ACCOUNT) || Object.hasOwn(state.participants, GUEST);
         const phase = state.round?.phase;
         const cards = Object.values(state.round?.votes ?? {}).map((v) => v.card);
+        const seats = [state.participants[GUEST], state.participants[ACCOUNT]];
         const { state: moved, causes } = move(state);
 
         expect(moved.participants).not.toHaveProperty(GUEST);
         expect(moved.ownerId).not.toBe(GUEST);
         for (const id of others) expect(moved.participants).toHaveProperty(id);
         if (seated) expect(moved.participants).toHaveProperty(ACCOUNT);
+        if (seats.some((seat) => seat?.connected)) {
+          expect(moved.participants[ACCOUNT]?.connected).toBe(true);
+        }
         expect(moved.round?.phase).toBe(phase);
         expect(causes.filter((cause) => cause.type === "revealed")).toEqual([]);
         // An anonymous reveal keeps every card on the table, whoever leaves it.

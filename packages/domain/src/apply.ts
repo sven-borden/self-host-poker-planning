@@ -339,7 +339,8 @@ function password(state: RoomState, on: unknown): Step {
  *
  * Alone in the room, the guest's seat, as it is, with its name, role, avatar, join time and
  * presence, and the guest's vote become the account's. When the account sits here too, its seat
- * stays with the name the room knows it by. It takes the guest's PO role, and when the guest's
+ * stays with the name the room knows it by, and is as present as the more present of the two
+ * seats. It takes the guest's PO role, and when the guest's
  * card is the one that stands while the round votes, it becomes a voter, or `settle` would drop
  * that card. The account's card stands over the guest's, with one exception: after an anonymous
  * reveal both stay. Taking a card off the table as a seat goes would tie that card to that seat,
@@ -385,7 +386,21 @@ function movedSeat(state: RoomState, guest: UserId, account: UserId): RoomState[
   const round = state.round;
   const guestCardStands =
     round?.phase === "voting" && ownVote(round, guest) && !ownVote(round, account);
-  return guestCardStands ? { ...rest, [account]: { ...kept, role: "voter" } } : rest;
+  const merged = morePresent(kept, seat);
+  return { ...rest, [account]: guestCardStands ? { ...merged, role: "voter" } : merged };
+}
+
+/**
+ * `kept`, as present as the more present of the two seats. The person has one presence: the
+ * away a seat of theirs left behind a day ago says nothing about the seat they sit in now, and
+ * would let anyone claim a PO role the person never left, and shrink the eligible voters.
+ * Both away: the person was last here at the later of the two.
+ */
+function morePresent(kept: Participant, other: Participant): Participant {
+  const { awaySince: _, ...here } = kept;
+  const merged = { ...here, connected: kept.connected || other.connected };
+  if (kept.awaySince === undefined || other.awaySince === undefined) return merged;
+  return { ...merged, awaySince: Math.max(kept.awaySince, other.awaySince) };
 }
 
 // ---------------------------------------------------------------------------------- rounds
