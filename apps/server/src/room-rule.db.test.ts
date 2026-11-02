@@ -880,7 +880,9 @@ describe("the one invariant: no frame without a judgement of its gate", () => {
     await must(colleague.cmd("claimOwner"));
     await locked;
     const before = owner.received.length;
-    await must(colleague.cmd("startRound", { subject: { kind: "title", text: "After the claim" } }));
+    await must(
+      colleague.cmd("startRound", { subject: { kind: "title", text: "After the claim" } }),
+    );
     await settled(owner);
     expect(owner.received.length).toBe(before);
   });
