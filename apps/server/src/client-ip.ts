@@ -8,8 +8,8 @@
  * forged. Without a trusted proxy (`TRUST_PROXY=false` or 0) it is the socket's peer
  * address. The result is a rate-limit key, not the address itself: an IPv4-mapped IPv6
  * address counts as the IPv4 one, and an IPv6 address as its /64 network. Azure App Service's
- * front end writes `ip:port` into the header (ADR-032), so an entry loses its port first: a
- * client's next connection has another port and must stay the same client.
+ * front end is reported to write `ip:port` into the header (ADR-032), so an entry loses its port
+ * first: a client's next connection has another port and must stay the same client.
  */
 import { isIP } from "node:net";
 
@@ -43,8 +43,12 @@ export function clientIp(request: PeerRequest, proxies: number): string | undefi
 
 /**
  * An `X-Forwarded-For` entry without its port: `192.0.2.1:4711`, `[2001:db8::1]:4711` and
- * `[2001:db8::1]` are the addresses inside. An entry that already is an address stays whole: a
- * short port on an IPv6 address without brackets reads as its last group, which the key drops.
+ * `[2001:db8::1]` are the addresses inside. An entry that already is an address stays whole, so
+ * a port under 10000 on an IPv6 address without brackets reads as one more group. Usually that is
+ * the last group, which the key drops. Where `::` then stands for fewer groups it shifts the rest:
+ * `2a01:db8::a:b:c:d:4711` keys as `2a01:db8:0:a::`, so part of the host is in the key, and
+ * `::ffff:c000:201:4711` is no longer mapped and keys as `::`. That takes all three: no brackets,
+ * a `::` that ends within the first four groups or the hex mapped form, and such a port.
  */
 function withoutPort(entry: string): string {
   if (isIP(entry) !== 0) return entry;

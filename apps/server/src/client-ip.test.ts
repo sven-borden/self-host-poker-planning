@@ -64,6 +64,12 @@ describe("clientIp", () => {
     expect(entry("2001:db8:0:1::7:51234")).toBe("2001:db8:0:1::");
     expect(entry("2001:db8:0:1:aaaa:bbbb:cccc:dddd:4711")).toBe("2001:db8:0:1::");
     expect(entry("2001:db8:0:1::7:4711")).toBe("2001:db8:0:1::");
+    // The known limit of reading it as a group: `::` shrinks, and the groups after it shift.
+    expect(entry("2a01:db8::a:b:c:d:4711")).toBe("2a01:db8:0:a::");
+    expect(entry("2a01:db8::e:b:c:d:4711")).toBe("2a01:db8:0:e::");
+    expect(entry("::ffff:c000:201:4711")).toBe("::");
+    // A port of five digits is no group, so the same addresses key as they should.
+    expect(entry("2a01:db8::a:b:c:d:51234")).toBe("2a01:db8::");
     // The port is read only at its proxy's place in the chain.
     expect(clientIp(request("203.0.113.7:51234, 172.18.0.2"), 2)).toBe("203.0.113.7");
     // A socket address is never rewritten: it has no port, and nothing here is forged.
