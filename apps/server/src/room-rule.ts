@@ -56,7 +56,7 @@ export function asciiDomain(raw: string): string {
 /** A patch's rule with its domains in that form, so the domain judges what it can read. */
 export function withAsciiDomains(command: Command): Command {
   if (command.type !== "updateSettings") return command;
-  const rule = command.patch.restriction as Restriction | null | undefined;
+  const rule = command.patch.restriction;
   if (!rule) return command;
   const domains = rule.domains.map(asciiDomain);
   return { ...command, patch: { ...command.patch, restriction: { ...rule, domains } } };

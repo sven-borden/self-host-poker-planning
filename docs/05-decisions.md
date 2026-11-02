@@ -108,7 +108,7 @@ Entra linking needs a test (OQ-6). **Alternatives.** A cookie token now and auth
 **Decision.** A random 10-character code in the URL; an optional password (argon2id,
 rate-limited). Roles: product owner, voter, observer. The PO can hand over the role;
 when the PO has been away for 2 minutes, anyone in the room can claim it. W5 adds
-restricting a room to an email domain or Microsoft tenant.
+restricting a room to an email domain or Microsoft tenant (ADR-028).
 
 ## ADR-011: Room defaults
 
@@ -1197,3 +1197,168 @@ got. Re-encrypting on use alone: a row nobody reads would keep the old key alive
 the same values. A rotation across a real rolling deploy of several instances: the races are
 injected between statements of one process, with a second store for the instance on the old
 key. No key has been set on Sven's instance, and nothing uses the vault until #54.
+
+## ADR-028: A room limited to accounts goes by what a provider proves (2026-11-02, #50)
+
+**Decision.** The PO can limit a room to email domains, Microsoft tenant ids, or both: a person
+passes by either list. The rule is a setting, `settings.restriction`, changed through
+`updateSettings` and `apply`. The server judges it, at `enter` and at `join`, on a fresh read of
+the room and of the account. A person who does not pass gets no snapshot.
+
+**What meets a rule.** A Microsoft address proves nothing: Entra's `email` claim is whatever a
+tenant's admin set, which is the takeover #47's review found. So:
+- A domain is met only by an address its provider verified: today, a Google account with
+  `user.email_verified`. `room-rule.ts` reads `user` joined with `account`, and takes a domain only
+  from a row whose provider is Google. A Microsoft account's `user.email` is a placeholder and its
+  `claimed_email` is never read here, so no claim meets a domain, whatever it says.
+- A tenant is met only by `account.tenant_id`, from the token, which #47 checks. Compared as a
+  GUID, whatever its case. Never the consumer tenant: every personal Microsoft account carries it,
+  so a rule on it would admit them all, and `cleanTenant` refuses it.
+- So a person at `contoso.com` signing in with Microsoft passes by the tenant, not the domain. The
+  panel says so under the tenant list, and the refused screen says so to that person, because
+  nobody should set `contoso.com` for a Microsoft shop and lock everyone out unwarned.
+
+**Google, as it answers.** The rule reads the address Google vouched for and nothing more, so a
+Gmail address is a Gmail address and `gmail.com` in a rule admits all of Gmail. `hd` is not kept.
+It would tell a Workspace account from a personal Google account opened on a company address, which
+keeps `email_verified` after its owner leaves the company. That is under *Accepted*.
+
+**Domains match exactly.** Lower-cased, whole: `example.com` admits neither `notexample.com` nor
+`example.com.evil.net`, and not `mail.example.com` either. No subdomains and no wildcard: a rule says
+what the PO typed, each one is a line away, and a suffix match is how the two refused above get in.
+An international name is stored in its `xn--` form, made by the platform's IDNA (`domainToASCII` on
+the server, `new URL` in the panel): the domain package has no `URL`, and accepts ASCII alone. The
+ASCII form is what the join screen shows too: it cannot be spoofed by a look-alike letter, at the
+price of reading badly. ASCII input is never run through a URL parser, which would quietly turn
+`a@b.com/x` into `b.com`: it meets `cleanDomain`, which refuses a wildcard, an `@`, a scheme, a
+path, a port, an IP address, a trailing dot and a bare top-level name.
+
+**Limits.** 20 entries in each list, each a domain of 253 characters at most or a GUID: in the
+domain (`bad_restriction`), and in the protocol's strict schema at 64 entries of 1024 characters.
+A rule with no entry is no rule: the page removes it with `null`.
+
+**The rule comes before the password, everywhere.** At `enter`, at `join` and at `POST
+/api/rooms/:code/access`. Someone the rule refuses gets the rule's code whatever they typed: no
+hash runs, no try counts, no grant is written, and the answers to a right and a wrong password
+are the same bytes. A grant from before the rule does not pass it. Someone who passes the rule
+still needs the password. So a refused person learns nothing of the password, and a person with
+the password but the wrong account is refused.
+
+**What a refused person learns.** Three codes: `sign_in_required` (a guest), `account_not_allowed`
+and `restriction_unavailable`, the last with a word of its own below. The refused `enter` carries
+`requirement: { domains, organisation }`, so the join screen says what would pass: the domains, by
+name, and "your organisation" for a tenant, never a GUID. Domains are shown to anyone holding the
+link: that is what lets them choose the right account, and the panel's hint says so to the PO. A
+link is a bearer capability already; what it now tells a stranger is where a team works. The
+sign-in buttons are the providers that can pass: Google for a domain, Microsoft for a tenant.
+With a wrong account, the screen says which rule failed. Sign-out reloads the page as a guest,
+whose buttons then return here, so the room stays the return path.
+
+**`GET /api/rooms/:code`.** It hands a password room's name to anyone holding the code. For a room
+with a rule that is not enough: the header goes to someone refused as `{ code, name: null,
+hasPassword: false }`, which is what a room with no name and no password would say. It reads a
+session for a room with a rule only: every other header still costs one query. The name stays off
+the socket as it always was.
+
+**The server enforces it at each door.** `roomRefusal` in the domain takes the state and what the
+account proves, so a page says nothing. `enter` reads the identity and judges it on the state it
+goes on to send. A `join`, a hand-over and a claim read the identity first and are judged in the
+run's step, on the very state the compare-and-set commits over, so a rule set a moment earlier
+holds across instances with no lock and no second query. A rejected step stores nothing.
+
+**The PO always stays.** `roomRefusal` lets `ownerId` through whatever the rule says, provider
+gone included, so no rule locks out the one person who can change it. A rule the PO does not meet
+asks first, in the panel: it may be a mistake, and handing the role over would leave them out. The
+ask is the page's, since the server's answer would be the same either way. If the page cannot read
+the PO's own account, it asks.
+
+**Who sets it.** Only the PO, by `apply`. Only someone signed in: the row asks a guest PO to sign
+in, and the server answers `sign_in_required`. Only for a provider this install has: domains need
+Google, tenant ids need Microsoft, and the panel shows the list that can work. Removing a rule
+needs neither, so a rule can always come off.
+
+**A person the rule refuses never becomes PO.** The PO passes every rule, so the role would be a
+way around it: anyone seated before a rule could claim it once the PO is away, then enter for ever
+and remove the rule. So `transferOwner` and `claimOwner` answer `owner_not_allowed` for someone
+it refuses, seated or not. That costs a sliver of privacy: a PO who tries to hand the role over
+learns that this one person would not pass, though not why. The PO will see the same when that
+person next reloads, and the rule's integrity is worth more.
+
+**People already seated stay, and a reload is the end of that.** A rule applies to entering and
+joining from then on. Nobody is kicked: the socket stays and keeps playing, seat and vote. Their
+next `enter`, from a reload or a dropped connection, is refused, and the seat and its vote stay
+where they are, stored, to go away after the grace like anyone's. This is the choice between that
+and a seat that survives until its owner leaves, and the refusal wins, for three reasons. A rule is
+a promise that internal tickets stay internal, and a seat that outlives it would keep seeing them
+for as long as a browser keeps reconnecting, which is days. The seat would become a way around the
+rule. And nothing is lost by the refusal: a guest who signs in with a passing account finds the
+seat again, and a PO can remove the seat. The cost is that a blip of the network ends it for
+someone mid-round, which is why the PO reads it first: "They stay until they reload the page or
+leave." After `leave`, a socket has no seat to stay by, so it is read again like any visitor.
+
+**The PO sees a count, not a list.** `GET /api/rooms/:code/restriction`, the PO alone, answers how
+many people here the stored rule would refuse, and what the PO's own account proves. Not in the
+snapshot, which would read every seat's account on every vote. It counts the stored rule only, so
+that testing a guess about someone costs a commit, which the room hears, and is held by 60 reads
+in 10 minutes. It cannot be made nothing: a PO who sets `gmail.com` and reads the count learns
+something about the two people in a room of two. No address, provider or tenant ever comes back.
+
+**Visitors.** A socket on the join form holds snapshots, which name people. When a rule changes,
+`settingsUpdated` carries `restriction: true`, on the cause, so it reaches other instances by the
+same signal as a lockout. Before the broadcast, each visitor without a seat is marked and read
+again, gets nothing meanwhile, and hears `locked` if refused; the page enters again and shows the
+refusal. A lost signal is met by the same read before the next version goes out (`blind`).
+
+**Sign-in, checked against #48.** A refused guest has no seat, signs in from the screen, comes
+back as the account, and is judged afresh. A guest seated before the rule moves as ever: `moveGuest`
+is the server's and takes no gate, and that is right, since the seat is theirs. It also opens
+nothing: a seat lets nobody past the rule, so an account that does not pass finds its seat moved
+and itself refused, and the panel's count now counts it. A grant moves too, and passes nothing.
+Someone who signs out mid-room is a guest on the reload and is refused, and the account's seat
+waits for them. A socket opened before a rule keeps what it had while it stays seated; a `join`,
+a hand-over, a claim and a `leave` are each read fresh, and the session is read on every `join`.
+
+**A provider that goes away fails closed.** With no provider, as production is until Sven adds
+keys, nobody could ever pass, so the row does not appear. A rule set before keys were removed is
+judged by what is left: a list whose provider is gone admits nobody, a Google account already
+signed in included. With no list left it is `restriction_unavailable`, for everyone but the PO:
+refused, never open, with a message that says so and no button that cannot work. The row still
+shows for such a rule, names what is gone, and takes it off.
+
+**Privacy.** No address, provider or tenant of any person enters the state, so none can reach a
+snapshot, a frame, the history or an export. The rule itself is in the snapshot for those let in:
+the domains, and `organisation` for the rest; a tenant's id goes to the PO alone. Tests read real
+frames for all of it, and the logs for addresses, tenants and codes. A refused `enter` spends the
+socket's message budget like any other, and its answer turns on the caller's own account alone, so
+it tells nobody who has an account or which addresses exist. Exports and history do not read the
+rule; retention keeps or deletes it with the room's `live`.
+
+**Protocol 6.** The refused `enter`'s `requirement`, the patch, the view and four ack codes. Each
+alone is the kind of change that kept the version before, but a tab from before this has no screen
+for these refusals and would strand on the generic error, so it is told to reload.
+
+**Accepted.**
+- A personal Google account opened on a company address, and a Google account whose owner has
+  since left, keep `email_verified`. Requiring `hd` would close the first and refuse real people on
+  domains Google does not host; it needs a column, so it stays an option for Sven (see the PR).
+- A provider's word is read at sign-in. A session lives `ROOM_TTL_DAYS`, and `user.email` is not
+  updated on a later sign-in, so someone removed from a tenant or a domain passes until the session
+  ends. A room is not a company's identity system.
+- `outsiders` can be read as a test of a guess, as said above.
+- A second tab left open after a sign-out keeps the snapshots until its next command finds the
+  session gone, as in any room: its seat is still there.
+- An international domain reads as `xn--…` on the join screen.
+
+**Alternatives.** A `room_restriction` table: the rule would need its own commit path and lose the
+compare-and-set, for a list of 20 strings. Over HTTP like the password: there is no secret to keep
+off the command pipeline, and #25's contract gives the panel its rollback for free. A domain rule
+met by a Microsoft claim for verified tenants: Entra offers no proof of the kind Google's flag
+gives, and the tenant rule says the thing directly. Subdomain matching: see above. Auto-kicking
+those who do not pass: the brief says no, and a table that empties itself mid-round is worse than
+a screen. A per-seat mark for the PO: a count at most. Checking the identity in the commit's
+transaction, as `requireGrant` does: an account does not change under a command, and the state
+does, which the step already sees.
+
+**Not tested.** Real Google and Microsoft tokens, and real IDN addresses at Google: the stand-in
+answers for them, so what the fields hold is read from their docs and Better Auth's code. No
+provider keys are set on Sven's instance, so the row does not appear there yet.

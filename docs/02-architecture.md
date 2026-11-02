@@ -110,6 +110,7 @@ type RoomSettings = {
   poVotes: boolean;                                  // default true
   observersCount: boolean;                           // default true
   autoAdvance: boolean;                              // default false (#52, ADR-024)
+  restriction?: { domains: string[]; tenants: string[] }; // absent: open (#50, ADR-028)
 };
 
 type Participant = {
@@ -775,7 +776,7 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   and the grants in one transaction (`AccessWrite` in `db/rooms.ts`). The snapshot's
   settings carry `hasPassword` (optional, protocol 4 kept) and `settingsUpdated` its
   `password` (`set`, `changed`, `removed`); `GET /api/rooms/:code` adds
-  `hasPassword`.
+  `hasPassword`. A room with a rule (below) hides both this and its name from someone refused.
   - **Hashing**: Node's own `crypto.argon2` (24.7 and later, so `engines` and the Node
     check ask for 24.7), argon2id with OWASP's parameters (19 MiB, t = 2, p = 1, a 16-byte
     random salt, a 32-byte tag), stored as a PHC string with its parameters. A check
@@ -839,14 +840,48 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
     and per-room limits are as meant whatever the proxies.
   - Logs name the room by its id ("room password changed", "room access granted",
     "wrong room password"); never the password, the hash, the code or the address.
+- Rule (optional, #50, ADR-028): `settings.restriction` limits a room to email domains and
+  Microsoft tenant ids, a person passing by either. It changes through `updateSettings`, the PO's
+  alone, signed in, for a provider this install has (`sign_in_required`,
+  `restriction_unavailable`), and comes off with `null`. Removing needs neither.
+  - **What meets it**: a domain, only an address its provider verified, today a Google account
+    with `user.email_verified`; a tenant, only `account.tenant_id`. A Microsoft address never meets
+    a domain, whatever it claims. `room-rule.ts` reads both fresh from `user` and `account`, as
+    `AccessIdentity`, and the domain's `roomRefusal` judges it. Domains match exactly, lower-cased,
+    in their `xn--` form: no subdomains, no wildcard. A tenant is a GUID, never the consumer one.
+  - **Who passes**: its PO, always. A seat does not pass: someone seated before the rule stays while
+    the socket does, and meets it at the next `enter`, the seat and its vote left stored. Nobody is
+    kicked. After `leave`, or when the rule changes, a socket without a seat is read again and
+    hears `locked` if refused. Nobody it refuses becomes PO: `transferOwner` and `claimOwner` answer
+    `owner_not_allowed`.
+  - **Where it runs**: `enter` reads the identity and judges it on the state it sends. A `join`, a
+    hand-over and a claim are judged in the run's step, on the state the compare-and-set commits
+    over. `POST /api/rooms/:code/access` and `GET /api/rooms/:code` check it too. It comes before
+    the password in all of them, so someone refused learns nothing of the password: no hash, no
+    try, no grant, the same bytes for a right and a wrong one. `GET` answers them `{ code, name:
+    null, hasPassword: false }`, and reads a session for a room with a rule only.
+  - **Refusals**: `sign_in_required`, `account_not_allowed`, `restriction_unavailable`. The `enter`
+    ack carries `requirement: { domains, organisation }`: the domains by name, which anyone holding
+    the link may read, and a word for a tenant. No snapshot goes to a socket that has not passed
+    (`isGated`).
+  - **A provider gone**: a list whose provider's keys are gone admits nobody, and with none left
+    the code is `restriction_unavailable`, for everyone but the PO. Fails closed, and the PO's row
+    still shows, to take it off. With no provider and no rule the row does not appear.
+  - **The PO's count**: `GET /api/rooms/:code/restriction`, the PO alone, answers `{ outsiders, own
+    }`: how many here the stored rule would refuse, and the PO's own account, for the question
+    before a rule they do not meet. Never who, never why.
+  - **In a snapshot**: `settings.restriction` is `{ domains, organisation }` for those let in, plus
+    `tenants` for the PO. No address, provider or tenant of any person enters the state.
 - Input limits, enforced on the server: names 32 characters, room names 60, round
   titles 200 and links 2000, custom decks of 20 cards of 4 characters, timers of 5 to
-  3600 seconds, passwords 6 to 128, HTTP bodies 16 KB, socket messages 16 KB (Socket.IO's
+  3600 seconds, passwords 6 to 128, 20 domains of 253 characters and 20 tenant ids in a room's
+  rule, HTTP bodies 16 KB, socket messages 16 KB (Socket.IO's
   `maxHttpBufferSize`, and a bigger message closes the connection; a long paste comes in several
   commands, ADR-024), no binary packets (`maxAttachments: 0`, which closes it too). The domain judges the exact rules and answers their codes (`bad_name`,
   `bad_subject`, `bad_seconds` …); before it, every inbound schema is strict and caps
   each string, array and number well above the domain's limit (`WIRE_LIMITS` in
-  `@pp/protocol`: a name 1024 code units, a subject 4096, a card 128, a deck 64 cards,
+  `@pp/protocol`: a name 1024 code units, a subject 4096, a card 128, a deck 64 cards, a rule's
+  list 64 entries of 1024,
   round numbers, restarts and history cursors at Postgres's `integer`, timer seconds at a
   day), so garbage costs a `bad_payload` and nothing else. `history`'s `limit` is 1 to 50.
 - Text (names, round titles, room names: the domain's `cleanText`): control characters,
@@ -895,6 +930,7 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   | Wrong passwords | a handful of guests on one address | address and room | 25 in 10 min |
   | Wrong passwords (database, every instance) | brute force | room | 50 in 10 min |
   | Password changes (`PUT`, `DELETE`) | hashing on demand | person (PO) | 30 in 10 min |
+  | The rule's count (`GET /api/rooms/:code/restriction`) | reading seats' accounts, testing guesses | person (PO) | 60 in 10 min |
   | argon2 runs at once | memory (19 MiB each) | instance | 2, 32 waiting at most 2 s, then 503 `busy` |
   | Socket messages (`enter`, `cmd`, `history`, `queue`) | the server's work | person, all sockets | 10 a second, bursts of 20 |
   | Roster commands (`join`, `leave`, `rename`, `setAvatar`, `setRole`) | broadcast and announcement floods | person | 10 a minute, bursts of 10 |
@@ -905,6 +941,7 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   | Payload | memory, parsing | socket message | 16 KB, every frame, before the session is checked; no binary. 100 connections with no room and no session hold 15 MiB at this cap, 134 MiB at 128 KB (#52, ADR-024). The token bucket runs after the frame is decoded, so it does not bound the parsing |
   | Payload | memory, parsing | HTTP request | 16 KB (identity routes 4 KB) |
   | Queue | the room's stored state, the PO's list | room | 500 items and 256 KB of JSON (262,144 bytes), `queue_full` past either; one batch holds no more, and each item's key, title and link pass the subject's rules |
+  | Room's rule | a snapshot carries its domains | room | 20 entries in each list, `bad_restriction` past it |
   | Queue item's title | a snapshot, which carries the next item's | item | 800 bytes on top of the 200 characters: at most 1,053 bytes more in a snapshot, 205 for a bare link, of which it carries 64 characters |
   | People in a room | the table | room | 16 counted, 32 at most |
 

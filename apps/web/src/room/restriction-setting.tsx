@@ -64,7 +64,14 @@ function parseRule(
  * check, so the PO can take them out. A rule the PO does not meet asks first: the PO stays,
  * and may not have meant it. The panel reads how many people here would not pass, never who.
  */
-export function RestrictionSetting({ room, settings, change, pending, id }: ControlProps) {
+export function RestrictionSetting({
+  room,
+  settings,
+  change,
+  pending,
+  id,
+  describedBy,
+}: ControlProps) {
   const t = useT();
   const code = useRoomStore((state) => state.code);
   const signedIn = useIdentityStore((state) => state.provider !== null);
@@ -88,6 +95,7 @@ export function RestrictionSetting({ room, settings, change, pending, id }: Cont
     tenantsHint: useId(),
     problem: useId(),
   };
+  const problemId = problem === null ? "" : ids.problem;
   const showDomains = google || stored.domains !== "";
   const showTenants = microsoft || stored.tenants !== "";
 
@@ -133,7 +141,7 @@ export function RestrictionSetting({ room, settings, change, pending, id }: Cont
 
   if (!signedIn && rule === undefined) {
     return (
-      <p data-restriction-sign-in className="m-0 text-sm">
+      <p id={id} data-restriction-sign-in className="m-0 text-sm">
         {t("restriction.signInFirst")}
       </p>
     );
@@ -158,7 +166,7 @@ export function RestrictionSetting({ room, settings, change, pending, id }: Cont
             data-restriction-domains
             value={domains}
             onChange={(event) => setDomains(event.target.value)}
-            aria-describedby={ids.domainsHint}
+            aria-describedby={`${describedBy} ${ids.domainsHint} ${problemId}`}
             rows={2}
             autoComplete="off"
             spellCheck={false}
@@ -180,7 +188,7 @@ export function RestrictionSetting({ room, settings, change, pending, id }: Cont
             data-restriction-tenants
             value={tenants}
             onChange={(event) => setTenants(event.target.value)}
-            aria-describedby={ids.tenantsHint}
+            aria-describedby={`${describedBy} ${ids.tenantsHint} ${problemId}`}
             rows={2}
             autoComplete="off"
             spellCheck={false}
