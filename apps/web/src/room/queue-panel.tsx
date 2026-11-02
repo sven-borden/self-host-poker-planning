@@ -3,9 +3,11 @@ import type { CmdAck, QueueItemView } from "@pp/protocol";
 import { ArrowDownIcon, ArrowUpIcon, GripVerticalIcon, XIcon } from "lucide-react";
 import {
   type FormEvent,
+  lazy,
   memo,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
+  Suspense,
   startTransition,
   useCallback,
   useEffect,
@@ -24,6 +26,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "../components/ui/sheet.tsx";
+import { connectorOn } from "../connectors/connector.ts";
 import { useT } from "../i18n/hooks.ts";
 import type { TFunction } from "../i18n/i18n.ts";
 import { cn } from "../lib/utils.ts";
@@ -32,6 +35,13 @@ import { useRoomStore } from "../stores/room-store.ts";
 import { failureMessage } from "./failure.ts";
 import { type PasteResult, parsePaste, pasteLeft, queueBatches } from "./paste-queue.ts";
 import { itemName, keyLabel, safeHref, shortUrl } from "./subject.ts";
+
+/** The tracker's part of the sheet (#54): a chunk of its own, for installs that have one. */
+const ConnectorSection = lazy(() =>
+  import("../connectors/connector-section.tsx").then((module) => ({
+    default: module.ConnectorSection,
+  })),
+);
 
 /** A phone: the `phone:` variant in styles.css. The panel is a bottom sheet there. */
 const PHONE_QUERY = "(max-width: 640px)";
@@ -346,6 +356,11 @@ function QueueBody({ side }: { side: boolean }) {
       <div role="status" data-queue-live className="sr-only">
         <span key={news.id}>{news.text}</span>
       </div>
+      {connectorOn("jira") ? (
+        <Suspense fallback={null}>
+          <ConnectorSection />
+        </Suspense>
+      ) : null}
       <PasteForm items={items} ready={loading !== "loading"} onAdded={refresh} />
       {failure !== null ? (
         <p role="alert" className="m-0 px-4 pb-2 text-sm">

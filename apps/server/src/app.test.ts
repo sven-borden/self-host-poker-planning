@@ -354,7 +354,9 @@ describe("the built web app", () => {
       GOOGLE_CLIENT_SECRET: "google-secret",
       JIRA_CLIENT_ID: "jira-id",
       JIRA_CLIENT_SECRET: "jira-secret-not-for-the-page",
-      POKER_VAULT_KEY: Buffer.alloc(32, 7).toString("base64"),
+      POKER_VAULT_KEY: Buffer.from(Array.from({ length: 32 }, (_, n) => n * 7 + 1)).toString(
+        "base64",
+      ),
     };
     const html = await (await app({ staticDir: root }, keys).app.request("/")).text();
     expect(html).toContain('<meta name="pp-connectors" content="jira">');

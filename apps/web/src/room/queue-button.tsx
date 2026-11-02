@@ -1,7 +1,8 @@
 import { ListOrderedIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { reloadAction } from "../components/shell/reload-action.ts";
 import { Button } from "../components/ui/button.tsx";
+import { connectorResultWaits } from "../connectors/connector.ts";
 import { useT } from "../i18n/hooks.ts";
 
 type PanelModule = typeof import("./queue-panel.tsx");
@@ -37,6 +38,19 @@ export function RoomQueueButton({ count }: { count: number }) {
         .catch(() => {});
     }
   }
+
+  // Back from a tracker (#54): the sheet the PO left from opens, and says how it went.
+  const opened = useRef(false);
+  useEffect(() => {
+    if (opened.current || !connectorResultWaits()) return;
+    opened.current = true;
+    loadPanel()
+      .then((module) => {
+        setPanel(module);
+        setOpen(true);
+      })
+      .catch(() => {});
+  }, []);
 
   const Panel = panel?.QueuePanel;
   return (

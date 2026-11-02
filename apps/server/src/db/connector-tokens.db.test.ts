@@ -127,7 +127,7 @@ describe("a database dump", () => {
     expect(await readBack(tokens, "user-a")).toBe(token);
   });
 
-  it("holds about the row only its owner, connector, version, dates and sealed value", async () => {
+  it("holds about the row only its owner, connector, version, dates, sealed value and site", async () => {
     const { rows } = await sql.query<{ column_name: string }>(
       `select column_name from information_schema.columns
        where table_name = 'connector_token' order by ordinal_position`,
@@ -139,6 +139,7 @@ describe("a database dump", () => {
       "version",
       "created_at",
       "updated_at",
+      "settings",
     ]);
   });
 

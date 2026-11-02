@@ -32,6 +32,7 @@ describe("historyRow", () => {
       },
       stats: computeResults(["5", "8"], { kind: "preset", id: "fib" }),
       final: null,
+      source: null,
       startedAt: new Date(T0 + 4),
       revealedAt: new Date(T0 + 10),
       finishedAt: new Date(T0 + 20),

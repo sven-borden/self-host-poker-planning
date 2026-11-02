@@ -1,4 +1,4 @@
-import { ACK_ERROR_CODES, PROTOCOL_ERROR_CODES } from "@pp/protocol";
+import { ACK_ERROR_CODES, CONNECTOR_ERROR_CODES, PROTOCOL_ERROR_CODES } from "@pp/protocol";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { de } from "./de.ts";
 import { en } from "./en.ts";
@@ -166,6 +166,9 @@ describe("catalogs", () => {
       // The exports (#34): the product's name in the heading, and "Votes" again.
       "exports.heading",
       "exports.colVotes",
+      // The connector (#54): words Jira and the French use alike.
+      "connector.site",
+      "connector.sprint",
     ],
     de: [
       "app.name",
@@ -199,6 +202,9 @@ describe("catalogs", () => {
       "exports.colMedian",
       "exports.heading",
       "exports.headingNamed",
+      // The connector (#54): Jira's own words in German too.
+      "connector.board",
+      "connector.sprint",
     ],
   };
 
@@ -301,6 +307,22 @@ describe("error codes", () => {
       expect(message.trim(), `${language}: ${code}`).not.toBe("");
     }
   });
+
+  it.each(LANGUAGES)(
+    "has a connector message for every code it can refuse with, in %s",
+    (language) => {
+      const catalog = { en, fr, de }[language];
+      const t = fixedT(language);
+      for (const code of CONNECTOR_ERROR_CODES) {
+        expect(Object.hasOwn(catalog.connector.errors, code), code).toBe(true);
+        const message = (t as (key: string, values: object) => string)(`connector.errors.${code}`, {
+          system: "Jira",
+        });
+        expect(message, code).not.toContain("connector.errors");
+        expect(message, code).not.toContain("{{");
+      }
+    },
+  );
 
   it("holds no message for a code the protocol does not list", () => {
     const listed = new Set<string>([...ACK_ERROR_CODES, "unknown"]);

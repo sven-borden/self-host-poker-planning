@@ -14,11 +14,20 @@ export const SIGN_IN_BASE = `http://localhost:${SIGN_IN_PORT}`;
 const FAKE_PORT = PORT + 4;
 export const SIGN_IN_FAKE_ORIGIN = `http://127.0.0.1:${FAKE_PORT}`;
 
-/** Fake keys, and where the stand-in listens. */
+const JIRA_FAKE_PORT = PORT + 5;
+/** The stand-in for Atlassian (#54): `apps/server/src/fake-jira-start.ts`, in the same process. */
+export const JIRA_FAKE_ORIGIN = `http://127.0.0.1:${JIRA_FAKE_PORT}`;
+
+/** Fake keys, and where the stand-ins listen. The Jira keys are `FAKE_JIRA_CLIENT`'s. */
 export const SIGN_IN_ENV = {
   GOOGLE_CLIENT_ID: "e2e-google-client",
   GOOGLE_CLIENT_SECRET: "e2e-google-secret",
   MICROSOFT_CLIENT_ID: "e2e-microsoft-client",
   MICROSOFT_CLIENT_SECRET: "e2e-microsoft-secret",
   FAKE_OIDC_PORT: String(FAKE_PORT),
+  JIRA_CLIENT_ID: "fake-jira-client",
+  JIRA_CLIENT_SECRET: "fake-jira-secret",
+  // Not secret, and not used anywhere else: 32 bytes for this run's throwaway rows.
+  POKER_VAULT_KEY: "ZTJlLW9ubHktdmF1bHQta2V5LW5vdC1mb3ItdXNlLTA=",
+  FAKE_JIRA_PORT: String(JIRA_FAKE_PORT),
 };

@@ -10,14 +10,14 @@ export const fr: Catalog<"many"> = {
     skipToContent: "Aller au contenu",
   },
   theme: {
-    current: "Thème : {{mode}}",
+    current: "Thème\u{202f}: {{mode}}",
     label: "Thème",
     light: "Clair",
     dark: "Sombre",
     system: "Système",
   },
   language: {
-    current: "Langue : {{language}}",
+    current: "Langue\u{202f}: {{language}}",
     label: "Langue",
     loadFailed: "Impossible de charger cette langue. Rechargez la page et réessayez.",
   },
@@ -99,7 +99,7 @@ export const fr: Catalog<"many"> = {
       "Les {{max, number}} places à la table sont prises. Rejoignez la salle en tant qu’observateur, ou attendez qu’une place se libère.",
     fullTitle: "Cette salle est complète",
     fullBody:
-      "{{max, number}} personnes sont déjà là. Gardez cette page ouverte : vous pourrez entrer dès que quelqu’un part.",
+      "{{max, number}} personnes sont déjà là. Gardez cette page ouverte\u{202f}: vous pourrez entrer dès que quelqu’un part.",
   },
   you: {
     title: "Vous",
@@ -174,7 +174,7 @@ export const fr: Catalog<"many"> = {
     timerThenTimeUp: "À la fin, tout le monde voit que le temps est écoulé.",
     timerCustom: "Autre durée",
     timerCustomLabel: "Durée personnalisée",
-    timerCustomHint: "De 5 secondes à 60 minutes : 90 ou 1:30.",
+    timerCustomHint: "De 5 secondes à 60 minutes\u{202f}: 90 ou 1:30.",
     timerCustomBad:
       "Saisissez de 5 secondes à 60 minutes, en secondes (90) ou en minutes et secondes (1:30).",
     timerSet: "Valider",
@@ -341,16 +341,16 @@ export const fr: Catalog<"many"> = {
     noValue: "aucune valeur",
     spreadRange: "{{low}} à {{high}}",
     distribution: "Votes par carte",
-    cardVotes_one: "{{card}} : {{count, number}} vote",
-    cardVotes_many: "{{card}} : {{count, number}} votes",
-    cardVotes_other: "{{card}} : {{count, number}} votes",
+    cardVotes_one: "{{card}}\u{202f}: {{count, number}} vote",
+    cardVotes_many: "{{card}}\u{202f}: {{count, number}} votes",
+    cardVotes_other: "{{card}}\u{202f}: {{count, number}} votes",
     notCounted: "Non comptées",
     notCountedNote: "Les cartes spéciales ne comptent pas dans ces chiffres.",
     extremes: "Carte la plus basse et carte la plus haute",
     lowest: "Plus basse",
     highest: "Plus haute",
-    lowestNames: "Carte la plus basse ({{card}}) : {{names}}",
-    highestNames: "Carte la plus haute ({{card}}) : {{names}}",
+    lowestNames: "Carte la plus basse ({{card}})\u{202f}: {{names}}",
+    highestNames: "Carte la plus haute ({{card}})\u{202f}: {{names}}",
     consensus: "Consensus",
     consensusOn: "Consensus sur {{card}}.",
     agreementShort: "Accord {{agreement, number(style: percent; maximumFractionDigits: 0)}}",
@@ -360,11 +360,11 @@ export const fr: Catalog<"many"> = {
     cardsTie_many: "{{count, number}} cartes à égalité",
     cardsTie_other: "{{count, number}} cartes à égalité",
     suggestedAgreement:
-      "Carte suggérée : {{card}}. Accord : {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
+      "Carte suggérée\u{202f}: {{card}}. Accord\u{202f}: {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
     mostVotedAgreement:
-      "Plus votée : {{card}}. Accord : {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
+      "Plus votée\u{202f}: {{card}}. Accord\u{202f}: {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
     tieAgreement:
-      "Égalité entre {{cards}}. Accord : {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
+      "Égalité entre {{cards}}. Accord\u{202f}: {{agreement, number(style: percent; maximumFractionDigits: 0)}}.",
     nothing: "Rien à compter.",
     cards: "Cartes jouées",
     offTable: "Hors de la table",
@@ -380,7 +380,7 @@ export const fr: Catalog<"many"> = {
     pick: "Choisissez l’estimation finale, puis enregistrez-la.",
     suggested: "{{card}}, suggérée",
     tied: "{{card}}, à égalité",
-    centre: "Estimation finale : {{card}}.",
+    centre: "Estimation finale\u{202f}: {{card}}.",
   },
   timer: {
     seconds_one: "{{count, number}} seconde",
@@ -404,7 +404,7 @@ export const fr: Catalog<"many"> = {
     stopSpoken: "Arrêter le minuteur",
     customLabel: "Durée",
     customStart: "Lancer",
-    left: "Temps restant : {{time}}",
+    left: "Temps restant\u{202f}: {{time}}",
     up: "Temps écoulé",
   },
   hand: {
@@ -412,7 +412,7 @@ export const fr: Catalog<"many"> = {
     hintLobby: "Vous pourrez jouer dès que le product owner lancera le tour.",
     hintLobbyOwner: "Lancez le vote pour jouer vos cartes.",
     hintRevealed: "Les cartes sont révélées. Les votes ne peuvent plus changer dans ce tour.",
-    youVoted: "Votre vote : {{card}}.",
+    youVoted: "Votre vote\u{202f}: {{card}}.",
     hintChange: "Vous pouvez encore changer votre carte.",
     youChanged: "Vous avez changé de carte\u{202f}: {{card}}.",
     retracted: "Vote retiré.",
@@ -421,14 +421,16 @@ export const fr: Catalog<"many"> = {
   po: {
     makeOwner: "Nommer product owner",
     remove: "Retirer de la salle",
-    handOverVoter: "Confier le rôle de product owner à {{name}} ? Vous devenez votant.",
-    handOverStayVoter: "Confier le rôle de product owner à {{name}} ? Vous restez votant.",
-    handOverObserver: "Confier le rôle de product owner à {{name}} ? Vous restez observateur.",
+    handOverVoter: "Confier le rôle de product owner à {{name}}\u{202f}? Vous devenez votant.",
+    handOverStayVoter: "Confier le rôle de product owner à {{name}}\u{202f}? Vous restez votant.",
+    handOverObserver:
+      "Confier le rôle de product owner à {{name}}\u{202f}? Vous restez observateur.",
     handOverNoVote:
-      "Le product owner ne vote pas dans cette salle : {{name}} cessera donc de voter.",
+      "Le product owner ne vote pas dans cette salle\u{202f}: {{name}} cessera donc de voter.",
     handOver: "Confier le rôle",
     handingOver: "Transmission…",
-    removeQuestion: "Retirer {{name}} de la salle ? Cette personne pourra revenir avec le lien.",
+    removeQuestion:
+      "Retirer {{name}} de la salle\u{202f}? Cette personne pourra revenir avec le lien.",
     removeConfirm: "Retirer",
     removing: "Retrait…",
     cancel: "Annuler",
@@ -436,9 +438,9 @@ export const fr: Catalog<"many"> = {
   },
   sound: {
     title: "Son",
-    off: "Son : désactivé",
-    on: "Son : activé",
-    waiting: "Son : activé, dès votre premier clic ou votre première touche",
+    off: "Son\u{202f}: désactivé",
+    on: "Son\u{202f}: activé",
+    waiting: "Son\u{202f}: activé, dès votre premier clic ou votre première touche",
     enable: "Jouer les effets sonores",
     hint: "Une carte posée, la révélation, un consensus et les dernières secondes du minuteur. Enregistré sur cet appareil.",
     musicEnable: "Jouer la musique de fond",
@@ -468,7 +470,7 @@ export const fr: Catalog<"many"> = {
     button: "Prendre le rôle de product owner",
     claiming: "Prise du rôle…",
     notYet:
-      "Pas encore : le product owner est revenu, ou est hors ligne depuis moins de {{minutes, number}} minutes.",
+      "Pas encore\u{202f}: le product owner est revenu, ou est hors ligne depuis moins de {{minutes, number}} minutes.",
   },
   live: {
     joined: "{{name}} a rejoint la salle.",
@@ -515,13 +517,13 @@ export const fr: Catalog<"many"> = {
       "Le ticket suivant démarre désormais tout seul après une estimation enregistrée.",
     autoAdvanceOff: "Le ticket suivant ne démarre plus tout seul.",
     restrictionChanged: "Le product owner a changé qui peut rejoindre cette salle.",
-    queueAdded_one: "{{count, number}} ticket ajouté à la file. Ensuite : {{item}}.",
-    queueAdded_many: "{{count, number}} de tickets ajoutés à la file. Ensuite : {{item}}.",
-    queueAdded_other: "{{count, number}} tickets ajoutés à la file. Ensuite : {{item}}.",
+    queueAdded_one: "{{count, number}} ticket ajouté à la file. Ensuite\u{202f}: {{item}}.",
+    queueAdded_many: "{{count, number}} de tickets ajoutés à la file. Ensuite\u{202f}: {{item}}.",
+    queueAdded_other: "{{count, number}} tickets ajoutés à la file. Ensuite\u{202f}: {{item}}.",
     queueAddedPlain_one: "{{count, number}} ticket ajouté à la file.",
     queueAddedPlain_many: "{{count, number}} de tickets ajoutés à la file.",
     queueAddedPlain_other: "{{count, number}} tickets ajoutés à la file.",
-    advanceSoon: "Ensuite, dans {{seconds, number}} secondes : {{item}}.",
+    advanceSoon: "Ensuite, dans {{seconds, number}} secondes\u{202f}: {{item}}.",
     advanceHeld: "La salle reste sur ce tour.",
     roomRenamed: "La salle s’appelle maintenant {{name}}.",
     poVotesOn: "Le product owner vote désormais aussi.",
@@ -537,7 +539,7 @@ export const fr: Catalog<"many"> = {
     deckNow: "Le product owner est passé à {{deck}}.",
     specialsNow: "Le product owner a modifié les cartes spéciales.",
     timerChanged: "Le product owner a modifié le minuteur.",
-    timerStarted: "Minuteur lancé : {{duration}}.",
+    timerStarted: "Minuteur lancé\u{202f}: {{duration}}.",
     timerExtended: "{{duration}} de plus.",
     timerExtendedSome: "Temps ajouté.",
     timerStopped: "Minuteur arrêté.",
@@ -558,10 +560,10 @@ export const fr: Catalog<"many"> = {
   dev: {
     tableTitle: "Disposition de la table",
     tableLede:
-      "Un banc d’essai pour la table. Paramètres de l’adresse : n de 1 à 16, state lobby, voting ou revealed, observers de 0 à 4, away 0 ou 1.",
+      "Un banc d’essai pour la table. Paramètres de l’adresse\u{202f}: n de 1 à 16, state lobby, voting ou revealed, observers de 0 à 4, away 0 ou 1.",
     hand: "Main",
     miniCards: "Mini-cartes",
-    average: "Moyenne des cartes numériques : {{value, number(maximumFractionDigits: 1)}}",
+    average: "Moyenne des cartes numériques\u{202f}: {{value, number(maximumFractionDigits: 1)}}",
   },
   notFound: {
     title: "Page introuvable",
@@ -580,16 +582,16 @@ export const fr: Catalog<"many"> = {
     openThere: "L’ouvrir là-bas",
   },
   roomGone: {
-    lede: "Il n’y a pas de salle à cette adresse. Voici ce qui a pu se passer :",
+    lede: "Il n’y a pas de salle à cette adresse. Voici ce qui a pu se passer\u{202f}:",
     typo: "Le code ou le lien a été mal saisi ou coupé. Comparez-le avec celui que vous avez reçu.",
     expired_one:
-      "La salle a été supprimée : sur ce serveur, une salle est effacée après {{count, number}} jour sans activité.",
+      "La salle a été supprimée\u{202f}: sur ce serveur, une salle est effacée après {{count, number}} jour sans activité.",
     expired_many:
-      "La salle a été supprimée : sur ce serveur, une salle est effacée après {{count, number}} jours sans activité.",
+      "La salle a été supprimée\u{202f}: sur ce serveur, une salle est effacée après {{count, number}} jours sans activité.",
     expired_other:
-      "La salle a été supprimée : sur ce serveur, une salle est effacée après {{count, number}} jours sans activité.",
+      "La salle a été supprimée\u{202f}: sur ce serveur, une salle est effacée après {{count, number}} jours sans activité.",
     expiredUnknown:
-      "La salle a été supprimée : sur ce serveur, une salle est effacée après une longue période sans activité.",
+      "La salle a été supprimée\u{202f}: sur ce serveur, une salle est effacée après une longue période sans activité.",
     deleted: "Le product owner de la salle l’a supprimée.",
     tryAnother: "Essayer un autre code",
     createRoom: "Créer une nouvelle salle",
@@ -607,8 +609,8 @@ export const fr: Catalog<"many"> = {
   signIn: {
     google: "Se connecter avec Google",
     microsoft: "Se connecter avec Microsoft",
-    hint: "Facultatif : votre nom vous suit sur vos autres appareils.",
-    signedInAs: "Compte connecté :",
+    hint: "Facultatif\u{202f}: votre nom vous suit sur vos autres appareils.",
+    signedInAs: "Compte connecté\u{202f}:",
     signOut: "Se déconnecter",
     signedInWith: "Compte connecté avec {{provider}}",
     signingOut: "Déconnexion…",
@@ -616,13 +618,14 @@ export const fr: Catalog<"many"> = {
       cancelled: "Connexion annulée. Vous pouvez continuer sans compte.",
       accountExists:
         "Cette adresse e-mail a déjà un compte, ouvert d’une autre façon. Connectez-vous de cette autre façon.",
-      noEmail: "Votre compte n’a pas transmis d’adresse e-mail : la connexion n’a pas pu aboutir.",
+      noEmail:
+        "Votre compte n’a pas transmis d’adresse e-mail\u{202f}: la connexion n’a pas pu aboutir.",
       tenantNotAllowed:
         "Ce site n’accepte pas ce compte Microsoft. Essayez-en un autre, ou continuez sans compte.",
       rateLimited: "Trop de tentatives de connexion. Attendez une minute, puis réessayez.",
       failed: "La connexion n’a pas abouti. Réessayez, ou continuez sans compte.",
       stillMoving:
-        "Votre compte est connecté. Certaines de vos salles sont encore en cours de transfert : rouvrez-les dans un instant.",
+        "Votre compte est connecté. Certaines de vos salles sont encore en cours de transfert\u{202f}: rouvrez-les dans un instant.",
     },
   },
   restriction: {
@@ -644,23 +647,23 @@ export const fr: Catalog<"many"> = {
     otherAccount:
       "Ce compte ne peut pas rejoindre cette salle. Déconnectez-vous pour en utiliser un autre.",
     sessionTooOld:
-      "Votre connexion date de plus de {{days, number}} jours. Cette salle en demande une récente : se reconnecter permet à votre fournisseur de confirmer que vous êtes toujours là. Déconnectez-vous, puis reconnectez-vous.",
+      "Votre connexion date de plus de {{days, number}} jours. Cette salle en demande une récente\u{202f}: se reconnecter permet à votre fournisseur de confirmer que vous êtes toujours là. Déconnectez-vous, puis reconnectez-vous.",
     unavailable:
-      "Ce serveur ne propose plus la connexion demandée par cette salle : personne ne peut la rejoindre pour l’instant. Demandez au product owner de changer la règle.",
+      "Ce serveur ne propose plus la connexion demandée par cette salle\u{202f}: personne ne peut la rejoindre pour l’instant. Demandez au product owner de changer la règle.",
     yourOrganisation: "votre organisation",
     signInFirst: "Connectez-vous pour réserver cette salle à certains comptes.",
     domainsLabel: "Domaines de messagerie",
     domainsHint:
-      "Un par ligne, à l’identique : example.com n’admet pas mail.example.com. Seul compte un compte Google dont Google a vérifié l’adresse, et cela prouve seulement que quelqu’un a pu y recevoir du courrier, boîtes partagées comprises.",
+      "Un par ligne, à l’identique\u{202f}: example.com n’admet pas mail.example.com. Seul compte un compte Google dont Google a vérifié l’adresse, et cela prouve seulement que quelqu’un a pu y recevoir du courrier, boîtes partagées comprises.",
     tenantsLabel: "Identifiants de tenant Microsoft",
     tenantsHint:
-      "Un par ligne. Les personnes connectées avec Microsoft passent par l’identifiant de tenant de leur organisation, jamais par leur adresse : un domaine ci-dessus ne les admet pas.",
+      "Un par ligne. Les personnes connectées avec Microsoft passent par l’identifiant de tenant de leur organisation, jamais par leur adresse\u{202f}: un domaine ci-dessus ne les admet pas.",
     googleGone:
-      "Ce serveur ne propose plus la connexion Google : personne ne peut passer par un domaine.",
+      "Ce serveur ne propose plus la connexion Google\u{202f}: personne ne peut passer par un domaine.",
     microsoftGone:
-      "Ce serveur ne propose plus la connexion Microsoft : personne ne peut passer par un tenant.",
-    badDomain: "Ce n’est pas un domaine : {{entry}}",
-    badTenant: "Ce n’est pas l’identifiant de tenant d’une organisation : {{entry}}",
+      "Ce serveur ne propose plus la connexion Microsoft\u{202f}: personne ne peut passer par un tenant.",
+    badDomain: "Ce n’est pas un domaine\u{202f}: {{entry}}",
+    badTenant: "Ce n’est pas l’identifiant de tenant d’une organisation\u{202f}: {{entry}}",
     tooMany: "Chaque liste contient {{max, number}} entrées au plus.",
     outsiders_one:
       "{{count, number}} personne ici ne passerait pas. Elle reste jusqu’à ce qu’elle recharge la page, perde sa connexion ou s’en aille.",
@@ -703,7 +706,7 @@ export const fr: Catalog<"many"> = {
     joined: "Vous avez une place",
     claimed: "Vous êtes product owner",
     claimedWhy:
-      "Ce rôle vous permet d’animer cette salle et de la renommer. La supprimer reste réservé à la personne à qui elle appartient : reprendre le rôle ou le recevoir ne donne pas ce droit.",
+      "Ce rôle vous permet d’animer cette salle et de la renommer. La supprimer reste réservé à la personne à qui elle appartient\u{202f}: reprendre le rôle ou le recevoir ne donne pas ce droit.",
     kept: "Votre salle, avec un autre product owner",
     keptWhy:
       "Quelqu’un d’autre a repris le rôle de product owner. Récupérez ce rôle dans la salle, et vous pourrez la supprimer.",
@@ -723,15 +726,15 @@ export const fr: Catalog<"many"> = {
     renamed: "Salle renommée.",
     delete: "Supprimer",
     deleteNamed: "Supprimer {{name}}",
-    deleteTitle: "Supprimer {{name}} ?",
+    deleteTitle: "Supprimer {{name}}\u{202f}?",
     deleteBody:
-      "La salle disparaît pour tout le monde : ses tours, son historique, sa file et les accès. C’est définitif.",
+      "La salle disparaît pour tout le monde\u{202f}: ses tours, son historique, sa file et les accès. C’est définitif.",
     deleteLive: "Les personnes présentes dans la salle voient aussitôt qu’elle n’existe plus.",
     deleteConfirm: "Supprimer cette salle",
     deleted: "Salle supprimée.",
     leave: "Quitter cette salle",
-    leaveNamed: "Quitter cette salle : {{name}}",
-    leaveTitle: "Quitter {{name}} ?",
+    leaveNamed: "Quitter cette salle\u{202f}: {{name}}",
+    leaveTitle: "Quitter {{name}}\u{202f}?",
     leaveBody:
       "Vous perdez votre place et la salle disparaît de cette liste. Le lien de la salle vous permet de la rejoindre à nouveau.",
     leaveKept:
@@ -771,7 +774,7 @@ export const fr: Catalog<"many"> = {
     empty: "Aucun tour pour l’instant. Un tour apparaît ici dès que le tour suivant commence.",
     rounds: "Tours terminés",
     noFinal: "Aucune",
-    finalSpoken: "Estimation finale : {{card}}.",
+    finalSpoken: "Estimation finale\u{202f}: {{card}}.",
     noFinalSpoken: "Aucune estimation finale.",
     tookHours: "{{hours, number}} h {{minutes, number}} min",
     hours_one: "{{count, number}} heure",
@@ -788,8 +791,8 @@ export const fr: Catalog<"many"> = {
     votesOf: "Votes du tour {{round, number}}",
     anonymous: "Tour anonyme",
     changed: "changée",
-    voteSpoken: "{{name}} : {{card}}",
-    voteChangedSpoken: "{{name}} : {{card}}, changée après la révélation",
+    voteSpoken: "{{name}}\u{202f}: {{card}}",
+    voteChangedSpoken: "{{name}}\u{202f}: {{card}}, changée après la révélation",
     more: "Afficher les tours précédents",
     loadingMore: "Chargement des tours précédents…",
   },
@@ -822,18 +825,22 @@ export const fr: Catalog<"many"> = {
     keysCopied_one: "{{count, number}} ligne copiée pour Jira ou Azure DevOps.",
     keysCopied_many: "{{count, number}} lignes copiées pour Jira ou Azure DevOps.",
     keysCopied_other: "{{count, number}} lignes copiées pour Jira ou Azure DevOps.",
-    keysSkipped_one: "{{count, number}} tour ignoré : pas de clé ou pas d’estimation finale.",
-    keysSkipped_many: "{{count, number}} tours ignorés : pas de clé ou pas d’estimation finale.",
-    keysSkipped_other: "{{count, number}} tours ignorés : pas de clé ou pas d’estimation finale.",
-    noKeys: "Rien n’a été copié : aucun tour n’a à la fois une clé et une estimation finale.",
+    keysSkipped_one:
+      "{{count, number}} tour ignoré\u{202f}: pas de clé ou pas d’estimation finale.",
+    keysSkipped_many:
+      "{{count, number}} tours ignorés\u{202f}: pas de clé ou pas d’estimation finale.",
+    keysSkipped_other:
+      "{{count, number}} tours ignorés\u{202f}: pas de clé ou pas d’estimation finale.",
+    noKeys:
+      "Rien n’a été copié\u{202f}: aucun tour n’a à la fois une clé et une estimation finale.",
     refused:
-      "Le navigateur n’a pas autorisé la copie. Le texte est sélectionné ci-dessous : copiez-le avec Ctrl+C, ou ⌘C sur un Mac.",
+      "Le navigateur n’a pas autorisé la copie. Le texte est sélectionné ci-dessous\u{202f}: copiez-le avec Ctrl+C, ou ⌘C sur un Mac.",
     field: "Texte à copier",
     failed: "Impossible de préparer l’export. Rechargez la page et réessayez.",
     heading: "Poker Planning",
-    headingNamed: "Poker Planning : {{room}}",
+    headingNamed: "Poker Planning\u{202f}: {{room}}",
     rangeToday: "Tours terminés le {{date}}",
-    item: "{{label}} : {{shown}}",
+    item: "{{label}}\u{202f}: {{shown}}",
     colRound: "Tour",
     colSubject: "Sujet",
     colKey: "Clé",
@@ -851,10 +858,10 @@ export const fr: Catalog<"many"> = {
     count_one: "{{count, number}} ticket",
     count_many: "{{count, number}} de tickets",
     count_other: "{{count, number}} tickets",
-    lede: "Ce que l’équipe estime ensuite, dans l’ordre. Vous seul voyez cette liste ; la salle voit ce qui vient ensuite.",
+    lede: "Ce que l’équipe estime ensuite, dans l’ordre. Vous seul voyez cette liste\u{202f}; la salle voit ce qui vient ensuite.",
     pasteLabel: "Collez vos tickets",
     pasteHint:
-      "Un par ligne : des clés, des liens, ou un tableau copié depuis Jira ou Azure DevOps. Toute autre ligne devient un titre. Aucun lien n’est ouvert.",
+      "Un par ligne\u{202f}: des clés, des liens, ou un tableau copié depuis Jira ou Azure DevOps. Toute autre ligne devient un titre. Aucun lien n’est ouvert.",
     add: "Ajouter à la file",
     nothingPasted: "Collez d’abord une liste.",
     added_one: "{{count, number}} ticket ajouté.",
@@ -871,18 +878,18 @@ export const fr: Catalog<"many"> = {
     shortened_many: "{{count, number}} de titres ont été raccourcis.",
     shortened_other: "{{count, number}} titres ont été raccourcis.",
     overflow_one:
-      "{{count, number}} ticket n’a pas trouvé place : une file en contient {{max, number}} au plus, moins s’ils sont longs.",
+      "{{count, number}} ticket n’a pas trouvé place\u{202f}: une file en contient {{max, number}} au plus, moins s’ils sont longs.",
     overflow_many:
-      "{{count, number}} de tickets n’ont pas trouvé place : une file en contient {{max, number}} au plus, moins s’ils sont longs.",
+      "{{count, number}} de tickets n’ont pas trouvé place\u{202f}: une file en contient {{max, number}} au plus, moins s’ils sont longs.",
     overflow_other:
-      "{{count, number}} tickets n’ont pas trouvé place : une file en contient {{max, number}} au plus, moins s’ils sont longs.",
+      "{{count, number}} tickets n’ont pas trouvé place\u{202f}: une file en contient {{max, number}} au plus, moins s’ils sont longs.",
     kept: "Ces lignes restent dans la zone.",
     partial_one:
-      "{{count, number}} ticket est entré avant l’arrêt. Le reste est encore dans la zone : ajoutez-le de nouveau, rien n’entrera deux fois.",
+      "{{count, number}} ticket est entré avant l’arrêt. Le reste est encore dans la zone\u{202f}: ajoutez-le de nouveau, rien n’entrera deux fois.",
     partial_many:
-      "{{count, number}} de tickets sont entrés avant l’arrêt. Le reste est encore dans la zone : ajoutez-le de nouveau, rien n’entrera deux fois.",
+      "{{count, number}} de tickets sont entrés avant l’arrêt. Le reste est encore dans la zone\u{202f}: ajoutez-le de nouveau, rien n’entrera deux fois.",
     partial_other:
-      "{{count, number}} tickets sont entrés avant l’arrêt. Le reste est encore dans la zone : ajoutez-le de nouveau, rien n’entrera deux fois.",
+      "{{count, number}} tickets sont entrés avant l’arrêt. Le reste est encore dans la zone\u{202f}: ajoutez-le de nouveau, rien n’entrera deux fois.",
     empty: "La file est encore vide.",
     loading: "Chargement de la file…",
     failed: "La file n’a pas pu être chargée.",
@@ -895,18 +902,108 @@ export const fr: Catalog<"many"> = {
     moved: "{{item}} est maintenant en position {{place, number}} sur {{total, number}}.",
     removed: "{{item}} retiré.",
     clear: "Vider la file",
-    clearAsk_one: "Retirer {{count, number}} ticket ?",
-    clearAsk_many: "Retirer les {{count, number}} de tickets ?",
-    clearAsk_other: "Retirer les {{count, number}} tickets ?",
+    clearAsk_one: "Retirer {{count, number}} ticket\u{202f}?",
+    clearAsk_many: "Retirer les {{count, number}} de tickets\u{202f}?",
+    clearAsk_other: "Retirer les {{count, number}} tickets\u{202f}?",
     clearYes: "Tout retirer",
     clearNo: "Les garder",
     cleared: "La file est vide.",
     nextItem: "Ticket suivant",
-    next: "Ensuite : {{item}}",
-    nextIn: "Ensuite : {{item}}, dans {{seconds, number}} s",
+    next: "Ensuite\u{202f}: {{item}}",
+    nextIn: "Ensuite\u{202f}: {{item}}, dans {{seconds, number}} s",
     stay: "Rester sur ce tour",
     subjectHint:
-      "Vide, le ticket suivant démarre : {{item}}. Un sujet saisi passe d’abord et la file attend.",
+      "Vide, le ticket suivant démarre\u{202f}: {{item}}. Un sujet saisi passe d’abord et la file attend.",
+  },
+  connector: {
+    connect: "Connecter {{system}}",
+    lede: "Importez un sprint ou une recherche dans la file, et renvoyez les estimations. Vous connectez votre propre compte, et personne d’autre dans la salle ne s’en sert.",
+    signIn: "Connectez-vous avec un compte pour relier {{system}}.",
+    connectedTo: "Connecté à {{site}}",
+    site: "Site",
+    siteSave: "Utiliser ce site",
+    siteChange: "Changer de site",
+    field: "Les estimations vont dans",
+    fieldIs: "Les estimations vont dans {{field}}",
+    fieldHint:
+      "Un champ numérique de ce site. La suggestion se fonde sur son nom\u{202f}: vérifiez-la avant d’enregistrer.",
+    fieldSave: "Enregistrer le champ",
+    fieldChange: "Changer de champ",
+    fieldNone:
+      "Ce site n’a aucun champ numérique\u{202f}: les estimations ne peuvent pas y retourner.",
+    importFrom: "Importer depuis",
+    bySprint: "Un sprint",
+    byJql: "Une recherche JQL",
+    board: "Tableau",
+    boardFilter: "Nom du tableau",
+    boardFind: "Chercher",
+    noBoards: "Aucun tableau trouvé.",
+    sprint: "Sprint",
+    sprintActive: "{{sprint}} (actif)",
+    noSprints: "Ce tableau n’a aucun sprint actif ou à venir.",
+    jql: "Requête JQL",
+    jqlHint:
+      "Telle que vous la saisiriez dans la recherche de tickets. Elle part vers Jira et n’est pas conservée ici.",
+    import: "Importer",
+    importing: "Importation…",
+    nothingAsked: "Choisissez d’abord un sprint ou saisissez une requête.",
+    leftOut_one:
+      "{{count, number}} ticket laissé de côté\u{202f}: la file est pleine ou il n’a pas pu être lu.",
+    leftOut_many:
+      "{{count, number}} de tickets laissés de côté\u{202f}: la file est pleine ou ils n’ont pas pu être lus.",
+    leftOut_other:
+      "{{count, number}} tickets laissés de côté\u{202f}: la file est pleine ou ils n’ont pas pu être lus.",
+    beyond_one: "Environ {{count, number}} autre au-delà de la limite de {{max, number}} tickets.",
+    beyond_many:
+      "Environ {{count, number}} d’autres au-delà de la limite de {{max, number}} tickets.",
+    beyond_other:
+      "Environ {{count, number}} autres au-delà de la limite de {{max, number}} tickets.",
+    beyondUnknown: "D’autres tickets restent au-delà de la limite de {{max, number}}.",
+    disconnect: "Déconnecter",
+    disconnectNote:
+      "Cela supprime votre jeton ici. {{system}} garde sa propre trace de l’autorisation\u{202f}:",
+    grantsLink: "retirez-la dans votre compte Atlassian",
+    result: {
+      connected: "{{system}} est connecté.",
+      cancelled: "Rien n’a été connecté\u{202f}: vous êtes revenu en arrière sur {{system}}.",
+      failed: "{{system}} n’a pas pu être connecté. Réessayez.",
+    },
+    write: {
+      writing: "Écriture de {{card}} sur {{item}} dans {{system}}…",
+      written: "{{item}}\u{202f}: {{card}} est dans {{system}}.",
+      failed: "{{item}}\u{202f}: {{card}} n’est pas arrivé dans {{system}}.",
+      retry: "Réessayer",
+      dismiss: "Masquer",
+      history: "Écrire dans {{system}}",
+      done: "Écrit dans {{system}}.",
+    },
+    errors: {
+      connector_sign_in: "Connectez-vous avec un compte pour utiliser {{system}}.",
+      connector_not_connected: "Connectez d’abord {{system}} dans la file.",
+      connector_reconnect: "{{system}} n’accepte plus cette connexion. Connectez-le de nouveau.",
+      connector_no_site: "Choisissez d’abord un site {{system}} dans la file.",
+      connector_no_field: "Choisissez d’abord le champ de l’estimation dans la file.",
+      connector_bad_site: "Ce site n’est plus dans votre liste {{system}}.",
+      connector_bad_field: "Ce champ n’est pas un champ numérique de ce site.",
+      connector_other_site:
+        "Ce ticket appartient à un autre site {{system}} que celui auquel vous êtes connecté.",
+      connector_no_source: "Ce ticket ne vient pas de {{system}}.",
+      connector_no_final: "Enregistrez d’abord une estimation finale.",
+      connector_not_numeric:
+        "Seul un nombre part vers {{system}}\u{202f}: cette estimation reste ici.",
+      connector_rate_limited: "{{system}} demande de ralentir. Réessayez dans un instant.",
+      connector_rate_limited_wait:
+        "{{system}} demande de ralentir. Réessayez dans {{seconds, number}}\u{202f}s.",
+      connector_forbidden: "Votre compte {{system}} n’a pas le droit de faire cela.",
+      connector_not_found:
+        "{{system}} ne trouve pas cet élément, ou votre compte ne peut pas le voir.",
+      connector_bad_query:
+        "{{system}} n’a pas pu exécuter cette requête. Vérifiez-la et réessayez.",
+      connector_field_refused:
+        "{{system}} a refusé le champ sur ce ticket\u{202f}: il n’est peut-être pas sur son écran.",
+      connector_unavailable: "{{system}} ne répond pas correctement. Réessayez plus tard.",
+      connector_timeout: "{{system}} a mis trop de temps à répondre. Réessayez.",
+    },
   },
   common: {
     network: "Impossible de joindre le serveur. Vérifiez votre connexion, puis réessayez.",
@@ -932,7 +1029,7 @@ export const fr: Catalog<"many"> = {
     no_round: "Aucun tour n’est en cours. Lancez d’abord un tour.",
     not_voter: "Les observateurs ne votent pas. Passez au rôle de votant pour jouer une carte.",
     bad_card: "Cette carte ne fait pas partie du jeu de la salle. Choisissez-en une autre.",
-    round_revealed: "Les cartes sont déjà retournées : les votes ne peuvent plus changer.",
+    round_revealed: "Les cartes sont déjà retournées\u{202f}: les votes ne peuvent plus changer.",
     round_changed:
       "Un nouveau tour a commencé avant l’arrivée de votre vote. Choisissez à nouveau votre carte.",
     not_voting: "Ce tour n’est pas ouvert au vote.",
@@ -941,7 +1038,7 @@ export const fr: Catalog<"many"> = {
       "Cartes non révélées\u{202f}: dans un tour anonyme, une carte seule montre à qui elle appartient. Attendez une deuxième carte.",
     not_revealed: "Retournez d’abord les cartes.",
     bad_seconds:
-      "Cette durée de minuteur n’est pas autorisée : un minuteur dure de {{min, number}} secondes à {{max, number}} minutes. Choisissez-en une autre.",
+      "Cette durée de minuteur n’est pas autorisée\u{202f}: un minuteur dure de {{min, number}} secondes à {{max, number}} minutes. Choisissez-en une autre.",
     no_timer: "Aucun minuteur n’est en cours.",
     target_not_present:
       "Cette personne n’est pas dans la salle en ce moment. Seule une personne présente peut devenir product owner.",
@@ -952,7 +1049,7 @@ export const fr: Catalog<"many"> = {
     bad_queue_item:
       "L’un de ces tickets ne peut pas entrer dans la file. Vérifiez-le et réessayez.",
     queue_full:
-      "La file est pleine : elle contient {{max, number}} tickets au plus, moins s’ils sont longs.",
+      "La file est pleine\u{202f}: elle contient {{max, number}} tickets au plus, moins s’ils sont longs.",
     unknown_item: "Ce ticket n’est plus dans la file.",
     bad_restriction:
       "L’une de ces entrées n’est ni un domaine ni un identifiant de tenant, ou il y en a trop. Vérifiez-les et réessayez.",
