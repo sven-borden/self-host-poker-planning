@@ -1,19 +1,14 @@
-import { MAX_QUEUE_ITEMS } from "@pp/domain";
 import {
   type ConnectionView,
   type ConnectorBoardView,
   type ConnectorFieldView,
-  type ConnectorImportView,
   type ConnectorName,
-  type ConnectorSiteView,
   type ConnectorSprintView,
   MAX_JQL_LENGTH,
 } from "@pp/protocol";
 import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
-import type { TFunction } from "../i18n/i18n.ts";
-import { RoomApiError } from "../rooms/api.ts";
 import { isSignedIn, useIdentityStore } from "../stores/identity-store.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { connectorMessage, connectorResult, SYSTEM_NAMES } from "./connector.ts";
@@ -23,21 +18,25 @@ import {
   chooseSite,
   disconnect,
   fetchBoards,
-  fetchConnection,
   fetchFields,
-  fetchSites,
   fetchSprints,
   importItems,
   startConnection,
 } from "./connector-api.ts";
+import {
+  FIELD,
+  HINT,
+  importReport,
+  LABEL,
+  type Problem,
+  problemOf,
+  returnFocus,
+  SitePicker,
+  useConnection,
+} from "./connector-parts.tsx";
 
 /** Where a person removes the grant Atlassian keeps: 3LO has no revoke endpoint. */
 const GRANTS_URL = "https://id.atlassian.com/manage-profile/apps";
-
-const FIELD =
-  "min-h-11 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-line/30";
-const LABEL = "text-sm font-medium";
-const HINT = "m-0 text-sm text-ink-2";
 
 /** What the section says of a connection that came back. */
 const RESULT_MESSAGES = {
@@ -46,50 +45,6 @@ const RESULT_MESSAGES = {
   expired: "connector.result.expired",
   failed: "connector.result.failed",
 } as const;
-
-/** A refusal: its code, and how long the tracker asked to wait. */
-interface Problem {
-  code: string;
-  retryAfter?: number;
-}
-
-function problemOf(error: unknown): Problem {
-  if (!(error instanceof RoomApiError)) return { code: "unknown" };
-  return {
-    code: error.code,
-    ...(error.retryAfter === undefined ? {} : { retryAfter: error.retryAfter }),
-  };
-}
-
-/**
- * After a change that took away the control that opened it: the focus goes to its `selector`,
- * once that is drawn, and not to the sheet's root, where the sheet's focus trap leaves it. A focus
- * the person already moved somewhere stays there.
- */
-function returnFocus(section: HTMLElement | null, selector: string, frames = 30) {
-  requestAnimationFrame(() => {
-    const active = document.activeElement;
-    const lost =
-      active === null || active === document.body || active.getAttribute("role") === "dialog";
-    if (!lost && !section?.contains(active)) return;
-    const target = section?.querySelector<HTMLElement>(selector);
-    if (target) target.focus();
-    else if (frames > 0) returnFocus(section, selector, frames - 1);
-  });
-}
-
-/** What the sheet says after an import: every count that is not zero, in one line. */
-export function importReport(t: TFunction, view: ConnectorImportView): string {
-  const parts = [view.added > 0 ? t("queue.added", { count: view.added }) : t("queue.addedNone")];
-  if (view.duplicates > 0) parts.push(t("queue.duplicates", { count: view.duplicates }));
-  if (view.shortened > 0) parts.push(t("queue.shortened", { count: view.shortened }));
-  if (view.leftOut > 0) parts.push(t("connector.leftOut", { count: view.leftOut }));
-  if (view.beyond === null) parts.push(t("connector.beyondUnknown", { max: MAX_QUEUE_ITEMS }));
-  else if (view.beyond > 0) {
-    parts.push(t("connector.beyond", { count: view.beyond, max: MAX_QUEUE_ITEMS }));
-  }
-  return parts.join(" ");
-}
 
 /**
  * The tracker's part of the queue's sheet (#54, ADR-030), a chunk of its own: connect, pick a site
@@ -102,45 +57,10 @@ export function ConnectorSection({ name = "jira" }: { name?: ConnectorName }) {
   const signedIn = useIdentityStore(isSignedIn);
   const code = useRoomStore((state) => state.snapshot?.room.code);
   const system = SYSTEM_NAMES[name];
-  const [connection, setConnection] = useState<ConnectionView | null>(null);
-  const [problem, setProblem] = useState<Problem | null>(null);
+  const { connection, problem, setProblem, report, change } = useConnection(name, signedIn);
   const [busy, setBusy] = useState(false);
   const [result] = useState(connectorResult);
   const section = useRef<HTMLElement>(null);
-
-  const load = useCallback(async () => {
-    try {
-      setConnection(await fetchConnection(name));
-    } catch (error) {
-      setProblem(problemOf(error));
-    }
-  }, [name]);
-
-  useEffect(() => {
-    if (signedIn) void load();
-  }, [load, signedIn]);
-
-  /** Every refusal comes here. A grant found dead took the row: back to "Connect", wherever. */
-  const report = useCallback(
-    (found: Problem | null) => {
-      setProblem(found);
-      if (found?.code === "connector_reconnect") void load();
-    },
-    [load],
-  );
-
-  /** A change at the server, then a fresh look at the connection. True when it went through. */
-  async function change(act: () => Promise<void>): Promise<boolean> {
-    setProblem(null);
-    try {
-      await act();
-      await load();
-      return true;
-    } catch (error) {
-      report(problemOf(error));
-      return false;
-    }
-  }
 
   async function connect() {
     if (code === undefined || busy) return;
@@ -277,77 +197,6 @@ function Connected({ name, code, connection, change, onProblem, returnTo }: Conn
         </p>
       </div>
     </>
-  );
-}
-
-function SitePicker({
-  name,
-  current,
-  onPick,
-  onProblem,
-}: {
-  name: ConnectorName;
-  current: string | undefined;
-  onPick: (id: string) => Promise<void>;
-  onProblem: (problem: Problem) => void;
-}) {
-  const t = useT();
-  const id = useId();
-  const system = SYSTEM_NAMES[name];
-  const [sites, setSites] = useState<readonly ConnectorSiteView[] | null>(null);
-  const [picked, setPicked] = useState(current ?? "");
-  const report = useRef(onProblem);
-  report.current = onProblem;
-
-  useEffect(() => {
-    let live = true;
-    fetchSites(name)
-      .then((list) => {
-        if (!live) return;
-        setSites(list);
-        setPicked((now) => now || (list[0]?.id ?? ""));
-      })
-      .catch((error: unknown) => {
-        if (live) report.current(problemOf(error));
-      });
-    return () => {
-      live = false;
-    };
-  }, [name]);
-
-  if (sites === null) return null;
-  if (sites.length === 0) return <p className={HINT}>{t("connector.noSites", { system })}</p>;
-  return (
-    <form
-      noValidate
-      data-connector-sites
-      className="flex flex-col gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (picked !== "") void onPick(picked);
-      }}
-    >
-      <label htmlFor={id} className={LABEL}>
-        {t("connector.site")}
-      </label>
-      <select
-        id={id}
-        data-connector-site
-        className={FIELD}
-        value={picked}
-        onChange={(event) => setPicked(event.target.value)}
-      >
-        {sites.map((site) => (
-          <option key={site.id} value={site.id}>
-            {site.name}
-          </option>
-        ))}
-      </select>
-      <Button type="submit" variant="outline" className="self-start">
-        {t("connector.siteSave")}
-      </Button>
-    </form>
   );
 }
 

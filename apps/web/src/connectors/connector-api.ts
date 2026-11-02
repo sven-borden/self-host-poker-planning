@@ -4,6 +4,7 @@ import type {
   ConnectorFieldsView,
   ConnectorImportView,
   ConnectorName,
+  ConnectorSavedQueriesView,
   ConnectorSiteView,
   ConnectorSprintView,
   ConnectorWriteView,
@@ -64,10 +65,37 @@ export async function fetchSprints(
   ).sprints;
 }
 
+/** The one place a token leaves this page: in a body, to this server, once. */
+export async function connectAzure(organization: string, token: string): Promise<void> {
+  await call(`${own("azure-devops")}/connect`, jsonInit("POST", { organization, token }));
+}
+
+export async function fetchTypes(name: ConnectorName): Promise<readonly string[]> {
+  return answer<{ types: readonly string[] }>(await call(`${own(name)}/types`)).types;
+}
+
+export const fetchTypeFields = async (name: ConnectorName, type: string) =>
+  answer<ConnectorFieldsView>(await call(`${own(name)}/fields?type=${encodeURIComponent(type)}`));
+
+export async function chooseTypedField(
+  name: ConnectorName,
+  id: string,
+  type: string,
+): Promise<void> {
+  await call(`${own(name)}/field`, jsonInit("PUT", { id, type }));
+}
+
+export async function clearField(name: ConnectorName): Promise<void> {
+  await call(`${own(name)}/field`, jsonInit("DELETE"));
+}
+
+export const fetchSavedQueries = async (name: ConnectorName) =>
+  answer<ConnectorSavedQueriesView>(await call(`${own(name)}/queries`));
+
 export const importItems = async (
   name: ConnectorName,
   code: string,
-  query: { jql: string } | { sprint: number },
+  query: { jql: string } | { sprint: number } | { wiql: string } | { saved: string },
 ) =>
   answer<ConnectorImportView>(await call(`${inRoom(code, name)}/import`, jsonInit("POST", query)));
 

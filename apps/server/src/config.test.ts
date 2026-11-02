@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  azureDevOpsGaps,
   ConfigError,
   connectorGaps,
   connectorNames,
@@ -40,6 +41,7 @@ describe("loadConfig", () => {
       sentryDsn: undefined,
       umami: undefined,
       socialProviders: { google: undefined, microsoft: undefined },
+      azureDevOps: false,
       betterAuthSecret: VALID_ENV.BETTER_AUTH_SECRET,
     });
     expect(Object.isFrozen(config)).toBe(true);
@@ -62,6 +64,7 @@ describe("loadConfig", () => {
       CSP_EXTRA_SOURCES: "script-src https://stats.example.com",
       REDIS_URL: "redis://redis.internal:6379/0",
       SENTRY_DSN: "https://abc123@o1.ingest.sentry.io/42",
+      AZURE_DEVOPS_CONNECTOR: "on",
       UMAMI_URL: "https://stats.example.com",
       UMAMI_WEBSITE_ID: "6639E935-21CE-47C9-89D2-DA5D28B7DC15",
       UNRELATED: "ignored",
@@ -81,6 +84,7 @@ describe("loadConfig", () => {
       cspExtraSources: { "script-src": ["https://stats.example.com"] },
       redisUrl: "redis://redis.internal:6379/0",
       sentryDsn: "https://abc123@o1.ingest.sentry.io/42",
+      azureDevOps: true,
       umami: {
         scriptUrl: "https://stats.example.com/script.js",
         websiteId: "6639e935-21ce-47c9-89d2-da5d28b7dc15",
@@ -192,7 +196,7 @@ describe("loadConfig", () => {
       connectorNames(loadConfig({ ...VALID_ENV, ...env }));
     expect(names({ ...jira, ...google, ...vault })).toEqual(["jira"]);
     expect(names({})).toEqual([]);
-    expect(names({ ...google, ...vault })).toEqual([]);
+    expect(names({ ...google, ...vault })).not.toContain("jira");
     expect(names({ ...jira, ...google })).toEqual([]);
     expect(names({ ...jira, ...vault })).toEqual([]);
     expect(loadConfig({ ...VALID_ENV, ...jira }).jira).toEqual({
@@ -200,6 +204,51 @@ describe("loadConfig", () => {
       clientSecret: "jira-secret",
     });
     expect(loadConfig(VALID_ENV).jira).toBeUndefined();
+  });
+
+  it("has Azure DevOps only on the operator's word, with the vault and a way to sign in (#55)", () => {
+    const google = { GOOGLE_CLIENT_ID: "g", GOOGLE_CLIENT_SECRET: "s" };
+    const jira = { JIRA_CLIENT_ID: "jira-id", JIRA_CLIENT_SECRET: "jira-secret" };
+    const vault = { POKER_VAULT_KEY: randomBytes(32).toString("base64") };
+    const on = { AZURE_DEVOPS_CONNECTOR: "on" };
+    const names = (env: Record<string, string>) =>
+      connectorNames(loadConfig({ ...VALID_ENV, ...env }));
+    expect(names({ ...on, ...google, ...vault })).toEqual(["azure-devops"]);
+    expect(names({ ...on, ...jira, ...google, ...vault })).toEqual(["jira", "azure-devops"]);
+    expect(names({ ...google, ...vault })).toEqual([]);
+    expect(names({ ...on, ...google })).toEqual([]);
+    expect(names({ ...on, ...vault })).toEqual([]);
+    expect(names(on)).toEqual([]);
+    expect(connectorGaps(loadConfig({ ...VALID_ENV, ...on, ...vault }))).toEqual([]);
+  });
+
+  it.each(["true", "ON", "On", "1", "yes", "off", " on", ""])(
+    "leaves Azure DevOps dark at %j, and does not stop the start",
+    (value) => {
+      const config = loadConfig({
+        ...VALID_ENV,
+        GOOGLE_CLIENT_ID: "g",
+        GOOGLE_CLIENT_SECRET: "s",
+        POKER_VAULT_KEY: randomBytes(32).toString("base64"),
+        AZURE_DEVOPS_CONNECTOR: value,
+      });
+      expect(config.azureDevOps).toBe(false);
+      expect(connectorNames(config)).toEqual([]);
+    },
+  );
+
+  it("names what keeps an Azure DevOps that was turned on dark, and nothing else", () => {
+    const google = { GOOGLE_CLIENT_ID: "g", GOOGLE_CLIENT_SECRET: "s" };
+    const vault = { POKER_VAULT_KEY: randomBytes(32).toString("base64") };
+    const on = { AZURE_DEVOPS_CONNECTOR: "on" };
+    const gaps = (env: Record<string, string>) =>
+      azureDevOpsGaps(loadConfig({ ...VALID_ENV, ...env }));
+    expect(gaps({})).toEqual([]);
+    expect(gaps(vault)).toEqual([]);
+    expect(gaps({ ...on, ...google, ...vault })).toEqual([]);
+    expect(gaps({ ...on, ...google })).toEqual(["POKER_VAULT_KEY"]);
+    expect(gaps({ ...on, ...vault })).toEqual(["GOOGLE_CLIENT_ID", "MICROSOFT_CLIENT_ID"]);
+    expect(gaps(on)).toEqual(["POKER_VAULT_KEY", "GOOGLE_CLIENT_ID", "MICROSOFT_CLIENT_ID"]);
   });
 
   it("names the missing half of a provider's keys, never the value (#47)", () => {

@@ -1,3 +1,4 @@
+import type { ConnectorName } from "@pp/protocol";
 import { useEffect, useState } from "react";
 import { reloadAction } from "../components/shell/reload-action.ts";
 import { useT } from "../i18n/hooks.ts";
@@ -8,7 +9,11 @@ import { SYSTEM_NAMES } from "./connector.ts";
  * open across a deploy, must not reach the error boundary and take the room with it, since
  * estimating never depends on a tracker. A failed load says so in a toast, and the page goes on.
  */
-export function useConnectorChunk<T>(wanted: boolean, load: () => Promise<T>): T | null {
+export function useConnectorChunk<T>(
+  wanted: boolean,
+  load: () => Promise<T>,
+  name: ConnectorName = "jira",
+): T | null {
   const t = useT();
   const [chunk, setChunk] = useState<T | null>(null);
   useEffect(() => {
@@ -20,7 +25,7 @@ export function useConnectorChunk<T>(wanted: boolean, load: () => Promise<T>): T
       },
       () => {
         if (!live) return;
-        const message = t("connector.loadFailed", { system: SYSTEM_NAMES.jira });
+        const message = t("connector.loadFailed", { system: SYSTEM_NAMES[name] });
         import("sonner")
           .then(({ toast }) => toast(message, { id: "connector-failed", action: reloadAction(t) }))
           .catch(() => {});
@@ -29,6 +34,6 @@ export function useConnectorChunk<T>(wanted: boolean, load: () => Promise<T>): T
     return () => {
       live = false;
     };
-  }, [wanted, load, t]);
+  }, [wanted, load, t, name]);
   return chunk;
 }

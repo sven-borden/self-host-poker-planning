@@ -951,13 +951,74 @@ export const de: Catalog = {
       history: "In {{system}} schreiben",
       done: "In {{system}} geschrieben.",
     },
+    azure: {
+      lede: "Importieren Sie eine gespeicherte Abfrage oder eine WIQL-Abfrage in die Warteschlange und senden Sie Schätzungen zurück. Sie verbinden sich mit Ihrem eigenen Token, und niemand sonst im Raum nutzt es.",
+      organization: "Organisation",
+      organizationHint: "Nur ihr Name: was in Ihrer Adressleiste auf dev.azure.com/ folgt.",
+      token: "Persönliches Zugriffstoken",
+      tokenScope:
+        "Erstellen Sie eines nur für diese Organisation, mit einem einzigen angehakten Bereich: Work Items, Read & write.",
+      tokenLink: "Token erstellen",
+      tokenUse:
+        "Es dient nur dazu, das Importierte zu lesen und Ihre Schätzungen zu schreiben. Bei Microsoft endet es an seinem Ablaufdatum, geben Sie ihm also die kürzeste Laufzeit, die für Sie passt. Hier bleibt es verschlüsselt, bis Sie die Verbindung trennen, ein anderes einfügen oder Ihr Konto löschen.",
+      tokenReplace: "Dieses Token verwenden",
+      checking: "Token wird geprüft…",
+      project: "Projekt",
+      projectIs: "Projekt: {{project}}",
+      projectSave: "Dieses Projekt verwenden",
+      projectChange: "Projekt wechseln",
+      noProjects: "Dieses Token erreicht in dieser Organisation kein Projekt.",
+      fieldAuto:
+        "Schätzungen gehen in das Feld, das der Typ jedes Eintrags trägt: Story Points, Effort oder Size.",
+      fieldPick: "Feld wählen",
+      fieldReset: "Das Feld jedes Typs verwenden",
+      fieldType: "Arbeitselementtyp",
+      fieldHint: "Einträge eines Typs ohne dieses Feld bleiben bei Story Points, Effort oder Size.",
+      fieldNone: "Dieser Typ hat kein Zahlenfeld.",
+      fieldCancel: "Abbrechen",
+      bySaved: "Eine gespeicherte Abfrage",
+      byWiql: "Eine WIQL-Abfrage",
+      saved: "Gespeicherte Abfrage",
+      noSaved: "Dieses Projekt hat keine gespeicherte Abfrage, die Sie sehen können.",
+      savedMore: "Einige Ordner wurden nicht gelesen, die Liste ist also nicht vollständig.",
+      wiql: "WIQL-Abfrage",
+      wiqlHint:
+        "Zum Beispiel: Select [System.Id] From WorkItems Where [System.TeamProject] = @project. Sie geht an Azure DevOps und wird hier nicht aufbewahrt.",
+      nothingAsked: "Wählen Sie zuerst eine gespeicherte Abfrage oder geben Sie eine Abfrage ein.",
+      disconnectNote:
+        "Das löscht Ihr Token hier. Bei Microsoft besteht es weiter, bis es abläuft oder Sie es widerrufen:",
+      revokeLink: "in Azure DevOps widerrufen",
+      errors: {
+        connector_no_site: "Wählen Sie zuerst in der Warteschlange ein Azure-DevOps-Projekt.",
+        connector_bad_site: "Dieses Projekt steht nicht mehr auf Ihrer Liste.",
+        connector_bad_field: "Dieses Feld ist kein Zahlenfeld dieses Arbeitselementtyps.",
+        connector_other_site:
+          "Dieser Eintrag gehört zu einer anderen Azure-DevOps-Organisation als der, mit der Sie verbunden sind.",
+        connector_no_source: "Dieser Eintrag stammt nicht aus Azure DevOps.",
+        connector_field_refused:
+          "Azure DevOps hat diese Zahl bei diesem Eintrag abgelehnt: Eine Regel seines Typs verbietet sie vielleicht.",
+      },
+    },
     errors: {
       connector_sign_in: "Melden Sie sich mit einem Konto an, um {{system}} zu nutzen.",
       connector_not_connected: "Verbinden Sie zuerst {{system}} in der Warteschlange.",
+      connector_bad_organization:
+        "Das ist kein Organisationsname. Geben Sie nur den Namen an, ohne Adresse darum herum.",
+      connector_bad_token:
+        "{{system}} hat dieses Token nicht angenommen. Es ist vielleicht falsch eingegeben, abgelaufen oder für eine andere Organisation erstellt.",
+      connector_no_access:
+        "{{system}} hat dieses Token nicht in diese Organisation gelassen. Das Token ist vielleicht falsch, abgelaufen oder ohne den nötigen Bereich, oder sein Konto ist kein Mitglied. Prüfen Sie den Namen und das Token.",
+      connector_no_projects:
+        "Dieses Token funktioniert, kann aber die Projekte dieser Organisation nicht auflisten, daher wurde nichts gespeichert. Haken Sie bei {{system}} zusätzlich Project and Team, Read an und versuchen Sie es erneut.",
+      connector_scope:
+        "Diesem Token fehlt der einzige nötige Bereich: Work Items, Read & write. Bearbeiten Sie es oder erstellen Sie ein anderes.",
+      connector_no_organization: "{{system}} hat keine Organisation mit diesem Namen.",
       connector_setup:
         "{{system}} hat abgelehnt, obwohl die Verbindung gerade erneuert wurde: Neu verbinden hilft nicht. Wer diesen Server betreibt, sollte die Berechtigungen der {{system}}-App prüfen.",
       connector_reconnect:
         "{{system}} akzeptiert diese Verbindung nicht mehr. Verbinden Sie es erneut.",
+      connector_token_refused:
+        "{{system}} hat dieses Token abgelehnt oder eine Anmeldung verlangt. Es ist vielleicht abgelaufen, widerrufen oder braucht eine neue Anmeldung bei {{system}}. Versuchen Sie es danach erneut, oder fügen Sie in der Warteschlange ein neues Token ein.",
       connector_no_site: "Wählen Sie zuerst eine {{system}}-Website in der Warteschlange.",
       connector_no_field: "Wählen Sie zuerst das Feld für die Schätzung in der Warteschlange.",
       connector_bad_site: "Diese Website steht nicht mehr auf Ihrer {{system}}-Liste.",
@@ -977,6 +1038,10 @@ export const de: Catalog = {
         "{{system}} konnte diese Abfrage nicht ausführen. Prüfen Sie sie und versuchen Sie es erneut.",
       connector_field_refused:
         "{{system}} hat das Feld bei diesem Eintrag abgelehnt: Vielleicht ist es nicht auf seiner Maske.",
+      connector_no_estimate_field:
+        "Dieser Eintrag hat kein Schätzfeld, daher wurde nichts geschrieben.",
+      connector_query_cap:
+        "Diese Abfrage findet mehr, als {{system}} zurückgibt. Grenzen Sie sie ein und versuchen Sie es erneut.",
       connector_unavailable: "{{system}} antwortet nicht richtig. Versuchen Sie es später erneut.",
       connector_timeout: "{{system}} hat zu lange gebraucht. Versuchen Sie es erneut.",
     },

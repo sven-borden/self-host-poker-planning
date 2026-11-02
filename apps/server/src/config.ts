@@ -5,7 +5,8 @@
  * `REDIS_URL` may hold a password, `BETTER_AUTH_SECRET` signs the sessions, the provider
  * secrets of `GOOGLE_CLIENT_SECRET` and `MICROSOFT_CLIENT_SECRET` open sign-in,
  * `JIRA_CLIENT_SECRET` opens the Jira app, and `POKER_VAULT_KEY` and `POKER_VAULT_OLD_KEYS`
- * open the connectors' tokens.
+ * open the connectors' tokens. `AZURE_DEVOPS_CONNECTOR` is the one connector variable that is no
+ * secret.
  */
 import { type ConnectorName, SIGN_IN_PROVIDERS, type SignInProvider } from "@pp/protocol";
 import { z } from "zod";
@@ -88,32 +89,43 @@ export interface Config {
    * `JIRA_CLIENT_SECRET`. It works only with the vault too: see `connectorNames`.
    */
   readonly jira: OAuthClient | undefined;
+  /**
+   * The operator's own word for Azure DevOps (#55, ADR-031), from `AZURE_DEVOPS_CONNECTOR=on`. It
+   * has no keys, so nothing else says the install wants a form that stores people's tokens.
+   */
+  readonly azureDevOps: boolean;
 }
 
 /**
- * The connectors this install has: a tracker's keys, the vault to hold a person's token, and a
- * way to be an account at all. Without any of them no route and no button exists.
+ * The connectors this install has: what asks for the tracker (its keys, or the operator's word),
+ * the vault to hold a person's token, and a way to be an account at all. Without any of them no
+ * route and no button exists.
  */
 export function connectorNames(
-  config: Pick<Config, "jira" | "vault" | "socialProviders">,
+  config: Pick<Config, "jira" | "azureDevOps" | "vault" | "socialProviders">,
 ): ConnectorName[] {
   if (config.vault === undefined || socialProviderIds(config).length === 0) return [];
-  return config.jira === undefined ? [] : ["jira"];
-}
-
-/**
- * What keeps a tracker with keys dark, as the variables that are missing: `connectorNames`'s
- * reasons, for one line at the start. Names only.
- */
-export function connectorGaps(
-  config: Pick<Config, "jira" | "vault" | "socialProviders">,
-): readonly string[] {
-  if (config.jira === undefined) return [];
   return [
-    ...(config.vault === undefined ? ["POKER_VAULT_KEY"] : []),
-    ...(socialProviderIds(config).length === 0 ? ["GOOGLE_CLIENT_ID", "MICROSOFT_CLIENT_ID"] : []),
+    ...(config.jira === undefined ? [] : (["jira"] as const)),
+    ...(config.azureDevOps ? (["azure-devops"] as const) : []),
   ];
 }
+
+/** The variables a connector that was asked for still needs, for one line at the start. */
+const accountGaps = (config: Pick<Config, "vault" | "socialProviders">): readonly string[] => [
+  ...(config.vault === undefined ? ["POKER_VAULT_KEY"] : []),
+  ...(socialProviderIds(config).length === 0 ? ["GOOGLE_CLIENT_ID", "MICROSOFT_CLIENT_ID"] : []),
+];
+
+/** What keeps a tracker with keys dark: `connectorNames`'s reasons. Names only. */
+export const connectorGaps = (
+  config: Pick<Config, "jira" | "vault" | "socialProviders">,
+): readonly string[] => (config.jira === undefined ? [] : accountGaps(config));
+
+/** What keeps an Azure DevOps that was turned on dark. Names only. */
+export const azureDevOpsGaps = (
+  config: Pick<Config, "azureDevOps" | "vault" | "socialProviders">,
+): readonly string[] => (config.azureDevOps ? accountGaps(config) : []);
 
 /** The providers `config` has keys for, in the order the page shows them. */
 export function socialProviderIds(config: Pick<Config, "socialProviders">): SignInProvider[] {
@@ -149,6 +161,7 @@ const REASONS = {
   MICROSOFT_TENANT_ID: "must be common, organizations, consumers or a tenant id (a GUID)",
   JIRA_CLIENT_ID: "must be the client id from the Atlassian developer console",
   JIRA_CLIENT_SECRET: "must be the secret from the Atlassian developer console",
+  AZURE_DEVOPS_CONNECTOR: "is on to turn it on, and anything else leaves it off",
   POKER_VAULT_KEY:
     "must be 32 random bytes in base64 on one line, with no line break or space, such as the output of openssl rand -base64 32, and must not be BETTER_AUTH_SECRET",
   POKER_VAULT_OLD_KEYS:
@@ -301,6 +314,11 @@ const schema = z.object({
     .default("common"),
   JIRA_CLIENT_ID: oauthKey.optional(),
   JIRA_CLIENT_SECRET: oauthKey.optional(),
+  // Exactly `on`: any other value leaves it dark, and is no reason to refuse the start.
+  AZURE_DEVOPS_CONNECTOR: z
+    .string()
+    .transform((v) => v === "on")
+    .default(false),
   POKER_VAULT_KEY: z.string().refine(isVaultKey).optional(),
   POKER_VAULT_OLD_KEYS: z
     .string()
@@ -408,6 +426,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
       v.JIRA_CLIENT_ID && v.JIRA_CLIENT_SECRET
         ? Object.freeze({ clientId: v.JIRA_CLIENT_ID, clientSecret: v.JIRA_CLIENT_SECRET })
         : undefined,
+    azureDevOps: v.AZURE_DEVOPS_CONNECTOR,
     betterAuthSecret: v.BETTER_AUTH_SECRET,
     vault: v.POKER_VAULT_KEY ? new Vault(v.POKER_VAULT_KEY, v.POKER_VAULT_OLD_KEYS) : undefined,
   });

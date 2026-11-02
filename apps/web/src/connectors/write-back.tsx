@@ -2,8 +2,9 @@ import type { ConnectorName, RoundView } from "@pp/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
+import { keyLabel } from "../room/subject.ts";
 import { RoomApiError } from "../rooms/api.ts";
-import { connectorMessage, SYSTEM_NAMES } from "./connector.ts";
+import { connectorMessage, ROUND_SYSTEMS, SYSTEM_NAMES } from "./connector.ts";
 import { ConnectorAlert } from "./connector-alert.tsx";
 import { writeBack } from "./connector-api.ts";
 import { takeFinalPress } from "./final-press.ts";
@@ -18,12 +19,17 @@ interface Line {
   retryAfter?: number;
 }
 
-/** A final with no number stays here for a reason a press cannot change: no "Try again". */
-const OUTCOME_CODES: ReadonlySet<string> = new Set(["connector_not_numeric"]);
+/** A final with no number, or an item with no estimate: a press cannot change it, no "Try again". */
+const OUTCOME_CODES: ReadonlySet<string> = new Set([
+  "connector_not_numeric",
+  "connector_no_estimate_field",
+]);
 
 function subjectLabel(round: RoundView): string {
   const { subject } = round;
-  if (subject.kind === "link") return subject.key ?? subject.title ?? subject.url;
+  if (subject.kind === "link") {
+    return subject.key === undefined ? (subject.title ?? subject.url) : keyLabel(subject.key);
+  }
   return subject.kind === "title" ? subject.text : "";
 }
 
@@ -74,7 +80,8 @@ export function WriteBackLines({
     [code, name],
   );
 
-  const revealed = round?.phase === "revealed" && round.system === "jira" ? round : null;
+  const revealed =
+    round?.phase === "revealed" && round.system === ROUND_SYSTEMS[name] ? round : null;
   const number = round?.number;
   useEffect(() => {
     if (revealed === null || revealed.final === undefined) return;

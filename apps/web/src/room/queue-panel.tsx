@@ -36,11 +36,18 @@ import { type PasteResult, parsePaste, pasteLeft, queueBatches } from "./paste-q
 import { itemName, keyLabel, safeHref, shortUrl } from "./subject.ts";
 
 const loadSection = () => import("../connectors/connector-section.tsx");
+const loadAzure = () => import("../connectors/azure-section.tsx");
 
 /** The tracker's part of the sheet (#54): a chunk of its own, for installs that have one. */
 function TrackerSection() {
   const chunk = useConnectorChunk(true, loadSection);
   return chunk === null ? null : <chunk.ConnectorSection />;
+}
+
+/** Azure DevOps' part (#55), a chunk of its own too. */
+function AzureTrackerSection() {
+  const chunk = useConnectorChunk(true, loadAzure, "azure-devops");
+  return chunk === null ? null : <chunk.AzureSection />;
 }
 
 /** A phone: the `phone:` variant in styles.css. The panel is a bottom sheet there. */
@@ -357,6 +364,7 @@ function QueueBody({ side }: { side: boolean }) {
         <span key={news.id}>{news.text}</span>
       </div>
       {connectorOn("jira") ? <TrackerSection /> : null}
+      {connectorOn("azure-devops") ? <AzureTrackerSection /> : null}
       <PasteForm items={items} ready={loading !== "loading"} onAdded={refresh} />
       {failure !== null ? (
         <p role="alert" className="m-0 px-4 pb-2 text-sm">

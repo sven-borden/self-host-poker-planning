@@ -20,7 +20,8 @@ import {
   connectorResult,
   readConnectorResult,
 } from "./connector.ts";
-import { ConnectorSection, importReport } from "./connector-section.tsx";
+import { importReport } from "./connector-parts.tsx";
+import { ConnectorSection } from "./connector-section.tsx";
 import { forgetFinalPress, markFinalPress } from "./final-press.ts";
 import { HistoryWrite } from "./history-write.tsx";
 import { TrackerLines } from "./tracker-lines.tsx";

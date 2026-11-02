@@ -8,6 +8,7 @@
  * A search is a POST, so the JQL is in no URL. A sprint is searched by JQL too: Jira deprecated
  * the agile API's list of a sprint's issues, and one way of paging is enough.
  */
+import { MAX_JQL_LENGTH, WIRE_LIMITS } from "@pp/protocol";
 import { z } from "zod";
 import type { OAuthClient } from "../config.ts";
 import { Secret } from "../vault.ts";
@@ -17,8 +18,10 @@ import {
   type Failure,
   type FoundItem,
   type Grant,
+  type OAuthSignIn,
   type Outcome,
   type Site,
+  type SprintBoards,
   success,
   type UpstreamCode,
 } from "./connector.ts";
@@ -62,6 +65,11 @@ const STORY_POINTS_NAMES = [
   /story ?points?/i,
   /estimate|schätzung|estimation/i,
 ];
+
+const JIRA_QUERY: z.ZodType<BacklogQuery> = z.union([
+  z.strictObject({ jql: z.string().trim().min(1).max(MAX_JQL_LENGTH) }),
+  z.strictObject({ sprint: z.number().int().positive().max(WIRE_LIMITS.roundNumber) }),
+]);
 
 const tokenSchema = z.object({
   access_token: z.string().min(1).max(8192),
@@ -153,7 +161,7 @@ export function failureOf(response: Response, bad: UpstreamCode): Failure {
 }
 
 /** A failed `fetch`: only the kind of failure. Its message and cause are left behind. */
-function fetchFailure(error: unknown): Failure {
+export function fetchFailure(error: unknown): Failure {
   const name = error instanceof Error ? error.name : "";
   return {
     ok: false,
@@ -270,13 +278,16 @@ async function grantFrom(answer: Outcome<Response>, now: number): Promise<Outcom
   });
 }
 
+export type JiraConnector = BacklogConnector & OAuthSignIn & SprintBoards;
+
 export function createJiraConnector(
   client: OAuthClient,
   now: () => number = Date.now,
-): BacklogConnector {
+): JiraConnector {
   return {
     name: "jira",
     system: "jira",
+    query: JIRA_QUERY,
 
     authorizeUrl: (state, redirectUri) => {
       const url = new URL(AUTHORIZE_URL);

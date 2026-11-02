@@ -161,7 +161,7 @@ With two proxies that takes both steps: the second must trust the first, and the
 
 ### Connector tokens
 
-The Jira connector (see "Jira Cloud"), and Azure DevOps still to come (#55), keep each person's token encrypted
+The Jira connector (see "Jira Cloud") and the Azure DevOps connector (see "Azure DevOps") keep each person's token encrypted
 with AES-256-GCM, under a key that lives in the environment and never in the database. A guest
 holds no token. Without a key the server runs as usual and the connectors stay off. To turn it
 on, set a key and recreate the container (`docker compose up -d`: `restart` does not read
@@ -253,6 +253,58 @@ Disconnecting deletes the token here. Atlassian keeps its own record of the gran
 removes at <https://id.atlassian.com/manage-profile/apps>. A person who removes it there, or whose
 Atlassian password changes, is asked to connect again.
 
+### Azure DevOps
+
+There is nothing to register and no key of its own. A person who signs in can connect their own
+organisation with a personal access token, import a saved query or a WIQL query into the queue, and
+send each final estimate back.
+
+It is off until you set `AZURE_DEVOPS_CONNECTOR=on`, because it stores people's own tokens for a
+third party on your server, and setting the vault for Jira must not open that by itself. It also
+needs `POKER_VAULT_KEY` and a sign-in provider (Google or Microsoft). Any other value, or either of
+those missing, leaves the page without a button and the server without a route, and with `on` the
+start logs which variables are missing.
+
+This covers Azure DevOps Services at `https://dev.azure.com/{organisation}`. **Azure DevOps Server
+(on-premises) is not supported:** the server never takes an address from a person. Entra sign-in is
+not built either; a token needs no app registration and works for any organisation (ADR-031).
+
+**Making a token**, for each person:
+
+1. Open `https://dev.azure.com/{your organisation}/_usersSettings/tokens` and press **New Token**.
+2. Under **Organization**, pick that one organisation. This connector uses one organisation per
+   connection, and Microsoft is moving away from tokens for all organisations.
+3. Give it the shortest expiry that suits you. It stops working by itself on that date at Microsoft,
+   and you paste a new one.
+4. Under **Scopes**, choose **Custom defined**, then **Work Items: Read & write** (`vso.work_write`).
+   Microsoft's documentation says that scope also lists projects, but this has not yet been seen on
+   a real organisation. If connecting says the token cannot list projects, tick **Project and Team:
+   Read** too.
+5. Press **Create** and copy the token: Microsoft shows it once.
+6. In a room's queue, give the organisation's name and the token. The server tests it, and lists the
+   organisation's projects, before it keeps it, and says what is wrong if it refuses.
+
+Your organisation's administrators may limit who can make tokens, for how long, and with which
+scopes. A token can do no more than the person who made it.
+
+The token is used for that person's own imports and write-backs, never for anyone else in the room.
+It is sealed by the vault, and never shown again, logged or exported. What goes to Azure DevOps is a
+query, and the final estimate as a number, to the field the item's type carries: Story Points, Effort
+or Size. An item with none, such as a Task in many processes, keeps its estimate here and the page
+says so. A person with a process of their own can choose another of a type's number fields. A final
+with no number is not written, and an anonymous round sends nothing but its number.
+
+A token stays here, sealed, until the person disconnects, pastes another or deletes their account.
+Disconnecting deletes it here; it still exists at Microsoft until it expires or is revoked at the
+address in step 1, and the page links there. If Azure DevOps refuses a token or asks for a sign-in,
+it is not deleted, because the server cannot tell an expired token from one that needs a fresh
+sign-in at Azure DevOps. The page offers **Try again** after that sign-in, and a field for a new
+token.
+
+Microsoft's own advice is not to use personal access tokens as long-term credentials for production
+applications or services. A token can go inactive after 90 days in organisations backed by Entra, and
+administrators can restrict them. ADR-031 weighs this.
+
 ### Running several instances
 
 One instance is the default and serves many teams. To run more behind one address, give
@@ -316,13 +368,14 @@ nothing about Redis is loaded or opened.
   and none of the provider's tokens, so nothing here can reach a person's Google or Microsoft
   account afterwards. The email is shown to its owner alone, on the landing page, and nowhere in
   a room, where a screen may be shared.
-- **Connectors**, Jira from #54 and Azure DevOps to come (#55), only for an account that connects Jira or Azure
+- **Connectors**, Jira from #54 and Azure DevOps from #55, only for an account that connects Jira or Azure
   DevOps: the token, encrypted
-  with a key kept outside the database, the site and the field chosen, and when it was connected.
+  with a key kept outside the database, the site or the organisation and project, the field chosen,
+  and when it was connected.
   It goes when the person disconnects, and with the account. It is never logged. A round imported
-  from Jira keeps where it came from (the site's id and the issue's), never a person. What goes to
-  Jira is a query, and the final estimate as a number; an issue's key, title and link are stored in
-  the room as for any item in the queue.
+  from a tracker keeps where it came from (the site's id or the organisation's name, and the item's),
+  never a person. What goes to a tracker is a query, and the final estimate as a number; an item's
+  key, title and link are stored in the room as for any item in the queue.
 - **For how long**: a room idle for `ROOM_TTL_DAYS` days (default 90) is deleted with
   its history and its password grants. Activity is any change in the room, and opening
   it (counted at most once a day, or once a 24th of a shorter period). A guest's session

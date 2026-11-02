@@ -354,12 +354,13 @@ describe("the built web app", () => {
       GOOGLE_CLIENT_SECRET: "google-secret",
       JIRA_CLIENT_ID: "jira-id",
       JIRA_CLIENT_SECRET: "jira-secret-not-for-the-page",
+      AZURE_DEVOPS_CONNECTOR: "on",
       POKER_VAULT_KEY: Buffer.from(Array.from({ length: 32 }, (_, n) => n * 7 + 1)).toString(
         "base64",
       ),
     };
     const html = await (await app({ staticDir: root }, keys).app.request("/")).text();
-    expect(html).toContain('<meta name="pp-connectors" content="jira">');
+    expect(html).toContain('<meta name="pp-connectors" content="jira azure-devops">');
     expect(html).not.toContain("jira-secret-not-for-the-page");
     const { POKER_VAULT_KEY: _, ...noVault } = keys;
     const dark = await (await app({ staticDir: root }, noVault).app.request("/")).text();

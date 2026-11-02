@@ -18,6 +18,10 @@ const JIRA_FAKE_PORT = PORT + 5;
 /** The stand-in for Atlassian (#54): `apps/server/src/fake-jira-start.ts`, in the same process. */
 export const JIRA_FAKE_ORIGIN = `http://127.0.0.1:${JIRA_FAKE_PORT}`;
 
+const AZURE_FAKE_PORT = PORT + 6;
+/** The stand-in for Azure DevOps (#55): `apps/server/src/fake-azure-devops-start.ts`, the same way. */
+export const AZURE_FAKE_ORIGIN = `http://127.0.0.1:${AZURE_FAKE_PORT}`;
+
 /** Fake keys, and where the stand-ins listen. The Jira keys are `FAKE_JIRA_CLIENT`'s. */
 export const SIGN_IN_ENV = {
   GOOGLE_CLIENT_ID: "e2e-google-client",
@@ -29,5 +33,7 @@ export const SIGN_IN_ENV = {
   JIRA_CLIENT_SECRET: "fake-jira-secret",
   // Not secret, and not used anywhere else: 32 bytes for this run's throwaway rows.
   POKER_VAULT_KEY: "ZTJlLW9ubHktdmF1bHQta2V5LW5vdC1mb3ItdXNlLTA=",
+  AZURE_DEVOPS_CONNECTOR: "on",
   FAKE_JIRA_PORT: String(JIRA_FAKE_PORT),
+  FAKE_AZURE_PORT: String(AZURE_FAKE_PORT),
 };

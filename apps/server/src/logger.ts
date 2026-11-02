@@ -48,6 +48,7 @@ const SECRET_NAMES = [
   // What a connector carries (#54): nothing logs these; this is for a mistake.
   "jql",
   "summary",
+  "wiql",
 ];
 
 /** Headers of a request or handshake logged whole, in either case, at three depths. */

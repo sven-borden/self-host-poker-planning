@@ -618,21 +618,30 @@ they are logged, queries carry ciphertext only, and `guard` keeps driver text ou
 ciphertext; the keys live in the environment. The purge needs no step of its own: a user it
 deletes takes its rows by cascade, and #51 will too.
 
-### Connectors (#54, ADR-030)
+### Connectors (#54, ADR-030; #55, ADR-031)
 
 `apps/server/src/connectors/`, registered by `setup.ts` only when `connectorNames(config)` names
-one: the tracker's keys, the vault and a sign-in provider. Otherwise nothing exists, and `/api/*`
-answers 404.
+one: the tracker's keys, or `AZURE_DEVOPS_CONNECTOR=on` for the one with none, the vault and a sign-in
+provider. Otherwise nothing exists, and `/api/*` answers 404.
 
-- `connector.ts`, the seam: `BacklogConnector`, what a tracker must do, and `Outcome`, a value or
-  a code. `jira.ts` is the one implementation; #55 is the second.
+- `connector.ts`, the seam: `BacklogConnector`, what every tracker must do, parts for what only some
+  have (`OAuthSignIn`, `PastedToken`, `SprintBoards`, `SavedQueries`, `ItemFields`), and `Outcome`, a
+  value or a code. `jira.ts` is one implementation, `azure-devops.ts` the other.
+- `azure-devops.ts`: a pasted personal access token, for one organisation. A site is a project, and
+  `Site.home` the organisation an item's `source.site` names, without regard to case. Only a 200 in
+  JSON is an answer. A 401, a 203 sign-in page and a redirect, which `redirect: "manual"` does not
+  follow, are `connector_token_refused`, and a refusal never deletes the row: `access.ts` never
+  reaches `dropToken` here. Connecting lists the projects before anything is saved. The estimate's
+  field is read for each item from what its type carries (`fieldFor`).
 - `access.ts`: `withToken(account, call)`, a person's live token, refreshed through `replaceToken`.
   Two instances refreshing at once is normal; a row is dropped only by `dropToken`. A token refused
   after a refresh is `connector_setup`, and costs no further rotation.
 - `oauth-state.ts`: `state` as hashes in a `verification` row, one `delete … returning` to spend it.
   One that ran out still knows its room, and goes back to it to say so.
-- `routes.ts`: `/api/connectors/jira` for the person, `/api/rooms/:code/connectors/jira/{connect,
-  import,write-back}` for the PO of that room. The account comes from the session alone.
+- `routes.ts`: `/api/connectors/{jira,azure-devops}` for the person,
+  `/api/rooms/:code/connectors/…/{import,write-back}` for the PO of that room, with `connect` there
+  for OAuth; a pasted token goes to `/api/connectors/azure-devops/connect`. The account comes from the
+  session alone, and a route exists only for a connector with that part.
 
 An import ends in `queueImport`, a server command, so `apply` decides and `source` comes off no
 socket. A round keeps its item's `source` (`Round.source`, `round_history.source`, an additive
@@ -641,7 +650,8 @@ the round as all a client sends. The page starts a write only for a final that v
 confirmed by the frame whose causes say so; anything else waits for a person's press.
 
 `Response` in this process is not `fetch`'s: the HTTP adapter replaces the global, so `instanceof
-Response` is false on what `fetch` answers. `jira.ts` passes an `Outcome` for that reason.
+Response` is false on what `fetch` answers. `jira.ts` and `azure-devops.ts` pass an `Outcome` for
+that reason.
 
 ## 7. Identity
 
@@ -1367,7 +1377,8 @@ language, and an unknown code gets a generic one.
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | no | sign-in with Microsoft Entra ID (#47), both or neither; the secret is never logged. Redirect URI: `<BASE_URL>/api/auth/callback/microsoft` |
 | `MICROSOFT_TENANT_ID` | no (`common`) | who may sign in with Microsoft: `common` (any work, school or personal account), `organizations` (work and school), `consumers` (personal) or one tenant's id (a GUID) |
 | `POKER_VAULT_KEY` | no | encrypts the connectors' tokens (#53, section 6): 32 random bytes in base64 (`openssl rand -base64 32`), never `BETTER_AUTH_SECRET`, never logged. Unset, the vault is off. Malformed, repeated or the session secret, it stops the start |
-| `JIRA_CLIENT_ID`, `JIRA_CLIENT_SECRET` | no | the Jira Cloud connector (#54, section 6), both or neither, with `POKER_VAULT_KEY` and a sign-in provider; without any of them it is dark. The secret is never logged. Redirect URI `BASE_URL/api/connectors/jira/callback` |
+| `JIRA_CLIENT_ID`, `JIRA_CLIENT_SECRET` | no | the Jira Cloud connector (#54, section 6), both or neither, with `POKER_VAULT_KEY` and a sign-in provider; without any of them it is dark. The secret is never logged. Redirect URI `BASE_URL/api/connectors/jira/callback`. Azure DevOps (#55) has no variable of its own: `POKER_VAULT_KEY` and a sign-in provider turn it on |
+| `AZURE_DEVOPS_CONNECTOR` | no | exactly `on` turns on the Azure DevOps connector (#55, section 6), with `POKER_VAULT_KEY` and a sign-in provider; any other value or none leaves it dark. Not a secret. With `on` and either missing, the start logs a warning naming the variables |
 | `POKER_VAULT_OLD_KEYS` | no | during a key change: previous keys, in the same form, comma-separated, that open tokens and seal none (README, "Connector tokens"); needs `POKER_VAULT_KEY` |
 
 ## 13. Testing

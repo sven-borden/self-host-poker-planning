@@ -1,10 +1,10 @@
-import type { ConnectorName, HistoryRoundView } from "@pp/protocol";
+import type { HistoryRoundView } from "@pp/protocol";
 import { useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { RoomApiError } from "../rooms/api.ts";
 import { useRoomStore } from "../stores/room-store.ts";
-import { connectorMessage, connectorOn, SYSTEM_NAMES } from "./connector.ts";
+import { connectorMessage, connectorOf, connectorOn, SYSTEM_NAMES } from "./connector.ts";
 import { ConnectorAlert } from "./connector-alert.tsx";
 import { writeBack } from "./connector-api.ts";
 
@@ -12,13 +12,7 @@ import { writeBack } from "./connector-api.ts";
  * "Write to Jira" on a past round, for the PO (#54, ADR-030): the way back to an estimate after a
  * reload took the room's line for it away. The server reads the final from the round's row.
  */
-export function HistoryWrite({
-  round,
-  name = "jira",
-}: {
-  round: HistoryRoundView;
-  name?: ConnectorName;
-}) {
+export function HistoryWrite({ round }: { round: HistoryRoundView }) {
   const t = useT();
   const code = useRoomStore((state) => state.snapshot?.room.code);
   const isOwner = useRoomStore((state) => {
@@ -27,9 +21,10 @@ export function HistoryWrite({
   });
   const [state, setState] = useState<"idle" | "writing" | "written">("idle");
   const [problem, setProblem] = useState<{ code: string; retryAfter?: number } | null>(null);
+  const name = connectorOf(round.system ?? "jira");
   const system = SYSTEM_NAMES[name];
   if (!isOwner || code === undefined || round.final === null) return null;
-  if (round.system !== "jira" || !connectorOn(name)) return null;
+  if (round.system === undefined || !connectorOn(name)) return null;
 
   async function write(room: string) {
     setState("writing");

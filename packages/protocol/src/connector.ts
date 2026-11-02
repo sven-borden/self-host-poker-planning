@@ -7,7 +7,7 @@
  */
 
 /** The connectors this version knows. */
-export const CONNECTOR_NAMES = ["jira"] as const;
+export const CONNECTOR_NAMES = ["jira", "azure-devops"] as const;
 export type ConnectorName = (typeof CONNECTOR_NAMES)[number];
 
 export function isConnectorName(value: unknown): value is ConnectorName {
@@ -34,6 +34,19 @@ export function isConnectorResult(value: unknown): value is ConnectorResult {
 /** A JQL query past this is refused before it leaves: a real filter is a line or two. */
 export const MAX_JQL_LENGTH = 2000;
 
+/** A WIQL query past this is refused before it leaves. Azure DevOps takes up to 32,000. */
+export const MAX_WIQL_LENGTH = 4000;
+
+/** The most a pasted personal access token can be: Microsoft's are 84 characters today. */
+export const MAX_PAT_LENGTH = 1024;
+
+/**
+ * An Azure DevOps organisation's name, as Microsoft allows it: letters, digits and hyphens, at
+ * most 50, and a hyphen at neither end. It goes into `https://dev.azure.com/{organisation}/`, so
+ * nothing else may pass: no dot, no slash, no `@`.
+ */
+export const ADO_ORGANIZATION = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,48}[A-Za-z0-9])?$/;
+
 /** The most a single list of boards or sprints holds. */
 export const MAX_BOARDS = 100;
 
@@ -48,8 +61,27 @@ export const CONNECTOR_ERROR_CODES = [
   /** A guest: only an account connects a tracker. */
   "connector_sign_in",
   "connector_not_connected",
+  /** Not a name an organisation can have: nothing was asked of the tracker. */
+  "connector_bad_organization",
+  /** The tracker did not take this token, or it ran out. */
+  "connector_bad_token",
+  /**
+   * This organisation did not let the token in. A stranger's token, a made-up one, an expired one
+   * and a wrong scope can all read like this, so the words name them all.
+   */
+  "connector_no_access",
+  /** The token works and lacks the scope the app needs. */
+  "connector_scope",
+  "connector_no_organization",
   /** The grant is gone: the row went with it, and the person connects again. */
   "connector_reconnect",
+  /**
+   * A saved token was refused, or a sign-in was asked for: a 401, a 203 and a 3xx cannot be told
+   * apart. It may come back after a sign-in at the tracker, so the row stays.
+   */
+  "connector_token_refused",
+  /** The token reads work items and cannot list the organisation's projects: nothing was saved. */
+  "connector_no_projects",
   /**
    * The tracker refused a token it had just renewed, so connecting again would change nothing:
    * the app's scopes do not fit what the call asks. The connection stays.
@@ -74,6 +106,10 @@ export const CONNECTOR_ERROR_CODES = [
   "connector_bad_query",
   /** The tracker refused the field on this item: it is not on the item's screen. */
   "connector_field_refused",
+  /** The item's type carries no estimate: a Task, in many process templates. Not a failure. */
+  "connector_no_estimate_field",
+  /** The query finds more than the tracker will give back at all. */
+  "connector_query_cap",
   "connector_unavailable",
   "connector_timeout",
 ] as const;
@@ -83,7 +119,7 @@ export function isConnectorErrorCode(value: unknown): value is ConnectorErrorCod
   return (CONNECTOR_ERROR_CODES as readonly unknown[]).includes(value);
 }
 
-/** One site of the person's own list. The id is the only thing a client ever sends back. */
+/** One site of the person's own list, or a project. Only the id ever comes back from a client. */
 export interface ConnectorSiteView {
   readonly id: string;
   readonly name: string;
@@ -97,6 +133,8 @@ export interface ConnectorFieldView {
 /** `GET /api/connectors/:name`: no call to the tracker, no token opened. */
 export interface ConnectionView {
   readonly connected: boolean;
+  /** The organisation a token was given for, where a tracker has one. */
+  readonly organization?: string;
   readonly site?: ConnectorSiteView;
   readonly field?: ConnectorFieldView;
 }
@@ -115,6 +153,12 @@ export interface ConnectorBoardView {
 /** `more`: the list stopped at `MAX_BOARDS`, and a name narrows it. */
 export interface ConnectorBoardsView {
   readonly boards: readonly ConnectorBoardView[];
+  readonly more: boolean;
+}
+
+/** A saved query, by its path. A folder is never one. `more`: the list stopped short. */
+export interface ConnectorSavedQueriesView {
+  readonly queries: readonly ConnectorSiteView[];
   readonly more: boolean;
 }
 

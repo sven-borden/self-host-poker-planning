@@ -666,6 +666,35 @@ it, and nothing at all on one that does not.
 Every control is native, 44 px tall, and fits 320 px. Nothing moves, so nothing changes under
 reduced motion.
 
+Azure DevOps (#55, ADR-031) sits in the same sheet as a section of its own, under Jira's on an
+install with both, and is otherwise the same in its alerts, its focus and the lines under the table.
+What differs:
+
+- **Connecting.** No leaving the page: a sentence, "Organisation" and "Personal access token", a
+  password field the browser is told not to fill. Under it: make one for this organisation, the
+  single scope to tick (Work Items, Read & write) with a link to where tokens are made, and what it
+  is used for, that it stops working at its expiry at Microsoft, so to give it the shortest life that
+  suits, and that it stays here until you disconnect, paste another or delete your account. The field
+  empties the moment it is sent, also when refused, and the button says "Testing the token…" for up
+  to the 20 s two calls can take; the organisation stays, so a mistake costs one paste. Each refusal
+  says which: not taken, not let in, the scope, no list of projects, no such organisation.
+- **A project.** "Connected to fabrikam", and a list of the token's projects with "Use this project"
+  when there are several.
+- **The field.** One line says estimates go to the field each item's type carries. "Choose a field"
+  opens a work item type and that type's number fields, for a process of its own; a choice then
+  reads "Estimates go to Points", beside "Use each type's own field".
+- **Import.** Two radios, a saved query by its path, or a WIQL query. A folder is never in the list.
+- **An item with no estimate field.** The line says so with nothing to press: it is no failure.
+- **A token refused.** It is not deleted, and nothing says "connect again": the connection has not
+  gone. The alert says Azure DevOps refused the token or asked for a sign-in, what may have caused
+  that, and both ways on. Under it stand "Try again", and a form with the organisation filled in and
+  "Use this token", and under those the connection as it was, Disconnect included. Nothing typed or
+  picked is lost. "Try again" says "Testing the token…" while it goes, and on success the alert and
+  the form leave and the focus goes to the project. A round's line says the same with its own "Try
+  again".
+- **Disconnect.** The line under it says the token still exists at Microsoft until it expires or is
+  revoked, and links to the person's tokens page in that organisation.
+
 ## Summary and exports
 
 As built (#34):
