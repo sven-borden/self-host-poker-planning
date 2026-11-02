@@ -1,21 +1,44 @@
 # Only what `pnpm install` and `pnpm build` need reaches the build context (see Dockerfile).
+#
+# Two readers use this file. `docker build` lets `**/x` match at the top too. `az acr run` packs
+# the upload with the Azure CLI's own reading of it, where `**/x` needs a folder above x, so every
+# rule below that must hold at the top is written twice. Nothing filters on the remote side, and
+# the Dockerfile's `COPY . .` copies what arrives (docs/07-self-hosting-azure.md, "Without Docker").
 
 # Dependencies, build output and caches: the image builds its own
+node_modules
 **/node_modules
+dist
 **/dist
+coverage
 **/coverage
+.tsbuild
 **/.tsbuild
+*.tsbuildinfo
 **/*.tsbuildinfo
+.vite
 **/.vite
 
 # Never send secrets to the builder
+.env
 **/.env
+.env.*
 **/.env.*
 !.env.example
+.npmrc
 **/.npmrc
+.envrc
 **/.envrc
+*.pem
 **/*.pem
+*.key
 **/*.key
+# The Azure template's working files hold real values or a compiled copy of them (.gitignore).
+# infra/.env.azure falls under `**/.env.*`. The rest of infra stays: `az acr run` reads its task
+# file from the upload.
+infra/*.local.bicepparam
+infra/*.parameters.json
+infra/main.json
 
 # Version control, CI, editors and local tooling
 .git
@@ -23,21 +46,31 @@
 .claude
 .vscode
 .idea
+.DS_Store
 **/.DS_Store
+Thumbs.db
 **/Thumbs.db
+Desktop.ini
 **/Desktop.ini
 
 # Scratch, logs and test artefacts
+tmp
 **/tmp
+*.log
 **/*.log
+test-results
 **/test-results
+playwright-report
 **/playwright-report
+blob-report
 **/blob-report
+playwright/.cache
 **/playwright/.cache
 
-# Docs and the Docker files themselves: not part of the build
+# Docs and the Compose file: not part of the build. The Dockerfile stays in: `az acr run` packs
+# only what this file lets through and, unlike `az acr build`, does not add the Dockerfile back.
+# The runtime image takes nothing but /out from the build stage, so it never holds a copy.
 docs
 input.md
 compose.yaml
-Dockerfile
 .dockerignore

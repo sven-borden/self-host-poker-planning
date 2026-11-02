@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DrizzleQueryError } from "drizzle-orm";
+import pg from "pg";
 import { describe, expect, it } from "vitest";
 import {
   CONNECT_BUDGET_MS,
@@ -125,6 +126,25 @@ describe("waitForDatabase", () => {
 });
 
 describe("libpqUrl", () => {
+  // What `pg` reads from a URL, without connecting: the password and whether it checks the
+  // certificate. A Flexible Server password can hold / + =, so the Azure template encodes it.
+  const parsed = (url: string) => {
+    const client = new pg.Client({ connectionString: libpqUrl(url) }) as pg.Client & {
+      password: string;
+      ssl: { rejectUnauthorized?: boolean } | boolean;
+    };
+    return { password: client.password, ssl: client.ssl };
+  };
+
+  it("reads an encoded password, and checks the certificate with verify-full only (ADR-032)", () => {
+    const url = (mode: string) =>
+      `postgresql://poker:a%2Fb%2Bc%3D@poker-db.postgres.database.azure.com/poker?sslmode=${mode}`;
+    expect(parsed(url("verify-full")).password).toBe("a/b+c=");
+    expect(parsed(url("verify-full")).ssl).toEqual({});
+    expect(parsed(url("require")).password).toBe("a/b+c=");
+    expect(parsed(url("require")).ssl).toEqual({ rejectUnauthorized: false });
+  });
+
   it("gives sslmode its libpq meaning and leaves every other URL as it is", () => {
     const base = `postgres://pp:${SECRET}@db.internal:5432/pp`;
     expect(libpqUrl(base)).toBe(base);
