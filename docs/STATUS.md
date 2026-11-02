@@ -172,6 +172,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
   Its own switch and a mood picker in the speaker's popover, one volume. A lazy chunk. Live
   at 2ce3c96.
 - **W4 is complete** (2026-11-02).
+- Sign-in with Google and Microsoft from #47 (ADR-023), merged and dark: no keys are set, so
+  no route and no button exists. Implicit linking is off, provider tokens are never kept, a
+  Microsoft person is `tid:oid`. The room route loads 181.6 kB. Live at f3c5955.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -182,18 +185,16 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- #52: an implementer in `../pp-wt-52`.
-- #47: an implementer in `../pp-wt-47`. The PR will say `Refs #47`: the issue stays open
-  until the sign-ins work on poker.borden.ch with Sven's keys.
+- #52 (PR #108): in review, in `../pp-wt-52`. Its migration must be regenerated after #47's.
+- #48: an implementer in `../pp-wt-48`.
+- #47 is merged and stays open until the sign-ins work on poker.borden.ch.
 - **Agents again, issue after issue, until the end of 2026-11-02** (Sven, 2026-11-01): the
   main session orchestrates and does not stop between issues (see `CLAUDE.md`).
 
 ## Next
 
 - W3 (#33–#41): all merged but #38 and #41, which need Sven's OQ-1 and OQ-2.
-- W5 (#48–#51) follows #47. W6 (#53–#55) follows, #53 needing #47 too. W7 waits for Sven's
-  OQ-3 (#56). #47's live check needs his Google and Microsoft keys in Coolify: the code
-  merges without them.
+- W5's #49 to #51 follow #48. W6's #53 to #55 follow. W7 waits for Sven's OQ-3 (#56).
 - The local reveal budget fails on clean `main` since 2026-11-02 (named reveal, 1 run of 4
   clean, worst 67 ms; #43 had 10 of 10). CI passes at the first try. Cause not looked for.
 - Image size: 239 MB of 250 MB after #40 (236 MB before; architecture section 12 still
@@ -257,6 +258,9 @@ issues are merged.
   Suggested 5." names the last voter beside the group's suggestion (no card is paired
   with a name). Also the German count "0/7 haben abgestimmt" (was "haben bisher
   abgestimmt", shortened to fit 360 px), if another wording is wanted.
+- **#47: do not set the Google or Microsoft keys until #48 has merged.** Before it, a guest
+  who signs in loses their rooms for good. Then follow the list in PR #107, set both proxy
+  steps first (above), run the live check, and close #47.
 - **After #46**: install the app on a phone and check the icon, the name "Poker" and the bar
   colour, and on Android feel the reveal's beats. No real phone has run it. #46 closed with
   the icon judged by eye and Lighthouse's check replaced by Chromium's.
