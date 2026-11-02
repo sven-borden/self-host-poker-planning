@@ -649,7 +649,7 @@ export const de: Catalog = {
     deleteConfirm: "Diesen Raum löschen",
     deleted: "Raum gelöscht.",
     leave: "Diesen Raum verlassen",
-    leaveNamed: "{{name}} verlassen",
+    leaveNamed: "Diesen Raum verlassen: {{name}}",
     leaveTitle: "{{name}} verlassen?",
     leaveBody:
       "Ihr Platz wird frei, und der Raum verschwindet aus dieser Liste. Über den Link des Raums können Sie wieder beitreten.",

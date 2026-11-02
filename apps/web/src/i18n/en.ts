@@ -690,7 +690,7 @@ export const en = {
     deleteConfirm: "Delete this room",
     deleted: "Room deleted.",
     leave: "Leave this room",
-    leaveNamed: "Leave {{name}}",
+    leaveNamed: "Leave this room: {{name}}",
     leaveTitle: "Leave {{name}}?",
     leaveBody:
       "Your seat goes, and the room goes from this list. The room’s link lets you join again.",

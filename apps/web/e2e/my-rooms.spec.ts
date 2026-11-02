@@ -191,8 +191,14 @@ test.describe("with provider keys", () => {
     await expect(row).toContainText("You are the product owner");
     await expect(row).toContainText("does not carry that right");
     await expect(row.getByRole("button", { name: "Rename Abandoned" })).toBeVisible();
-    await expect(row.getByRole("button", { name: "Leave Abandoned" })).toBeVisible();
+    await expect(row.getByRole("button", { name: "Leave this room: Abandoned" })).toBeVisible();
     await expect(row.getByRole("button", { name: "Delete Abandoned" })).toHaveCount(0);
+    await page.setViewportSize({ width: 320, height: 640 });
+    const width = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(width).toBeLessThanOrEqual(320);
+    expect(
+      (await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze()).violations.map(({ id }) => id),
+    ).toEqual([]);
 
     const id = await page.evaluate(async () => {
       const { rooms } = await (await fetch("/api/my-rooms")).json();
@@ -216,7 +222,7 @@ test.describe("with provider keys", () => {
 
     await page.goto(ROOMS);
     await expect(page.locator("[data-my-room]")).toContainText("You hold a seat");
-    await page.getByRole("button", { name: "Leave Theirs" }).click();
+    await page.getByRole("button", { name: "Leave this room: Theirs" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Leave this room" }).click();
 
     await expect(page.getByText("You left the room.")).toBeVisible();

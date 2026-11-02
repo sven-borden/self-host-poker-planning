@@ -175,8 +175,8 @@ describe("the list", () => {
     expect(screen.getByText("1 round")).toBeTruthy();
     expect(named("Rename Sprint planning")).toBeTruthy();
     expect(named("Delete Sprint planning")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Leave Sprint planning" })).toBeNull();
-    expect(named("Leave Room bbbbbbbbbb")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Leave this room: Sprint planning" })).toBeNull();
+    expect(named("Leave this room: Room bbbbbbbbbb")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Delete Room bbbbbbbbbb" })).toBeNull();
   });
 
@@ -198,7 +198,7 @@ describe("the list", () => {
     await screen.findByText("You are the product owner");
     expect(screen.getByText(/does not carry that right/)).toBeTruthy();
     expect(named("Rename Sprint planning")).toBeTruthy();
-    expect(named("Leave Sprint planning")).toBeTruthy();
+    expect(named("Leave this room: Sprint planning")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Delete Sprint planning" })).toBeNull();
   });
 
@@ -210,7 +210,7 @@ describe("the list", () => {
     await renderRooms();
     await screen.findByText("Your room, with another product owner");
     expect(screen.getByText(/Get the role back in the room/)).toBeTruthy();
-    expect(named("Leave Sprint planning")).toBeTruthy();
+    expect(named("Leave this room: Sprint planning")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Delete Sprint planning" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Rename Sprint planning" })).toBeNull();
   });
@@ -353,7 +353,7 @@ describe("renaming", () => {
     await renderRooms();
     fireEvent.click(await screen.findByRole("button", { name: "Rename Sprint planning" }));
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
-    await screen.findByRole("button", { name: "Leave Sprint planning" });
+    await screen.findByRole("button", { name: "Leave this room: Sprint planning" });
     expect(screen.getByText("Only the product owner can do that.")).toBeTruthy();
   });
 });
@@ -435,7 +435,9 @@ describe("leaving", () => {
       [`POST /api/my-rooms/${ROOM_B.id}/leave`]: noContent,
     });
     await renderRooms();
-    fireEvent.click(await screen.findByRole("button", { name: "Leave Room bbbbbbbbbb" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Leave this room: Room bbbbbbbbbb" }),
+    );
     fireEvent.click(await screen.findByRole("button", { name: "Leave this room" }));
     await screen.findByText("You left the room.");
     expect(rowCount()).toBe(0);
@@ -449,11 +451,13 @@ describe("leaving", () => {
       [`POST /api/my-rooms/${ROOM_A.id}/leave`]: noContent,
     });
     await renderRooms();
-    fireEvent.click(await screen.findByRole("button", { name: "Leave Sprint planning" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Leave this room: Sprint planning" }),
+    );
     await screen.findByText(/stays on this list/);
     fireEvent.click(await screen.findByRole("button", { name: "Leave this room" }));
     await screen.findByText("You left the room.");
     expect(rowCount()).toBe(1);
-    expect(screen.queryByRole("button", { name: "Leave Sprint planning" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Leave this room: Sprint planning" })).toBeNull();
   });
 });

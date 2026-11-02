@@ -665,7 +665,7 @@ export const fr: Catalog<"many"> = {
     deleteConfirm: "Supprimer cette salle",
     deleted: "Salle supprimée.",
     leave: "Quitter cette salle",
-    leaveNamed: "Quitter {{name}}",
+    leaveNamed: "Quitter cette salle : {{name}}",
     leaveTitle: "Quitter {{name}} ?",
     leaveBody:
       "Vous perdez votre place et la salle disparaît de cette liste. Le lien de la salle vous permet de la rejoindre à nouveau.",
