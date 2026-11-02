@@ -82,6 +82,12 @@ describe("a failed sign-in's code", () => {
     expect(takeSignInError()).toBeNull();
   });
 
+  it("gives the news that rooms are still moving like a failure's code (#48)", () => {
+    arrive("?sign_in_error=still_moving");
+    readSignInError();
+    expect(takeSignInError()).toBe("still_moving");
+  });
+
   it("is a plain failure when this version does not know it", () => {
     arrive("?sign_in_error=%3Cscript%3E");
     readSignInError();

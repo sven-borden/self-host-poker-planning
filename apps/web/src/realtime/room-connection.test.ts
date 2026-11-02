@@ -15,6 +15,7 @@ import {
   openRoom,
   type RoomSocket,
   requestHistory,
+  SIGNED_IN_RELOAD_MS,
   sendCommand,
 } from "./room-connection.ts";
 import { createSocket } from "./socket.ts";
@@ -210,6 +211,55 @@ describe("openRoom", () => {
     // A later close the server forces is final again.
     fake.fire("disconnect", "io server disconnect");
     expect(useRoomStore.getState()).toMatchObject({ status: "error", error: "offline" });
+  });
+
+  it("after signedIn, ignores the socket and reloads into the account (#48)", async () => {
+    vi.useFakeTimers();
+    try {
+      const reload = vi.fn();
+      const fake = fakeSocket(() => ({ ok: true, snapshot: snapshot(1) }));
+      closers.push(
+        openRoom(CODE, { socket: fake.socket, connect: () => () => {}, delay: () => 0, reload }),
+      );
+      fake.up();
+      await vi.advanceTimersByTimeAsync(0);
+      fake.fire("signedIn");
+      expect(useRoomStore.getState().status).toBe("reconnecting");
+      // A snapshot still on its way must not show the join form for a moment.
+      fake.fire("snapshot", snapshot(2));
+      expect(useRoomStore.getState().snapshot?.version).toBe(1);
+      Object.defineProperty(fake.socket, "active", { configurable: true, get: () => false });
+      fake.fire("disconnect", "io server disconnect");
+      expect(useRoomStore.getState().status).toBe("reconnecting");
+      expect(fake.socket.connect).not.toHaveBeenCalled();
+      // Not at once: the new cookie is still on its way to this browser.
+      expect(reload).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(SIGNED_IN_RELOAD_MS);
+      expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not reload a page that left the room meanwhile (#48)", async () => {
+    vi.useFakeTimers();
+    try {
+      const reload = vi.fn();
+      const fake = fakeSocket(() => ({ ok: true, snapshot: snapshot(1) }));
+      const close = openRoom(CODE, {
+        socket: fake.socket,
+        connect: () => () => {},
+        reload,
+      });
+      fake.up();
+      await vi.advanceTimersByTimeAsync(0);
+      fake.fire("signedIn");
+      close();
+      await vi.advanceTimersByTimeAsync(SIGNED_IN_RELOAD_MS);
+      expect(reload).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("locks on password_required, keeps the socket, and enters again once asked (#31)", async () => {

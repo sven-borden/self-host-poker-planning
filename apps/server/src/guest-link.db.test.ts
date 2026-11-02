@@ -64,7 +64,7 @@ beforeAll(async () => {
   admin = testClient(t.url);
   config = testConfig({ DATABASE_URL: t.url, TRUST_PROXY: "1", ...KEYS });
   setup = await setupServer(config, logs.logger, undefined, { presenceGraceMs: GRACE_MS });
-  sync = setup.deps.handlers as RoomSync;
+  sync = setup.deps?.handlers as RoomSync;
   server = createServer(config, { ...setup.deps, logger: logs.logger });
   await server.listen();
   const bound = server.httpServer.address();
@@ -233,7 +233,9 @@ async function playRound(po: TestClient, voters: readonly [TestClient, string][]
   await must(po.cmd("startRound", { subject: { kind: "none" } }));
   const number = po.latest()?.room.round?.number;
   for (const [client, card] of voters) {
-    await client.waitFor((s) => s.room.round?.number === number && s.room.round.phase === "voting");
+    await client.waitFor(
+      (s) => s.room.round?.number === number && s.room.round?.phase === "voting",
+    );
     await must(client.cmd("castVote", { card, round: number }));
   }
   await must(po.cmd("reveal"));
@@ -516,8 +518,8 @@ describe("an account that exists", () => {
     }
     await must(poTab.cmd("reveal"));
     const shown = (await poTab.waitFor((s) => s.room.round?.phase === "revealed")).snapshot;
-    const cards = shown.room.round?.phase === "revealed" && shown.room.round;
-    if (!cards || !cards.anonymous) throw new Error("not anonymous");
+    const cards = shown.room.round;
+    if (cards?.phase !== "revealed" || !cards.anonymous) throw new Error("not anonymous");
     expect(cards.cards).toEqual(["3", "5", "8"]);
     const framesBefore = poTab.frames.length;
     first.close();
@@ -630,6 +632,22 @@ describe("what fails how", () => {
     expect(await pendingLinks()).toEqual([]);
   });
 
+  it("leaves a guest on its way alone, whatever the purge makes of it", async () => {
+    const seatedOnly = new Browser();
+    const guest = await seatedOnly.guest();
+    const signed = new Browser();
+    await signIn(signed, person());
+    const account = (await signed.session())?.user.id ?? "";
+    // Owns no room, and `begin` ended its sessions: by every other rule the purge would take it.
+    await createGuestLinkStore(setup.database.db).begin(guest, account);
+    const far = new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000);
+    await setup.database.retention.purge({ ttlDays: 1, now: far });
+    expect(await userExists(guest)).toBe(true);
+    await admin.query("delete from guest_link");
+    await setup.database.retention.purge({ ttlDays: 1, now: far });
+    expect(await userExists(guest)).toBe(false);
+  });
+
   it("finishes a move whose process died, from the row it left", async () => {
     const browser = new Browser();
     const guest = await browser.guest();
@@ -658,6 +676,30 @@ describe("what fails how", () => {
     await store.begin(guest, first);
     await store.begin(guest, (await two.session())?.user.id ?? "");
     await expect(store.accountOf(guest)).resolves.toBe(first);
+  });
+
+  it("moves nothing for a callback the browser did not start", async () => {
+    const victim = new Browser();
+    const guest = await victim.guest();
+    const { code } = await roomOf(guest);
+    (await victim.sit(code, "Ana")).close();
+    const attacker = new Browser();
+    await attacker.guest();
+    const started = await attacker.post("/api/auth/sign-in/social", {
+      provider: "google",
+      returnTo: "/",
+    });
+    const { url } = (await started.json()) as { url: string };
+    const answer = await fetch(
+      `${atFake(url, fake.origin)}&${FAKE_PERSON_PARAM}=${fakePersonParam(person())}`,
+      { redirect: "manual" },
+    );
+    const back = new URL(answer.headers.get("location") ?? "");
+    const response = await victim.go(`${back.pathname}${back.search}`);
+    expect(response.headers.get("location")).toContain("sign_in_error=failed");
+    expect((await victim.session())?.user.id).toBe(guest);
+    expect((await liveOf(code)).state.ownerId).toBe(guest);
+    expect(await pendingLinks()).toEqual([]);
   });
 
   it("is a no-op run again: same version, same rows", async () => {

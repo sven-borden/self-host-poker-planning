@@ -93,7 +93,7 @@ export function startRetention(options: RetentionOptions): Retention {
   async function purge(): Promise<RetentionRun> {
     const started = performance.now();
     const durationMs = () => Math.round(performance.now() - started);
-    await beforePurge?.();
+    if (beforePurge) await beforePurge();
     let inUse: readonly string[];
     try {
       // One instance answers at once, several after their answers: awaited either way.

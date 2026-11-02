@@ -140,6 +140,54 @@ test.describe("with provider keys", () => {
     await context.close();
   });
 
+  test("a guest PO signs in at the table: same seat, same card, no form, and no other tab left behind", async ({
+    browser,
+  }) => {
+    const { context, page } = await newPerson(browser);
+    const who = person("Grace Hopper");
+    await atProviders(context, who);
+    const code = await newRoom(page);
+    await page.getByRole("textbox", { name: "Your name" }).fill("Table Name");
+    await joinAs(page);
+    // A second person keeps the round open: alone, a card would reveal it.
+    const ben = await newPerson(browser);
+    await ben.page.goto(`${SIGN_IN_BASE}/r/${code}`);
+    await ben.page.getByRole("textbox", { name: "Your name" }).fill("Ben");
+    await joinAs(ben.page);
+    await page.getByRole("button", { name: "Start voting" }).click();
+    const card = page.getByRole("button", { name: "5", exact: true });
+    await card.click();
+    await expect(card).toHaveAttribute("aria-pressed", "true");
+
+    const other = await context.newPage();
+    await other.goto(`${SIGN_IN_BASE}/r/${code}`);
+    await expect(other.locator("[data-you-name] bdi")).toHaveText("Table Name");
+
+    await buttonOf(page, "Sign in with Microsoft").click();
+    await expect(page.locator("section[data-you] [data-account]")).toHaveText("Grace Hopper");
+    expect(page.url()).toBe(`${SIGN_IN_BASE}/r/${code}`);
+    await expect(page.locator("[data-you-name] bdi")).toHaveText("Table Name");
+    await expect(page.getByRole("button", { name: "Join the room" })).toHaveCount(0);
+    await expect(card).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "Reveal cards" }).first()).toBeEnabled();
+    await expectNoAddress(page, who, "Microsoft");
+
+    // The other tab of that guest hears of it, and comes back as the account, at the same seat.
+    await expect(other.locator("section[data-you] [data-account]")).toHaveText("Grace Hopper");
+    await expect(other.locator("[data-you-name] bdi")).toHaveText("Table Name");
+    await expect(other.getByRole("button", { name: "Join the room" })).toHaveCount(0);
+    await expect(other.getByRole("button", { name: "5", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // At the table the seat keeps the name it had, and the round stays open.
+    await expect(ben.page.getByText("Table Name").first()).toBeVisible();
+    await expect(ben.page.getByText("Grace Hopper")).toHaveCount(0);
+    await expect(ben.page.getByRole("button", { name: "Join the room" })).toHaveCount(0);
+    await context.close();
+    await ben.context.close();
+  });
+
   test("the account row holds no provider token after a browser's sign-in", async ({ browser }) => {
     const { context, page } = await newPerson(browser);
     const who = person();
