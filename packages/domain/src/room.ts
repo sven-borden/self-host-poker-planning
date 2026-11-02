@@ -149,6 +149,13 @@ export type Round = {
 export type RoomState = {
   /** The product owner (PO). */
   ownerId: UserId;
+  /**
+   * Who holds the right to delete the room (#49, ADR-027): the owner at creation, then whoever
+   * that person hands the role to. A claim leaves it where it is: taking the role carries the
+   * room's use, not its end. Server-held: no command sets it and no snapshot carries it. Absent in
+   * a room stored before it, where `keeperOf` reads the PO, until a claim or a hand-over writes it.
+   */
+  keeperId?: UserId;
   settings: RoomSettings;
   participants: Record<UserId, Participant>;
   /** `null` = lobby, before the first round. */
@@ -231,10 +238,16 @@ export const DEFAULT_SETTINGS: Readonly<RoomSettings> = Object.freeze({
   autoAdvance: false,
 });
 
+/** Who holds the right to delete the room: see `keeperId`. */
+export function keeperOf({ keeperId, ownerId }: Pick<RoomState, "keeperId" | "ownerId">): UserId {
+  return keeperId ?? ownerId;
+}
+
 /** A new room: default settings, nobody inside (the PO enters through `join` too), no round. */
 export function createRoom({ ownerId }: { ownerId: UserId }): RoomState {
   return {
     ownerId,
+    keeperId: ownerId,
     settings: {
       ...DEFAULT_SETTINGS,
       deck: { ...DEFAULT_SETTINGS.deck } as DeckSpec,

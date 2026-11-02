@@ -61,6 +61,7 @@ export {
   type QueueEntry,
   type QueueItem,
   type QueueSource,
+  keeperOf,
   ROLES,
   type Role,
   type RoomSettings,

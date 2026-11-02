@@ -41,6 +41,7 @@ import type {
 import { baseCards, deckCards } from "./decks.ts";
 import {
   AUTO_ADVANCE_MS,
+  keeperOf,
   MAX_MEMBERS,
   MAX_PARTICIPANTS,
   MIN_ANONYMOUS_REVEAL_CARDS,
@@ -248,8 +249,14 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       if (command.to === actor || !isPresent(participant(state, command.to))) {
         return refuse("target_not_present");
       }
+      // A hand-over by the keeper is the keeper's own act, and the right to delete goes with it.
+      // Anyone else can only pass on the role they hold.
       return done(
-        { ...state, ownerId: command.to },
+        {
+          ...state,
+          ownerId: command.to,
+          keeperId: actor === keeperOf(state) ? command.to : keeperOf(state),
+        },
         { type: "ownerChanged", by: "transfer", to: command.to },
       );
     case "claimOwner":
@@ -348,7 +355,12 @@ function claimOwner(state: RoomState, actor: UserId, now: number): Step {
   if (owner && (owner.awaySince === undefined || now - owner.awaySince < OWNER_CLAIM_AFTER_MS)) {
     return refuse("owner_present");
   }
-  return done({ ...state, ownerId: actor }, { type: "ownerChanged", by: "claim", to: actor });
+  // The keeper stays, and is written down here: in a room stored before `keeperId`, the PO the
+  // claim replaces is the keeper, and after this write no reading could take the claimer for one.
+  return done(
+    { ...state, ownerId: actor, keeperId: keeperOf(state) },
+    { type: "ownerChanged", by: "claim", to: actor },
+  );
 }
 
 /**
@@ -409,6 +421,9 @@ function password(state: RoomState, on: unknown): Step {
  * reveal both stay. Taking a card off the table as a seat goes would tie that card to that seat,
  * so the guest's stays as a departed voter's card does (`removeParticipant`), under the guest's
  * id, which then names nobody.
+ *
+ * The right to delete the room (`keeperId`) moves apart from the PO role: a guest can hold either
+ * alone, or the right with no seat at all, when someone claimed the role.
  */
 function moveGuest(state: RoomState, guest: UserId, account: UserId): Step {
   if (guest === account) return done(state);
@@ -416,11 +431,13 @@ function moveGuest(state: RoomState, guest: UserId, account: UserId): Step {
   const guestVote = round ? ownVote(round, guest) : undefined;
   const seat = participant(state, guest);
   const movesOwner = state.ownerId === guest;
+  const movesKeeper = state.keeperId === guest;
   const votes = round && guestVote ? movedVotes(round, guest, account, guestVote) : round?.votes;
-  if (!seat && !movesOwner && votes === round?.votes) return done(state);
+  if (!seat && !movesOwner && !movesKeeper && votes === round?.votes) return done(state);
   const next: RoomState = {
     ...state,
     ...(movesOwner && { ownerId: account }),
+    ...(movesKeeper && { keeperId: account }),
     participants: movedSeat(state, guest, account),
   };
   return done(
