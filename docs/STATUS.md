@@ -94,6 +94,10 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
   rename, leave and delete. Deleting needs the PO and the keeper in one: a role taken by
   claim cannot destroy a room, and retention follows the keeper. The room route loads
   184.8 kB. Live at c0a90bb.
+- Rooms limited to accounts from #50 (ADR-028), dark until sign-in has keys: email domains,
+  Microsoft tenants, or both. One invariant in `broadcast` keeps anyone refused off the feed. A
+  keeper the rule refuses has no row and no delete. Sign-ins over 30 days cannot pass. Live at
+  ff158df.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -104,8 +108,8 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- #50 (PR #112): review findings being fixed in `../pp-wt-50`.
-- #51: an implementer in `../pp-wt-51`.
+- #51 (PR #113): review findings being fixed in `../pp-wt-51`, the rule's wiring last.
+- #54: an implementer in `../pp-wt-54`. Its live check needs Sven's site and keys.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
 - **Agents again, issue after issue, until the end of 2026-11-02** (Sven, 2026-11-01): the
   main session orchestrates and does not stop between issues (see `CLAUDE.md`).
@@ -113,7 +117,7 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 ## Next
 
 - W3 (#33–#41): all merged but #38 and #41, which need Sven's OQ-1 and OQ-2.
-- W6's #54 and #55 follow W5; their live checks need Sven's test sites. W7 waits for his
+- W6's #55 follows #54; its live check needs Sven's test organisation. W7 waits for his
   OQ-3 (#56).
 - The local reveal budget fails on clean `main` since 2026-11-02 (named reveal, 1 run of 4
   clean, worst 67 ms; #43 had 10 of 10). CI passes at the first try. Cause not looked for.
