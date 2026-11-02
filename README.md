@@ -228,8 +228,10 @@ no connection.
    `read:project:jira`. `offline_access` is asked for by the server and needs no setting.
 3. Under **Authorization**, choose OAuth 2.0 (3LO) and set the callback URL to
    `https://your-host/api/connectors/jira/callback`: your `BASE_URL`, exactly, with that path.
-4. Under **Distribution**, share the app if people outside your own Atlassian organisation should
-   connect. An app left private works for its owner's sites only.
+4. Under **Distribution**, turn sharing on. An app is private by default: Atlassian lets only the
+   app's owner install and use it, so a colleague in the same organisation is refused too. Anyone
+   but the person who created the app needs this, and a check of the setup is only worth something
+   with a second person connecting.
 5. Under **Settings**, copy the client id and the secret to `JIRA_CLIENT_ID` and
    `JIRA_CLIENT_SECRET`, runtime only, and recreate the container (`docker compose up -d`).
 
@@ -238,6 +240,15 @@ connects their own account, and the server uses that token only for that person'
 write-back: never for anyone else in the room. It writes one thing, the final estimate as a number,
 to a field the PO picked from the site's number fields. A final with no number is not written, and
 an anonymous round sends nothing but its number.
+
+The scopes ask for more than this code uses: Jira has no classic scope narrower than
+`write:jira-work`, and that one also allows deleting issues, which is what the consent screen says
+and what a person agrees to. The server never does. If your team would rather not grant it, see
+"Scopes" in ADR-030 before you set the app up.
+
+Should the page say that Jira refused although the connection was just renewed, connecting again
+will not help: compare the app's scopes with step 2. The server's log says at the start when keys are
+set and something else keeps the connector off, by the variable's name.
 
 Disconnecting deletes the token here. Atlassian keeps its own record of the grant, which a person
 removes at <https://id.atlassian.com/manage-profile/apps>. A person who removes it there, or whose

@@ -2069,9 +2069,12 @@ wrote and drops its own token. Two traps follow.
 
 - An `invalid_grant` can be the answer to the loser of a race, outside the leeway, while the
   person's grant is fine. So the refused refresh waits 400 ms for a winner still on its way, and
-  deletes the row only by compare-and-set on the version it read (`dropToken`, new). Anything else
-  from the token address (a 5xx, a timeout, a 429) leaves the row: a bad minute costs nobody a
-  connection.
+  deletes the row only by compare-and-set on the version it read (`dropToken`, new). Atlassian
+  says `invalid_grant`; reports from the field show `unauthorized_client` with "refresh_token is
+  invalid" for the same thing, so both are believed the same way. Anything else from the token
+  address (a 5xx, a timeout, a 429, whose wait goes through to the page) leaves the row. That does
+  not always save the connection: a refresh that timed out after Atlassian rotated has lost the
+  new token, the old one is good for ten more minutes, and past those the person connects again.
 - What the connection points at (the site and the field) must not move `version`, or a person
   changing the field during a refresh would make the refresh's write lose, and drop a token Atlassian
   has already rotated. So it has a column of its own, `connector_token.settings`, unsealed since it
@@ -2080,7 +2083,12 @@ wrote and drops its own token. Two traps follow.
   on the person's list, with its field.
 
 One instance makes one refresh per person at a time. A token Jira answers with a 401 before its time
-gets one forced refresh and one more try.
+gets one forced refresh and one more try. A 401 after that says something a refresh cannot cure,
+such as Atlassian's `Unauthorized; scope does not match`, so it has a code of its own,
+`connector_setup`: the row stays, the words are about the app's setup and not about connecting
+again, and the instance remembers that token (by its hash, in memory) so the next call spends no
+rotation. A call that works forgets it. Each instance spends one rotation to learn this, and one
+more on the token that follows when this one runs out.
 
 **Sites.** `accessible-resources` is read with the person's token. One site is taken; several are
 offered. A site is stored only if it is on that person's list, read again at that moment. Every call
@@ -2093,6 +2101,14 @@ and only with Jira in its scopes, since an id is not unique across Atlassian's p
 `read:sprint:jira-software`, `read:project:jira`, `offline_access`. The agile API takes its own
 granular scopes, and `read:project:jira` is what its list of boards asks for; that is the only
 reason a granular scope stands beside the classic pair. Nothing administrative, no user data.
+
+These are not the least the code needs. `write:jira-work` covers creating and editing issues,
+comments and worklogs, and deleting issues; the app only ever sends one number to one field. The
+classic pair was chosen because it is two scopes that each search, field list and issue update in
+Atlassian's API reference names, against a granular set of about ten that would have to be proven
+on a real site, and nothing here runs on one yet. Narrowing them is one list in `jira.ts` and one
+step of the README, and it is Sven's call once he has read the consent screen: a person agrees to
+what that screen says, not to what this code does.
 
 **Import.** `POST /api/rooms/:code/connectors/jira/import`, the PO alone, signed in. `queueImport` is
 a server command in `OWNER_ONLY`: the wire has no schema for it, so `source` still comes off no
@@ -2126,28 +2142,56 @@ source, no number, no connection, another site than the item's, no field. The fi
 the site's own custom number fields, with a guess by name shown and not saved until the PO
 presses: nothing is written to a field no person looked at.
 
-**Automatic, from the page.** A final recorded in this tab goes by itself, from the page, a moment
-after the snapshot that shows it. A press would lose to auto-advance: ten seconds later the round
+**Automatic, from the page.** A final this very tab recorded goes by itself, from the page, a moment
+after the frame that confirms it. A press would lose to auto-advance: ten seconds later the round
 is gone. On the server it would need a hook in the socket path, and a way to tell the PO how it
-went. Writing twice is harmless, so two tabs or a changed final are fine. A failure stays as a line
-under the table, through the rounds that follow, with "Try again" and "Dismiss"; the round is never
-touched. A final already on the table when the page comes up waits for a press: it may be days
-old, and someone may have changed the issue since. The line goes with a reload, and the history's
-"Write to Jira" on a past round is the way back to it.
+went. A failure stays as a line under the table, through the rounds that follow, with "Try again"
+and "Dismiss"; the round is never touched.
+
+The rule (Sven, 2026-11-02): the write carries the PO's token, so only the PO's own press may start
+it. The tab marks its press of "Record" before the command leaves, and only the live frame whose
+causes say that final was set, for that room, round and item, writes (`final-press.ts`).
+Everything else waits for a press, with a line that says the final was not recorded on this page
+and that someone else may have recorded it: a final found in a snapshot, from a re-entry, from
+another tab or device, from anyone else, or after a hand-over. A snapshot from an `enter` has no
+causes, so a tab that slept through a hand-over wakes to a line and writes nothing, though no
+render of it ever saw the role leave. So the rule lives in `WriteBackLines`, not in the parent's
+`me.isOwner`, which can only know who is PO now. A press refused, or answered with no frame of its
+own, confirms nothing, and a frame past the version its answer gave is someone else's. This also
+ends two tabs writing at once. A write a press would have started and a lost frame kept back
+(several instances, a lost reply) waits too: that errs towards a person looking. The line goes
+with a reload, and the history's "Write to Jira" on a past round is the way back to it.
 
 **Failures.** The server sends codes (`CONNECTOR_ERROR_CODES`), HTTP only, so no socket message
 changes and `ACK_ERROR_CODES` does not hold them; the page words them with the tracker's name in
-`en`, `fr` and `de`. 429 carries `Retry-After` through, in seconds, and the page says how long. 401
-tries a refresh, then "connect again". 403, 404, 5xx, a timeout (10 s on every call, by
-`AbortSignal`) and an answer that is not Jira's each have their code, and a 400 means the query on
-an import and the field on a write. A failure holds a code, never Jira's words, which can quote the
-query or an issue. `fetch`'s errors are dropped for the same reason. Logs name the room by its id;
+`en`, `fr` and `de`. 429 carries `Retry-After` through, in seconds, at most an hour in both the
+header and the body, and the page says how long. A 401 tries a refresh, then a dead grant asks to
+connect again and takes the page back to "Connect", from whichever call found it, while a token
+refused after the refresh is `connector_setup` (above). 403, 404, 5xx, a timeout (10 s on every
+call, by `AbortSignal`, a stalled body included) and an answer that is not Jira's each have their
+code, and a 400 means the query on an import, the field on a write, and a board with no sprints on a
+list of sprints, which is an empty list: Atlassian answers a Kanban board that way. A failure holds
+a code, never Jira's words, which can quote the query or an issue. `fetch`'s errors are dropped
+for the same reason. Logs name the room by its id;
 no token, code, room code, JQL, title or address is in one, and the redaction list gains `jql` and
 `summary` for a mistake. Per person: 60 reads a minute, 30 changes in ten minutes, 10 imports a
 minute, 60 writes a minute. They hold per instance, like every limit (architecture section 8).
 
+A `state` that ran out while a consent screen stood open goes back to its room and says so, since
+its row still names the room until the retention job sweeps it. One that is spent, swept or
+another session's has no room to go to: the first page says what happened and links to "My rooms".
+Keys that do nothing because the vault or a sign-in provider is missing say so at the start, in
+one line naming the variable. A chunk of the connector that cannot load, as on a tab left open
+across a deploy, says so in a toast and costs the room nothing: estimating never depends on a
+tracker, so these chunks do not go through `lazy` and the error boundary.
+
 **Disconnect.** Deletes the row. 3LO has no revoke endpoint in Atlassian's documentation, so the
 page says that Atlassian keeps its own grant, and links to the person's connected apps.
+
+**An account's deletion (ADR-029).** `begin` and `endSessions` delete the row. A refresh under way
+cannot bring it back: `replaceToken` never creates a row. A connection under way could, since
+`saveToken` is an upsert, so it writes nothing for an account with a deletion marker, in the one
+statement. One that runs at the very moment `begin` commits is what `endSessions` is for.
 
 **The seam.** `BacklogConnector` is what `routes.ts` needs: `authorizeUrl`, `exchangeCode`, `refresh`,
 `sites`, `numberFields`, `guessField`, `boards`, `sprints`, `search`, `count`, `writeEstimate`.
@@ -2165,5 +2209,10 @@ sprint issues: deprecated. Import through `queueAdd` from the page: `source` wou
 **Not tested.** Everything here ran against a stand-in built from Atlassian's documentation and its
 OpenAPI files. Real tokens, a real site, the leeway under a real race, what Atlassian does with
 classic and granular scopes on one app, and the wording of its consent screen are for the live
-check, which needs Sven's test site and app. The issue stays open for it. A rate limit that holds
-across instances does not exist here (ADR-016).
+check, which needs Sven's test site and app and a second person, since a private app refuses anyone
+but its owner. The issue stays open for it. A rate limit that holds across instances does not exist
+here (ADR-016).
+
+**Limits.** A response's body is read whole by `response.json()` with no cap on its size. What bounds
+it is the 10 s timeout and a fixed host at Atlassian: nothing a client sends picks the address, so
+this is left as it is.

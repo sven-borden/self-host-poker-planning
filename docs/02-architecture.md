@@ -596,7 +596,7 @@ them into `config.vault`, which is undefined when the vault is off.
 `db/connector-tokens.ts` is the only way to the table, on `database.connectorTokens`. Every
 method takes an `AccountId` (only `accountOf(sessionUser)` makes one; a guest gets none) and
 a connector from `CONNECTORS`, which is checked at run time. `saveToken` (`saved`, `vault_off`,
-`no_account` for a guest or nobody, `too_large` past 16 KiB) is for the person connecting and
+`no_account` for a guest, nobody, or an account being deleted, `too_large` past 16 KiB) is for the person connecting and
 replaces whatever is there; a refresh never uses it. `readToken` (`ok` with a `Secret` and an
 opaque `version`, `vault_off`, `not_connected`, or `unreadable` with `unknown_key` or `corrupt`;
 the row stays). `replaceToken(account, connector, version, token)` is a compare-and-set on that
@@ -627,15 +627,18 @@ answers 404.
 - `connector.ts`, the seam: `BacklogConnector`, what a tracker must do, and `Outcome`, a value or
   a code. `jira.ts` is the one implementation; #55 is the second.
 - `access.ts`: `withToken(account, call)`, a person's live token, refreshed through `replaceToken`.
-  Two instances refreshing at once is normal; a row is dropped only by `dropToken`.
+  Two instances refreshing at once is normal; a row is dropped only by `dropToken`. A token refused
+  after a refresh is `connector_setup`, and costs no further rotation.
 - `oauth-state.ts`: `state` as hashes in a `verification` row, one `delete … returning` to spend it.
+  One that ran out still knows its room, and goes back to it to say so.
 - `routes.ts`: `/api/connectors/jira` for the person, `/api/rooms/:code/connectors/jira/{connect,
   import,write-back}` for the PO of that room. The account comes from the session alone.
 
 An import ends in `queueImport`, a server command, so `apply` decides and `source` comes off no
 socket. A round keeps its item's `source` (`Round.source`, `round_history.source`, an additive
 column), and a write-back reads the final and the source from the round's row, with the number of
-the round as all a client sends.
+the round as all a client sends. The page starts a write only for a final that very tab recorded,
+confirmed by the frame whose causes say so; anything else waits for a person's press.
 
 `Response` in this process is not `fetch`'s: the HTTP adapter replaces the global, so `instanceof
 Response` is false on what `fetch` answers. `jira.ts` passes an `Outcome` for that reason.
