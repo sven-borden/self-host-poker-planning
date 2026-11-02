@@ -104,15 +104,11 @@ describe("createCommandRunner", () => {
   it("does not let a quiet step swallow a round it ended (#48)", async () => {
     const mem = memoryStore([room("ABC", revealedRoom())]);
     const runner = createCommandRunner(mem.store);
-    const ended = revealedRoom().round;
-    const quiet = (state: RoomState) => ({
-      state: { ...state, round: nextRound(state) },
-      ...(ended && { ended }),
-      quiet: true,
-    });
+    const quiet = (state: RoomState) => ({ ...nextRound(state), quiet: true });
     await runner.run("ABC", quiet);
     expect(mem.commits).toHaveLength(1);
-    expect(mem.commits[0]).toMatchObject({ ended: { round: { number: ended?.number } } });
+    const number = revealedRoom().round?.number;
+    expect(mem.commits[0]).toMatchObject({ ended: { round: { number } } });
     expect(mem.commits[0]).not.toHaveProperty("keepActivity");
   });
 
