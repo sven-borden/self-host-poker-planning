@@ -69,7 +69,13 @@ async function startInstance(
   logger: ReturnType<typeof collectLogs>["logger"],
   limited: boolean,
 ): Promise<Instance> {
-  const setup = await setupServer(config, logger);
+  // Unlimited too when `limited` is false, or the fuzz would stop storing rules after five.
+  const setup = await setupServer(
+    config,
+    logger,
+    undefined,
+    limited ? {} : { ruleChangeLimit: { window: 3600, max: 1e6 } },
+  );
   const server = createServer(config, {
     ...setup.deps,
     logger,
@@ -460,10 +466,13 @@ function commandArb(ids: () => string[]) {
     fc.record({ type: fc.constant("extendTimer"), payload: fc.record({ seconds }) }),
     fc.record({ type: fc.constant("timeUp") }),
     fc.record({ type: fc.constant("updateSettings"), payload: fc.record({ patch }) }),
-    fc.record({
-      type: fc.constant("updateSettings"),
-      payload: fc.record({ patch: fc.record({ restriction }) }),
-    }),
+    // Several times over: one arm in thirty would store a rule in one room out of sixty.
+    ...Array.from({ length: 8 }, () =>
+      fc.record({
+        type: fc.constant("updateSettings"),
+        payload: fc.record({ patch: fc.record({ restriction }) }),
+      }),
+    ),
     fc.record({ type: fc.constant("transferOwner"), payload: fc.record({ to: who }) }),
     fc.record({ type: fc.constant("claimOwner") }),
     // The server's own commands and names that are no command at all.

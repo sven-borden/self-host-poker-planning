@@ -106,7 +106,7 @@ import { historyView } from "../db/history.ts";
 import type { AccessStore, AccessWrite, HistoryStore, RoomStore } from "../db/rooms.ts";
 import type { CommandRunner, RunOutcome } from "../db/runner.ts";
 import type { Logger } from "../logger.ts";
-import { memoryRateLimit, type RateLimiter } from "../rate-limit.ts";
+import { memoryRateLimit, type RateLimiter, type RateLimitRule } from "../rate-limit.ts";
 import type { RealtimeHandlers, RealtimeServer, RealtimeSocket } from "../realtime.ts";
 import {
   NO_RULES,
@@ -191,6 +191,8 @@ export interface SharedOptions {
 export interface RoomSyncOptions {
   /** Counts the commits that set a rule (`RULE_CHANGE_LIMIT`). Left out, one of its own. */
   limiter?: RateLimiter;
+  /** For tests only: `RULE_CHANGE_LIMIT` otherwise. */
+  ruleChangeLimit?: RateLimitRule;
   runner: CommandRunner;
   store: Pick<RoomStore, "loadRoom">;
   /**
@@ -1689,7 +1691,10 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
 
   /** A commit that sets a rule counts, and one that stored nothing gives its place back. */
   async function countingRule(who: string, run: () => Promise<CmdAck>): Promise<CmdAck> {
-    const slot = await limiter.reserve(`restriction|change|${who}`, RULE_CHANGE_LIMIT);
+    const slot = await limiter.reserve(
+      `restriction|change|${who}`,
+      options.ruleChangeLimit ?? RULE_CHANGE_LIMIT,
+    );
     if (!slot.allowed) return refuse("rate_limited");
     const ack = await run();
     if (!ack.ok) slot.release();
