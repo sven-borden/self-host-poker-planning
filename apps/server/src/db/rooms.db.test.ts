@@ -408,11 +408,11 @@ describe("a restart", () => {
     const after = await open();
     try {
       const loaded = await after.store.loadRoom(room.code);
-      expect(loaded).toEqual({ ...room, state });
+      expect(loaded).toEqual(room);
       const meta = { code: room.code, version: room.version, now: T0 + 30_000 };
       for (const viewer of ["u1", "u2", "u3", "someone-else"]) {
         expect(JSON.stringify(toSnapshot(loaded?.state as RoomState, viewer, meta))).toBe(
-          JSON.stringify(toSnapshot(state, viewer, meta)),
+          JSON.stringify(toSnapshot(room.state, viewer, meta)),
         );
       }
     } finally {

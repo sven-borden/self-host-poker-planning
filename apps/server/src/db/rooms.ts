@@ -237,7 +237,9 @@ export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore 
           .onConflictDoNothing({ target: room.code })
           .returning({ id: room.id });
         const row = rows[0];
-        return row ? { id: row.id, code, version: FIRST_VERSION, state } : null;
+        if (!row) return null;
+        const stored = name === null ? state : { ...state, name };
+        return { id: row.id, code, version: FIRST_VERSION, state: stored };
       }),
 
     loadRoom: (code) =>
