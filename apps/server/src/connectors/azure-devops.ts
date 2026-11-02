@@ -183,13 +183,11 @@ export function azureUrl(
   return `${API_ROOT}/${organization}/${path}?${search.toString().replaceAll("%24", "$")}`;
 }
 
-/** The organisation and project of a site's id, `fabrikam/{guid}`; nothing else passes. */
+/** The organisation and project of a site's id, `fabrikam/{guid}`. `azureUrl` checks the first. */
 function partsOf(site: string): { organization: string; project: string } | null {
   const [organization, project, ...rest] = site.split("/");
   if (organization === undefined || project === undefined || rest.length > 0) return null;
-  return ADO_ORGANIZATION.test(organization) && GUID.test(project)
-    ? { organization, project }
-    : null;
+  return GUID.test(project) ? { organization, project } : null;
 }
 
 const headers = (token: Secret) => ({

@@ -2256,8 +2256,8 @@ since `vso.project` or `vso.profile` suffice and `vso.work` inherits the latter 
 `vso.hooks_write`: if that one works the token is good and lacks the scope (`connector_scope`), which
 tells the two cases apart without reading Microsoft's words. Otherwise a sign-in page, a redirect or a
 plain 401 is `connector_bad_token`, a 401 with TF400813 or VS30063 or a 403 is
-`connector_no_access`, and a 404 is `connector_no_organization`. This is one read more than the
-brief's one read, on the refused path only.
+`connector_no_access`, and a 404 is `connector_no_organization`. A good token costs one read; only a
+refused one costs a second.
 
 A read cannot show the right to write, and no read is a write. So a token with `vso.work` alone
 connects, imports, and is told at its first write: a 401 on a write is followed by the same read as
@@ -2270,8 +2270,8 @@ So `read` takes exactly one thing for an answer: status 200 with `application/js
 3xx is `connector_reconnect`. A 200 in HTML is `connector_unavailable`, not "connect again", since
 that would drop a working token over a proxy's page.
 
-**`redirect: "manual"`, and why not `"error"`.** Jira uses `"error"`, and so did the brief. There, a
-redirect becomes a `TypeError` that reads like a dead network, so a sign-in redirect would say "not
+**`redirect: "manual"`, and why not `"error"`.** Jira uses `"error"`, and the first plan here did too.
+There, a redirect becomes a `TypeError` that reads like a dead network, so a sign-in redirect would say "not
 answering" instead of "connect again", and telling them apart means matching undici's message.
 `"manual"` follows nothing either: a token still goes nowhere it was not sent, and a test holds that
 the sign-in address is never called.
@@ -2361,8 +2361,7 @@ connection, as Jira does: a project mixes types, and a Task has none.
 **Not tested.** Everything here ran against a stand-in built from Microsoft's REST reference. No real
 organisation has seen this code. The documentation does not say what a missing scope, an expired PAT
 or an unknown organisation really answers, so these are readings: a scope refusal as 401 or 403 (both
-are tested), a token-less `_apis/projects` as refused, an unknown organisation as 404 and not a sign-in
-page, `$depth` capped at 2, TF400813 and VS30063 for a stranger. That `vso.work_write` reaches
+are tested), an unknown organisation as 404 and not a sign-in page, `$depth` capped at 2, TF400813 and VS30063 for a stranger. That `vso.work_write` reaches
 `_apis/projects` rests on the inheritance table alone. The live check needs Sven's test organisation
 and a PAT, and a second person, and the issue stays open for it.
 

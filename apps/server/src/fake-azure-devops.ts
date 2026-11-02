@@ -31,6 +31,8 @@ export const EFFORT = "Microsoft.VSTS.Scheduling.Effort";
 export const SIZE = "Microsoft.VSTS.Scheduling.Size";
 export const REMAINING = "Microsoft.VSTS.Scheduling.RemainingWork";
 export const CUSTOM_POINTS = "Custom.Points";
+const CUSTOM_COLOUR = "Custom.Colour";
+const CUSTOM_ROLLUP = "Custom.Rollup";
 
 export const QUERY_FOLDER = "11111111-aaaa-4aaa-8aaa-111111111111";
 export const QUERY_MINE = "22222222-aaaa-4aaa-8aaa-222222222222";
@@ -61,7 +63,7 @@ const TYPES: Record<FakeProcess, Record<string, string[]>> = {
   Scrum: { "Product Backlog Item": [EFFORT], Bug: [EFFORT], Task: [REMAINING] },
   Basic: { Issue: [EFFORT], Task: [REMAINING] },
   CMMI: { Requirement: [SIZE], Task: [REMAINING] },
-  Custom: { Story: [CUSTOM_POINTS, STORY_POINTS], Note: [] },
+  Custom: { Story: [CUSTOM_POINTS, STORY_POINTS, CUSTOM_COLOUR, CUSTOM_ROLLUP], Note: [] },
 };
 
 /** The fields of a project, with their kind. `System.Id` is read-only; a title is no number. */
@@ -75,6 +77,8 @@ const FIELDS = [
   { referenceName: SIZE, name: "Size", type: "double", readOnly: false },
   { referenceName: REMAINING, name: "Remaining Work", type: "double", readOnly: false },
   { referenceName: CUSTOM_POINTS, name: "Points", type: "integer", readOnly: false },
+  { referenceName: CUSTOM_COLOUR, name: "Colour", type: "string", readOnly: false },
+  { referenceName: CUSTOM_ROLLUP, name: "Rollup", type: "double", readOnly: true },
 ];
 
 export interface FakeWorkItem {
@@ -162,6 +166,8 @@ export interface FakeAzure extends FakeAzureState {
   batches: number[][];
   /** The WIQL of each run. */
   wiql: string[];
+  /** The PAT of each run of a WIQL. */
+  wiqlTokens: string[];
   /** The tree a saved query reads as: ids flat, or `tree` as parent and children. */
   saved: Record<string, { ids?: number[]; tree?: [number, number][] }>;
   reset(): void;
@@ -232,6 +238,7 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
     tops: [] as string[],
     batches: [] as number[][],
     wiql: [] as string[],
+    wiqlTokens: [] as string[],
     saved: {} as FakeAzure["saved"],
     reset() {
       fake.writes.length = 0;
@@ -247,6 +254,7 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
       fake.tops.length = 0;
       fake.batches.length = 0;
       fake.wiql.length = 0;
+      fake.wiqlTokens.length = 0;
       fake.saved = {};
     },
   };
@@ -535,6 +543,7 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
     if (method === "POST" && rest === "/_apis/wit/wiql") {
       const { query } = JSON.parse(await bodyOf(request)) as { query: string };
       fake.wiql.push(query);
+      fake.wiqlTokens.push(pat);
       if (/^bad wiql/i.test(query)) {
         json(response, 400, refusal(`TF51006: The query is wrong: ${query}`));
         return;

@@ -966,6 +966,7 @@ describe("write-back", () => {
     });
     const seat = await claimed.browser.sit(code, "Claimer");
     await claimed.browser.import(code, { wiql: WIQL });
+    expect(azure.wiqlTokens).toEqual([FAKE_SECOND_TOKEN]);
     const round = await estimate(seat, 1, "5");
     expect((await claimed.browser.writeBack(code, round)).status).toBe(200);
     expect(azure.writes.at(-1)?.token).toBe(FAKE_SECOND_TOKEN);

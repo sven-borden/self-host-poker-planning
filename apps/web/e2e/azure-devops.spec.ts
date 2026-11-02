@@ -401,6 +401,30 @@ test("without the vault nothing of it shows", async ({ page }) => {
   expect(answer.status()).toBe(404);
 });
 
+async function audit(page: Page) {
+  await settle(page);
+  const { violations } = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+  expect(violations.map(({ id }) => id)).toEqual([]);
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+}
+
+test("axe finds nothing at 320 px, as a guest", async ({ browser }) => {
+  const { context, page } = await newPerson(browser);
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto(SIGN_IN_BASE);
+  await page.getByRole("button", { name: "Create the room" }).click();
+  await expect(page).toHaveURL(ROOM_PATH);
+  await page.getByRole("textbox", { name: "Your name" }).fill("Gus");
+  await page.getByRole("button", { name: "Join the room" }).click();
+  await page.locator("[data-queue-open]").click();
+  await expect(section(page).locator("[data-connector-sign-in]")).toBeVisible();
+  await audit(page);
+  await context.close();
+});
+
 test("axe finds nothing at 320 px, in every state of the section", async ({ browser }) => {
   await control({ projects: [FIBER, CUSTOM] });
   const { context, page } = await newPerson(browser);
@@ -408,42 +432,42 @@ test("axe finds nothing at 320 px, in every state of the section", async ({ brow
   await page.setViewportSize({ width: 320, height: 800 });
   await poInRoom(page);
   await page.locator("[data-queue-open]").click();
-  const audit = async () => {
-    await settle(page);
-    const { violations } = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
-    expect(violations.map(({ id }) => id)).toEqual([]);
-    const overflow = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    );
-    expect(overflow).toBeLessThanOrEqual(0);
-  };
   await expect(patField(page)).toBeVisible();
-  await audit();
+  await audit(page);
   await control({ signIn: "203" });
   await fillToken(page, "fabrikam", "e2e-no-such-token");
   await expect(problem(page, "connector_bad_token")).toBeVisible();
-  await audit();
+  await audit(page);
   await fillToken(page, "fabrikam", TOKEN);
   await expect(section(page).getByRole("combobox", { name: "Project" })).toBeVisible();
-  await audit();
+  await audit(page);
   await section(page).getByRole("button", { name: "Use this project" }).click();
   await expect(section(page).getByRole("combobox", { name: "Saved query" })).toBeVisible();
-  await audit();
+  await audit(page);
   await section(page).getByRole("button", { name: "Choose a field" }).click();
   await expect(section(page).getByRole("combobox", { name: "Estimates go to" })).toBeVisible();
-  await audit();
+  await audit(page);
   await section(page).getByRole("button", { name: "Cancel" }).click();
   await section(page).getByRole("radio", { name: "A WIQL query" }).check();
   await expect(section(page).getByRole("textbox", { name: "WIQL query" })).toBeVisible();
-  await audit();
+  await audit(page);
   await section(page).getByRole("radio", { name: "A saved query" }).check();
+  await section(page).getByRole("button", { name: "Choose a field" }).click();
+  await expect(section(page).getByRole("combobox", { name: "Estimates go to" })).toBeVisible();
+  await section(page).getByRole("button", { name: "Save the field" }).click();
+  await expect(section(page).locator("[data-connector-field-reset]")).toBeVisible();
+  await audit(page);
+  await section(page).locator("[data-connector-field-reset]").click();
   await importSaved(page);
   await expect(section(page).locator("[data-connector-report]")).toHaveText("3 items added.");
-  await audit();
+  await audit(page);
   await closeSheet(page);
   await control({ fail: [{ match: "/_apis/wit/workitems/1", method: "PATCH", status: 500 }] });
   await estimateNext(page, "Start voting", "5");
   await expect(page.locator("[data-write-line=failed]")).toBeVisible();
-  await audit();
+  await audit(page);
+  await page.locator("[data-write-retry]").click();
+  await expect(page.locator("[data-write-line=written]")).toBeVisible();
+  await audit(page);
   await context.close();
 });
