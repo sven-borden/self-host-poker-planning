@@ -700,8 +700,9 @@ server sends and never decides the outcome of a round.
   vote's flight starts only when the slot is in sight (`inSight`). The hand snaps
   (`snap-x snap-mandatory`, cards `snap-center`) and centres the vote, and the card the
   arrow keys focus (`focus({ preventScroll: true })`), when it lies under a fade. `room/haptics.ts` (`voteTick`) vibrates 12 ms when `use-vote.ts`
-  hears a confirmed vote: only where `navigator.vibrate` exists, never under reduced
-  motion, errors swallowed. `room/namesakes.ts` numbers each later person whose name is
+  hears a confirmed vote, and `revealTick` beats twice when `LiveAnnouncer` hears a reveal: only
+  where `navigator.vibrate` exists, never under reduced motion or with `pp-haptics` off
+  (`room/haptics-prefs.ts`, the row in `room/haptics-row.tsx`), errors swallowed. `room/namesakes.ts` numbers each later person whose name is
   already taken in the room, in the current join order (`PersonFlags.namesake`), and
   `shownName` (`table/seat.tsx`, `table.nameNumbered`) says "Ana (2)" everywhere a name
   shows: seats, popovers, the observers' row, the results' extremes (`PersonName` in
@@ -940,6 +941,26 @@ French and German tone is reviewed in #41.
   before first paint as an external file.
 - `theme-init.js` has no content hash in its name, so it must be served with
   `Cache-Control: no-cache` (hashed files under `assets/` can be immutable).
+
+## Installable app (#46)
+
+ADR-022 has the reasons. What is where:
+
+- `public/manifest.webmanifest`, `public/icons/` (committed; `node apps/web/scripts/make-icons.ts`
+  draws them again from `public/favicon.svg` and `--bg`, in Edge).
+- `src/pwa/service-worker.js`: plain JavaScript, not bundled. `scripts/pwa-plugin.ts` fills in
+  its build id and precache list and writes it to `dist/sw.js`, with `dist/offline.html`
+  (`scripts/offline-page.ts`, from the catalogs' `offline` keys) and the page's hashed script
+  and style (`src/pwa/offline.js`, `tokens.css` + `src/pwa/offline.css`). Those two files are
+  plain ES5 and CSS with no build step; `offline.js` repeats the language and theme rules, like
+  `public/theme-init.js`.
+- `src/pwa/register.ts` registers it after `load`, in a build only: `pnpm dev` runs no worker.
+- **The rule to keep:** nothing but `/assets/*` and the offline page goes into Cache Storage, and
+  always under its path. A navigation is never stored, in any form: a room's code would land
+  in a key, the server's head tags would freeze, and a deploy could not reach the page.
+- e2e: every spec runs with `serviceWorkers: "block"`, because a page under a worker hides its
+  files from `page.route`. `e2e/pwa.spec.ts` turns it on. `context.setOffline` reaches the worker,
+  and a deployment is played on a small server of the spec's own, which changes `sw.js`.
 
 ## Observability (#40)
 

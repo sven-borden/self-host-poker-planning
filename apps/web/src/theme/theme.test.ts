@@ -80,8 +80,8 @@ describe("the theme colour", () => {
 
   beforeEach(() => {
     document.head.innerHTML =
-      '<meta name="theme-color" data-scheme="light" media="(prefers-color-scheme: light)" content="#111111" />' +
-      '<meta name="theme-color" data-scheme="dark" media="(prefers-color-scheme: dark)" content="#222222" />';
+      '<meta name="theme-color" data-scheme="light" media="(prefers-color-scheme: light)" />' +
+      '<meta name="theme-color" data-scheme="dark" media="(prefers-color-scheme: dark)" />';
   });
   afterEach(() => {
     document.head.innerHTML = "";

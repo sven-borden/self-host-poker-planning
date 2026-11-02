@@ -376,9 +376,11 @@ As built (#22), for 640 px and below (the `phone:` variant) unless stated:
   controls do not overlap; the page scrolls between them: the table keeps the desktop's
   540 px stage, and a table drawn for short screens is for later (PO decision, #22).
 - **Haptics.** A 12 ms `navigator.vibrate` tick once the server confirmed the viewer's
-  vote, where the browser has it (Android). Safari on iOS has none, so nothing happens
-  and nothing fails; never under reduced motion; never the only feedback (the card lifts,
-  the seat turns, the hand's live region speaks).
+  vote, and two beats (20, 70, 35 ms) on the reveal, for everyone, once. Where the browser
+  has it (Android); Safari on iOS has none, so nothing happens and nothing fails. Never under
+  reduced motion; never the only feedback (the card lifts, the seat turns, the live regions
+  speak). On by default (#46): the "Vibrate" row in the speaker's popover turns it off on this
+  device, and shows only on a touch screen that can vibrate.
 - **No sideways scroll** from 320 to 640 px in English, French and German, in the join
   form, the lobby, voting (with a long title, and with the field focused) and after a
   reveal (`e2e/mobile.spec.ts`).
@@ -919,6 +921,22 @@ Nothing rings over a voice on a call: all but the two moments that matter last u
 and those fade within a second. Under reduced motion nothing turns, so no flicks, and the
 consensus follows the reveal's notes. Nothing is said by sound alone: the live region and the
 screen say all of it. Hidden tabs hear everything: that is what it is for.
+
+## The installed app
+
+As built (#46, ADR-022). The app installs from the browser's own menu; nothing in the app
+asks for it.
+
+- **Icon.** The brand mark on a tile of `--bg` (the page's light background), which keeps both
+  cards readable on any wallpaper. Rounded for a desktop, a whole square for Android's masks and
+  for iOS, which rounds it itself. The mark stays inside the 40 % circle a launcher keeps.
+- **Bars.** `theme-color` is `--bg` of the theme the page is showing, a saved one first, so
+  the phone's bar melts into the page. The splash is the light `--bg`.
+- **Offline.** A navigation with no network shows a plain page: the mark, "You are offline",
+  "A room needs a connection. Check yours, then try again.", and "Try again", which reloads.
+  In the saved language or the browser's, in the saved theme or the system's, on system fonts,
+  and the same on every URL: never a room, never its code. A room already open stays on its own
+  "reconnecting" state; this page is only for a load.
 
 ## Accessibility
 

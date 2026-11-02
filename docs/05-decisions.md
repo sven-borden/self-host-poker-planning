@@ -348,3 +348,88 @@ setting on the user (a person's phone and laptop want different answers).
 **Not heard yet.** The recipes were checked by rendering them offline (no clipping, every
 voice ends in silence, the reveal stronger than a card), not by ear. They are numbers in
 one file.
+
+## ADR-022: An installable app with a worker that stores no page
+
+**Decision.** A web app manifest, four icons drawn from the brand mark, and a hand-written
+service worker of about 70 lines (`apps/web/src/pwa/service-worker.js`, no workbox, no
+`vite-plugin-pwa`: the image has 11 MB left, and nothing here needs them). It does two things:
+it answers a navigation with a plain offline page when there is no network, and it stores
+files under `/assets/`, whose names hold their content's hash.
+
+**No page is ever stored.** A navigation goes to the network, always, and its answer is
+dropped. That one rule settles three things at once. A room's code, a bearer capability,
+cannot land in a cache key. `index.html` carries tags the server fills per deployment (the
+socket transport of #39, the opt-in services of #40), and these cannot freeze. And a redeploy
+cannot pin an old app: whatever worker runs, the next navigation is the server's, with today's
+script names. The cost is that an installed app needs the network to open, which it needs
+anyway: a room is live state on the server. The offline page lives under its own name, with
+its script and style under `/assets/`, so the worker has one rule for files, and is the same on
+every URL, so it shows no code. `/api`, `/socket.io` (a sign-in's redirect, from W5, is a
+navigation there), other origins and anything but a GET get no `respondWith` at all.
+
+**Builds.** `scripts/pwa-plugin.ts` fills in a hash of the built files, so each build that
+changes them is a new `sw.js`, which the server sends with `no-cache` and the page registers
+with `updateViaCache: "none"`. It installs, skips waiting, and on activate drops every older
+`pp-shell-*` cache. Waiting for tabs to close protects nothing here, since no worker holds a
+page in place. **An open tab is not reloaded:** it keeps running what it loaded, with its
+requests now going through the new worker. A lazy chunk of the old build that it never fetched
+is a 404 from the server, the same as with no worker at all, and the app already survives that
+(a failed chunk costs a button or asks for a reload). When the protocol has moved on, the room
+tells the tab to reload (`protocol_mismatch`), and that reload is a navigation, so it reaches
+the new app. A rollback, or an image with no `sw.js`, leaves at worst a worker that stores
+hashed files and shows the offline page. To retire it, ship an `sw.js` that unregisters itself.
+
+**The policy did not change.** A worker falls back to `script-src 'self'` and a manifest to
+`default-src 'self'`, so neither needs a directive, and a narrower policy than no addition
+does not exist. `e2e/fixtures.ts` fails any spec on a violation. At the root, the worker's scope
+is the whole app with no `Service-Worker-Allowed`.
+
+**Installability is proved by the browser, not Lighthouse.** Lighthouse dropped its PWA
+category and its `installable-manifest` audit in version 12: 13.6.0, the latest on 2026-11-02,
+lists neither that audit nor `maskable-icon`, `splash-screen` or `themed-omnibox` (checked, not
+assumed). So `e2e/pwa.spec.ts` asks Chromium itself, under the production headers:
+`Page.getInstallabilityErrors` returns nothing for the app and a list for a page with no
+manifest, which shows the question means something. That needs a real profile (a private
+context is never installable). Lighthouse 11.7.1, the last line with the check, was also run
+once by hand against this build under the production headers, in Edge: PWA category 100,
+`installable-manifest`, `maskable-icon`, `splash-screen` and `themed-omnibox` all pass. It is
+not in CI: an old major is not worth pinning for an answer the browser gives directly.
+
+**Icons.** A tile of the page's `--bg` with the mark on it, because the mark's spruce card
+would vanish on a spruce tile. `maskable-512` and the 180 px `apple-touch-icon` are whole
+squares (iOS paints transparency black and rounds the corners itself), and in the maskable
+one the mark's farthest corner sits at 38 % of the side, inside the 40 % circle every launcher
+keeps. They were judged by eye, also under circular masks at 192 and 48 px, on light and dark;
+`scripts/make-icons.ts` draws them, with the browser Playwright already has. `short_name` is
+"Poker", as a launcher cuts "Poker Planning" at about 12 characters. The name is the product's
+in every language, and the manifest has no other copy, so nothing there needs translating.
+
+**Theme colours.** The manifest holds the light `--bg`, the only value it can hold. The page
+has one `theme-color` per scheme. A theme picked in the app must beat the system's, so
+`theme-init.js` (before first paint) and `applyThemeColour` turn the matching tag's `media` to
+`all` and the other's to `not all`, which keeps every literal in `index.html`.
+
+**The offline page.** All three languages are in the page, from the catalogs, written by the
+build. A worker cannot read `localStorage`, so a small script in `<head>` picks the saved
+language or the browser's by setting `<html lang>`, and CSS shows that section: without the
+script the page is English. It takes `tokens.css`, so both themes are the app's, and system
+fonts, as the app's are not worth storing for one page. Its only control reloads.
+
+**Haptics.** The reveal's two beats (20, 70, 35 ms) go to everyone, from `LiveAnnouncer`, the one
+place already told of each reveal once, and never on a page that opens on a revealed round. A
+new `vibrate` stops the last one, so the vote that ends a round, whose confirmation can arrive
+after the reveal's snapshot, gives way to the beats. The same guards as the vote's tick apply.
+On by default, on this device (`pp-haptics`), and only a saved "off" turns it off. The switch
+sits in the speaker's popover, with the device's other preferences, and shows only where the
+call exists, the main pointer is a finger, and motion is allowed: Chromium has `vibrate` on a
+desktop too, with no motor behind it, and under reduced motion the switch would do nothing.
+
+**Alternatives.** Caching `index.html` as the shell (fast and offline-capable, but it freezes the
+head tags, and a stale shell is what a real room cannot afford); a `vite-plugin-pwa` manifest
+of every asset (precaches chunks most people never load); no worker at all (Chromium no longer
+requires one to install, but offline would be the browser's error page).
+
+**Not tested.** No real iPhone or Android phone: the home-screen icon, the standalone start and
+the feel of the beats are for Sven. Plain http gets no worker and no install, as browsers
+require https (localhost aside); the app runs as before.

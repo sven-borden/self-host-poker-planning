@@ -435,7 +435,7 @@ export const de: Catalog = {
   },
   offline: {
     title: "Sie sind offline",
-    body: "Ein Raum braucht eine Verbindung. Prüfen Sie Ihre und versuchen Sie es erneut.",
+    body: "Ein Raum braucht eine Verbindung. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
     retry: "Erneut versuchen",
   },
   claim: {

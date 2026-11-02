@@ -121,7 +121,7 @@ test("a room leaves no trace in Cache Storage", async ({ browser, baseURL }) => 
       expect(new URL(key).search).toBe("");
       expect(`${cache} ${key} ${url} ${body}`).not.toContain(code);
     }
-    // Nothing else a page can reach keeps it either: the worker holds no state of its own.
+    // One build, one cache.
     expect(await page.evaluate(() => caches.keys())).toHaveLength(1);
   } finally {
     await context.close();
@@ -190,13 +190,15 @@ for (const [language, tag, title, retry] of [
   });
 }
 
-test("the worker keeps away from the API and the socket", async ({ browser, baseURL }) => {
+test("offline, a navigation to the API gets the browser's failure, not our page", async ({
+  browser,
+  baseURL,
+}) => {
   const { page, context } = await newPerson(browser);
   try {
     await page.goto("/");
     await controlled(page);
     await context.setOffline(true);
-    // A navigation there gets the browser's own failure, not our page.
     const failed = await page.goto(new URL("/api/health", baseURL).href).catch(() => null);
     expect(failed).toBeNull();
   } finally {
