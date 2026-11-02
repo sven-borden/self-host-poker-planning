@@ -492,6 +492,95 @@ describe("the deadline", () => {
   });
 });
 
+describe("a room that is gone (#49)", () => {
+  const closes = (client: TestClient) =>
+    new Promise<string[]>((resolve) => {
+      const events: string[] = [];
+      client.socket.once("deleted", () => events.push("deleted"));
+      client.socket.once("disconnect", () => resolve(events));
+    });
+
+  it("tells every socket of the room, and only that room's", async () => {
+    const { store, sync, client } = await start(createRoom({ ownerId: "ada" }));
+    await store.insertRoom({
+      code: "OtherRoom1",
+      name: null,
+      state: createRoom({ ownerId: "bob" }),
+    });
+    const [a, b, other] = [client("ada"), client("bob"), client("cy")];
+    await a.enter(CODE);
+    await b.enter(CODE);
+    await other.enter("OtherRoom1");
+    const heard = [closes(a), closes(b)];
+
+    sync.roomDeleted(idOf(store));
+
+    await expect(Promise.all(heard)).resolves.toEqual([["deleted"], ["deleted"]]);
+    expect(other.socket.connected).toBe(true);
+  });
+
+  it("ends its deadline, and a deadline that lands in a room already gone closes it", async () => {
+    const state = withDeadline(
+      play(
+        play(createRoom({ ownerId: "ada" }), "ada", { type: "join", name: "Ada", role: "voter" }),
+        "ada",
+        {
+          type: "startRound",
+          subject: { kind: "none" },
+        },
+      ),
+      Date.now() + 60_000,
+    );
+    const { store, sync, client } = await start(state);
+    const id = idOf(store);
+    const a = client("ada");
+    await a.enter(CODE);
+    expect(sync.deadlines.armed(id)).toBeDefined();
+    const heard = closes(a);
+
+    store.rooms.delete(CODE);
+    sync.roomDeleted(id);
+
+    await expect(heard).resolves.toEqual(["deleted"]);
+    expect(sync.deadlines.armed(id)).toBeUndefined();
+  });
+
+  it("shows itself to the next command, when the word never came", async () => {
+    const { store, client } = await start(createRoom({ ownerId: "ada" }));
+    const a = client("ada");
+    await a.enter(CODE);
+    const heard = closes(a);
+
+    store.rooms.delete(CODE);
+    const ack = a.cmd("join", { name: "Ada", role: "voter" }).catch(() => null);
+
+    await expect(heard).resolves.toEqual(["deleted"]);
+    await ack;
+  });
+
+  it("shows itself to the server's own run, when the word never came", async () => {
+    const state = withDeadline(
+      play(
+        play(createRoom({ ownerId: "ada" }), "ada", { type: "join", name: "Ada", role: "voter" }),
+        "ada",
+        {
+          type: "startRound",
+          subject: { kind: "none" },
+        },
+      ),
+      Date.now() + 150,
+    );
+    const { store, client } = await start(state);
+    const a = client("ada");
+    await a.enter(CODE);
+    const heard = closes(a);
+
+    store.rooms.delete(CODE);
+
+    await expect(heard).resolves.toEqual(["deleted"]);
+  });
+});
+
 describe("one room per socket", () => {
   const A = "RoomSlowAA";
   const B = "RoomQuickB";

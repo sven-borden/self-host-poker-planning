@@ -361,6 +361,18 @@ describe("projectCauses", () => {
   });
 });
 
+describe("the room's name (#49)", () => {
+  it("travels when the room has one, with its cause, and a view without one stays the same", () => {
+    const plain = createRoom({ ownerId: "po" });
+    expect(toSnapshot(plain, "po", META).room).not.toHaveProperty("name");
+    const { state, causes } = run([["po", { type: "renameRoom", name: "Sprint 12" }]], plain);
+    const snapshot = toSnapshot(state, "o", { ...META, causes });
+    expect(snapshot.room.name).toBe("Sprint 12");
+    expect(snapshot.causes).toStrictEqual([{ type: "roomRenamed" }]);
+    expect(snapshotSchema.parse(snapshot)).toStrictEqual(snapshot);
+  });
+});
+
 describe("the room password (#31)", () => {
   const password = (on: boolean): [string, Command] => ["po", { type: "password", on }];
 
