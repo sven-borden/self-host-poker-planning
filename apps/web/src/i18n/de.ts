@@ -1,7 +1,7 @@
 import type { Catalog } from "./en.ts";
 
-// German copy, addressed with "Sie" (OQ-2 default until #41). Loaded on demand: see
-// i18n.ts.
+// German copy. The reader is always "Sie" (OQ-2, ADR-012), and the words are those of
+// docs/08-glossary.md. Loaded on demand: see i18n.ts.
 export const de: Catalog = {
   app: {
     name: "Poker Planning",

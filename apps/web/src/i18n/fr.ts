@@ -1,8 +1,9 @@
 import type { Catalog } from "./en.ts";
 
-// French copy, addressed with "vous" (OQ-2 default until #41). A narrow no-break space
-// (U+202F) goes before : ; ! and ?, and plurals need `_many` (Intl.PluralRules gives
-// "many" for 1 000 000 and up). Loaded on demand: see i18n.ts.
+// French copy. The reader is always "vous" (OQ-2, ADR-012), and the words are those of
+// docs/08-glossary.md. A narrow no-break space (U+202F) goes before : ; ! and ?, and plurals
+// need `_many` (Intl.PluralRules gives "many" for each exact million). Loaded on demand: see
+// i18n.ts.
 export const fr: Catalog<"many"> = {
   app: {
     name: "Poker Planning",

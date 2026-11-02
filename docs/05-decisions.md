@@ -134,7 +134,8 @@ moves on; the timer's and the automatic reveal are unchanged.
 
 **Decision.** Every user-facing string exists in `en`, `fr` and `de` from the first
 UI issue. react-i18next with typed keys; CI fails on a missing key; the server sends
-codes, never sentences. Tone per language decided in #41 (OQ-2).
+codes, never sentences. Tone per language decided in #41 (OQ-2): see the amendment of
+2026-11-02.
 
 **Consequences.** Every UI issue carries its French and German copy.
 **Alternatives.** English only, translation-ready (recommended in round 1); English and French.

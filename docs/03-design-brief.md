@@ -1197,8 +1197,8 @@ asks for it.
 
 Plain, short, active voice, in English, French and German. Name things as people
 know them: room, round, card, reveal, product owner (PO). Errors say what happened and
-what to do. The tone per language (tu or vous, du or Sie) is decided in #41; until
-then French uses vous and German uses Sie.
+what to do. French always says vous and German always says Sie (#41, OQ-2); the words
+per language are in `docs/08-glossary.md`.
 
 - **Language switcher**: in the header, before the theme toggle. Each language is named
   in itself (English, Français, Deutsch) and marked with its `lang`, so a reader finds
