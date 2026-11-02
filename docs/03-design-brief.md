@@ -632,6 +632,32 @@ anyone until there is a queue.
   ("Next in 10 seconds: PAY-3."), never second by second, and "The room stays on this
   round." when it stops.
 
+## A tracker in the queue
+
+Jira in the PO's sheet (#54, ADR-030), a lazy section above the paste box on an install that has
+it, and nothing at all on one that does not.
+
+- **Connecting.** A sentence and "Connect Jira". The browser leaves for Atlassian and comes back to
+  the same room with the sheet open and one line that says how it went. A guest reads "Sign in with
+  an account to connect Jira." and gets no button. Several sites: a list and "Use this site".
+- **The field.** A list of the site's number fields with the one that looks right selected, and
+  "Save the field": a guess is shown and never used until someone looked at it. Once saved it is
+  one line, "Estimates go to Story Points", with "Change field".
+- **Import.** Two radios, a sprint or a JQL search. A board and a sprint in native lists, the
+  active sprint first and marked; a name field only when the list of boards was cut. "Import" reads
+  "Importing…" while it runs, and one line says what happened as for a paste, with how many were
+  left out and how many more lie past the limit. A refused query stays in the box.
+- **Disconnect.** A plain button, and a line under it: this deletes your token here, and Atlassian
+  keeps its own record of the grant, with the link to remove it.
+- **Under the table.** The PO alone, and only for a round from Jira. A recorded final goes by itself
+  and a quiet line says "ABC-1: 5 is in Jira." A failure is an alert with the reason, "Try again" and
+  "Dismiss", and it stays through the rounds that follow: the room never waits for Jira. A final with
+  no number says it stays here, with nothing to press. A final the page did not see recorded waits
+  for "Write to Jira". The history has that press on every past round from Jira, for the PO.
+
+Every control is native, 44 px tall, and fits 320 px. Nothing moves, so nothing changes under
+reduced motion.
+
 ## Summary and exports
 
 As built (#34):

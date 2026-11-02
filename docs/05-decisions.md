@@ -806,7 +806,8 @@ is an item each, bullets are no part of a line, and raw CSV reads as a table.
 
 **Connectors.** #54 and #55 will add items through the same `apply`. `QueueItem.source` is
 reserved for their external id; nothing writes it, the strict wire schema refuses it from a
-client and no view shows it. A write-back will need the round to keep it too: not built.
+client and no view shows it. A write-back will need the round to keep it too: not built. (Built
+by #54, ADR-030.)
 
 **Alternatives.** The list in `live` (simplest, and every vote rewrites it, see above); a table
 of items (a query per reorder, and `apply` could no longer see the queue); the list in the
@@ -1661,3 +1662,134 @@ does, which the step already sees.
 **Not tested.** Real Google and Microsoft tokens, and real IDN addresses at Google: the stand-in
 answers for them, so what the fields hold is read from their docs and Better Auth's code. No
 provider keys are set on Sven's instance, so the row does not appear there yet.
+
+## ADR-030: Jira Cloud through each person's own token, into the queue and back (2026-11-02, #54)
+
+**Decision.** A signed-in account connects its own Jira by OAuth 2.0 (3LO). The PO of a room
+imports by JQL or by a sprint, over HTTP, and the items go in through a server command, so `apply`
+still decides. A recorded final goes back to the item it estimated, with that same person's token.
+Everything is dark until `JIRA_CLIENT_ID`, `JIRA_CLIENT_SECRET`, `POKER_VAULT_KEY` and a sign-in
+provider are all there: no route, no button, no tag in `index.html`. The code sits in
+`apps/server/src/connectors/` and `apps/web/src/connectors/`, behind the seam `connector.ts`.
+
+**Whose token.** The account comes from the session and from nothing else (`accountOf`, ADR-026).
+The PO's own token imports and writes: never another seated person's, and never the keeper's for a
+PO who claimed the role. A guest has none. A PO with no connection, or a new PO after a hand-over
+who has none, writes nothing, and the page says so. There is no room-level connection: it would
+act in Jira as someone who is not there, and Jira's history would name the wrong person.
+
+**`state`.** Random, 32 bytes, single use, ten minutes, bound to the session that asked, and never a
+room code: it goes to Atlassian. It lives in a row of Better Auth's `verification` table, so any
+instance can finish what another began and the retention job already sweeps it, and the row holds
+hashes: of `state`, of the session id, with the room's id to come back to. `take` is one `delete …
+returning`, so two callbacks with one `state` get one row. A `state` from another session is
+spent and refused. A connection starts with a POST under the same Origin check as every change, so
+another site cannot begin one in a visitor's name, and the way back is `/r/<code>`, built by the
+server from the id in the row: nothing the request says is read. No room code reaches any URL
+sent to Atlassian.
+
+**A token's life.** Atlassian rotates refresh tokens. They last 90 days of disuse and stay usable for
+ten minutes after their use (Atlassian's "leeway"). Two instances refreshing at once is normal, so
+there is no lock: `replaceToken` is the judge, the first write wins, and the loser reads what it
+wrote and drops its own token. Two traps follow.
+
+- An `invalid_grant` can be the answer to the loser of a race, outside the leeway, while the
+  person's grant is fine. So the refused refresh waits 400 ms for a winner still on its way, and
+  deletes the row only by compare-and-set on the version it read (`dropToken`, new). Anything else
+  from the token address (a 5xx, a timeout, a 429) leaves the row: a bad minute costs nobody a
+  connection.
+- What the connection points at (the site and the field) must not move `version`, or a person
+  changing the field during a refresh would make the refresh's write lose, and drop a token Atlassian
+  has already rotated. So it has a column of its own, `connector_token.settings`, unsealed since it
+  is no secret, with `readSettings` and `writeSettings`. Not in the sealed value, and not a table
+  of its own: it lives and dies with the row, and a save keeps it. Reconnecting keeps a site still
+  on the person's list, with its field.
+
+One instance makes one refresh per person at a time. A token Jira answers with a 401 before its time
+gets one forced refresh and one more try.
+
+**Sites.** `accessible-resources` is read with the person's token. One site is taken; several are
+offered. A site is stored only if it is on that person's list, read again at that moment. Every call
+goes to `https://api.atlassian.com/ex/jira/{cloudId}/…`, the addresses are constants, a cloud id must
+look like one before a token goes anywhere, nothing a client sends becomes a host, and redirects are
+errors. The site's own address is used for one thing: the link of an item. A resource is listed once
+and only with Jira in its scopes, since an id is not unique across Atlassian's products.
+
+**Scopes.** `read:jira-work`, `write:jira-work`, `read:board-scope:jira-software`,
+`read:sprint:jira-software`, `read:project:jira`, `offline_access`. The agile API takes its own
+granular scopes, and `read:project:jira` is what its list of boards asks for; that is the only
+reason a granular scope stands beside the classic pair. Nothing administrative, no user data.
+
+**Import.** `POST /api/rooms/:code/connectors/jira/import`, the PO alone, signed in. `queueImport` is
+a server command in `OWNER_ONLY`: the wire has no schema for it, so `source` still comes off no
+socket, and `PROTOCOL_VERSION` stands. A search is a POST to `/rest/api/3/search/jql`, so a query is
+in no URL. A sprint is searched by JQL too (`sprint = 7 AND issuetype not in subtaskIssueTypes()
+ORDER BY rank ASC`): Jira has deprecated `GET /rest/agile/1.0/sprint/{id}/issue`, and one way of
+paging is enough. The id is a number, so nothing can be written into that query. Pages are 100,
+at most 10, and stop once the queue is full. A JQL has a cap of 2,000 characters and an empty
+one does not leave. A page that fails in the middle adds nothing. `fitToQueue` takes what fits by
+count and by bytes, as the page does for a paste, and says what was left out; what lies beyond the
+last page read comes from `/search/approximate-count`, or the page says "more" when Jira will not
+tell. A summary is cut to 200 characters with an ellipsis, as in a paste. One with hidden characters
+keeps its key and link and loses the title, since a ticket should not vanish for a zero-width
+space, and a key that is no key is counted as left out. An item already pasted stays as it is, a
+duplicate, with no `source`: it can be estimated and not written back. Nothing from Jira is rendered
+as HTML: an item is the queue's key, title and link, and the page draws them as text.
+
+**`source`.** ADR-024 reserved `QueueItem.source` with `{ system, id }`, and nothing wrote it, so it
+gains `site`, the cloud id, without a migration of data. `id` is Jira's issue id, not the key: a key
+changes when an issue moves. A round started from an item keeps it (`Round.source`), "Vote again"
+too, and `round_history.source` holds it, an additive column. It names no person. A snapshot says
+only `round.system`, to the PO alone, and a history row `system`, to everyone in the room: the
+tracker's name, no more than the link beside it already shows.
+
+**Write-back.** `POST …/write-back { round }` sends the round's number and nothing else: the server
+reads the final and the source from the round's row, which exists from the moment a final is
+recorded, in the commit that stores it. So there is one way to read a round, for the one on the
+table and for one long past, and a client can decide no value. Only `{ fields: { [fieldId]: n } }`
+leaves, so an anonymous round gives nothing but its number. Refused, in order: no final, no
+source, no number, no connection, another site than the item's, no field. The field is chosen from
+the site's own custom number fields, with a guess by name shown and not saved until the PO
+presses: nothing is written to a field no person looked at.
+
+**Automatic, from the page.** A final recorded in this tab goes by itself, from the page, a moment
+after the snapshot that shows it. A press would lose to auto-advance: ten seconds later the round
+is gone. On the server it would need a hook in the socket path, and a way to tell the PO how it
+went. Writing twice is harmless, so two tabs or a changed final are fine. A failure stays as a line
+under the table, through the rounds that follow, with "Try again" and "Dismiss"; the round is never
+touched. A final already on the table when the page comes up waits for a press: it may be days
+old, and someone may have changed the issue since. The line goes with a reload, and the history's
+"Write to Jira" on a past round is the way back to it.
+
+**Failures.** The server sends codes (`CONNECTOR_ERROR_CODES`), HTTP only, so no socket message
+changes and `ACK_ERROR_CODES` does not hold them; the page words them with the tracker's name in
+`en`, `fr` and `de`. 429 carries `Retry-After` through, in seconds, and the page says how long. 401
+tries a refresh, then "connect again". 403, 404, 5xx, a timeout (10 s on every call, by
+`AbortSignal`) and an answer that is not Jira's each have their code, and a 400 means the query on
+an import and the field on a write. A failure holds a code, never Jira's words, which can quote the
+query or an issue. `fetch`'s errors are dropped for the same reason. Logs name the room by its id;
+no token, code, room code, JQL, title or address is in one, and the redaction list gains `jql` and
+`summary` for a mistake. Per person: 60 reads a minute, 30 changes in ten minutes, 10 imports a
+minute, 60 writes a minute. They hold per instance, like every limit (architecture section 8).
+
+**Disconnect.** Deletes the row. 3LO has no revoke endpoint in Atlassian's documentation, so the
+page says that Atlassian keeps its own grant, and links to the person's connected apps.
+
+**The seam.** `BacklogConnector` is what `routes.ts` needs: `authorizeUrl`, `exchangeCode`, `refresh`,
+`sites`, `numberFields`, `guessField`, `boards`, `sprints`, `search`, `count`, `writeEstimate`.
+`jira.ts` is its one implementation. `access.ts`, `oauth-state.ts` and `routes.ts` hold no word of
+Jira's beyond the name a connector gives them. #55 adds a file, a `Connector` name it already has,
+and whatever Azure DevOps makes of a site and a sprint.
+
+**Alternatives.** A site and field inside the sealed value: no migration, and the race above. A table
+of connections: a second thing to delete and to list for #51, for two strings. PKCE: Atlassian's 3LO
+takes a client secret and asks for no PKCE, and `state` does the rest. `state` in a signed cookie:
+not single use without a store anyway. A press to write: see above. A server-side outbox for
+writes: a queue of retries for a harmless, repeatable call a person can repeat. The agile API's
+sprint issues: deprecated. Import through `queueAdd` from the page: `source` would come off the wire.
+
+**Not tested.** Everything here ran against a stand-in built from Atlassian's documentation and its
+OpenAPI files. Real tokens, a real site, the leeway under a real race, what Atlassian does with
+classic and granular scopes on one app, and the wording of its consent screen are for the live
+check, which needs Sven's test site and app. The issue stays open for it. A rate limit that holds
+across instances does not exist here (ADR-016).

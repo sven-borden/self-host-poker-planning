@@ -152,7 +152,7 @@ type QueueItem = {                  // at least one of key, title, url, each und
   key?: string;                     // a Jira key or an Azure DevOps id
   title?: string;
   url?: string;
-  source?: { system: "jira" | "ado"; id: string }; // reserved for #54 and #55, written by nothing
+  source?: { system: "jira" | "ado"; site: string; id: string }; // #54: only `queueImport` writes it
 };
 type Queue = { items: QueueItem[]; lastId: number; rev: number };
 
@@ -580,7 +580,8 @@ room past the period go in the first run after the start (README, "Privacy").
 `user_id` (references `user`, `on delete cascade`), `connector`, `sealed_token`, `version` (a
 random uuid, new at every save and replacement, for `replaceToken`), `created_at`, `updated_at`,
 primary key `(user_id, connector)`, which also serves the cascade. Only the sealed value says
-anything about the token.
+anything about the token. `settings` (#54) is what the connection points at, unsealed: no secret,
+and apart from the token so that it moves no `version` (ADR-030).
 
 `vault.ts` is AES-256-GCM through Node's `crypto`. A sealed value is
 `v1.<key id>.<iv>.<tag>.<ciphertext>`: format, 8 hex digits derived from the key, then base64url
@@ -598,7 +599,8 @@ opaque `version`, `vault_off`, `not_connected`, or `unreadable` with `unknown_ke
 the row stays). `replaceToken(account, connector, version, token)` is a compare-and-set on that
 version and answers `replaced`, `gone` (disconnected meanwhile) or `changed` (another write was
 first), and never inserts. Then `deleteToken`, `listConnections` and `enabled`; the last two and
-`deleteToken` work with the vault off. Nothing calls it before #54 and #55.
+`deleteToken` work with the vault off. #54 adds `dropToken`, a delete by compare-and-set on the
+version, for a refresh the provider refused, and `readSettings` and `writeSettings`.
 
 A read that finds an old key re-encrypts the row on the way out. `node dist/main.mjs vault:rotate`
 (`vault-rotation.ts`, `rotateTokens`) does every row in batches of 200, one compare-and-set per
@@ -612,6 +614,28 @@ A token never reaches a log, an error or Sentry: `Secret` and `Vault` print a fi
 they are logged, queries carry ciphertext only, and `guard` keeps driver text out. A dump holds
 ciphertext; the keys live in the environment. The purge needs no step of its own: a user it
 deletes takes its rows by cascade, and #51 will too.
+
+### Connectors (#54, ADR-030)
+
+`apps/server/src/connectors/`, registered by `setup.ts` only when `connectorNames(config)` names
+one: the tracker's keys, the vault and a sign-in provider. Otherwise nothing exists, and `/api/*`
+answers 404.
+
+- `connector.ts`, the seam: `BacklogConnector`, what a tracker must do, and `Outcome`, a value or
+  a code. `jira.ts` is the one implementation; #55 is the second.
+- `access.ts`: `withToken(account, call)`, a person's live token, refreshed through `replaceToken`.
+  Two instances refreshing at once is normal; a row is dropped only by `dropToken`.
+- `oauth-state.ts`: `state` as hashes in a `verification` row, one `delete … returning` to spend it.
+- `routes.ts`: `/api/connectors/jira` for the person, `/api/rooms/:code/connectors/jira/{connect,
+  import,write-back}` for the PO of that room. The account comes from the session alone.
+
+An import ends in `queueImport`, a server command, so `apply` decides and `source` comes off no
+socket. A round keeps its item's `source` (`Round.source`, `round_history.source`, an additive
+column), and a write-back reads the final and the source from the round's row, with the number of
+the round as all a client sends.
+
+`Response` in this process is not `fetch`'s: the HTTP adapter replaces the global, so `instanceof
+Response` is false on what `fetch` answers. `jira.ts` passes an `Outcome` for that reason.
 
 ## 7. Identity
 
@@ -1305,6 +1329,7 @@ language, and an unknown code gets a generic one.
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | no | sign-in with Microsoft Entra ID (#47), both or neither; the secret is never logged. Redirect URI: `<BASE_URL>/api/auth/callback/microsoft` |
 | `MICROSOFT_TENANT_ID` | no (`common`) | who may sign in with Microsoft: `common` (any work, school or personal account), `organizations` (work and school), `consumers` (personal) or one tenant's id (a GUID) |
 | `POKER_VAULT_KEY` | no | encrypts the connectors' tokens (#53, section 6): 32 random bytes in base64 (`openssl rand -base64 32`), never `BETTER_AUTH_SECRET`, never logged. Unset, the vault is off. Malformed, repeated or the session secret, it stops the start |
+| `JIRA_CLIENT_ID`, `JIRA_CLIENT_SECRET` | no | the Jira Cloud connector (#54, section 6), both or neither, with `POKER_VAULT_KEY` and a sign-in provider; without any of them it is dark. The secret is never logged. Redirect URI `BASE_URL/api/connectors/jira/callback` |
 | `POKER_VAULT_OLD_KEYS` | no | during a key change: previous keys, in the same form, comma-separated, that open tokens and seal none (README, "Connector tokens"); needs `POKER_VAULT_KEY` |
 
 ## 13. Testing

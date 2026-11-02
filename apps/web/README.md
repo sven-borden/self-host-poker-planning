@@ -658,6 +658,22 @@ waits, and says so as `fromQueue`, which names `Decision`'s button. `room/next-u
 under the table and the countdown; `useDeadlinePing` in `timer.tsx` is the vote timer's ping
 for any deadline. An item is named by `itemName` in `subject.ts`.
 
+## Connectors (#54)
+
+`connectors/connector.ts` is what the room's own chunk carries: `connectorOn` reads the server's
+`<meta name="pp-connectors">`, `readConnectorResult` takes `?connector=` out of the address in
+`main.tsx`, and `connectorMessage` words a refusal with the tracker's name. The result stays until the
+sheet closes (`clearConnectorResult`), and is not taken at the first read: the room's first renders
+mount and drop `RoomQueueButton`, which is what opens the sheet on the way back.
+
+`connector-section.tsx` is a lazy chunk in the queue's sheet. `tracker-lines.tsx` is in the room's
+chunk and loads `write-back.tsx` once a round with `system` has been on the table, and stays for the
+visit, so a failed write outlives its round. Only a final this page saw recorded goes by itself; one
+there when the page came up waits for a press (ADR-030). `history-write.tsx` is the same press in
+the history. These forms sit inside the subject field's in React's tree: a submit stops its
+propagation, as the paste form does. Codes are `connector.errors.*`, apart from the ack codes, and
+`i18n.test.ts` holds each one to a message.
+
 ## Rules
 
 - `pnpm dev` runs Vite on 5173 and proxies `/api` and `/socket.io` (WebSocket too) to

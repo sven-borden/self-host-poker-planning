@@ -15,9 +15,6 @@ import type { Db } from "../db/rooms.ts";
 
 export const STATE_TTL_MS = 10 * 60 * 1000;
 
-/** What `state` looks like: 32 random bytes in base64url. */
-const STATE_SHAPE = /^[\w-]{43}$/;
-
 const hash = (value: string) => createHash("sha256").update(value).digest("base64url");
 const identifierOf = (state: string) => `connector-state:${hash(state)}`;
 
@@ -53,7 +50,6 @@ export function createOAuthStateStore(db: Db, now: () => number = Date.now): OAu
     },
 
     take: async (state, sessionId) => {
-      if (!STATE_SHAPE.test(state)) return null;
       const rows = await guard("take connector state", () =>
         db
           .delete(verification)

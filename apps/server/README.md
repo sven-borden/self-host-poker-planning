@@ -40,6 +40,13 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   for the person connecting, a refresh is `readToken` then `replaceToken` with its `version`.
   `src/vault-rotation.ts`: `runVaultRotation(env, destination?)`, what `node dist/main.mjs
   vault:rotate` runs; it answers with an exit code.
+- `src/connectors/`: the trackers (#54, ADR-030). `connector.ts` is the seam, `jira.ts` Jira, `access.ts`
+  a person's live token (`withToken`), `oauth-state.ts` a connection's `state`, `routes.ts` the HTTP
+  routes. Everything comes back as an `Outcome`, whose failure is a code: never let a tracker's text,
+  a URL or a `fetch` error through, and never test `instanceof Response`, which the HTTP adapter
+  breaks. `src/fake-jira.ts` is the stand-in for tests, reached by replacing `fetch`
+  (`routeAtlassianTo`), and `src/fake-jira-start.ts` loads it into the e2e server; `main.ts` imports
+  neither. Its `POST /__control` and `GET /__state` are how a spec drives it.
 - `src/auth.ts`: identity. `createAuth(config, db, logger)` builds Better Auth (Drizzle
   adapter, anonymous plugin, options in `authOptions`); `registerAuthApi` mounts
   `/api/auth/*`, and `POST /api/me/name` and `/api/me/avatar`; `sessionMiddleware(auth)` is the socket
