@@ -38,13 +38,20 @@ export function formatNumber(
   );
 }
 
-/** Names joined as the language joins them: "Ana, Ben and Cleo", "Ana, Ben et Cleo". */
-export function formatList(items: readonly string[], locale: string): string {
+/**
+ * Names joined as the language joins them: "Ana, Ben and Cleo", "Ana, Ben et Cleo". `disjunction`
+ * says either will do: "a.com, b.com or c.com", "a.com, b.com ou c.com".
+ */
+export function formatList(
+  items: readonly string[],
+  locale: string,
+  type: "conjunction" | "disjunction" = "conjunction",
+): string {
   return cached(
-    "list",
+    `list-${type}`,
     locale,
     undefined,
-    () => new Intl.ListFormat(locale, { type: "conjunction" }),
+    () => new Intl.ListFormat(locale, { type }),
   ).format(items);
 }
 

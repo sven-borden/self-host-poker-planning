@@ -1,52 +1,9 @@
 {
-  "id": "8b2b6fdc-5009-4915-8e8b-3238c27580e9",
+  "id": "b6d2d29b-94bd-4718-b9f6-92142fe346ee",
   "prevId": "d2aaad16-8fbc-44f3-abdc-9ada1b6f1afe",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.account_deletion": {
-      "name": "account_deletion",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "choices": {
-          "name": "choices",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "account_deletion_user_id_user_id_fk": {
-          "name": "account_deletion_user_id_user_id_fk",
-          "tableFrom": "account_deletion",
-          "tableTo": "user",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.connector_token": {
       "name": "connector_token",
       "schema": "",
@@ -619,6 +576,12 @@
         },
         "tenant_id": {
           "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hosted_domain": {
+          "name": "hosted_domain",
           "type": "text",
           "primaryKey": false,
           "notNull": false

@@ -12,7 +12,7 @@ import {
 } from "@pp/protocol";
 import { ensureIdentity, retryDelay, UNAUTHENTICATED } from "../identity/identity.ts";
 import { listenForSignIn, reloadOnceSignedIn } from "../identity/sign-in-wait.ts";
-import { useRoomStore } from "../stores/room-store.ts";
+import { isRestrictionRefusal, useRoomStore } from "../stores/room-store.ts";
 import { localNow, noteRoundTrip, sampleServerClock } from "./server-clock.ts";
 import {
   connectWhenIdentified,
@@ -36,6 +36,11 @@ import {
 // sends `enter` again, which then answers `password_required`. When one tab of this
 // browser gets in with the password, it says so on a `BroadcastChannel`, and the others
 // locked out of that room enter again: the grant is the session user's, so they pass too.
+//
+// A room limited to accounts (#50) answers one of the rule's codes, with what would pass: the
+// store goes `restricted` and the socket stays connected, like `locked`, and `locked` from the
+// server enters again and hears the same. Nothing on this page moves past it but a sign-in, which
+// reloads the page.
 //
 // A guest who signs in (#48) comes back as a new page. Another tab of that guest hears
 // `signedIn`, and reloads into the account once the new cookie is here (`sign-in-wait.ts`): the
@@ -151,6 +156,14 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
       settle("ok");
       return;
     }
+    if (isRestrictionRefusal(ack.code)) {
+      attempt = 0;
+      lockedAs = null;
+      const { domains = [], organisation = false } = ack.requirement ?? {};
+      store().restrict({ code: ack.code, domains, organisation });
+      settle(ack.code);
+      return;
+    }
     if (ack.code === "password_required") {
       // Said as a change when the page last saw the room with a password, and the viewer
       // was not removed (a removal says so itself).
@@ -232,7 +245,7 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
     removed = true;
     store().setRemoved(true);
   };
-  /** The PO set or changed the password, and this viewer is not in the room (#31). */
+  /** The password or the rule shut this viewer out, who is not in the room (#31, #50). */
   const onLocked = () => {
     if (stopped) return;
     enter();
@@ -293,9 +306,12 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
     store().setConnection(connection);
     const { status } = store();
     if (status === "error") return;
-    // The password form stays while the socket reconnects: its next `enter` asks again.
-    if (connection === "reconnecting" && status !== "locked") store().setStatus("reconnecting");
-    else if (connection === "offline") fail("offline");
+    // The password form and the rule's screen stay while the socket reconnects: its next
+    // `enter` asks again.
+    if (connection === "reconnecting" && status !== "locked" && status !== "restricted") {
+      store().setStatus("reconnecting");
+    }
+    if (connection === "offline") fail("offline");
   });
   const stopConnecting = (options.connect ?? connectWhenIdentified)(socket);
 

@@ -99,7 +99,7 @@ export function registerAccountApi(
     if (me.user.isAnonymous) return c.json({ code: "not_allowed" }, 403);
     const allowed = await limiter.consume(`account|${bucket}|${me.user.id}`, limit);
     if (!allowed.allowed) return rateLimited(c, allowed.retryAfter);
-    return { user: me.user, recent: Date.now() - me.startedAt.getTime() <= RECENT_SIGN_IN_MS };
+    return { user: me.user, recent: Date.now() - me.startedAt <= RECENT_SIGN_IN_MS };
   }
 
   app.get("/api/account", async (c) => {

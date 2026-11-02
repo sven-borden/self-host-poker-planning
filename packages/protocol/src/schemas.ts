@@ -18,6 +18,22 @@ import { ACK_ERROR_CODES } from "./errors.ts";
 
 export const ackErrorCodeSchema = z.enum(ACK_ERROR_CODES);
 
+/**
+ * A room's rule as a viewer may read it (#50): the domains are shown to anyone let in, a
+ * tenant's id to the PO alone, whose panel edits it. Everyone else reads `organisation`.
+ */
+export const restrictionViewSchema = z.object({
+  domains: z.array(z.string()),
+  organisation: z.boolean(),
+  tenants: z.array(z.string()).optional(),
+});
+
+/** What a refused `enter` may say (#50): what would pass, never who passes. */
+export const requirementSchema = z.object({
+  domains: z.array(z.string()),
+  organisation: z.boolean(),
+});
+
 export const roomSettingsSchema = z.object({
   deck: deckSpecSchema,
   specials: z.array(specialCardSchema),
@@ -35,6 +51,8 @@ export const roomSettingsSchema = z.object({
   hasPassword: z.boolean().optional(),
   /** The next item starts by itself after a recorded final (#52). */
   autoAdvance: z.boolean(),
+  /** Only some accounts may enter (#50). Left out for a room anyone may enter. */
+  restriction: restrictionViewSchema.optional(),
 });
 
 export const subjectSchema = z.discriminatedUnion("kind", [
@@ -173,6 +191,8 @@ export const causeSchema = z.discriminatedUnion("type", [
     type: z.literal("settingsUpdated"),
     /** The PO set, changed or removed the password (#31). Optional: protocol 4 still. */
     password: z.enum(["set", "changed", "removed"]).optional(),
+    /** The room's rule changed (#50): that it did, never what it says. */
+    restriction: z.literal(true).optional(),
   }),
   z.object({
     type: z.literal("ownerChanged"),
@@ -237,6 +257,7 @@ export const snapshotSchema = z.object({
 });
 
 export type RoomSettingsView = z.output<typeof roomSettingsSchema>;
+export type RestrictionView = z.output<typeof restrictionViewSchema>;
 export type SubjectView = z.output<typeof subjectSchema>;
 export type ParticipantView = z.output<typeof participantViewSchema>;
 export type ResultsView = z.output<typeof resultsSchema>;
@@ -261,7 +282,12 @@ export type EnterPayload = z.output<typeof enterPayloadSchema>;
 
 export const enterAckSchema = z.union([
   z.object({ ok: z.literal(true), snapshot: snapshotSchema }),
-  z.object({ ok: z.literal(false), code: ackErrorCodeSchema }),
+  z.object({
+    ok: z.literal(false),
+    code: ackErrorCodeSchema,
+    /** With the four codes of a room's rule (#50): what the join screen asks for. */
+    requirement: requirementSchema.optional(),
+  }),
 ]);
 export type EnterAck = z.output<typeof enterAckSchema>;
 

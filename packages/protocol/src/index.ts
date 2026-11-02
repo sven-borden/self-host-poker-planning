@@ -69,6 +69,7 @@ export {
   participantViewSchema,
   type QueueSummary,
   queueSummarySchema,
+  type RestrictionView,
   type ResultsView,
   type RoomSettingsView,
   type RoomView,

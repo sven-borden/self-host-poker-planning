@@ -26,15 +26,18 @@ export const busyClass = "aria-disabled:pointer-events-none aria-disabled:opacit
  * page opens in this tab and comes back here. Someone signed in sees which provider, their name
  * and "Sign out", which starts a fresh guest on this same page: a reload, as the old session's
  * socket cannot carry on, and "My rooms" (#49) and "Account" (#51), which have no other way in: the
- * top bar is full at 320 px. A room may be on a shared screen, so the address shows only where a page asks for it
- * (`showAddress`): the landing page, and nowhere in a room.
+ * top bar is full at 320 px. A room may be on a shared screen, so the address shows only where a
+ * page asks for it (`showAddress`): the landing page, and nowhere in a room. `only` (#50): a room
+ * limited to accounts offers the providers that can pass it, and needs no word that this is optional.
  */
 export function SignInRow({
   className,
   showAddress = false,
+  only,
 }: {
   className?: string;
   showAddress?: boolean;
+  only?: readonly SignInProvider[];
 }) {
   const t = useT();
   const status = useIdentityStore((state) => state.status);
@@ -42,7 +45,8 @@ export function SignInRow({
   const name = useIdentityStore((state) => state.name);
   const provider = useIdentityStore((state) => state.provider);
   const signedIn = useIdentityStore(isSignedIn);
-  const [providers] = useState(signInProviders);
+  const [offered] = useState(signInProviders);
+  const providers = only ? offered.filter((id) => only.includes(id)) : offered;
   const [busy, setBusy] = useState<SignInProvider | "out" | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -113,7 +117,7 @@ export function SignInRow({
         </div>
       ) : (
         <>
-          <p className="m-0 text-sm text-ink-2">{t("signIn.hint")}</p>
+          {only ? null : <p className="m-0 text-sm text-ink-2">{t("signIn.hint")}</p>}
           <div className="grid gap-2 sm:flex sm:flex-wrap">
             {providers.map((id) => (
               <Button

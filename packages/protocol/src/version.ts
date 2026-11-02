@@ -10,6 +10,9 @@
  * - 5: the backlog queue (#52): its commands, causes and ack codes, the room view's `queue`,
  *   the round's `advanceAt`, and `startRound` carrying its `round`. A tab from before it would
  *   show a countdown it cannot read and drop the page's next item, so it is told to reload.
+ * - 6: a room limited to accounts (#50): the refused `enter` carries its `requirement`, the
+ *   `restriction` patch and view, and six ack codes. A tab from before it has no screen for
+ *   these refusals, so it is told to reload.
  *
  * Not breaking, so not bumped: an optional field on an outbound view (the web checks
  * shapes), or an optional field on an inbound command, such as the `restart` of
@@ -27,4 +30,4 @@
  * read, and keeps showing the old name until a reload; it ignores `deleted` and shows the
  * connection lost, and a reload shows the room gone. `keeperId` (#49) is in no message at all.
  */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;

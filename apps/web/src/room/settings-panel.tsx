@@ -30,12 +30,14 @@ import {
 import { Switch } from "../components/ui/switch.tsx";
 import { type Formatters, useFormat, useT } from "../i18n/hooks.ts";
 import type { TFunction } from "../i18n/i18n.ts";
+import { signInProviders } from "../identity/sign-in.ts";
 import { cn } from "../lib/utils.ts";
 import { commandSender } from "../realtime/room-connection.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { DeckControl, SpecialsControl } from "./deck-field.tsx";
 import { codeOf, failureMessage } from "./failure.ts";
 import { PasswordSetting } from "./password-setting.tsx";
+import { RestrictionSetting } from "./restriction-setting.tsx";
 import { WhoCanRevealControl } from "./reveal-setting.tsx";
 import { deckName, type SettingKey } from "./settings-words.ts";
 import { TimerSetting } from "./timer-setting.tsx";
@@ -106,6 +108,8 @@ export interface SettingField {
    * (`errorMessage`) would not say why. A code not listed falls back to those.
    */
   refusals?: Readonly<Partial<Record<string, (t: TFunction) => string>>>;
+  /** Whether the row shows at all; left out, it always does. */
+  visible?: (settings: RoomSettingsView) => boolean;
   // A field with neither a toggle nor a Control shows its value to the PO too, until its
   // issue adds one.
 }
@@ -310,6 +314,24 @@ export const GROUPS: readonly SettingGroup[] = [
         },
       },
       {
+        // #50: without a provider nobody could pass, so the row shows only to take a rule off.
+        key: "restriction",
+        label: (t) => t("settings.restriction"),
+        hint: (t) => t("settings.restrictionHint"),
+        value: (t, s) =>
+          t(s.restriction ? "settings.restrictionLimited" : "settings.restrictionAnyone"),
+        // Everyone else reads what the rule asks for, a tenant only as "your organisation".
+        detail: (t, s, room) => {
+          const rule = s.restriction;
+          if (!rule || room.you === room.ownerId) return null;
+          const words = rule.organisation ? [t("restriction.yourOrganisation")] : [];
+          return [...rule.domains, ...words].join(", ");
+        },
+        visible: (s) => s.restriction !== undefined || signInProviders().length > 0,
+        layout: "block",
+        Control: RestrictionSetting,
+      },
+      {
         // #31: everyone else reads "On" or "Off", never more.
         key: "hasPassword",
         label: (t) => t("password.label"),
@@ -335,7 +357,17 @@ const isPhone = () => window.matchMedia(PHONE_QUERY).matches;
 
 /** `settings` with `patch` applied as the domain merges it: shallow, `timer` one level deep. */
 export function withPatch(settings: RoomSettingsView, patch: SettingsPatch): RoomSettingsView {
-  return { ...settings, ...patch, timer: { ...settings.timer, ...patch.timer } };
+  const { restriction, ...rest } = patch;
+  const merged = { ...settings, ...rest, timer: { ...settings.timer, ...patch.timer } };
+  if (restriction === undefined) return merged;
+  if (restriction === null) {
+    const { restriction: _, ...open } = merged;
+    return open;
+  }
+  return {
+    ...merged,
+    restriction: { ...restriction, organisation: restriction.tenants.length > 0 },
+  };
 }
 
 /** The refusal of a change the page gave up on: the connection dropped while it was on its way. */
@@ -592,7 +624,7 @@ function PanelBody({
       <div className="divide-y divide-line">
         {groups.map((group) => (
           <SettingsGroup key={group.id} group={group}>
-            {group.fields.map((field) => (
+            {group.fields.filter(shows(changes.shown)).map((field) => (
               <FieldRow
                 key={field.key}
                 field={field}
@@ -625,6 +657,9 @@ function PanelLive() {
     </div>
   );
 }
+
+const shows = (settings: RoomSettingsView) => (field: SettingField) =>
+  field.visible?.(settings) ?? true;
 
 function SettingsGroup({ group, children }: { group: SettingGroup; children: ReactNode }) {
   const t = useT();

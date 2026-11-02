@@ -2,7 +2,8 @@
  * The room API over HTTP (#14): `POST /api/rooms` creates a room whose product owner is
  * the caller, `GET /api/rooms/:code` returns a room's public header (code, name, and whether
  * it has a password). The
- * room itself (people, the round) travels over the socket (#15), never here.
+ * room itself (people, the round) travels over the socket (#15), never here. A room limited to
+ * accounts (#50) tells someone its rule refuses neither its name nor its password's state.
  */
 import {
   cleanRoomName,
@@ -15,12 +16,13 @@ import { WIRE_LIMITS } from "@pp/protocol";
 import type { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "./app.ts";
-import { type Auth, sessionUser } from "./auth.ts";
+import { type Auth, sessionOf, sessionUser } from "./auth.ts";
 import type { Config } from "./config.ts";
 import type { RoomStore, StoredRoom } from "./db/rooms.ts";
 import { foreignOrigin, isJsonBody, rateLimited, requestIp } from "./http.ts";
 import type { RateLimiter } from "./rate-limit.ts";
 import { generateRoomCode, isRoomCode, type RandomBytes } from "./room-code.ts";
+import { NO_RULES, type RoomRules, refusalOf } from "./room-rule.ts";
 
 /**
  * Room creations per client address: 20 in 10 minutes. A team behind one office address
@@ -78,6 +80,8 @@ export interface RoomApiDeps {
   limiter: RateLimiter;
   /** The code's randomness; `crypto.randomBytes` unless a test stubs it. */
   random?: RandomBytes;
+  /** Rooms limited to accounts (#50); left out, a rule refuses everyone but the PO. */
+  rules?: RoomRules;
 }
 
 /**
@@ -88,7 +92,7 @@ export interface RoomApiDeps {
  */
 export function registerRoomApi(
   app: Hono<AppEnv>,
-  { auth, rooms, config, limiter, random }: RoomApiDeps,
+  { auth, rooms, config, limiter, random, rules = NO_RULES }: RoomApiDeps,
 ): void {
   app.post("/api/rooms", async (c) => {
     c.header("Cache-Control", "no-store");
@@ -126,6 +130,14 @@ export function registerRoomApi(
     // The retention period lets the page say how long an idle room is kept (#24).
     if (!header) {
       return c.json({ code: "room_not_found", retentionDays: config.roomTtlDays }, 404);
+    }
+    // A session is read for a room with a rule only: no other header costs one more query.
+    if (header.restriction !== null) {
+      const me = await sessionOf(auth, c.req.raw.headers);
+      const who = me && { id: me.user.id, startedAt: me.startedAt };
+      if ((await refusalOf(rules, header, who)) !== null) {
+        return c.json({ code: header.code, name: null, hasPassword: false });
+      }
     }
     // Whether the room asks for a password (#31): the join screen shows its field.
     return c.json({ code: header.code, name: header.name, hasPassword: header.hasPassword });

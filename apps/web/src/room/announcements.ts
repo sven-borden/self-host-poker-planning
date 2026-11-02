@@ -694,6 +694,8 @@ function settingSentence(t: TFunction, setting: NonNullable<LiveEvent["setting"]
       return t(to.observersCount ? "live.observersCountOn" : "live.observersCountOff", {
         max: MAX_PARTICIPANTS,
       });
+    case "restriction":
+      return t("live.restrictionChanged");
   }
 }
 

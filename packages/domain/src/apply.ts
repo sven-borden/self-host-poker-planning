@@ -697,7 +697,8 @@ function updateSettings(state: RoomState, patch: unknown, now: number): Step {
   const patched = patchSettings(state.settings, patch);
   if (!patched.ok) return refuse(patched.error);
   const settings = patched.settings;
-  if (sameJson(settings, canonicalSettings(state.settings))) return done(state);
+  const before = canonicalSettings(state.settings);
+  if (sameJson(settings, before)) return done(state);
   if (
     settings.observersCount &&
     !state.settings.observersCount &&
@@ -706,13 +707,16 @@ function updateSettings(state: RoomState, patch: unknown, now: number): Step {
     return refuse("room_full");
   }
   const next: RoomState = { ...state, settings };
+  const updated: Cause = sameJson(settings.restriction, before.restriction)
+    ? { type: "settingsUpdated" }
+    : { type: "settingsUpdated", restriction: true };
   const round = state.round;
   if (
     round?.phase !== "voting" ||
     (sameJson(canonicalDeck(round.deck), settings.deck) &&
       sameJson(round.specials, settings.specials))
   ) {
-    return done(next, { type: "settingsUpdated" });
+    return done(next, updated);
   }
   // A new deck or new specials during Voting restart the round: same subject and number.
   // It starts over as any round does, timer included: a new deadline and start when the
@@ -731,11 +735,11 @@ function updateSettings(state: RoomState, patch: unknown, now: number): Step {
     restarted.timerStartedAt = now;
   }
   return {
-    ...done(
-      withRound(next, restarted),
-      { type: "settingsUpdated" },
-      { type: "roundStarted", number: round.number, restarted: true },
-    ),
+    ...done(withRound(next, restarted), updated, {
+      type: "roundStarted",
+      number: round.number,
+      restarted: true,
+    }),
     ended: round,
   };
 }

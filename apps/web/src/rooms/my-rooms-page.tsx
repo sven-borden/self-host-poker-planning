@@ -257,6 +257,11 @@ function MyRoomsList() {
           </Button>
         </div>
       )}
+      {page?.signInAgain && (
+        <p role="status" data-my-rooms-sign-in-again className="m-0 max-w-prose">
+          {t("myRooms.signInAgain")}
+        </p>
+      )}
       {page &&
         (page.rooms.length === 0 ? (
           <div data-my-rooms-empty className="flex flex-col items-start gap-4">

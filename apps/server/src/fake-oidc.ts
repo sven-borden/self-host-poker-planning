@@ -21,6 +21,8 @@ export interface FakePerson {
   readonly name?: string;
   readonly emailVerified?: boolean;
   readonly tenant?: string;
+  /** Google's `hd`, for a Workspace account. */
+  readonly hostedDomain?: string;
 }
 
 /** A query parameter a test adds to the authorize address: the person, as encoded JSON. */
@@ -67,7 +69,12 @@ function idToken(code: PendingCode): string {
   const { person, provider, clientId } = code;
   const claims =
     provider === "google"
-      ? { iss: "https://accounts.google.com", sub: person.id, email_verified: person.emailVerified }
+      ? {
+          iss: "https://accounts.google.com",
+          sub: person.id,
+          email_verified: person.emailVerified,
+          ...(person.hostedDomain !== undefined && { hd: person.hostedDomain }),
+        }
       : {
           iss: `https://login.microsoftonline.com/${person.tenant}/v2.0`,
           sub: `pairwise-${person.id}`,

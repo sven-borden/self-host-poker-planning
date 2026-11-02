@@ -439,7 +439,7 @@ server sends and never decides the outcome of a round.
   `GROUPS` lists every setting once, in `SETTING_KEYS` order (`settings-words.ts`, shared
   with the live region): Cards (deck, specials), Voting and reveal (timer, reveal when
   everyone voted, who can reveal, anonymous voting, change after the reveal), People (the
-  PO votes, observers count). Each `SettingField` has a label, a one-line hint, its value
+  PO votes, observers count, who can join). Each `SettingField` has a label, a one-line hint, its value
   in words (`[data-setting-value]`, what the read-only view shows), an optional `detail`
   line (the deck's cards, the specials in words, the timer's end, "This round still
   shows names." while the round on the table differs from the next) and, for the PO, a
@@ -486,6 +486,25 @@ server sends and never decides the outcome of a round.
   panel does the pending state, the rollback, the messages and the focus; the unit test
   "the plug-in contract" plugs in a radio group and a locked switch through the
   `groups` prop without touching the panel.
+  **The rule's row (#50, ADR-028)** is a `block` control by this contract: `restriction` is a
+  setting, so `RestrictionSetting` (`room/restriction-setting.tsx`) calls `change({ restriction })`
+  with the rule whole, or null, and the panel does the rest; `withPatch` shapes a pending rule as
+  the view. `SettingField.visible` hides the row with no provider and no rule. The row's `id` sits
+  on the form: each list has a `<label>` of its own, and the row's would add to its name.
+  `parseRule` checks each entry with the domain's `cleanDomain` and `cleanTenant` and names the
+  first it refuses; an international name goes to `xn--` by `new URL`, and anything holding `@`,
+  `/` and the like does not, which would take the host out of it. `fetchRoomRestriction` reads the
+  count and the PO's own account over HTTP when the rule or the people change, never in a snapshot,
+  and never while a change is `pending`: the row shows a change as it is pressed, and a read then
+  would answer for the room before it, with nothing to ask again. `removeRoomOutsiders` asks the
+  server to take the seats the rule refuses, and the count is read again after.
+  **The refused side**: an `enter` answered with one of the rule's codes (`isRestrictionRefusal`)
+  puts the store in `restricted` (`restrict(refusal)`, the snapshot dropped, the socket kept, so a
+  `signedIn` still reaches it), and `RoomView` shows `RoomRestricted` (`room/room-restricted.tsx`,
+  in the room route, so small). A `join` or a password check answered so enters again and lands
+  there. The server's `locked` does too. `SignInRow only` offers the providers that can pass and
+  drops the "optional" hint; signing out reloads this screen as a guest, so the room stays the
+  return path.
   **The password row (#31)** is the one row whose key is not a setting: `FieldKey` adds
   `hasPassword` to `SettingKey`, and its `Control` (`room/password-setting.tsx`, with
   `PasswordInput` from `room/password-input.tsx`) never calls `change`: it talks to the

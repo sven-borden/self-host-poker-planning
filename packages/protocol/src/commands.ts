@@ -45,6 +45,10 @@ export const WIRE_LIMITS = {
   roundNumber: 2_147_483_647,
   /** The domain takes a timer of 5 to 3600 seconds. */
   timerSeconds: 86_400,
+  /** The domain takes 20 entries in each list of a room's rule (#50). */
+  restrictionEntries: 64,
+  /** The domain takes a domain of 253 characters or a tenant's id; a raw IDN name runs longer. */
+  restrictionEntry: 1024,
 } as const;
 
 export const userIdSchema = z.string().min(1).max(WIRE_LIMITS.userId);
@@ -81,6 +85,11 @@ const wireSubjectSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("link"), url: textSchema }),
 ]);
 
+/** What a room's rule lists, as a client sends it; the domain judges each entry. */
+const ruleListSchema = z
+  .array(z.string().max(WIRE_LIMITS.restrictionEntry))
+  .max(WIRE_LIMITS.restrictionEntries);
+
 /** Any subset of the settings, `timer` one level deep (the domain's `SettingsPatch`). */
 export const settingsPatchSchema = z.strictObject({
   deck: wireDeckSpecSchema.optional(),
@@ -98,6 +107,11 @@ export const settingsPatchSchema = z.strictObject({
   poVotes: z.boolean().optional(),
   observersCount: z.boolean().optional(),
   autoAdvance: z.boolean().optional(),
+  /** The room's rule (#50), whole, or null to remove it. */
+  restriction: z
+    .strictObject({ domains: ruleListSchema, tenants: ruleListSchema })
+    .nullable()
+    .optional(),
 });
 
 /** A round's number, as the snapshot gave it (rounds count from 1). */

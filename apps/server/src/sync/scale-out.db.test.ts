@@ -7,8 +7,8 @@
  * instance; a command id resent to the other instance runs once; and retention sees a room
  * in use on the other instance. Nothing on Redis carries a room code or a card. Signals
  * that come late, or never, are covered too: a late kick or lockout, a lost change (the
- * next one goes out after every visitor's grant is read again), a newer state a server
- * run found, a claim still running elsewhere, and every Redis connection dropped mid-run.
+ * next one goes out after every visitor's grant is read again), a room's rule, a newer state a
+ * server run found, a claim still running elsewhere, and every Redis connection dropped mid-run.
  *
  * Needs `TEST_REDIS_URL` (a throwaway Redis: `docker run --rm -p 6379:6379 redis:7-alpine`,
  * CI's `db-tests` job has one). Without it the file is skipped locally and fails in CI.
@@ -701,6 +701,48 @@ describe.skipIf(!REDIS_URL)("two instances on one room (Redis)", () => {
       await expect.poll(() => locked.value).toBe(1);
       expect(visitor.received.length).toBe(seen);
       for (const frame of visitor.frames) expect(frame).not.toContain('"13"');
+    });
+
+    it("reads a visitor again when a room's rule arrives, by its signal or without it (#50)", async () => {
+      const setRule = (state: RoomState) =>
+        apply(
+          state,
+          {
+            type: "updateSettings",
+            patch: { restriction: { domains: ["example.com"], tenants: [] } },
+          },
+          { actor: ada.id, now: Date.now() },
+        );
+
+      // By its signal: no state to go by in the message, and the visitor leaves.
+      const heard = await insert(votingRoom());
+      const a = client(ada, two());
+      const seated = client(bob, two());
+      const visitor = client(dee, two());
+      await Promise.all([a.enter(heard), seated.enter(heard), visitor.enter(heard)]);
+      const locked = lockedCount(visitor);
+      const version = await silently(heard, setRule);
+      await signal({
+        room: await idOf(heard),
+        version,
+        causes: [{ type: "settingsUpdated", restriction: true }],
+      });
+      await expect.poll(() => locked.value, { timeout: 2000 }).toBe(1);
+      // Someone seated stays, and hears the rule.
+      await seated.waitFor((s) => s.room.settings.restriction !== undefined);
+      expect((await visitor.enter(heard)).ok).toBe(false);
+
+      // Without it: the next version goes out after every visitor is read again.
+      const lost = await insert(votingRoom());
+      const b = client(ada, two());
+      const other = client(dee, two());
+      await Promise.all([b.enter(lost), other.enter(lost)]);
+      const lockedToo = lockedCount(other);
+      const before = other.received.length;
+      await silently(lost, setRule);
+      await b.cmd("rename", { name: "Ada again" });
+      await expect.poll(() => lockedToo.value, { timeout: 2000 }).toBe(1);
+      expect(other.received.length).toBe(before);
     });
 
     it("sends the newer state a server run found when its signal never comes", async () => {

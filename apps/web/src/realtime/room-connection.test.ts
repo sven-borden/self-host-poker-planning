@@ -367,6 +367,45 @@ describe("openRoom", () => {
     expect(ensure).not.toHaveBeenCalled();
   });
 
+  it("goes restricted on a rule's refusal, keeps the socket, and stays through a reconnect (#50)", async () => {
+    let answer: unknown = {
+      ok: false,
+      code: "sign_in_required",
+      requirement: { domains: ["example.com"], organisation: true },
+    };
+    const fake = fakeSocket(() => answer);
+    open(fake);
+    fake.up();
+    await settle();
+    expect(status()).toBe("restricted");
+    expect(useRoomStore.getState().restricted).toEqual({
+      code: "sign_in_required",
+      domains: ["example.com"],
+      organisation: true,
+    });
+    expect(useRoomStore.getState().snapshot).toBeNull();
+    expect(fake.socket.disconnect).not.toHaveBeenCalled();
+
+    // A refusal without its details still says it, with nothing to offer.
+    answer = { ok: false, code: "restriction_unavailable" };
+    expect(await enterRoomAgain()).toBe("restriction_unavailable");
+    expect(useRoomStore.getState().restricted).toEqual({
+      code: "restriction_unavailable",
+      domains: [],
+      organisation: false,
+    });
+
+    fake.drop();
+    expect(status()).toBe("restricted");
+    fake.up();
+    await settle();
+    expect(status()).toBe("restricted");
+
+    answer = { ok: true, snapshot: snapshot(4) };
+    expect(await enterRoomAgain()).toBe("ok");
+    expect(useRoomStore.getState().restricted).toBeNull();
+  });
+
   it("locks on password_required, keeps the socket, and enters again once asked (#31)", async () => {
     let answer: unknown = { ok: false, code: "password_required" };
     const fake = fakeSocket(() => answer);

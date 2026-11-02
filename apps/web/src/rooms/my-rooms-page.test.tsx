@@ -461,3 +461,16 @@ describe("leaving", () => {
     expect(screen.queryByRole("button", { name: "Leave this room: Sprint planning" })).toBeNull();
   });
 });
+
+describe("rooms a rule hides (#50)", () => {
+  it("says that a recent sign-in brings the others back", async () => {
+    asAccount();
+    serve({ "GET /api/my-rooms": () => json(page([ROOM_A], { signInAgain: true })) });
+    await renderRooms();
+    await waitFor(() =>
+      expect(document.querySelector("[data-my-rooms-sign-in-again]")?.textContent).toContain(
+        "ask for a recent sign-in",
+      ),
+    );
+  });
+});
