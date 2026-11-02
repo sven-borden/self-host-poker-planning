@@ -191,7 +191,7 @@ test("auto-advance counts down for everyone, the PO can stay, and the next item 
     // Nothing runs before a final.
     await expect(nextUp(ben.page)).toHaveText("Next: AB-2");
     await page.getByRole("button", { name: "Record 5" }).click();
-    await expect(nextUp(ben.page)).toContainText(/Next: AB-2, in \d+ s/);
+    await expect(nextUp(ben.page)).toContainText(/Next: AB-2, in \d+\s+s/);
     await expect(ben.page.locator("[data-table-live]")).toContainText("Next in 10 seconds: AB-2.");
     await expect(ben.page.locator("[data-hold-advance]")).toHaveCount(0);
 
