@@ -241,6 +241,21 @@ describe("a deletion", () => {
     expect(finish).toHaveBeenCalledTimes(2);
   });
 
+  it("names a room that failed at the deletion's level, by its id alone", async () => {
+    const { deletions, rooms, logs } = harness();
+    vi.mocked(rooms.removeAccount).mockResolvedValueOnce("failed");
+    await deletions.start(ME, {});
+    const line = logs.lines.find(({ room }) => room === ROOM_A.id);
+    expect(line?.level).toBe(40);
+    expect(logs.raw.join("\n")).not.toContain(ROOM_A.code);
+
+    const stuck = new Date(Date.now() - DELETION_STUCK_MS - 1000);
+    const late = harness({ markerOf: async () => ({ choices: {}, since: stuck }) });
+    vi.mocked(late.rooms.removeAccount).mockResolvedValue("failed");
+    await late.deletions.sweep();
+    expect(late.logs.lines.find(({ room }) => room === ROOM_A.id)?.level).toBe(50);
+  });
+
   it("logs louder once a deletion has been stuck for a day", async () => {
     const since = new Date(Date.now() - DELETION_STUCK_MS - 1000);
     const { deletions, rooms, logs } = harness({

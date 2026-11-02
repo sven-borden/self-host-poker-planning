@@ -133,7 +133,10 @@ export function createAccountDeletions(options: AccountDeletionOptions): Account
           vacant: newGhost(),
           ...(wish !== undefined && "to" in wish && { heir: wish.to }),
         };
-        if ((await rooms.removeAccount(room, removal)) === "failed") failed += 1;
+        if ((await rooms.removeAccount(room, removal)) === "failed") {
+          failed += 1;
+          log[level]({ room: room.id }, "account deletion: a room did not change");
+        }
       } catch (error) {
         failed += 1;
         log[level](

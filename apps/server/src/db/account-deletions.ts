@@ -45,7 +45,10 @@ export interface AccountDeletionStore {
   markerOf(account: string): Promise<{ choices: RoomChoices; since: Date } | null>;
   /** Every account still going. */
   pending(): Promise<string[]>;
-  /** Ends any session that came up since: a sign-in that read no marker just before `begin`. */
+  /**
+   * Ends any session that came up since, a sign-in that read no marker just before `begin`, and
+   * deletes any connector's token it saved: a deletion that stays stuck must not keep one.
+   */
   endSessions(account: string): Promise<void>;
   /** Guests still on their way to this account (#48): they are this person, and go with it. */
   guestsOf(account: string): Promise<string[]>;
@@ -146,6 +149,7 @@ export function createAccountDeletionStore(db: Db): AccountDeletionStore {
     endSessions: (account) =>
       guard("end sessions", async () => {
         await db.delete(session).where(eq(session.userId, account));
+        await db.delete(connectorToken).where(eq(connectorToken.userId, account));
       }),
 
     guestsOf: (account) =>

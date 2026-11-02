@@ -23,6 +23,10 @@ const en = {
   exportAction: "Download my data",
   exportBusy: "Preparing your file…",
   exported: "Your file is on its way.",
+  exportMore_one:
+    "{{count, number}} room appears by its id alone: sign in again to have all of it.",
+  exportMore_other:
+    "{{count, number}} rooms appear by their id alone: sign in again to have all of them.",
   exportIncomplete:
     "Your file is on its way, but some rooms had not reached your account yet. Download it again in a moment.",
 
@@ -36,9 +40,15 @@ const en = {
   goesSeats_one: "Your seat in {{count, number}} room that belongs to someone else.",
   goesSeats_other: "Your seat in {{count, number}} rooms that belong to someone else.",
   goesHeld_one:
-    "Your right to {{count, number}} room whose rule no longer admits this account. The room stays, and with nobody who may hold it, it goes after {{days, number}} days without activity.",
+    "Your right to {{count, number}} room whose rule does not admit this account. The room stays.",
   goesHeld_other:
-    "Your right to {{count, number}} rooms whose rule no longer admits this account. Each stays, and with nobody who may hold it, it goes after {{days, number}} days without activity.",
+    "Your right to {{count, number}} rooms whose rule does not admit this account. Those rooms stay.",
+  goesAfter_one: "A room nobody may hold goes after {{count, number}} day without activity.",
+  goesAfter_other: "A room nobody may hold goes after {{count, number}} days without activity.",
+  moreRooms_one:
+    "Sign in again to see {{count, number}} more room: its rule asks for a recent sign-in.",
+  moreRooms_other:
+    "Sign in again to see {{count, number}} more rooms: their rule asks for a recent sign-in.",
   goesNames: "Your name on your cards in named rounds.",
   staysTitle: "What stays",
   staysCards:
@@ -60,10 +70,12 @@ const en = {
     "A room that goes to a guest stays for as long as it is used: after {{count, number}} days without activity, it is deleted.",
   unnamed: "Room without a name",
   takerLabel: "Who takes {{name}}",
-  takerRunning: "{{name}} (runs the room now)",
-  takerHere: "{{name}} (here now, seated longest)",
-  takerAway: "{{name}} (nobody is here, seated longest)",
-  takerNone: "Nobody here may take it: it stays with no keeper",
+  takerNobody: "Nobody here",
+  takerRunning: "{{name}} runs the room now.",
+  takerHere: "{{name}} is here, and has been seated longest.",
+  takerAway: "Nobody who may take it is here. {{name}} has been seated longest.",
+  takerChosen: "{{name}} takes this room and the right to delete it.",
+  takerNone: "Nobody here may take this room, so it stays with nobody holding it.",
   takerDelete: "Nobody: delete this room",
   deleteChosen:
     "This room goes for everyone in it, with its history, the moment your account does.",
@@ -105,8 +117,16 @@ const en = {
 
 type Copy = { readonly [K in keyof typeof en]: string };
 
-const fr: Copy &
-  Partial<Record<`${"goesAlone" | "goesSeats" | "goesHeld" | "sharedGuest"}_many`, string>> = {
+type FrenchMany =
+  | "goesAlone"
+  | "goesSeats"
+  | "goesHeld"
+  | "goesAfter"
+  | "moreRooms"
+  | "exportMore"
+  | "sharedGuest";
+
+const fr: Copy & Partial<Record<`${FrenchMany}_many`, string>> = {
   title: "Votre compte",
   loading: "Chargement de votre compte…",
   signedOut:
@@ -122,6 +142,12 @@ const fr: Copy &
   exportAction: "Télécharger mes données",
   exportBusy: "Préparation de votre fichier…",
   exported: "Votre fichier arrive.",
+  exportMore_one:
+    "{{count, number}} salle n’y figure que par son identifiant : reconnectez-vous pour tout avoir.",
+  exportMore_many:
+    "{{count, number}} de salles n’y figurent que par leur identifiant : reconnectez-vous pour tout avoir.",
+  exportMore_other:
+    "{{count, number}} salles n’y figurent que par leur identifiant : reconnectez-vous pour tout avoir.",
   exportIncomplete:
     "Votre fichier arrive, mais certaines salles n’avaient pas encore rejoint votre compte. Téléchargez-le à nouveau dans un instant.",
 
@@ -137,11 +163,23 @@ const fr: Copy &
   goesSeats_many: "Votre place dans {{count, number}} salles qui appartiennent à d’autres.",
   goesSeats_other: "Votre place dans {{count, number}} salles qui appartiennent à d’autres.",
   goesHeld_one:
-    "Votre droit sur {{count, number}} salle dont la règle n’admet plus ce compte. La salle reste et, si personne ne peut la détenir, elle disparaît après {{days, number}} jours sans activité.",
+    "Votre droit sur {{count, number}} salle dont la règle n’admet pas ce compte. La salle reste.",
   goesHeld_many:
-    "Votre droit sur {{count, number}} de salles dont la règle n’admet plus ce compte. Chacune reste et, si personne ne peut la détenir, elle disparaît après {{days, number}} jours sans activité.",
+    "Votre droit sur {{count, number}} de salles dont la règle n’admet pas ce compte. Ces salles restent.",
   goesHeld_other:
-    "Votre droit sur {{count, number}} salles dont la règle n’admet plus ce compte. Chacune reste et, si personne ne peut la détenir, elle disparaît après {{days, number}} jours sans activité.",
+    "Votre droit sur {{count, number}} salles dont la règle n’admet pas ce compte. Ces salles restent.",
+  goesAfter_one:
+    "Une salle que personne ne peut détenir disparaît après {{count, number}} jour sans activité.",
+  goesAfter_many:
+    "Une salle que personne ne peut détenir disparaît après {{count, number}} de jours sans activité.",
+  goesAfter_other:
+    "Une salle que personne ne peut détenir disparaît après {{count, number}} jours sans activité.",
+  moreRooms_one:
+    "Reconnectez-vous pour voir {{count, number}} salle de plus : sa règle demande une connexion récente.",
+  moreRooms_many:
+    "Reconnectez-vous pour voir {{count, number}} de salles de plus : leur règle demande une connexion récente.",
+  moreRooms_other:
+    "Reconnectez-vous pour voir {{count, number}} salles de plus : leur règle demande une connexion récente.",
   goesNames: "Votre nom sur vos cartes dans les tours nominatifs.",
   staysTitle: "Ce qui reste",
   staysCards:
@@ -166,10 +204,13 @@ const fr: Copy &
     "Une salle reprise par un invité reste tant qu’elle sert : après {{count, number}} jours sans activité, elle est supprimée.",
   unnamed: "Salle sans nom",
   takerLabel: "Qui reprend {{name}}",
-  takerRunning: "{{name}} (dirige la salle en ce moment)",
-  takerHere: "{{name}} (ici en ce moment, présence la plus ancienne)",
-  takerAway: "{{name}} (personne n’est là, présence la plus ancienne)",
-  takerNone: "Personne ici ne peut la reprendre : elle reste sans détenteur",
+  takerNobody: "Personne ici",
+  takerRunning: "{{name}} dirige la salle en ce moment.",
+  takerHere: "{{name}} est là, avec la présence la plus ancienne.",
+  takerAway:
+    "Aucune personne pouvant la reprendre n’est là. {{name}} a la présence la plus ancienne.",
+  takerChosen: "{{name}} reprend cette salle et le droit de la supprimer.",
+  takerNone: "Personne ici ne peut reprendre cette salle : elle reste sans détenteur.",
   takerDelete: "Personne : supprimer cette salle",
   deleteChosen:
     "Cette salle disparaît pour tous ses participants, avec son historique, dès que votre compte disparaît.",
@@ -225,6 +266,10 @@ const de: Copy = {
   exportAction: "Meine Daten herunterladen",
   exportBusy: "Ihre Datei wird vorbereitet…",
   exported: "Ihre Datei ist unterwegs.",
+  exportMore_one:
+    "{{count, number}} Raum steht nur mit seiner ID darin: Melden Sie sich erneut an, um alles zu erhalten.",
+  exportMore_other:
+    "{{count, number}} Räume stehen nur mit ihrer ID darin: Melden Sie sich erneut an, um alles zu erhalten.",
   exportIncomplete:
     "Ihre Datei ist unterwegs, aber einige Räume waren noch nicht in Ihrem Konto. Laden Sie sie gleich noch einmal herunter.",
 
@@ -238,9 +283,17 @@ const de: Copy = {
   goesSeats_one: "Ihr Platz in {{count, number}} Raum, der jemand anderem gehört.",
   goesSeats_other: "Ihr Platz in {{count, number}} Räumen, die anderen gehören.",
   goesHeld_one:
-    "Ihr Recht an {{count, number}} Raum, dessen Regel dieses Konto nicht mehr zulässt. Der Raum bleibt und verschwindet, wenn niemand ihn halten darf, nach {{days, number}} Tagen ohne Aktivität.",
+    "Ihr Recht an {{count, number}} Raum, dessen Regel dieses Konto nicht zulässt. Der Raum bleibt.",
   goesHeld_other:
-    "Ihr Recht an {{count, number}} Räumen, deren Regel dieses Konto nicht mehr zulässt. Jeder bleibt und verschwindet, wenn niemand ihn halten darf, nach {{days, number}} Tagen ohne Aktivität.",
+    "Ihr Recht an {{count, number}} Räumen, deren Regel dieses Konto nicht zulässt. Diese Räume bleiben.",
+  goesAfter_one:
+    "Ein Raum, den niemand halten darf, verschwindet nach {{count, number}} Tag ohne Aktivität.",
+  goesAfter_other:
+    "Ein Raum, den niemand halten darf, verschwindet nach {{count, number}} Tagen ohne Aktivität.",
+  moreRooms_one:
+    "Melden Sie sich erneut an, um {{count, number}} weiteren Raum zu sehen: Seine Regel verlangt eine aktuelle Anmeldung.",
+  moreRooms_other:
+    "Melden Sie sich erneut an, um {{count, number}} weitere Räume zu sehen: Ihre Regel verlangt eine aktuelle Anmeldung.",
   goesNames: "Ihr Name auf Ihren Karten in Runden mit Namen.",
   staysTitle: "Was bleibt",
   staysCards:
@@ -263,10 +316,12 @@ const de: Copy = {
     "Ein Raum, den ein Gast übernimmt, bleibt, solange er genutzt wird: Nach {{count, number}} Tagen ohne Aktivität wird er gelöscht.",
   unnamed: "Raum ohne Namen",
   takerLabel: "Wer übernimmt {{name}}",
-  takerRunning: "{{name}} (leitet den Raum gerade)",
-  takerHere: "{{name}} (gerade da, am längsten dabei)",
-  takerAway: "{{name}} (niemand ist da, am längsten dabei)",
-  takerNone: "Niemand hier darf ihn übernehmen: Er bleibt ohne Inhaber",
+  takerNobody: "Niemand hier",
+  takerRunning: "{{name}} leitet den Raum gerade.",
+  takerHere: "{{name}} ist da und am längsten dabei.",
+  takerAway: "Niemand, der ihn übernehmen darf, ist da. {{name}} ist am längsten dabei.",
+  takerChosen: "{{name}} übernimmt diesen Raum und das Recht, ihn zu löschen.",
+  takerNone: "Niemand hier darf diesen Raum übernehmen, also bleibt er ohne Inhaber.",
   takerDelete: "Niemand: diesen Raum löschen",
   deleteChosen:
     "Dieser Raum verschwindet für alle darin, mit seinem Verlauf, sobald Ihr Konto verschwindet.",

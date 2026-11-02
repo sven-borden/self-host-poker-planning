@@ -4,9 +4,10 @@
  * code is a bearer capability, and neither answer holds one.
  *
  * A room with a rule (#50, ADR-028) tells someone it refuses no more here than at its door, as "My
- * rooms" does: no seated name, no room's name, nothing but that a right or a card was there. Who
- * may take a room goes by the one test, `mayHoldRole`, at one read per person. A room with no rule
- * reads nothing more.
+ * rooms" does: no seated name, no room's name, nothing but that a right or a card was there. A
+ * person it would pass, on a sign-in too old for it, reads the same, and is told a new sign-in
+ * opens it: that is no refusal. Who may take a room goes by the one test, `mayHoldRole`, at one
+ * read per person. A room with no rule reads nothing more.
  */
 import { type HeirReason, heirsOf, type Restriction } from "@pp/domain";
 import { eq, sql } from "drizzle-orm";
@@ -45,6 +46,8 @@ export interface AccountOverview {
   seats: number;
   /** Rooms the person keeps that their rule refuses them: a number, and nothing about them. */
   held: number;
+  /** Rooms the person keeps that a new sign-in would show: their rule passes the account. */
+  signInAgain: number;
   shared: SharedRoom[];
 }
 
@@ -64,10 +67,11 @@ export interface ExportRoom {
   lastActiveAt: string;
 }
 
-/** A room whose rule refuses the person: that it names them, and nothing about it. */
+/** A room the person may not read: that it names them, their own seat, and nothing about it. */
 export interface WithheldRoom {
   id: string;
   withheld: true;
+  seat: ExportRoom["seat"];
 }
 
 /** A room a correct password let the person into. */
@@ -108,9 +112,13 @@ export interface ExportSignIn {
 export interface AccountDataStore {
   overview(who: string): Promise<AccountOverview>;
   profile(who: string): Promise<{ profile: ExportProfile; signIns: ExportSignIn[] } | null>;
-  rooms(who: string): Promise<(ExportRoom | WithheldRoom)[]>;
-  grants(who: string): Promise<ExportGrant[]>;
-  votes(who: string): Promise<ExportVote[]>;
+  /** The file's rooms, grants and cards, and how many rooms a new sign-in would show. */
+  file(who: string): Promise<{
+    rooms: (ExportRoom | WithheldRoom)[];
+    grants: ExportGrant[];
+    votes: ExportVote[];
+    signInAgain: number;
+  }>;
 }
 
 interface Seat {
@@ -119,6 +127,9 @@ interface Seat {
   joinedAt: number;
   connected: boolean;
 }
+
+/** Where a person stands with a room's rule. */
+type Standing = "passes" | "refused" | "tooOld";
 
 /** What a row brings for a room's rule. */
 interface Ruled {
@@ -141,10 +152,19 @@ export function createAccountDataStore(
       return reading;
     };
     /** Whether this person may hold this room's role, by the one test. */
-    return async (room: Ruled, who: string) =>
+    const may = async (room: Ruled, who: string) =>
       room.rule === null ||
       who === room.ownerId ||
       mayHoldRole(ruledRoom(room), who, await candidate(who), rules.providers, Date.now());
+    /** The same test, and asked with no age: a sign-in is the one thing a person can do about it. */
+    const standing = async (room: Ruled, who: string): Promise<Standing> => {
+      if (await may(room, who)) return "passes";
+      const { identity } = await candidate(who);
+      const atAnyAge = { identity, startedAt: undefined };
+      const passes = mayHoldRole(ruledRoom(room), who, atAnyAge, rules.providers, Date.now());
+      return passes ? "tooOld" : "refused";
+    };
+    return { may, standing };
   }
 
   /** The person's rooms, with who sits in them. */
@@ -167,16 +187,24 @@ export function createAccountDataStore(
   return {
     overview: (who) =>
       guard("read account overview", async () => {
-        const overview: AccountOverview = { alone: 0, seats: 0, held: 0, shared: [] };
-        const may = readerFor();
+        const overview: AccountOverview = {
+          alone: 0,
+          seats: 0,
+          held: 0,
+          signInAgain: 0,
+          shared: [],
+        };
+        const { may, standing } = readerFor();
         for (const row of await roomsNaming(who)) {
           const seated = Object.hasOwn(row.people, who);
           if (!row.keeper) {
             if (seated || row.productOwner) overview.seats += 1;
             continue;
           }
-          if (!(await may(row, who))) {
-            overview.held += 1;
+          const mine = await standing(row, who);
+          if (mine !== "passes") {
+            if (mine === "tooOld") overview.signInAgain += 1;
+            else overview.held += 1;
             continue;
           }
           const others = Object.keys(row.people).filter((id) => id !== who);
@@ -224,39 +252,43 @@ export function createAccountDataStore(
         };
       }),
 
-    rooms: (who) =>
-      guard("read account rooms", async () => {
-        const may = readerFor();
-        const shown: (ExportRoom | WithheldRoom)[] = [];
-        for (const row of await roomsNaming(who)) {
-          if (!(await may(row, who))) {
-            shown.push({ id: row.id, withheld: true });
-            continue;
-          }
-          const { id, name, productOwner, keeper, people, cardOnTable, lastActiveAt } = row;
-          const seat = Object.hasOwn(people, who) ? people[who] : undefined;
-          shown.push({
-            id,
-            name,
-            productOwner,
-            keeper,
-            seat: seat
-              ? {
-                  name: seat.name,
-                  role: seat.role,
-                  joinedAt: new Date(seat.joinedAt).toISOString(),
-                }
-              : null,
-            cardOnTable,
-            lastActiveAt: lastActiveAt.toISOString(),
-          });
-        }
-        return shown;
-      }),
+    file: (who) =>
+      guard("read account file", async () => {
+        const reader = readerFor();
+        /** Rooms kept from the file only until a new sign-in. */
+        const stale = new Set<string>();
+        const shows = async (id: string, row: Ruled) => {
+          const standing = await reader.standing(row, who);
+          if (standing === "tooOld") stale.add(id);
+          return standing === "passes";
+        };
 
-    grants: (who) =>
-      guard("read account grants", async () => {
-        const rows = await db
+        const rooms: (ExportRoom | WithheldRoom)[] = [];
+        for (const row of await roomsNaming(who)) {
+          const { id, name, productOwner, keeper, people, cardOnTable, lastActiveAt } = row;
+          const own = Object.hasOwn(people, who) ? people[who] : undefined;
+          const seat = own
+            ? {
+                name: own.name,
+                role: own.role,
+                joinedAt: new Date(own.joinedAt).toISOString(),
+              }
+            : null;
+          if (await shows(id, row)) {
+            const lastActive = lastActiveAt.toISOString();
+            rooms.push({
+              id,
+              name,
+              productOwner,
+              keeper,
+              seat,
+              cardOnTable,
+              lastActiveAt: lastActive,
+            });
+          } else rooms.push({ id, withheld: true, seat });
+        }
+
+        const grantRows = await db
           .select({
             id: room.id,
             name: room.name,
@@ -268,18 +300,13 @@ export function createAccountDataStore(
           .innerJoin(room, eq(room.id, roomAccess.roomId))
           .where(eq(roomAccess.userId, who))
           .orderBy(roomAccess.grantedAt);
-        const may = readerFor();
         const grants: ExportGrant[] = [];
-        for (const row of rows) {
-          const name = (await may(row, who)) ? row.name : null;
+        for (const row of grantRows) {
+          const name = (await shows(row.id, row)) ? row.name : null;
           grants.push({ room: { id: row.id, name }, since: row.since.toISOString() });
         }
-        return grants;
-      }),
 
-    votes: (who) =>
-      guard("read account votes", async () => {
-        const rows = await db
+        const voteRows = await db
           .select({
             roomId: roundHistory.roomId,
             roomName: room.name,
@@ -294,14 +321,13 @@ export function createAccountDataStore(
           .innerJoin(room, eq(room.id, roundHistory.roomId))
           .where(sql`${roundHistory.votes} @> ${namedRoundsOf(who)}::jsonb`)
           .orderBy(roundHistory.revealedAt);
-        const may = readerFor();
-        const cards: ExportVote[] = [];
-        for (const row of rows) {
+        const votes: ExportVote[] = [];
+        for (const row of voteRows) {
           if (row.votes.kind !== "named") continue;
-          const shown = await may(row, who);
+          const shown = await shows(row.roomId, row);
           for (const { who: voter, card, name, changedAfterReveal } of row.votes.votes) {
             if (voter !== who) continue;
-            cards.push({
+            votes.push({
               room: { id: row.roomId, name: shown ? row.roomName : null },
               round: row.round,
               subject: shown ? row.subject : null,
@@ -312,7 +338,7 @@ export function createAccountDataStore(
             });
           }
         }
-        return cards;
+        return { rooms, grants, votes, signInAgain: stale.size };
       }),
   };
 }

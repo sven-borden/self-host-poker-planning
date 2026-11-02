@@ -276,6 +276,7 @@ function MyRoomsList() {
           <ul className="m-0 flex list-none flex-col border-t border-line p-0">
             {page.rooms.map((room) => (
               <RoomRow
+                retentionDays={page.retentionDays}
                 key={room.id}
                 room={room}
                 name={name(room)}
@@ -362,10 +363,12 @@ function MyRoomsList() {
 function RoomRow({
   room,
   name,
+  retentionDays,
   ask,
 }: {
   room: MyRoom;
   name: string;
+  retentionDays: number;
   ask: (kind: "rename" | "delete" | "leave", from: HTMLElement) => void;
 }) {
   const t = useT();
@@ -394,7 +397,11 @@ function RoomRow({
           <span>{t("myRooms.rounds", { count: room.rounds })}</span>
         </p>
         {whose === "claimed" && (
-          <p className="m-0 mt-1 max-w-prose text-sm text-ink-2">{t("myRooms.claimedWhy")}</p>
+          <p className="m-0 mt-1 max-w-prose text-sm text-ink-2">
+            {room.noKeeper
+              ? t("myRooms.noKeeperWhy", { count: retentionDays })
+              : t("myRooms.claimedWhy")}
+          </p>
         )}
         {whose === "kept" && (
           <p className="m-0 mt-1 max-w-prose text-sm text-ink-2">{t("myRooms.keptWhy")}</p>

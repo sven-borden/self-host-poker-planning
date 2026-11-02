@@ -709,6 +709,12 @@ export const fr: Catalog<"many"> = {
     claimed: "Vous êtes product owner",
     claimedWhy:
       "Ce rôle vous permet d’animer cette salle et de la renommer. La supprimer reste réservé à la personne à qui elle appartient : reprendre le rôle ou le recevoir ne donne pas ce droit.",
+    noKeeperWhy_one:
+      "Ce rôle vous permet d’animer cette salle et de la renommer. Personne ne peut la supprimer : ce droit a disparu avec le compte qui le détenait. Elle disparaît après {{count, number}} jour sans activité.",
+    noKeeperWhy_many:
+      "Ce rôle vous permet d’animer cette salle et de la renommer. Personne ne peut la supprimer : ce droit a disparu avec le compte qui le détenait. Elle disparaît après {{count, number}} de jours sans activité.",
+    noKeeperWhy_other:
+      "Ce rôle vous permet d’animer cette salle et de la renommer. Personne ne peut la supprimer : ce droit a disparu avec le compte qui le détenait. Elle disparaît après {{count, number}} jours sans activité.",
     kept: "Votre salle, avec un autre product owner",
     keptWhy:
       "Quelqu’un d’autre a repris le rôle de product owner. Récupérez ce rôle dans la salle, et vous pourrez la supprimer.",
@@ -924,7 +930,7 @@ export const fr: Catalog<"many"> = {
     not_participant:
       "Vous ne faites plus partie de cette salle. Rechargez la page pour la rejoindre à nouveau.",
     not_owner: "Seul le product owner peut faire cela.",
-    not_keeper: "Seule la personne à qui cette salle appartient peut la supprimer.",
+    not_keeper: "Vous ne pouvez pas supprimer cette salle : ce droit ne vous appartient pas.",
     sign_in_again: "Reconnectez-vous d’abord : cette action demande une connexion récente.",
     bad_confirmation: "Ce n’est pas le mot demandé. Rien n’a été supprimé.",
     already_joined: "Vous êtes déjà dans cette salle.",

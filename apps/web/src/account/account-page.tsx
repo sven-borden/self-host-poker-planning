@@ -36,7 +36,7 @@ const PROVIDER_NAMES = { google: "Google", microsoft: "Microsoft" } as const;
 /** What a person picked for a room: a seat's id, or this. Nothing picked is the first seat. */
 const DELETE_ROOM = "delete";
 
-/** How the select says who the default is, and why. */
+/** The line under the select says who the default is, and why: an option is too narrow. */
 const DEFAULT_TAKER = {
   runsTheRoom: "takerRunning",
   here: "takerHere",
@@ -113,12 +113,13 @@ function Heading({ children }: { children?: ReactNode }) {
 function SignedOut() {
   const t = useAccountT();
   const shell = useT();
+  const [providers] = useState(signInProviders);
   return (
     <>
       <Heading>
         <p className="mt-4 max-w-prose text-ink-2">{t("signedOut")}</p>
       </Heading>
-      <SignInRow className="max-w-xl" />
+      <SignInRow className="max-w-xl" only={providers} />
       <Link to="/" className={buttonVariants({ variant: "outline", className: "self-start" })}>
         {shell("room.backHome")}
       </Link>
@@ -256,7 +257,9 @@ function ExportSection() {
     setNotice(null);
     setFailure(null);
     try {
-      setNotice(t((await downloadAccount()) ? "exported" : "exportIncomplete"));
+      const { complete, signInAgain } = await downloadAccount();
+      const more = signInAgain > 0 ? ` ${t("exportMore", { count: signInAgain })}` : "";
+      setNotice(`${t(complete ? "exported" : "exportIncomplete")}${more}`);
     } catch (error) {
       setFailure(failureMessage(shell, codeOf(error)));
     }
@@ -303,7 +306,7 @@ function DeleteSection({
   ask: () => void;
 }) {
   const t = useAccountT();
-  const { alone, seats, held, shared, retentionDays, recent } = overview;
+  const { alone, seats, held, signInAgain, shared, retentionDays, recent } = overview;
   return (
     <Section title={t("deleteTitle")}>
       <p className="m-0 max-w-prose">{t("deleteIntro")}</p>
@@ -312,7 +315,9 @@ function DeleteSection({
           <li>{t("goesAccount")}</li>
           {alone > 0 && <li>{t("goesAlone", { count: alone })}</li>}
           {seats > 0 && <li>{t("goesSeats", { count: seats })}</li>}
-          {held > 0 && <li>{t("goesHeld", { count: held, days: retentionDays })}</li>}
+          {held > 0 && (
+            <li>{`${t("goesHeld", { count: held })} ${t("goesAfter", { count: retentionDays })}`}</li>
+          )}
           <li>{t("goesNames")}</li>
         </Listing>
         <Listing title={t("staysTitle")}>
@@ -323,6 +328,11 @@ function DeleteSection({
           <li>{t("staysLogs")}</li>
         </Listing>
       </div>
+      {signInAgain > 0 && (
+        <p data-account-more className="m-0 max-w-prose text-sm">
+          {t("moreRooms", { count: signInAgain })}
+        </p>
+      )}
       {shared.length > 0 && (
         <div className="flex flex-col gap-3">
           <h3 className="m-0 font-semibold">{t("sharedTitle")}</h3>
@@ -335,6 +345,7 @@ function DeleteSection({
               <SharedRow
                 key={room.id}
                 room={room}
+                retentionDays={retentionDays}
                 value={picked[room.id] ?? ""}
                 pick={(value) => pick(room.id, value)}
               />
@@ -364,10 +375,12 @@ function Listing({ title, children }: { title: string; children: ReactNode }) {
 
 function SharedRow({
   room,
+  retentionDays,
   value,
   pick,
 }: {
   room: SharedRoom;
+  retentionDays: number;
   value: string;
   pick: (value: string) => void;
 }) {
@@ -375,8 +388,19 @@ function SharedRow({
   const shell = useT();
   const format = useFormat();
   const id = useId();
+  const lineId = useId();
   const name = room.name ?? t("unnamed");
   const [first, ...rest] = room.seats;
+  const chosen = room.seats.find((seat) => seat.id === value);
+  const outcome = t(DEFAULT_TAKER[room.why], { name: first?.name ?? "" });
+  const line =
+    value === DELETE_ROOM
+      ? t("deleteChosen")
+      : chosen
+        ? t("takerChosen", { name: chosen.name })
+        : first
+          ? outcome
+          : `${outcome} ${t("goesAfter", { count: retentionDays })}`;
   return (
     <li
       data-account-room
@@ -397,10 +421,11 @@ function SharedRow({
         <select
           id={id}
           value={value}
+          aria-describedby={lineId}
           onChange={(event) => pick(event.target.value)}
           className="h-11 w-full min-w-0 rounded-md border border-input bg-background px-2 text-base focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-hidden md:text-sm"
         >
-          <option value="">{t(DEFAULT_TAKER[room.why], { name: first?.name ?? "" })}</option>
+          <option value="">{first?.name ?? t("takerNobody")}</option>
           {rest.map((seat) => (
             <option key={seat.id} value={seat.id}>
               {seat.name}
@@ -408,7 +433,9 @@ function SharedRow({
           ))}
           <option value={DELETE_ROOM}>{t("takerDelete")}</option>
         </select>
-        {value === DELETE_ROOM && <p className="m-0 text-sm">{t("deleteChosen")}</p>}
+        <p id={lineId} data-account-taker-line className="m-0 text-sm wrap-anywhere">
+          {line}
+        </p>
       </div>
     </li>
   );
@@ -633,6 +660,7 @@ const ENDINGS = {
 function Ended({ ending }: { ending: Ending }) {
   const t = useAccountT();
   const [title, body] = ENDINGS[ending];
+  const [providers] = useState(signInProviders);
   usePageTitle(t(title));
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -652,7 +680,7 @@ function Ended({ ending }: { ending: Ending }) {
       </h1>
       <p className="m-0 max-w-prose">{t(body)}</p>
       {ending === "done" && <p className="m-0 max-w-prose text-ink-2">{t("doneRemains")}</p>}
-      {ending === "signedOut" && <SignInRow className="max-w-xl" />}
+      {ending === "signedOut" && <SignInRow className="max-w-xl" only={providers} />}
       <a href="/" className={buttonVariants({ variant: "outline", className: "self-start" })}>
         {t("home")}
       </a>

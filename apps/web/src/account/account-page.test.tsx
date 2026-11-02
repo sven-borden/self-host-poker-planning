@@ -33,6 +33,7 @@ const OVERVIEW = {
   alone: 2,
   seats: 1,
   held: 0,
+  signInAgain: 0,
   shared: [SHARED],
 };
 
@@ -137,6 +138,7 @@ describe("who sees the page", () => {
     await renderAccount();
     expect(await screen.findByRole("heading", { name: "Your account" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Google/ })).toBeTruthy();
+    expect(screen.queryByText(/your name follows you/)).toBeNull();
     expect(calls.map(({ key }) => key)).not.toContain("GET /api/account");
   });
 });
@@ -177,9 +179,9 @@ describe("what the page says", () => {
     asAccount();
     await renderAccount();
     const select = await screen.findByLabelText("Who takes Sprint planning");
-    expect((select as HTMLSelectElement).selectedOptions[0]?.textContent).toBe(
-      "Ann (here now, seated longest)",
-    );
+    expect((select as HTMLSelectElement).selectedOptions[0]?.textContent).toBe("Ann");
+    const line = document.getElementById(select.getAttribute("aria-describedby") ?? "");
+    expect(line?.textContent).toBe("Ann is here, and has been seated longest.");
     await confirmDeletion();
     expect(calls.find(({ key }) => key === "POST /api/account/delete")?.body).toEqual({
       confirm: "DELETE",
@@ -195,11 +197,34 @@ describe("what the page says", () => {
     serve({ "GET /api/account": () => json({ ...OVERVIEW, shared: rooms }) });
     asAccount();
     await renderAccount();
-    const shown = async (label: string) =>
-      ((await screen.findByLabelText(label)) as HTMLSelectElement).selectedOptions[0]?.textContent;
-    expect(await shown("Who takes Runs")).toBe("Ann (runs the room now)");
-    expect(await shown("Who takes Away")).toBe("Ann (nobody is here, seated longest)");
+    const shown = async (label: string) => {
+      const select = await screen.findByLabelText(label);
+      return document.getElementById(select.getAttribute("aria-describedby") ?? "")?.textContent;
+    };
+    expect(await shown("Who takes Runs")).toBe("Ann runs the room now.");
+    expect(await shown("Who takes Away")).toBe(
+      "Nobody who may take it is here. Ann has been seated longest.",
+    );
     expect(screen.getByText(/whoever runs the room now/)).toBeTruthy();
+  });
+
+  it("holds names alone in the options, and the line under them follows the choice", async () => {
+    serve({ "GET /api/account": () => json(OVERVIEW) });
+    asAccount();
+    await renderAccount();
+    const select = (await screen.findByLabelText("Who takes Sprint planning")) as HTMLSelectElement;
+    expect([...select.options].map(({ text }) => text)).toEqual([
+      "Ann",
+      "Ben",
+      "Nobody: delete this room",
+    ]);
+    const line = () => document.getElementById(select.getAttribute("aria-describedby") ?? "");
+    fireEvent.change(select, { target: { value: "ben" } });
+    expect(line()?.textContent).toBe("Ben takes this room and the right to delete it.");
+    fireEvent.change(select, { target: { value: "delete" } });
+    expect(line()?.textContent).toMatch(/This room goes for everyone in it/);
+    fireEvent.change(select, { target: { value: "" } });
+    expect(line()?.textContent).toBe("Ann is here, and has been seated longest.");
   });
 
   it("says so when a room's rule lets nobody seated take it, and still offers the delete", async () => {
@@ -208,18 +233,32 @@ describe("what the page says", () => {
     asAccount();
     await renderAccount();
     const select = (await screen.findByLabelText("Who takes Sprint planning")) as HTMLSelectElement;
-    expect(select.selectedOptions[0]?.textContent).toBe(
-      "Nobody here may take it: it stays with no keeper",
+    expect(select.selectedOptions[0]?.textContent).toBe("Nobody here");
+    expect(
+      document.getElementById(select.getAttribute("aria-describedby") ?? "")?.textContent,
+    ).toBe(
+      "Nobody here may take this room, so it stays with nobody holding it. A room nobody may hold goes after 90 days without activity.",
     );
     expect([...select.options].map(({ value }) => value)).toEqual(["", "delete"]);
   });
 
   it("says in one line what becomes of rooms whose rule refuses the person, and nothing else", async () => {
-    serve({ "GET /api/account": () => json({ ...OVERVIEW, held: 1, shared: [] }) });
+    const answer = { ...OVERVIEW, held: 1, shared: [], retentionDays: 1 };
+    serve({ "GET /api/account": () => json(answer) });
     asAccount();
     await renderAccount();
     expect(await screen.findByText(/Your right to 1 room whose rule/)).toBeTruthy();
+    expect(screen.getByText(/goes after 1 day without activity/)).toBeTruthy();
     expect(screen.queryByText(/Rooms with other people/)).toBeNull();
+  });
+
+  it("says a new sign-in shows more rooms, and calls that no refusal", async () => {
+    const answer = { ...OVERVIEW, recent: false, signInAgain: 2 };
+    serve({ "GET /api/account": () => json(answer) });
+    asAccount();
+    await renderAccount();
+    expect(await screen.findByText(/Sign in again to see 2 more rooms/)).toBeTruthy();
+    expect(screen.queryByText(/whose rule/)).toBeNull();
   });
 
   it("refuses an answer that gives no reason for the default", async () => {
@@ -441,6 +480,7 @@ describe("after the request", () => {
       expect(screen.getByText(/this request deleted nothing/)).toBeTruthy();
       expect(screen.queryByText(/most likely went through/)).toBeNull();
       expect(await screen.findByRole("button", { name: /Google/ })).toBeTruthy();
+      expect(screen.queryByText(/your name follows you/)).toBeNull();
       cleanup();
     }
   });
@@ -514,6 +554,23 @@ describe("the download", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Download my data" }));
     expect(await screen.findByText(/had not reached your account/)).toBeTruthy();
+    click.mockRestore();
+  });
+
+  it("says when the file holds rooms by id alone until a new sign-in", async () => {
+    serve({
+      "GET /api/account": () => json(OVERVIEW),
+      "GET /api/account/export": () => json({ version: 1, signInAgain: 1 }),
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    vi.stubGlobal(
+      "URL",
+      Object.assign(URL, { createObjectURL: () => "blob:x", revokeObjectURL() {} }),
+    );
+    asAccount();
+    await renderAccount();
+    fireEvent.click(await screen.findByRole("button", { name: "Download my data" }));
+    expect(await screen.findByText(/1 room appears by its id alone/)).toBeTruthy();
     click.mockRestore();
   });
 

@@ -106,7 +106,7 @@ export function registerAccountApi(
     const me = await asker(c, "read", ACCOUNT_READ_LIMIT);
     if (me instanceof Response) return me;
     const settled = await links.settle(me.user.id, ACCOUNT_SETTLE_MS);
-    const { alone, seats, held, shared } = await data.overview(me.user.id);
+    const { alone, seats, held, signInAgain, shared } = await data.overview(me.user.id);
     return c.json({
       recent: me.recent,
       retentionDays: config.roomTtlDays,
@@ -118,6 +118,7 @@ export function registerAccountApi(
         lastActiveAt: room.lastActiveAt.toISOString(),
       })),
       ...(!settled && { moving: true }),
+      ...(signInAgain > 0 && { signInAgain }),
     });
   });
 
@@ -127,11 +128,9 @@ export function registerAccountApi(
     const id = accountOf(me.user);
     if (id === undefined) return c.json({ code: "not_allowed" }, 403);
     const settled = await links.settle(id, EXPORT_SETTLE_MS);
-    const [person, rooms, grants, votes, connections] = await Promise.all([
+    const [person, { signInAgain, ...held }, connections] = await Promise.all([
       data.profile(id),
-      data.rooms(id),
-      data.grants(id),
-      data.votes(id),
+      data.file(id),
       tokens.listConnections(id),
     ]);
     if (!person) return c.json({ code: "unauthenticated" }, 401);
@@ -140,10 +139,9 @@ export function registerAccountApi(
       version: ACCOUNT_EXPORT_VERSION,
       exportedAt: new Date().toISOString(),
       ...(!settled && { incomplete: true }),
+      ...(signInAgain > 0 && { signInAgain }),
       ...person,
-      rooms,
-      grants,
-      votes,
+      ...held,
       connections: connections.map(({ connector }) => connector),
     };
     c.header("Content-Type", "application/json; charset=utf-8");

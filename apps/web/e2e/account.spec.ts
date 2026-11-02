@@ -213,6 +213,58 @@ test.describe("with provider keys", () => {
     await context.close();
   });
 
+  for (const language of ["en", "fr", "de"]) {
+    test(`a choice's reason fits a 320 px phone in full, in ${language}`, async ({ browser }) => {
+      const { context, page } = await signedIn(browser);
+      await page.setViewportSize({ width: 320, height: 640 });
+      await page.evaluate((chosen) => localStorage.setItem("pp-language", chosen), language);
+      const seats = [{ id: "a", name: "Wolfeschlegelsteinhausenbergerdo" }];
+      const room = (n: number, why: string, list = seats) => ({
+        id: `00000000-0000-4000-8000-00000000000${n}`,
+        name: `Room ${n}`,
+        lastActiveAt: new Date().toISOString(),
+        seats: list,
+        why,
+      });
+      const shared = [
+        room(1, "runsTheRoom"),
+        room(2, "here"),
+        room(3, "away"),
+        room(4, "nobody", []),
+      ];
+      await page.route("**/api/account", async (route) => {
+        const response = await route.fetch();
+        const body = (await response.json()) as object;
+        await route.fulfill({ response, json: { ...body, shared } });
+      });
+      await page.reload();
+      await expect(page.locator("[data-account-taker-line]")).toHaveCount(4);
+      const sized = await page.evaluate(() => ({
+        page: document.documentElement.scrollWidth,
+        lines: [...document.querySelectorAll("[data-account-taker-line]")].map(
+          (line) => line.scrollWidth <= line.clientWidth,
+        ),
+        options: [...document.querySelectorAll("select")].map((select) => {
+          const pen = document.createElement("canvas").getContext("2d");
+          const style = getComputedStyle(select);
+          if (pen) pen.font = `${style.fontSize} ${style.fontFamily}`;
+          const text = select.options[select.selectedIndex]?.text ?? "";
+          return (pen?.measureText(text).width ?? 0) <= select.clientWidth;
+        }),
+      }));
+      expect(sized).toEqual({
+        page: expect.any(Number),
+        lines: [true, true, true, true],
+        options: [true, true, true, true],
+      });
+      expect(sized.page).toBeLessThanOrEqual(320);
+      for (const select of await page.locator("select").all()) {
+        await expect(select).toHaveAttribute("aria-describedby", /.+/);
+      }
+      await context.close();
+    });
+  }
+
   test("an old session goes through the sign-in and comes back here", async ({ browser }) => {
     const { context, page } = await signedIn(browser);
     await page.route("**/api/account", async (route) => {

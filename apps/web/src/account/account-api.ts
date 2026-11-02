@@ -32,6 +32,8 @@ export interface AccountOverview {
   readonly seats: number;
   /** Rooms this person keeps whose rule now refuses them: only how many. */
   readonly held: number;
+  /** Rooms this person keeps that a new sign-in would show: the rule passes the account. */
+  readonly signInAgain: number;
   readonly shared: readonly SharedRoom[];
   /** How many idle days this server keeps a room no signed-in person keeps. */
   readonly retentionDays: number;
@@ -42,6 +44,12 @@ export interface AccountOverview {
 /** What a person chose for a room: someone seated, or to delete it. */
 export type RoomChoice = { readonly id: string; readonly to: string } | DeleteChoice;
 type DeleteChoice = { readonly id: string; readonly delete: true };
+
+/** What a file left out for now: a number, 0 when nothing. */
+const moreRooms = (body: unknown): number => {
+  const count = field(body, "signInAgain");
+  return typeof count === "number" ? count : 0;
+};
 
 function toRoom(raw: unknown): SharedRoom {
   const id = field(raw, "id");
@@ -90,17 +98,18 @@ export async function fetchAccount(): Promise<AccountOverview> {
     alone,
     seats,
     held,
+    signInAgain: moreRooms(body),
     shared: shared.map(toRoom),
     retentionDays,
     moving: field(body, "moving") === true,
   };
 }
 
-/** Saves the person's data as a file, and resolves whether it holds all of it. */
-export async function downloadAccount(): Promise<boolean> {
+/** Saves the person's data as a file, and says what it does not hold yet. */
+export async function downloadAccount(): Promise<{ complete: boolean; signInAgain: number }> {
   const file = await call("/api/account/export");
   saveFile(JSON.stringify(file, null, 2), "poker-planning-account.json", "application/json");
-  return field(file, "incomplete") !== true;
+  return { complete: field(file, "incomplete") !== true, signInAgain: moreRooms(file) };
 }
 
 /** Starts the deletion, and resolves whether it finished by the end of the server's wait. */

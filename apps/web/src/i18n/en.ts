@@ -12,7 +12,7 @@ const errors = {
     "The app sent something the server did not understand. Reload the page and try again.",
   not_participant: "You are no longer in this room. Reload the page to join again.",
   not_owner: "Only the product owner can do that.",
-  not_keeper: "Only the person this room belongs to can delete it.",
+  not_keeper: "You cannot delete this room: that right is not yours.",
   sign_in_again: "Sign in again first: this takes a recent sign-in.",
   bad_confirmation: "That is not the word asked for. Nothing was deleted.",
   already_joined: "You are already in this room.",
@@ -738,6 +738,10 @@ export const en = {
     claimed: "You are the product owner",
     claimedWhy:
       "The role lets you run this room and rename it. Deleting it stays with the person it belongs to: taking over the role, or being passed it, does not carry that right.",
+    noKeeperWhy_one:
+      "The role lets you run this room and rename it. Nobody can delete it: that right went with the account that held it. It goes after {{count, number}} day without activity.",
+    noKeeperWhy_other:
+      "The role lets you run this room and rename it. Nobody can delete it: that right went with the account that held it. It goes after {{count, number}} days without activity.",
     kept: "Your room, with another product owner",
     keptWhy:
       "Someone else took over as product owner. Get the role back in the room, and you can delete it.",
