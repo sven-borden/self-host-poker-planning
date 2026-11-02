@@ -286,7 +286,18 @@ nothing about Redis is loaded or opened.
   it (counted at most once a day, or once a 24th of a shorter period). A guest's session
   ends after the same number of days without a visit; a guest with no session left and
   no room is deleted too. Rooms owned by a signed-in user stay until deleted, and so does the
-  account, for now: deleting an account comes with #51.
+  account, until its owner deletes it.
+- **Your own data**: a signed-in person can download it as JSON and delete the account at
+  `/account`. The file holds their own profile, rooms and cards, nobody else's, and no room code, as
+  a code opens a room and the file may travel. Deleting takes a sign-in from the last 15 minutes and a
+  typed word. It removes the name, the address, the provider's identifiers, sessions, grants and
+  connectors' tokens, and every seat. A room with nobody else goes with its history; one with other
+  people goes to whoever the person chose, or to the person seated longest, or is deleted only if
+  they chose that; a room that goes to a guest then follows `ROOM_TTL_DAYS`. Cards in past rounds stay,
+  with no name and nothing to tie them to anyone, so the team's results stand. Words typed in a room
+  that lives on stay too: a room's name, a subject, a ticket. The server signs the person out first
+  and finishes by itself if something fails, at the latest at the next purge. Logs hold ids, never a
+  name or an address, and age as your logs do.
 - **The purge** runs inside the server 3 to 5 minutes after each start and then daily;
   with several instances only one runs it. It logs counts only, never a room code, a
   name or a vote. Set `ROOM_TTL_DAYS` (1 to 3650) to keep rooms shorter or longer.
@@ -295,8 +306,11 @@ nothing about Redis is loaded or opened.
   downtime longer than the period, that can be all of them. Before you start the server,
   raise `ROOM_TTL_DAYS`, or set `last_active_at = now()` on the rooms you restored
   (`update room set last_active_at = now()`).
-- **Backups** keep purged rooms until the backups themselves expire: a deleted room
-  stays in every dump taken before its deletion.
+- **Backups** keep purged rooms and deleted accounts until the backups themselves expire: a deleted
+  room or account stays in every dump taken before its deletion. **A restore brings them back**, and
+  nothing here can delete them again for you: the server keeps no list of who was deleted, as that
+  list would be personal data of its own. If you restore a backup older than a deletion, tell the
+  people concerned, who can delete again, and keep your backups no longer than you need them.
 - **Nothing is tracked by default.** Error reports (Sentry) and page views (Umami) are
   off unless you set their variables; until then the page loads nothing from anywhere
   else and the server sends nothing out. The policy allows their origins only once they

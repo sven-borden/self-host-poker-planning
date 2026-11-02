@@ -164,6 +164,7 @@ class Browser {
     const response = await this.go("/api/auth/get-session");
     const session = (await response.json()) as { user: { id: string } } | null;
     this.id = session?.user.id ?? "";
+    if (this.id !== "") secrets.push(this.id);
     return this.id;
   }
 

@@ -309,6 +309,14 @@ keeps (#35).
   it, and whatever acts on "this person's room" as a property, not a role, reads it too, as the
   purge does. **The list's filter stays inside its materialized CTE:** a `limit` beside it makes
   the planner walk `room_last_active_at_idx`.
+- Deleting an account (#51, ADR-029): `account.ts` holds the routes, `account-deletion.ts` the
+  order, `db/account-deletions.ts` its SQL, `db/account-data.ts` what the page and the file read,
+  and `removeAccount` in `packages/domain` the rules for one room. **A new place that stores a user
+  id or a name must go with the person:** `account.db.test.ts` seeds someone into every table and
+  searches every row from the catalog, so a new table fails it until it is added there. A new
+  foreign key to `user` must cascade. **Each step must change nothing the second time:** a deletion
+  can stop anywhere and run again. Never say a person is deleted unless `finish` said so, and never
+  log an id, a name or an address here.
 - A guest who signs in (#48, ADR-025): `guest-link.ts` holds the order, `db/guest-links.ts` the
   SQL, `moveGuest` in `packages/domain` the rules for one room, and `moveGuest` and `dropGuest` in
   `room-sync.ts` the run. **A new place that stores a user id must move with them:** add it to

@@ -1176,6 +1176,43 @@ account has one.
   line is a status region there from the page's start, as a line added with its words in it is not
   announced, and the title stays through the new load.
 
+## Your account
+
+A page a person comes to once or twice, and must be able to trust: it says what will happen before
+it happens, and afterwards only what the server said (#51, ADR-029). Only an account has one.
+
+- **Where.** "Account" stands beside "My rooms" and "Sign out" in the signed-in row. The page is
+  `/account`, a lazy route whose words load with it. An install without keys has no such page, and
+  someone signed out reads what it is for, with the sign-in buttons.
+- **The page.** The title, the provider and the address, then two sections parted by `--line`, each
+  under a heading: "Your data" and "Delete my account". No card and no fill.
+- **Your data.** What the file holds, in two plain lines, the second saying that rooms appear by
+  name and id, never by code, as a code opens a room and the file may travel. An outline "Download my
+  data". A line says it is on its way, and says so differently if a guest's rooms have yet to arrive.
+- **Delete my account.** A plain first line: it cannot be undone. Then "What goes" and "What stays",
+  side by side from `sm`, in `--ink-2`, with the numbers of this person's rooms. "What stays" is the
+  honest list: cards with no name, words typed in a room that lives on, what other people hold,
+  backups until they expire, and logs that hold ids.
+- **Rooms with other people.** Under what stays, each room this person keeps with others in it, as a
+  row parted by `--line`: its name, how long ago it was active, and a native `<select>` labelled "Who
+  takes <room>": the longest seated first, marked so, then the others, then "Nobody: delete this
+  room". Choosing that adds a plain line saying what it does. The intro says the default, and what a
+  guest taking a room means for how long it stays.
+- **The button.** With a recent sign-in, one `--bad` "Delete my account". With an older one, no
+  disabled button: the reason in a line, and "Sign in again", which comes back here.
+- **The dialog.** A title that asks, one line, the word to type in the page's language (`DELETE`,
+  `SUPPRIMER`, `LÖSCHEN`) as the field's label, "Cancel", and a `--bad` button that does nothing until
+  the word is there. It says "Deleting your account…" while it waits. What the server refuses is said
+  under the field, and the dialog stays. A session grown old closes it and shows the way to sign in.
+- **The end.** The whole page gives way to one of three, with the focus on its heading: "Your
+  account is deleted", only when the server said so, with what remains; "Your account is being
+  deleted", signed out everywhere, finishing by itself within a day, nothing more to do; and "You are
+  signed out", when the answer was lost, saying what that most likely means and how to tell. Never
+  "deleted" when it is not. Behind it the browser turns into a new guest.
+- **Elsewhere.** Another tab in a room reloads as a new guest. The people in a room see someone
+  leave, or a hand-over, or the page of a missing room: nothing says why. A sign-in to an account on
+  its way out comes back to the landing page with a line that says so.
+
 ## Landing, missing rooms and errors
 
 - **Landing page** (`/`): one screen that says what the tool is and how a round goes:

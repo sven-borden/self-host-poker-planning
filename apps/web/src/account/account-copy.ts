@@ -44,7 +44,7 @@ const en = {
   staysCopies:
     "What other people already hold: an export, a screenshot, what they remember. Those are theirs.",
   staysBackups:
-    "Backups of this server keep your data until they expire. Whoever runs this server is told to delete you again after a restore.",
+    "Backups of this server keep your data until they expire. If one is ever restored, your account comes back with it, and you can delete it again.",
   staysLogs: "Server logs hold ids, never your name or address, and age as logs do.",
 
   sharedTitle: "Rooms with other people in them",
@@ -135,7 +135,7 @@ const fr: Copy & Partial<Record<`${"goesAlone" | "goesSeats" | "sharedGuest"}_ma
   staysCopies:
     "Ce que d’autres détiennent déjà : un export, une capture d’écran, leurs souvenirs. Cela leur appartient.",
   staysBackups:
-    "Les sauvegardes de ce serveur conservent vos données jusqu’à leur expiration. La personne qui gère ce serveur doit vous supprimer à nouveau après une restauration.",
+    "Les sauvegardes de ce serveur conservent vos données jusqu’à leur expiration. Si l’une d’elles est restaurée, votre compte revient avec elle, et vous pouvez le supprimer à nouveau.",
   staysLogs:
     "Les journaux du serveur contiennent des identifiants, jamais votre nom ni votre adresse, et vieillissent comme tout journal.",
 
@@ -225,7 +225,7 @@ const de: Copy = {
   staysCopies:
     "Was andere bereits haben: einen Export, einen Screenshot, ihre Erinnerung. Das gehört ihnen.",
   staysBackups:
-    "Sicherungen dieses Servers behalten Ihre Daten, bis sie ablaufen. Wer diesen Server betreibt, muss Sie nach einer Wiederherstellung erneut löschen.",
+    "Sicherungen dieses Servers behalten Ihre Daten, bis sie ablaufen. Wird eine davon wiederhergestellt, kommt Ihr Konto mit ihr zurück, und Sie können es erneut löschen.",
   staysLogs:
     "Server-Protokolle enthalten IDs, nie Ihren Namen oder Ihre Adresse, und altern wie alle Protokolle.",
 

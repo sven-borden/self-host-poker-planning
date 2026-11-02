@@ -166,7 +166,7 @@ milestone per wave. **Alternatives.** A single package.
 **Decision.** Rooms, their history and orphan guest users are deleted after 90 days
 without activity (`ROOM_TTL_DAYS`). Rooms owned by signed-in users stay until deleted
 (W5; since ADR-027, "owned" means the room's keeper, so a claim of the PO role moves nothing
-here). No analytics or tracking by default; Sentry and Umami are opt-in.
+here), and so does an account, until its owner deletes it (ADR-029). No analytics or tracking by default; Sentry and Umami are opt-in.
 
 ## ADR-015: Paid branding decided in W7
 
@@ -1375,7 +1375,7 @@ over a socket.
 - *`room_not_found` for everyone but the PO:* false for a person with a seat whose page is out of
   date, who would read "no longer there" about a room they are in.
 
-**For #51.** `deleteOwned` and `roomDeleted` are what deleting an owned room needs. An account that goes
+**For #51** (answered by ADR-029). `deleteOwned` and `roomDeleted` are what deleting an owned room needs. An account that goes
 leaves its seats in rooms it does not own: the list reads `live`, and `round.votes` can name it too.
 It also has rooms it keeps without being their PO, and rooms it is the PO of without keeping them, and
 `deleteOwned` refuses both. Find the first through `room_keeper_apart_idx` (`roomsOf` spells the
@@ -1387,3 +1387,255 @@ room is someone else's: run the account's seat out with a `leave` and hand the r
 free for a claim. A guest's sign-in never needs this: `moveGuest` moves both.
 
 **Not tested.** Real Google and Microsoft sign-ins, as for #47.
+
+## ADR-029: An account is exported and deleted by its owner, in an order that can always finish (2026-11-02, #51)
+
+**Decision.** A signed-in person has a page at `/account`, linked beside "My rooms": a JSON file of
+what the server holds about them, and a way to delete the account. A guest has neither: the server
+refuses a guest on every route. On an install without provider keys nothing of this shows, and
+`/account` is the page of an unknown address. This is the one step in the product that cannot be
+undone, so most of what follows is about who may ask and what happens when it fails halfway.
+
+**Who is asking.** A session started in the last 15 minutes (`RECENT_SIGN_IN_MS`, read from
+`session.created_at`, which no visit moves), or the page sends the person through the sign-in with
+`/account` as the return path (`isReturnPath`). So a browser left open, or a cookie copied a while
+ago, deletes nothing. And a typed word, in a dialog, in the page's language: `DELETE`, `SUPPRIMER`
+or `LÖSCHEN` (`ACCOUNT_DELETE_WORDS` in `@pp/protocol`). A word and not the person's name or address:
+a Microsoft account may have no address, a name may be empty, and typing one's own name is no more
+deliberate. The server does not know which language the page showed, so it takes any of the three,
+in any case, NFC-normalised. The server checks the origin, the JSON, the 16 KB body, a limit of 5 in
+10 minutes per person, the session's age and the word, in that order; the page's dialog is not the
+guard. The refusals are `sign_in_again` and `bad_confirmation`, HTTP only. A sign-in that picks
+another account at the provider lands here as that account, whose name the page shows: `prompt:
+select_account` stays, as a person who signed out must get a choice.
+
+**The file.** `GET /api/account/export` answers a JSON attachment, `no-store`, 5 in 10 minutes per
+person, after a guest's pending move (`settle`, up to 5 s; past that the file says `incomplete:
+true`, and the page says so). Its shape is versioned (`ACCOUNT_EXPORT_VERSION`, `format:
+"poker-planning-account"`): `profile` (name, address, avatar, when the account began), `signIns` (the
+provider, since when, any `claimed_email`), `rooms`, `votes` and `connections`. In it: rooms the
+person keeps or sits in, and in each, their own seat; their own cards in named rounds, with the room,
+round number, subject, the name they went by and the time. **Never in it:** a room's code; a token;
+`account_id`, `tenant_id` or an `oid`, which they never saw; the stored Microsoft placeholder;
+another person's name or card; a round's stats or final, which are the team's. An anonymous round
+maps no person to a card, so it adds nothing. Connections go by name alone (`listConnections`).
+
+**No room codes.** A code is a bearer capability, and this file may be mailed around, kept in a
+downloads folder or attached to a ticket. Rooms go by name and id. An id opens nothing, and the
+page says so in words, beside the button.
+
+**What happens to each room.** A room's right to delete sits with its keeper (ADR-027), and the PO
+role can be elsewhere.
+
+| The person is | Other people seated | What happens |
+|---|---|---|
+| The keeper | none | Deleted, with its history, even if someone else holds the role: nobody can take it |
+| The keeper | some, nothing chosen | PO and keeper go to the person seated longest (`joinedAt`, then id) |
+| The keeper | some, one chosen | PO and keeper go to that person; if they left, as if nothing was chosen |
+| The keeper | some, "delete" chosen | Deleted, with `roomDeleted`: the person chose, on a page that said what it does |
+| PO by claim, someone else keeps | any | The seat goes, the role goes back to the keeper, the right stays |
+| Seated, someone else keeps | any | The seat goes |
+| A departed voter with a kept card | any | The card stays under a new id, with no name |
+
+**A room is never deleted under other people without the person choosing that,** and a chosen
+delete is the only path that does: `deleteAlone` is one statement that also requires no other seat,
+judged on the row's latest version, so someone who joins first keeps the room for the hand-over. A
+seat counts whether its person is here or away: an away seat is someone the room still expects.
+Someone who left the room is no seat, so a room everyone left goes, with their history.
+
+*The default takes the role too.* A keeper with a claimer in the role loses both to the longest
+seated, who may not be the claimer. The brief's rule, and it leaves the room with one person who
+holds both rather than a split that nobody chose.
+
+*A claimed role goes back to the keeper.* `apply` has no rule that hands a free role to anyone: a PO
+who left stays `ownerId`, and anyone can claim. That cannot stand here, as the id must go. So `ownerId`
+becomes the keeper. With the keeper seated, they hold the role again; with no seat, the role is free
+exactly as for a PO who left (`ownerClaimableAt: 0`), and the keeper's right stays. So nobody gains
+a right they did not have.
+
+*What a guest receiving a room means.* The exemption of ADR-014 follows the keeper, and a guest
+holds none. A room handed to a guest stays while it is used, and goes after `ROOM_TTL_DAYS` idle. A
+hand-over counts as activity, so that person gets the whole period, however long the room had
+been exempt and idle before: otherwise the next purge would take a room just handed over. A guest
+who signs in carries the right to the account (`moveGuest`) and the exemption comes with it. A seat
+that merely goes is quiet: it moves no `last_active_at`, as a deletion elsewhere is nothing the room
+did. The page says what a guest taking a room means.
+
+*Who the page names.* The choice lists the people seated, by name. A keeper with no seat, even one
+shut out by a password (ADR-027), reads those names: it is their room, and the choice needs them.
+The answer holds no code.
+
+**Every change to a live room goes through `apply`.** `removeAccount` is a server command, run by
+the room's runner with the compare-and-set, as `moveGuest` is. No socket can send it, the strict wire
+schema having no entry for it. The room's people see the existing paths: `ownerChanged` by
+`transfer` and `left`, or `deleted`. A second run changes nothing.
+
+*A card in a round still voting* goes, as a leaver's does. `settle` then applies the room's rule,
+as for any `leave`: if the person was the last one waited for, the round reveals. No other card
+moves and no other vote is lost. A deadline that has passed resolves first, as before any command,
+exactly once, and then the card is a revealed card.
+
+*A revealed card* stays. It cannot go: in an anonymous round the list that shrinks by one says
+whose card it was (ADR-011), and in a named one it stands in the results on the table. It cannot
+stay under the person's id. So the command carries `ghost`, 128 random bits in a user id's shape,
+made once per room per run, and the card moves under it with no name and no mark that it changed.
+`voted` and the named `votes` list departed voters by id, so the new id puts it nowhere that follows
+the person. A hash of the id would have let anyone who knows the id find the card.
+
+*In an anonymous round nothing links the person to a card, in any frame.*
+`packages/protocol/src/remove-account-secrecy.test.ts` deals the same cards differently among
+everyone but one viewer and finds that viewer's frames byte for byte the same, before and after, with
+the person seated or gone, with a card or without, as PO, keeper or neither, and whoever takes over.
+
+**Named history is anonymised.** `who` and `name` go from every named round, in batches; the entry
+keeps the card, and `stats` and `final` are not touched, so the results stand. An entry with `who`
+null reads "Someone" in the history panel, as an old departed vote does. `changedAfterReveal`
+goes too: it says something a person did, and makes the entry more recognisable.
+
+*A place in the list must not name anyone.* A round's list runs in join order, so an entry left in
+place would be "the third person who sat down". So such entries move behind the names, sorted by
+card, and a second deletion sorts them again, so the order of two deletions does not show either.
+The others keep their order. A hash of the id would stay the same across rounds and link them, so
+there is no id at all.
+
+*A round with one voter* keeps its one card, as its results are that card. It names nobody; but
+someone who sat in that room remembers who voted, and two voters with one still named work the same
+way, by elimination. The server cannot delete what people remember, and hiding the card would change
+a result that belongs to the team. The page says so. The same goes for **exports other people
+already hold**: the history's CSV and Markdown are round-level and never held a name, a person's
+own account file holds their own cards, and a screenshot is theirs.
+
+*A round rewritten later.* A revealed round with a recorded final has a row, and the row is written
+again when the round ends, from `live`, where the card now sits under the new id: `who` is that
+random id, `name` null. It names nobody and appears in that one row. Writing null there would need
+`historyVotes` to tell it from an old departed vote, for nothing.
+
+**What goes, the whole list.** `user` (name, address, avatar); `session`; `account` (with
+`claimed_email`, `tenant_id`, `account_id`), `connector_token`, `room_access`, `guest_link` on either
+side and the marker, by cascade; `verification` rows of a sign-in in progress that name the person; a
+guest still on its way to the account; in `live`: `ownerId`, `keeperId`, the seat, the vote and a kept
+name; `room.owner_user_id` by the commit; `round_history.votes`, each `who` and `name`. The queue holds
+no user id (ADR-024), nor do `round.stayed` and `round.advanceAt`. The password counters count per
+room. Rooms and their history that go take their own rows. A place that stores a user id from now on
+must be added here too: `account.db.test.ts` seeds a person into every table, searches every row of
+every table in the catalog, JSON included, for the id, the name, both addresses and the `oid` as
+text, and fails on a table it does not know.
+
+**What stays, and is no longer the person's.** Cards with no name. Words typed in a room that lives
+on: a room's name, a round's subject, a queue's tickets, as the server cannot know which speak of
+someone. A guest's id left in an anonymous round by an earlier merge (ADR-025), which names nobody.
+A room's `ownerId` naming a keeper who has gone, as ADR-027 already allows.
+
+**What stays for a while.** In memory, all of it ending by itself: the rate limits by person
+(`account|…`, `my-rooms|…`, `rename|…`, `avatar|…`, `password|…`), at the end of their windows;
+socket counts and message buckets, when the sockets close; acknowledged command ids, within their
+time to live, in Redis too with several instances; presence timers, which name someone no seat holds
+and do nothing. Logs hold ids, never a name or an address, and nothing in this path logs a person's
+id; they age as logs do. **Backups** keep everything until they expire, and a restore brings the
+account back. Nothing remembers who was deleted, since that list would be personal data of its own.
+The README's Privacy section warns of it, and the page says so in plain words.
+
+**A durable marker first, and everything can run again.** A transaction across rooms would hold a
+lock per room around the runner, so each room changes alone, as for a guest (ADR-025). In order:
+1. `begin`: `account_deletion` is written, with the person's choices, and the person's sessions end,
+   in one transaction. This is the only step that can leave the person as they were.
+2. The person's sockets hear `accountDeleted` and close, on every instance. A page reloads as a new
+   guest.
+3. Every room that names the person is dealt with, the lookup running again until none is left, for
+   a command that was in flight.
+4. Every named round loses the person, 200 rows a statement.
+5. `finish`, in one transaction: lock the `user` row, in a statement of its own; look again; delete
+   `verification` rows that name the person, the guests on their way, and the `user` row, last.
+   If a room or a round names the person after all, it changes nothing and the run goes round again.
+
+Everything past `begin` runs again until it is done: at once, for up to 5 s while the page waits; at
+every sign-in to the account and every `enter`; before every purge, so a few minutes after a start
+and then daily. Each step changes nothing once done, so two instances or overlapping runs are
+harmless. In a run, a room that fails does not stop the others.
+
+**What fails how.**
+- *The marker cannot be written:* 500 `internal`, and nothing changed. The page asks the session who
+  this browser is now, and says "Nothing was deleted" only if it is still the account.
+- *A room, or a later step, fails or takes over 5 s:* `{ finished: false }`. The page says the
+  account is being deleted, that the person is signed out everywhere, and that it finishes by itself
+  within a day. It never says "deleted" unless the server said `finished: true`.
+- *The answer is lost:* the page finds no account in the session and says what it can: signed out,
+  most likely deleted, and how to tell. With no answer to that read either, it says the request may
+  not have arrived.
+- *The process dies after the marker:* the next purge, 3 to 5 minutes after a start, finishes it.
+- *A second request:* its session is gone, so it hears 401, and changes nothing. Two at once both
+  pass the session check: `on conflict do nothing` keeps the first one's choices, and the second joins
+  the run on that instance, or runs beside it on another.
+- *A sign-in during it:* `session.create` asks for the marker and refuses: `account_going`, a message
+  on `/`, no session, and the deletion runs again. Better Auth's `user.create` never comes into it,
+  as the account row still answers. Once it is done, the same provider is a new person with nothing.
+- *A sign-in that read no marker just before `begin`:* its session outlives the delete. Every run ends
+  sessions again, and the cascade ends this one at the latest. That session can act for those seconds,
+  and a seat it took is found by the next lookup, or stops `finish`.
+- *A guest's move still pending:* the page's `settle` and the delete's give it a second. Past that,
+  `begin` stops it, as `linkOf` reads nothing for an account on its way out, and the guest is the same
+  person: its rooms are dealt with under the default, its rounds lose it, and its row goes in `finish`.
+- *A guest's move in flight on another instance as the deletion ends:* a move commits only if the
+  account's row exists (`AccessWrite.requireAccount`, read `for share` in the commit), and `finish`
+  takes that row `for update` before it looks. So a move lands wholly before, and `finish` finds the
+  seat and goes round again, or wholly after, and writes nothing.
+- *A room deleted meanwhile,* by another person or the purge: the runner finds none, and it counts
+  as done.
+- *A retention purge beside it:* a room the person keeps stays exempt until it is dealt with, as
+  they are a signed-in user until `finish`. A guest of theirs stays, held by the link.
+- *A room whose state the domain cannot read:* fails every run, and the marker stands, with the person
+  signed out, unable to sign in, and everything else done. Each run logs the room's id, and from a day
+  on at `error`. **Nothing ends such a deletion by itself,** as for a stuck link (ADR-025): giving up
+  would mean leaving a person's seat under an id that is gone. It takes someone who can look: repair
+  the room's `live` or delete that row, and the next sweep finishes.
+
+**After it.** The browser becomes a fresh guest on a page that says it is done: `get-session` finds
+no session and clears the cookie, and the page's bootstrap makes a new guest. A later sign-in with the
+same provider is a new person with nothing: no account row answers it, and the address is free.
+
+**Where it goes.** A lazy `/account`, and its words stay out of the catalogs: `en.ts` loads with
+every page, and the page's copy alone is more than the link costs. So `account/account-copy.ts` holds
+all three languages in the route's chunk, `translateIn` reads them by the same rules, and `i18n.test.ts`
+holds them to everything it holds the catalogs to. One word stays eager: the link. The room route
+went from 184.9 to 185.0 kB. This is the "lazy catalog" of `docs/STATUS.md`'s chores, for one page.
+
+**Considered and dropped.**
+- *Deleting a room with other people by default:* an account's owner leaving must not take a team's
+  room, and a deletion is the worst moment to find that out.
+- *A grace period before the delete:* a person who asks to be gone is gone. The fresh sign-in and the
+  typed word stand in for it, and a grace period keeps data nobody wants kept, for a recovery the
+  product has no way to do.
+- *An `account_required`-style check by the provider's `max_age`:* a provider's prompt proves nothing
+  more than a new session, and two providers do it differently.
+- *Keeping the `user` row as a tombstone:* it would keep an id and a date for no reader.
+- *A list of deleted ids, to delete them again after a restore:* that list is personal data, in the
+  backup too.
+- *A stable pseudonym per person across rounds:* it links rounds, and anyone who knows one entry
+  knows them all.
+- *Removing the entry, or the card, from a named round:* the stats beside it would no longer add up,
+  and the team's results would change.
+- *Turning a round whose voters all went into `anonymous`:* more code for the same words on screen,
+  and it would say less than the row does about how the round was played.
+- *A `leave` run as the person, then a hand-over:* two commits and a state between them, with the
+  id still in `ownerId`.
+- *Clearing the cookie on the answer:* `get-session` does it on the next read, and a person whose
+  answer was lost is covered the same way.
+- *A retry timer in the process:* the purge's daily run and a sign-in cover it, and the page promises
+  a day.
+
+**Accepted, and not built.**
+- *A copied cookie used within 15 minutes of the sign-in* can delete an account, with the typed word,
+  which is on the page. That is what "recent" costs.
+- *A deletion with no provider left:* an install that removes its keys leaves accounts that cannot
+  sign in again, so a session older than 15 minutes cannot delete. The page stays, with no button to
+  press: an operator removed the way in.
+- *A very large list of choices:* 150 in a request, and the 16 KB body before that. Only rooms the
+  person changed are sent.
+
+**Amends.** ADR-014: accounts no longer stay for ever. ADR-025's list of what holds a user id gains
+`account_deletion`, an account's alone, which no guest move touches. ADR-027's question for #51 is
+answered above: a room the person keeps goes to someone or goes, and a role by claim goes back.
+
+**Not tested.** Real Google and Microsoft sign-ins, as for #47: the re-authentication ran on the
+stand-in. A restore from a real backup. A deletion across a real rolling deploy: the races are forced
+between statements, or on a second run.

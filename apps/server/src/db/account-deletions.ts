@@ -180,11 +180,10 @@ export function createAccountDeletionStore(db: Db): AccountDeletionStore {
             )})
             for update`);
           for (const who of people) {
-            const named = await tx.execute(
-              sql`select 1 from room where ${namesPerson(who)} limit 1`,
-            );
+            // No `limit`: it would pull the plan off the indexes, on reads that usually find nothing.
+            const named = await tx.execute(sql`select id from room where ${namesPerson(who)}`);
             const rounds = await tx.execute(sql`
-              select 1 from round_history h where h.votes @> ${namedRoundsOf(who)}::jsonb limit 1`);
+              select h.id from round_history h where h.votes @> ${namedRoundsOf(who)}::jsonb`);
             if (named.rows.length > 0 || rounds.rows.length > 0) return false;
           }
           // Few rows, gone within ten minutes or at the next purge: a scan reads a small table.
