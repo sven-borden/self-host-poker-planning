@@ -967,13 +967,19 @@ export const fr: Catalog<"many"> = {
     disconnectNote:
       "Cela supprime votre jeton ici. {{system}} garde sa propre trace de l’autorisation :",
     grantsLink: "retirez-la dans votre compte Atlassian",
+    loadFailed:
+      "La partie {{system}} de cette page n’a pas pu se charger. La salle fonctionne toujours : rechargez pour la retrouver.",
     result: {
       connected: "{{system}} est connecté.",
       cancelled: "Rien n’a été connecté : vous êtes revenu en arrière sur {{system}}.",
+      expired:
+        "Cela a pris trop de temps, {{system}} n’a pas été connecté. Connectez-le de nouveau.",
       failed: "{{system}} n’a pas pu être connecté. Réessayez.",
+      lost: "{{system}} n’a pas été connecté : ce lien a expiré ou a déjà servi. Retournez dans votre salle et connectez-le depuis sa file.",
     },
     write: {
-      waiting: "{{item}} : {{card}} a été enregistré avant l’ouverture de cette page.",
+      waiting:
+        "{{item}} : {{card}} n’a pas été enregistré sur cette page, et quelqu’un d’autre l’a peut-être fait. Appuyer l’écrit dans {{system}} avec votre compte.",
       writing: "Écriture de {{card}} sur {{item}} dans {{system}}…",
       written: "{{item}} : {{card}} est dans {{system}}.",
       failed: "{{item}} : {{card}} n’est pas arrivé dans {{system}}.",
@@ -986,6 +992,8 @@ export const fr: Catalog<"many"> = {
       connector_sign_in: "Connectez-vous avec un compte pour utiliser {{system}}.",
       connector_not_connected: "Connectez d’abord {{system}} dans la file.",
       connector_reconnect: "{{system}} n’accepte plus cette connexion. Connectez-le de nouveau.",
+      connector_setup:
+        "{{system}} a refusé alors que la connexion venait d’être renouvelée : la refaire ne changera rien. La personne qui gère ce serveur doit vérifier les autorisations de son application {{system}}.",
       connector_no_site: "Choisissez d’abord un site {{system}} dans la file.",
       connector_no_field: "Choisissez d’abord le champ de l’estimation dans la file.",
       connector_bad_site: "Ce site n’est plus dans votre liste {{system}}.",

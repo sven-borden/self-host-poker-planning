@@ -17,6 +17,7 @@ import { RoomApiError } from "../rooms/api.ts";
 import { isSignedIn, useIdentityStore } from "../stores/identity-store.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { connectorMessage, connectorResult, SYSTEM_NAMES } from "./connector.ts";
+import { ConnectorAlert } from "./connector-alert.tsx";
 import {
   chooseField,
   chooseSite,
@@ -38,6 +39,14 @@ const FIELD =
 const LABEL = "text-sm font-medium";
 const HINT = "m-0 text-sm text-ink-2";
 
+/** What the section says of a connection that came back. */
+const RESULT_MESSAGES = {
+  connected: "connector.result.connected",
+  cancelled: "connector.result.cancelled",
+  expired: "connector.result.expired",
+  failed: "connector.result.failed",
+} as const;
+
 /** A refusal: its code, and how long the tracker asked to wait. */
 interface Problem {
   code: string;
@@ -50,6 +59,23 @@ function problemOf(error: unknown): Problem {
     code: error.code,
     ...(error.retryAfter === undefined ? {} : { retryAfter: error.retryAfter }),
   };
+}
+
+/**
+ * After a change that took away the control that opened it: the focus goes to its `selector`,
+ * once that is drawn, and not to the sheet's root, where the sheet's focus trap leaves it. A focus
+ * the person already moved somewhere stays there.
+ */
+function returnFocus(section: HTMLElement | null, selector: string, frames = 30) {
+  requestAnimationFrame(() => {
+    const active = document.activeElement;
+    const lost =
+      active === null || active === document.body || active.getAttribute("role") === "dialog";
+    if (!lost && !section?.contains(active)) return;
+    const target = section?.querySelector<HTMLElement>(selector);
+    if (target) target.focus();
+    else if (frames > 0) returnFocus(section, selector, frames - 1);
+  });
 }
 
 /** What the sheet says after an import: every count that is not zero, in one line. */
@@ -80,6 +106,7 @@ export function ConnectorSection({ name = "jira" }: { name?: ConnectorName }) {
   const [problem, setProblem] = useState<Problem | null>(null);
   const [busy, setBusy] = useState(false);
   const [result] = useState(connectorResult);
+  const section = useRef<HTMLElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -93,16 +120,25 @@ export function ConnectorSection({ name = "jira" }: { name?: ConnectorName }) {
     if (signedIn) void load();
   }, [load, signedIn]);
 
-  /** A change at the server, then a fresh look at the connection. */
-  async function change(act: () => Promise<void>) {
+  /** Every refusal comes here. A grant found dead took the row: back to "Connect", wherever. */
+  const report = useCallback(
+    (found: Problem | null) => {
+      setProblem(found);
+      if (found?.code === "connector_reconnect") void load();
+    },
+    [load],
+  );
+
+  /** A change at the server, then a fresh look at the connection. True when it went through. */
+  async function change(act: () => Promise<void>): Promise<boolean> {
     setProblem(null);
     try {
       await act();
       await load();
+      return true;
     } catch (error) {
-      setProblem(problemOf(error));
-      // A grant found dead takes the row with it: the section goes back to "Connect".
-      if (error instanceof RoomApiError && error.code === "connector_reconnect") await load();
+      report(problemOf(error));
+      return false;
     }
   }
 
@@ -119,21 +155,21 @@ export function ConnectorSection({ name = "jira" }: { name?: ConnectorName }) {
   }
 
   return (
-    <section data-connector={name} className="flex flex-col gap-3 border-b border-line px-4 py-3">
+    <section
+      ref={section}
+      data-connector={name}
+      className="flex flex-col gap-3 border-b border-line px-4 py-3"
+    >
       <h3 className="m-0 text-base font-semibold">{system}</h3>
       {result === null ? null : (
         <p role="status" data-connector-result={result} className="m-0 text-sm">
-          {result === "connected"
-            ? t("connector.result.connected", { system })
-            : result === "cancelled"
-              ? t("connector.result.cancelled", { system })
-              : t("connector.result.failed", { system })}
+          {t(RESULT_MESSAGES[result], { system })}
         </p>
       )}
       {problem === null ? null : (
-        <p role="alert" data-connector-problem={problem.code} className="m-0 text-sm">
+        <ConnectorAlert data-connector-problem={problem.code}>
           {connectorMessage(t, problem.code, name, problem.retryAfter)}
-        </p>
+        </ConnectorAlert>
       )}
       {!signedIn ? (
         <p data-connector-sign-in className={HINT}>
@@ -158,8 +194,8 @@ export function ConnectorSection({ name = "jira" }: { name?: ConnectorName }) {
           code={code}
           connection={connection}
           change={change}
-          onProblem={setProblem}
-          onLost={load}
+          onProblem={report}
+          returnTo={(selector) => returnFocus(section.current, selector)}
         />
       )}
     </section>
@@ -170,12 +206,12 @@ interface ConnectedProps {
   name: ConnectorName;
   code: string | undefined;
   connection: ConnectionView;
-  change: (act: () => Promise<void>) => Promise<void>;
+  change: (act: () => Promise<void>) => Promise<boolean>;
   onProblem: (problem: Problem | null) => void;
-  onLost: () => Promise<void>;
+  returnTo: (selector: string) => void;
 }
 
-function Connected({ name, code, connection, change, onProblem, onLost }: ConnectedProps) {
+function Connected({ name, code, connection, change, onProblem, returnTo }: ConnectedProps) {
   const t = useT();
   const system = SYSTEM_NAMES[name];
   const [changingSite, setChangingSite] = useState(false);
@@ -186,12 +222,13 @@ function Connected({ name, code, connection, change, onProblem, onLost }: Connec
         <SitePicker
           name={name}
           current={site?.id}
-          onPick={(id) =>
-            change(async () => {
+          onPick={async (id) => {
+            const saved = await change(async () => {
               await chooseSite(name, id);
               setChangingSite(false);
-            })
-          }
+            });
+            if (saved) returnTo("[data-connector-site-change]");
+          }}
           onProblem={onProblem}
         />
       ) : (
@@ -199,7 +236,7 @@ function Connected({ name, code, connection, change, onProblem, onLost }: Connec
           <p data-connector-site-name className="m-0 min-w-0 text-sm break-words">
             {t("connector.connectedTo", { site: site.name })}
           </p>
-          <Button variant="ghost" onClick={() => setChangingSite(true)}>
+          <Button variant="ghost" data-connector-site-change onClick={() => setChangingSite(true)}>
             {t("connector.siteChange")}
           </Button>
         </div>
@@ -211,18 +248,19 @@ function Connected({ name, code, connection, change, onProblem, onLost }: Connec
             name={name}
             current={connection.field}
             onPick={(id) => change(() => chooseField(name, id))}
+            onSaved={() => returnTo("[data-connector-field-change]")}
             onProblem={onProblem}
           />
-          {code === undefined ? null : (
-            <ImportForm name={name} code={code} onProblem={onProblem} onLost={onLost} />
-          )}
+          {code === undefined ? null : <ImportForm name={name} code={code} onProblem={onProblem} />}
         </>
       )}
       <div className="flex flex-col items-start gap-1">
         <Button
           variant="ghost"
           data-connector-disconnect
-          onClick={() => void change(() => disconnect(name))}
+          onClick={async () => {
+            if (await change(() => disconnect(name))) returnTo("[data-connector-connect]");
+          }}
         >
           {t("connector.disconnect")}
         </Button>
@@ -317,11 +355,13 @@ function FieldPicker({
   name,
   current,
   onPick,
+  onSaved,
   onProblem,
 }: {
   name: ConnectorName;
   current: ConnectorFieldView | undefined;
-  onPick: (id: string) => Promise<void>;
+  onPick: (id: string) => Promise<boolean>;
+  onSaved: () => void;
   onProblem: (problem: Problem) => void;
 }) {
   const t = useT();
@@ -355,7 +395,7 @@ function FieldPicker({
         <p data-connector-field-name className="m-0 min-w-0 text-sm break-words">
           {t("connector.fieldIs", { field: current?.name ?? "" })}
         </p>
-        <Button variant="ghost" onClick={() => setOpen(true)}>
+        <Button variant="ghost" data-connector-field-change onClick={() => setOpen(true)}>
           {t("connector.fieldChange")}
         </Button>
       </div>
@@ -372,7 +412,11 @@ function FieldPicker({
         event.preventDefault();
         event.stopPropagation();
         if (picked === "") return;
-        void onPick(picked).then(() => setOpen(false));
+        void onPick(picked).then((saved) => {
+          if (!saved) return;
+          setOpen(false);
+          onSaved();
+        });
       }}
     >
       <label htmlFor={ids.field} className={LABEL}>
@@ -408,12 +452,10 @@ function ImportForm({
   name,
   code,
   onProblem,
-  onLost,
 }: {
   name: ConnectorName;
   code: string;
   onProblem: (problem: Problem | null) => void;
-  onLost: () => Promise<void>;
 }) {
   const t = useT();
   const ids = { jql: useId(), hint: useId(), mode: useId() };
@@ -442,7 +484,6 @@ function ImportForm({
       setReport(importReport(t, await importItems(name, code, query)));
     } catch (error) {
       onProblem(problemOf(error));
-      if (error instanceof RoomApiError && error.code === "connector_reconnect") await onLost();
     } finally {
       pending.current = false;
       setBusy(false);
@@ -512,7 +553,7 @@ function SprintPicker({
 }: {
   name: ConnectorName;
   onPick: (sprint: number | null) => void;
-  onProblem: (problem: Problem) => void;
+  onProblem: (problem: Problem | null) => void;
 }) {
   const t = useT();
   const ids = { board: useId(), sprint: useId(), filter: useId() };
@@ -523,6 +564,8 @@ function SprintPicker({
   const [sprints, setSprints] = useState<readonly ConnectorSprintView[] | null>(null);
   const report = useRef({ onProblem, onPick });
   report.current = { onProblem, onPick };
+  /** A refusal of the last board's sprints, which says nothing about the next board. */
+  const refused = useRef(false);
 
   const find = useCallback(
     async (text: string) => {
@@ -545,6 +588,10 @@ function SprintPicker({
   useEffect(() => {
     report.current.onPick(null);
     setSprints(null);
+    if (refused.current) {
+      refused.current = false;
+      report.current.onProblem(null);
+    }
     if (board === null) return;
     let live = true;
     fetchSprints(name, board)
@@ -554,7 +601,9 @@ function SprintPicker({
         report.current.onPick(list[0]?.id ?? null);
       })
       .catch((error: unknown) => {
-        if (live) report.current.onProblem(problemOf(error));
+        if (!live) return;
+        refused.current = true;
+        report.current.onProblem(problemOf(error));
       });
     return () => {
       live = false;

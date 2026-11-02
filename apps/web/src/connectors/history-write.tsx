@@ -5,6 +5,7 @@ import { useT } from "../i18n/hooks.ts";
 import { RoomApiError } from "../rooms/api.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { connectorMessage, connectorOn, SYSTEM_NAMES } from "./connector.ts";
+import { ConnectorAlert } from "./connector-alert.tsx";
 import { writeBack } from "./connector-api.ts";
 
 /**
@@ -64,9 +65,9 @@ export function HistoryWrite({
         </Button>
       )}
       {problem === null ? null : (
-        <p role="alert" className="m-0 text-sm">
+        <ConnectorAlert>
           {connectorMessage(t, problem.code, name, problem.retryAfter)}
-        </p>
+        </ConnectorAlert>
       )}
     </div>
   );

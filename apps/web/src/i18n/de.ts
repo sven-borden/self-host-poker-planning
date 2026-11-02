@@ -930,13 +930,19 @@ export const de: Catalog = {
     disconnect: "Trennen",
     disconnectNote: "Damit wird Ihr Token hier gelöscht. {{system}} behält seine eigene Freigabe:",
     grantsLink: "Entfernen Sie sie in Ihrem Atlassian-Konto",
+    loadFailed:
+      "Der {{system}}-Teil dieser Seite konnte nicht geladen werden. Der Raum funktioniert weiter: Laden Sie neu, um ihn zurückzuholen.",
     result: {
       connected: "{{system}} ist verbunden.",
       cancelled: "Nichts wurde verbunden: Sie sind bei {{system}} zurückgegangen.",
+      expired:
+        "Das hat zu lange gedauert, {{system}} wurde nicht verbunden. Verbinden Sie es erneut.",
       failed: "{{system}} konnte nicht verbunden werden. Versuchen Sie es erneut.",
+      lost: "{{system}} wurde nicht verbunden: Dieser Link ist abgelaufen oder wurde schon benutzt. Gehen Sie zurück in Ihren Raum und verbinden Sie es dort über die Warteschlange.",
     },
     write: {
-      waiting: "{{item}}: {{card}} wurde festgehalten, bevor diese Seite geöffnet wurde.",
+      waiting:
+        "{{item}}: {{card}} wurde nicht auf dieser Seite festgehalten, vielleicht von jemand anderem. Ein Klick schreibt es mit Ihrem Konto in {{system}}.",
       writing: "{{card}} wird in {{item}} bei {{system}} geschrieben…",
       written: "{{item}}: {{card}} steht in {{system}}.",
       failed: "{{item}}: {{card}} ist nicht bei {{system}} angekommen.",
@@ -948,6 +954,8 @@ export const de: Catalog = {
     errors: {
       connector_sign_in: "Melden Sie sich mit einem Konto an, um {{system}} zu nutzen.",
       connector_not_connected: "Verbinden Sie zuerst {{system}} in der Warteschlange.",
+      connector_setup:
+        "{{system}} hat abgelehnt, obwohl die Verbindung gerade erneuert wurde: Neu verbinden hilft nicht. Wer diesen Server betreibt, sollte die Berechtigungen der {{system}}-App prüfen.",
       connector_reconnect:
         "{{system}} akzeptiert diese Verbindung nicht mehr. Verbinden Sie es erneut.",
       connector_no_site: "Wählen Sie zuerst eine {{system}}-Website in der Warteschlange.",

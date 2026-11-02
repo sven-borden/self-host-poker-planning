@@ -1,5 +1,12 @@
 import { createRoom, type RoomState } from "@pp/domain";
-import { CONNECTOR_META, type ConnectorImportView, type RoundView, toSnapshot } from "@pp/protocol";
+import {
+  CONNECTOR_META,
+  type ConnectorImportView,
+  type RoomView,
+  type RoundView,
+  type Snapshot,
+  toSnapshot,
+} from "@pp/protocol";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeLanguage, fixedT } from "../i18n/i18n.ts";
@@ -14,7 +21,10 @@ import {
   readConnectorResult,
 } from "./connector.ts";
 import { ConnectorSection, importReport } from "./connector-section.tsx";
+import { forgetFinalPress, markFinalPress } from "./final-press.ts";
 import { HistoryWrite } from "./history-write.tsx";
+import { TrackerLines } from "./tracker-lines.tsx";
+import { useConnectorChunk } from "./use-connector-chunk.ts";
 import { WriteBackLines } from "./write-back.tsx";
 
 const api = vi.hoisted(() => ({
@@ -31,6 +41,8 @@ const api = vi.hoisted(() => ({
   writeBack: vi.fn(),
 }));
 vi.mock("./connector-api.ts", () => api);
+const { toast } = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock("sonner", () => ({ toast }));
 
 const CODE = "abcdefghij";
 const PO = "po";
@@ -82,6 +94,17 @@ afterEach(() => {
   window.history.replaceState(null, "", "/");
 });
 
+/** The lines as the page has them: the round comes from the store. */
+function Lines() {
+  const view = useRoomStore((state) => state.snapshot?.room.round ?? null);
+  return <WriteBackLines code={CODE} round={view} />;
+}
+
+function Part({ load }: { load: () => Promise<{ text: string }> }) {
+  const chunk = useConnectorChunk(true, load);
+  return <p>{chunk?.text ?? "the room"}</p>;
+}
+
 describe("connectorOn", () => {
   it("reads the server's tag, and nothing without one", () => {
     expect(connectorOn("jira")).toBe(false);
@@ -104,6 +127,13 @@ describe("how a connection came back", () => {
     expect(connectorResult()).toBe("connected");
     clearConnectorResult();
     expect(connectorResult()).toBeNull();
+  });
+
+  it("keeps a state that ran out apart from a failure", () => {
+    window.history.replaceState(null, "", "/r/abc?connector=expired");
+    readConnectorResult();
+    expect(connectorResult()).toBe("expired");
+    clearConnectorResult();
   });
 
   it("takes a word it does not know for a failure, and nothing for nothing", () => {
@@ -258,6 +288,158 @@ describe("the section", () => {
     expect(screen.getByRole("alert").textContent).toContain("Connect again");
   });
 
+  describe("a dead grant found by any call", () => {
+    const dead = () => {
+      api.fetchConnection.mockResolvedValue({ connected: false });
+      return new RoomApiError("connector_reconnect");
+    };
+    const lands = async () => {
+      expect(await screen.findByRole("button", { name: "Connect Jira" })).toBeTruthy();
+      expect(screen.getByRole("alert").textContent).toContain("Connect again");
+      expect(screen.queryByRole("button", { name: t("connector.disconnect") })).toBeNull();
+    };
+
+    it("goes back to Connect from the list of sites", async () => {
+      showRoom();
+      api.fetchConnection.mockResolvedValueOnce({ connected: true });
+      api.fetchSites.mockImplementation(() => Promise.reject(dead()));
+      render(<ConnectorSection />);
+      await lands();
+    });
+
+    it("goes back to Connect from the list of fields", async () => {
+      showRoom();
+      api.fetchConnection.mockResolvedValueOnce({ connected: true, site: { id: "a", name: "A" } });
+      api.fetchFields.mockImplementation(() => Promise.reject(dead()));
+      render(<ConnectorSection />);
+      await lands();
+    });
+
+    it("goes back to Connect from the list of boards", async () => {
+      showRoom();
+      api.fetchConnection.mockResolvedValueOnce({
+        connected: true,
+        site: { id: "a", name: "A" },
+        field: { id: "f", name: "F" },
+      });
+      api.fetchBoards.mockImplementation(() => Promise.reject(dead()));
+      render(<ConnectorSection />);
+      await lands();
+    });
+
+    it("goes back to Connect from a board's sprints", async () => {
+      showRoom();
+      api.fetchConnection.mockResolvedValueOnce({
+        connected: true,
+        site: { id: "a", name: "A" },
+        field: { id: "f", name: "F" },
+      });
+      api.fetchSprints.mockImplementation(() => Promise.reject(dead()));
+      render(<ConnectorSection />);
+      await lands();
+    });
+  });
+
+  it("keeps the connection when the app's setup is what is wrong, and says so", async () => {
+    await connected();
+    api.importItems.mockRejectedValue(new RoomApiError("connector_setup"));
+    const calls = api.fetchConnection.mock.calls.length;
+    fireEvent.click(screen.getByLabelText(t("connector.byJql")));
+    fireEvent.change(screen.getByLabelText(t("connector.jql")), { target: { value: "x" } });
+    fireEvent.click(screen.getByRole("button", { name: t("connector.import") }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("scopes");
+    expect(alert.textContent).not.toContain("Connect again");
+    expect(alert.querySelector("svg")).not.toBeNull();
+    expect(api.fetchConnection).toHaveBeenCalledTimes(calls);
+    expect(screen.getByRole("button", { name: t("connector.disconnect") })).toBeTruthy();
+  });
+
+  it("lets a refused board's alert go when another board is picked", async () => {
+    api.fetchSprints.mockRejectedValueOnce(new RoomApiError("connector_unavailable"));
+    api.fetchBoards.mockResolvedValue({
+      boards: [
+        { id: 1, name: "Broken" },
+        { id: 2, name: "Fine" },
+      ],
+      more: false,
+    });
+    await connected();
+    await screen.findByRole("alert");
+    fireEvent.change(screen.getByLabelText(t("connector.board")), { target: { value: "2" } });
+    await screen.findByLabelText(t("connector.sprint"));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says a board has no sprint to pick when the answer is empty", async () => {
+    api.fetchSprints.mockResolvedValue([]);
+    await connected();
+    await screen.findByText(t("connector.noSprints"));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  describe("the focus after a change", () => {
+    const focused = (name: string) =>
+      waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name })));
+
+    it("goes to the control that changes a saved site", async () => {
+      showRoom();
+      api.fetchConnection.mockResolvedValueOnce({ connected: true });
+      api.fetchConnection.mockResolvedValue({
+        connected: true,
+        site: { id: "a", name: "Acme" },
+        field: { id: "f", name: "F" },
+      });
+      render(<ConnectorSection />);
+      const save = await screen.findByRole("button", { name: t("connector.siteSave") });
+      save.focus();
+      fireEvent.click(save);
+      await focused(t("connector.siteChange"));
+    });
+
+    it("goes to the control that changes a saved field", async () => {
+      showRoom();
+      api.fetchConnection.mockResolvedValue({ connected: true, site: { id: "a", name: "Acme" } });
+      render(<ConnectorSection />);
+      const save = await screen.findByRole("button", { name: t("connector.fieldSave") });
+      save.focus();
+      fireEvent.click(save);
+      await focused(t("connector.fieldChange"));
+    });
+
+    it("keeps the field's list open when saving it failed", async () => {
+      showRoom();
+      api.fetchConnection.mockResolvedValue({ connected: true, site: { id: "a", name: "Acme" } });
+      api.chooseField.mockRejectedValue(new RoomApiError("connector_unavailable"));
+      render(<ConnectorSection />);
+      fireEvent.click(await screen.findByRole("button", { name: t("connector.fieldSave") }));
+      await screen.findByRole("alert");
+      expect(screen.getByLabelText(t("connector.field"))).toBeTruthy();
+    });
+
+    it("goes to Connect after a disconnect", async () => {
+      await connected();
+      api.fetchConnection.mockResolvedValue({ connected: false });
+      const press = screen.getByRole("button", { name: t("connector.disconnect") });
+      press.focus();
+      fireEvent.click(press);
+      await focused("Connect Jira");
+    });
+
+    it("stays where the person moved it", async () => {
+      await connected();
+      const outside = document.createElement("button");
+      document.body.append(outside);
+      api.fetchConnection.mockResolvedValue({ connected: false });
+      fireEvent.click(screen.getByRole("button", { name: t("connector.disconnect") }));
+      outside.focus();
+      await screen.findByRole("button", { name: "Connect Jira" });
+      await new Promise((done) => requestAnimationFrame(done));
+      expect(document.activeElement).toBe(outside);
+      outside.remove();
+    });
+  });
+
   it("disconnects, and says where Atlassian keeps its own grant", async () => {
     await connected();
     const link = screen.getByRole("link", { name: t("connector.grantsLink") });
@@ -273,63 +455,200 @@ describe("the lines under the table", () => {
   const round = (number: number, final?: string, system: "jira" | null = "jira") =>
     ({
       number,
+      startedAt: number * 1000,
       phase: final === undefined ? "voting" : "revealed",
       subject: { kind: "link", url: "https://a/browse/ABC-1", key: "ABC-1" },
       ...(final === undefined ? {} : { final }),
       ...(system ? { system } : {}),
     }) as unknown as RoundView;
 
-  it("waits for a press on a final that was there when the page came up", async () => {
+  const FINAL_SET = (card: string): Snapshot["causes"] => [{ type: "finalSet", card }];
+
+  /** A frame of the room, through the store, as the socket delivers it. */
+  function frame(view: RoundView | null, causes: Snapshot["causes"] = [], version = held() + 1) {
+    const base = toSnapshot(createRoom({ ownerId: PO }), PO, { code: CODE, version, now: 0 });
+    const snapshot = { ...base, room: { ...base.room, round: view }, causes } as Snapshot;
+    act(() => {
+      useRoomStore.getState().receive(snapshot);
+    });
+  }
+  const held = () => useRoomStore.getState().snapshot?.version ?? 0;
+
+  /** The PO's own press of a final here, its frame and its answer, in the server's order. */
+  function recordHere(number: number, card: string) {
+    const settle = markFinalPress(CODE, round(number), card);
+    frame(round(number, card), FINAL_SET(card));
+    settle({ ok: true, version: held() });
+  }
+
+  const waiting = (card: string) =>
+    screen.findByText(t("connector.write.waiting", { item: "ABC-1", card, system: "Jira" }));
+  const written = (card: string) =>
+    screen.findByText(t("connector.write.written", { item: "ABC-1", card, system: "Jira" }));
+
+  beforeEach(() => {
+    forgetFinalPress();
+    act(() => useRoomStore.getState().open(CODE));
     api.writeBack.mockResolvedValue({ key: "ABC-1", value: 5 });
-    render(<WriteBackLines code={CODE} round={round(1, "5")} />);
-    expect(api.writeBack).not.toHaveBeenCalled();
-    expect(
-      screen.getByText(t("connector.write.waiting", { item: "ABC-1", card: "5" })),
-    ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Write to Jira" }));
-    await screen.findByText(
-      t("connector.write.written", { item: "ABC-1", card: "5", system: "Jira" }),
-    );
-    expect(api.writeBack).toHaveBeenCalledWith("jira", CODE, 1);
   });
 
-  it("writes a recorded final by itself, once for each final, by the round's number", async () => {
-    api.writeBack.mockResolvedValue({ key: "ABC-1", value: 5 });
-    const view = render(<WriteBackLines code={CODE} round={round(1)} />);
-    view.rerender(<WriteBackLines code={CODE} round={round(1, "5")} />);
-    await screen.findByText(
-      t("connector.write.written", { item: "ABC-1", card: "5", system: "Jira" }),
-    );
-    view.rerender(<WriteBackLines code={CODE} round={round(1, "5")} />);
+  it("writes a final this tab recorded, on its frame, once, by the round's number", async () => {
+    frame(round(1));
+    render(<Lines />);
+    recordHere(1, "5");
+    await written("5");
+    frame(round(1, "5"));
     expect(api.writeBack).toHaveBeenCalledTimes(1);
     expect(api.writeBack).toHaveBeenCalledWith("jira", CODE, 1);
-    view.rerender(<WriteBackLines code={CODE} round={round(1, "8")} />);
+    recordHere(1, "8");
     await waitFor(() => expect(api.writeBack).toHaveBeenCalledTimes(2));
   });
 
+  it("writes a press whose frame beat the lines' chunk, when the lines arrive", async () => {
+    frame(round(1));
+    recordHere(1, "5");
+    render(<Lines />);
+    await written("5");
+    expect(api.writeBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes a press whose frame comes after its answer", async () => {
+    frame(round(1));
+    render(<Lines />);
+    const settle = markFinalPress(CODE, round(1), "5");
+    const next = held() + 1;
+    settle({ ok: true, version: next });
+    frame(round(1, "5"), FINAL_SET("5"), next);
+    await written("5");
+  });
+
+  it("waits for a press on a final found at re-entry, and a press writes it", async () => {
+    frame(round(1, "5"));
+    render(<Lines />);
+    await waiting("5");
+    expect(api.writeBack).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Write to Jira" }));
+    await written("5");
+    expect(api.writeBack).toHaveBeenCalledWith("jira", CODE, 1);
+  });
+
+  it("waits on a final that came in a snapshot, even if this tab pressed that card", async () => {
+    frame(round(1));
+    render(<Lines />);
+    markFinalPress(CODE, round(1), "5");
+    frame(round(1, "5"));
+    await waiting("5");
+    expect(api.writeBack).not.toHaveBeenCalled();
+  });
+
+  it("waits on a final recorded in another tab or on another device", async () => {
+    frame(round(1));
+    render(<Lines />);
+    frame(round(1, "5"), FINAL_SET("5"));
+    await waiting("5");
+    expect(api.writeBack).not.toHaveBeenCalled();
+  });
+
+  it("waits on a final someone else recorded before handing the role back", async () => {
+    // The lines stay up throughout: the PO's seat in the page never changed.
+    frame(round(1));
+    render(<Lines />);
+    frame(round(1), [{ type: "ownerChanged", by: "claim", to: "stranger" }]);
+    frame(round(1, "13"), FINAL_SET("13"));
+    frame(round(1, "13"), [{ type: "ownerChanged", by: "transfer", to: PO }]);
+    await waiting("13");
+    expect(api.writeBack).not.toHaveBeenCalled();
+  });
+
+  it("waits when a sleeping tab wakes to a final set while it slept", async () => {
+    frame(round(1));
+    render(<Lines />);
+    recordHere(1, "5");
+    await written("5");
+    frame(round(2));
+    // Asleep: frames are missed. The socket comes back with `enter`, whose snapshot has no causes.
+    frame(round(2, "13"), [], held() + 40);
+    await waiting("13");
+    expect(api.writeBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits when a tab slept on an unanswered press and someone recorded that card", async () => {
+    frame(round(1));
+    render(<Lines />);
+    const settle = markFinalPress(CODE, round(1), "13");
+    settle({ ok: false });
+    frame(round(1, "13"), FINAL_SET("13"));
+    await waiting("13");
+    expect(api.writeBack).not.toHaveBeenCalled();
+  });
+
+  it("does not take another card, round or item for the press", async () => {
+    frame(round(1));
+    render(<Lines />);
+    markFinalPress(CODE, round(1), "5");
+    frame(round(1, "8"), FINAL_SET("8"));
+    await waiting("8");
+    markFinalPress(CODE, round(1), "5");
+    frame(round(2, "5"), FINAL_SET("5"));
+    await waiting("5");
+    const restarted = { ...round(2, "3"), startedAt: 9 } as RoundView;
+    markFinalPress(CODE, round(2), "3");
+    frame(restarted, FINAL_SET("3"));
+    await waiting("3");
+    const other = {
+      ...round(3, "2"),
+      subject: { kind: "link", url: "https://a/browse/ABC-2", key: "ABC-2" },
+    } as RoundView;
+    markFinalPress(CODE, round(3), "2");
+    frame(other, FINAL_SET("2"));
+    await screen.findByText(
+      t("connector.write.waiting", { item: "ABC-2", card: "2", system: "Jira" }),
+    );
+    expect(api.writeBack).not.toHaveBeenCalled();
+  });
+
+  it("does not take a frame past the press's answer, or one for a press that changed nothing", async () => {
+    frame(round(1));
+    render(<Lines />);
+    const settle = markFinalPress(CODE, round(1), "5");
+    const answered = held() + 1;
+    settle({ ok: true, version: answered });
+    frame(round(1, "5"), FINAL_SET("5"), answered + 1);
+    await waiting("5");
+    frame(round(2));
+    const nothing = markFinalPress(CODE, round(2), "8");
+    nothing({ ok: true, version: held() });
+    frame(round(2, "8"), FINAL_SET("8"));
+    await waiting("8");
+    expect(api.writeBack).not.toHaveBeenCalled();
+  });
+
   it("writes nothing for a round with no final, or from no tracker", () => {
-    render(<WriteBackLines code={CODE} round={round(1)} />);
-    render(<WriteBackLines code={CODE} round={null} />).rerender(
-      <WriteBackLines code={CODE} round={round(2, "5", null)} />,
-    );
+    frame(round(1));
+    render(<Lines />);
+    recordHere(1, "5");
+    cleanup();
+    forgetFinalPress();
+    act(() => useRoomStore.getState().reset());
+    act(() => useRoomStore.getState().open(CODE));
+    api.writeBack.mockClear();
+    frame(round(1));
+    render(<Lines />);
+    const settle = markFinalPress(CODE, round(1, undefined, null), "5");
+    frame(round(1, "5", null), FINAL_SET("5"));
+    settle({ ok: true, version: held() });
     expect(api.writeBack).not.toHaveBeenCalled();
-    render(
-      <WriteBackLines
-        code={CODE}
-        round={{ ...round(2, "5"), system: undefined } as unknown as RoundView}
-      />,
-    );
-    expect(api.writeBack).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("keeps a failure through the next round, and a retry clears it", async () => {
     api.writeBack.mockRejectedValueOnce(new RoomApiError("connector_timeout"));
-    const view = render(<WriteBackLines code={CODE} round={round(1)} />);
-    view.rerender(<WriteBackLines code={CODE} round={round(1, "5")} />);
+    frame(round(1));
+    render(<Lines />);
+    recordHere(1, "5");
     await screen.findByRole("button", { name: t("connector.write.retry") });
-    view.rerender(<WriteBackLines code={CODE} round={round(2)} />);
+    frame(round(2));
     expect(screen.getByRole("alert").textContent).toContain("ABC-1");
-    api.writeBack.mockResolvedValue({ key: "ABC-1", value: 5 });
     fireEvent.click(screen.getByRole("button", { name: t("connector.write.retry") }));
     await waitFor(() => expect(api.writeBack).toHaveBeenLastCalledWith("jira", CODE, 1));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
@@ -337,20 +656,76 @@ describe("the lines under the table", () => {
 
   it("says a final with no number stays, and offers no retry", async () => {
     api.writeBack.mockRejectedValue(new RoomApiError("connector_not_numeric"));
-    render(<WriteBackLines code={CODE} round={round(1)} />).rerender(
-      <WriteBackLines code={CODE} round={round(1, "M")} />,
-    );
+    frame(round(1));
+    render(<Lines />);
+    recordHere(1, "M");
     expect((await screen.findByRole("alert")).textContent).toContain("Only a number");
     expect(screen.queryByRole("button", { name: t("connector.write.retry") })).toBeNull();
   });
 
-  it("can be dismissed", async () => {
+  it("can be dismissed, and draws a failure as the room's own", async () => {
     api.writeBack.mockRejectedValue(new RoomApiError("connector_unavailable"));
-    render(<WriteBackLines code={CODE} round={round(1)} />).rerender(
-      <WriteBackLines code={CODE} round={round(1, "5")} />,
-    );
-    fireEvent.click(await screen.findByRole("button", { name: t("connector.write.dismiss") }));
+    frame(round(1));
+    render(<Lines />);
+    recordHere(1, "5");
+    const alert = await screen.findByRole("alert");
+    expect(alert.querySelector("svg")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: t("connector.write.dismiss") }));
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("the lines in the room", () => {
+  const room = {
+    code: CODE,
+    round: {
+      number: 1,
+      startedAt: 1000,
+      phase: "revealed",
+      final: "5",
+      subject: { kind: "link", url: "https://a/browse/ABC-1", key: "ABC-1" },
+      system: "jira",
+    },
+  } as unknown as RoomView;
+
+  function on() {
+    const tag = document.createElement("meta");
+    tag.name = CONNECTOR_META;
+    tag.content = "jira";
+    document.head.append(tag);
+  }
+
+  it("load nothing where the install has no tracker, whatever a round says", async () => {
+    const { container } = render(<TrackerLines room={room} />);
+    await act(async () => {
+      await import("./write-back.tsx");
+    });
+    expect(container.textContent).toBe("");
+  });
+
+  it("come up where it has one", async () => {
+    on();
+    render(<TrackerLines room={room} />);
+    await screen.findByRole("button", { name: "Write to Jira" });
+  });
+});
+
+describe("a tracker's chunk that cannot load", () => {
+  it("says so in a toast with a reload, and leaves the page alone", async () => {
+    toast.mockClear();
+    const load = () => Promise.reject(new Error("Failed to fetch dynamically imported module"));
+    render(<Part load={load} />);
+    await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("the room")).toBeTruthy();
+    const [message, options] = toast.mock.calls[0] ?? [];
+    expect(message).toBe(t("connector.loadFailed", { system: "Jira" }));
+    expect((options as { action: { label: string } }).action.label).toBe(t("room.reload"));
+  });
+
+  it("gives the part once it arrives", async () => {
+    const load = async () => ({ text: "the part" });
+    render(<Part load={load} />);
+    await screen.findByText("the part");
   });
 });
 

@@ -4,7 +4,9 @@ import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { RoomApiError } from "../rooms/api.ts";
 import { connectorMessage, SYSTEM_NAMES } from "./connector.ts";
+import { ConnectorAlert } from "./connector-alert.tsx";
 import { writeBack } from "./connector-api.ts";
+import { takeFinalPress } from "./final-press.ts";
 
 /** One round's estimate on its way to the tracker. */
 interface Line {
@@ -30,10 +32,12 @@ function subjectLabel(round: RoundView): string {
  * a recorded final goes to the tracker by itself, and this says how it went. Nothing here touches
  * the round: a failure stays as a line with "Try again" while the room moves on, and a countdown
  * to the next item changes nothing. The server reads the final and the item itself: all this
- * sends is the round's number. Writing twice is harmless, so two tabs may.
+ * sends is the round's number.
  *
- * Only a final this page saw recorded goes by itself. One already on the table when the page
- * came up waits for a press: it may be days old, and someone may have changed the item since.
+ * Only a final this very tab recorded goes by itself (`final-press.ts`): the write carries the
+ * PO's token, so nothing but the PO's own press here may start it. Any other final, whoever set
+ * it and however it got here, waits for a press. The rule holds here and not in a parent, which
+ * can only know who is PO now: a tab asleep through a hand-over never saw the role leave.
  */
 export function WriteBackLines({
   code,
@@ -47,7 +51,6 @@ export function WriteBackLines({
   const t = useT();
   const [lines, setLines] = useState<readonly Line[]>([]);
   const sent = useRef("");
-  const mounted = useRef(false);
   const system = SYSTEM_NAMES[name];
 
   const send = useCallback(
@@ -71,21 +74,24 @@ export function WriteBackLines({
     [code, name],
   );
 
-  const final = round?.phase === "revealed" ? round.final : undefined;
+  const revealed = round?.phase === "revealed" && round.system === "jira" ? round : null;
   const number = round?.number;
-  const fromTracker = round?.system === "jira";
-  const label = round === null ? "" : subjectLabel(round);
   useEffect(() => {
-    const first = !mounted.current;
-    mounted.current = true;
-    if (!fromTracker || final === undefined || number === undefined) return;
-    const id = `${number}:${final}`;
-    if (sent.current === id) return;
+    if (revealed === null || revealed.final === undefined) return;
+    const { final, number: asked, startedAt } = revealed;
+    const pressed = takeFinalPress(code, revealed, final);
+    const id = `${asked}:${startedAt}:${final}`;
+    if (!pressed && sent.current === id) return;
     sent.current = id;
-    const target = { round: number, label, card: final };
-    if (first) setLines((now) => [...now, { ...target, state: "waiting" }]);
-    else void send(target);
-  }, [fromTracker, final, number, label, send]);
+    const target = { round: asked, label: subjectLabel(revealed), card: final };
+    if (pressed) void send(target);
+    else {
+      setLines((now) => [
+        ...now.filter((each) => each.round !== asked),
+        { ...target, state: "waiting" },
+      ]);
+    }
+  }, [code, revealed, send]);
 
   // A word of success belongs to the round it speaks of; a failure stays until it is dealt with.
   useEffect(() => {
@@ -106,16 +112,16 @@ export function WriteBackLines({
           className="flex flex-wrap items-center justify-center gap-x-2 text-center text-sm"
         >
           {line.state === "failed" || line.state === "kept" ? (
-            <p role="alert" className="m-0">
+            <ConnectorAlert>
               {t("connector.write.failed", { item: line.label, card: line.card, system })}{" "}
               {connectorMessage(t, line.code ?? "unknown", name, line.retryAfter)}
-            </p>
+            </ConnectorAlert>
           ) : (
             <p role="status" className="m-0 text-ink-2">
               {line.state === "writing"
                 ? t("connector.write.writing", { item: line.label, card: line.card, system })
                 : line.state === "waiting"
-                  ? t("connector.write.waiting", { item: line.label, card: line.card })
+                  ? t("connector.write.waiting", { item: line.label, card: line.card, system })
                   : t("connector.write.written", { item: line.label, card: line.card, system })}
             </p>
           )}

@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useId } from "react";
+import { ConnectorNotice } from "../connectors/connector-notice.tsx";
 import { useFormat, useT } from "../i18n/hooks.ts";
 import type { MessageKey } from "../i18n/i18n.ts";
 import { RiseIn } from "../motion/motion.tsx";
@@ -32,6 +33,7 @@ function Home() {
   return (
     <RiseIn className="grid gap-10 [grid-template-areas:'intro'_'create'_'join'_'how'] lg:grid-cols-[minmax(0,1fr)_minmax(0,27rem)] lg:grid-rows-[auto_auto_1fr] lg:gap-x-14 lg:[grid-template-areas:'intro_create'_'join_create'_'how_create']">
       <div className="[grid-area:intro]">
+        <ConnectorNotice />
         <p className="font-mono text-xs tracking-[0.08em] text-ink-2 uppercase">
           {t("app.tagline")}
         </p>

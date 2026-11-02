@@ -931,6 +931,8 @@ export const en = {
   connector: {
     connect: "Connect {{system}}",
     lede: "Import a sprint or a search into the queue, and send estimates back. You connect your own account, and nobody else in the room uses it.",
+    loadFailed:
+      "The {{system}} part of this page could not be loaded. The room still works: reload to get it back.",
     signIn: "Sign in with an account to connect {{system}}.",
     connectedTo: "Connected to {{site}}",
     site: "Site",
@@ -971,10 +973,13 @@ export const en = {
     result: {
       connected: "{{system}} is connected.",
       cancelled: "Nothing was connected: you went back at {{system}}.",
+      expired: "That took too long, so {{system}} was not connected. Connect again.",
       failed: "{{system}} could not be connected. Try again.",
+      lost: "{{system}} was not connected: that link ran out or was already used. Go back to your room and connect from its queue.",
     },
     write: {
-      waiting: "{{item}}: {{card}} was recorded before this page opened.",
+      waiting:
+        "{{item}}: {{card}} was not recorded on this page, and someone else may have recorded it. Pressing writes it to {{system}} with your account.",
       writing: "Writing {{card}} to {{item}} in {{system}}…",
       written: "{{item}}: {{card}} is in {{system}}.",
       failed: "{{item}}: {{card}} did not reach {{system}}.",
@@ -987,6 +992,8 @@ export const en = {
       connector_sign_in: "Sign in with an account to use {{system}}.",
       connector_not_connected: "Connect {{system}} in the queue first.",
       connector_reconnect: "{{system}} no longer accepts this connection. Connect again.",
+      connector_setup:
+        "{{system}} refused this although the connection was just renewed, so connecting again will not help. Whoever runs this server should check the scopes of its {{system}} app.",
       connector_no_site: "Pick a {{system}} site in the queue first.",
       connector_no_field: "Choose the estimate’s field in the queue first.",
       connector_bad_site: "That site is not on your {{system}} list any more.",
