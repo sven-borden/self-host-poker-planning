@@ -293,6 +293,9 @@ keeps (#35).
   proved. Its `user.email` is `microsoftAddress`, never an address: show `account.claimed_email`,
   and read `tenant_id` for a tenant. A route's raw path must equal its decoded one, or it is a 404
   before Better Auth.
+- "My rooms" (#49, ADR-027): `my-rooms.ts` holds the routes under `/api/my-rooms`, for an account
+  alone, and `db/my-rooms.ts` the SQL. **A new table keyed to a room needs `on delete cascade`:**
+  a delete is one statement, and a test lists every foreign key to `room`.
 - A guest who signs in (#48, ADR-025): `guest-link.ts` holds the order, `db/guest-links.ts` the
   SQL, `moveGuest` in `packages/domain` the rules for one room, and `moveGuest` and `dropGuest` in
   `room-sync.ts` the run. **A new place that stores a user id must move with them:** add it to
