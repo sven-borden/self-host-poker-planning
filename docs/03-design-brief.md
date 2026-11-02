@@ -1236,13 +1236,15 @@ it happens, and afterwards only what the server said (#51, ADR-029). Only an acc
   backups until they expire, and logs that hold ids.
 - **Rooms a rule shuts the person out of.** One line in "What goes", with the number of rooms: the
   right goes, the room stays, and with nobody who may hold it it goes after the retention period.
-  Never a room's name, and no row.
+  Never a room's name, and no row. Rooms a sign-in over 30 days old hides are no refusal: a line under
+  the lists says how many more a new sign-in shows.
 - **Rooms with other people.** Under what stays, each room this person keeps with others in it, as a
   row parted by `--line`: its name, how long ago it was active, and a native `<select>` labelled "Who
-  takes <room>": the default first, saying why it is them (runs the room now, here now and seated
-  longest, or nobody is here and seated longest), then the others in the server's order, only people
-  a room's rule admits, then "Nobody: delete this room". With nobody admitted, the default says it stays
-  with no keeper. Choosing that adds a plain line saying what it does. The intro says the order, and
+  takes <room>": names alone, the default first, then the others in the server's order, only people a
+  room's rule admits, then "Nobody: delete this room". The reason never sits in an option, which
+  clips at 320 px: a line under the select says who takes it and why, follows the choice, and the
+  select points at it. With nobody admitted, the option reads "Nobody here" and the line writes out
+  what becomes of the room, with the days. Choosing that adds a plain line saying what it does. The intro says the order, and
   what a guest taking a room means for how long it stays.
 - **The button.** With a recent sign-in, one `--bad` "Delete my account". With an older one, no
   disabled button: the reason in a line, and "Sign in again", which comes back here.
