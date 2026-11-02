@@ -8,6 +8,9 @@
  *
  * Every answer is `no-store`; an error is `{ code }`, never a sentence. Logs name the room
  * by its id: never its code, the password, its hash or the client address.
+ *
+ * In a room limited to accounts (#50) the rule comes first: someone it refuses gets the rule's
+ * code, whatever they typed, so `/access` says nothing of the password and runs no hash.
  */
 import type { Hono } from "hono";
 import { z } from "zod";
@@ -26,6 +29,7 @@ import {
 } from "./password.ts";
 import type { RateLimiter, RateLimitRule } from "./rate-limit.ts";
 import { isRoomCode } from "./room-code.ts";
+import { NO_RULES, type RoomRules, refusalOf } from "./room-rule.ts";
 import type { RoomSync } from "./sync/room-sync.ts";
 
 /**
@@ -65,11 +69,21 @@ export interface PasswordApiDeps {
   limiter: RateLimiter;
   /** The argon2 runs' line (`HASH_GATE`); one per app by default. */
   gate?: HashGate;
+  /** Rooms limited to accounts (#50); left out, a rule refuses everyone but the PO. */
+  rules?: RoomRules;
 }
 
 export function registerPasswordApi(
   app: Hono<AppEnv>,
-  { auth, rooms, sync, config, limiter, gate = createHashGate() }: PasswordApiDeps,
+  {
+    auth,
+    rooms,
+    sync,
+    config,
+    limiter,
+    gate = createHashGate(),
+    rules = NO_RULES,
+  }: PasswordApiDeps,
 ): void {
   const ipOf = (c: Parameters<typeof requestIp>[0]) => requestIp(c, config) ?? "unknown";
 
@@ -142,6 +156,8 @@ export function registerPasswordApi(
       ? await rooms.loadPassword(code, me.id, PASSWORD_LIMITS.room.window)
       : null;
     if (!stored) return c.json({ code: "room_not_found" }, 404);
+    const refused = await refusalOf(rules, stored, me.id);
+    if (refused !== null) return c.json({ code: refused }, 403);
     // No password (removed meanwhile), or the caller needs none (the PO, a participant, a
     // grant holder): nothing to check, and no hash to run.
     if (stored.hash === null || stored.free) return c.body(null, 204);

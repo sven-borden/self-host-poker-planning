@@ -5,7 +5,6 @@ import {
   cleanDomain,
   cleanRestriction,
   cleanTenant,
-  domainOfAddress,
   MICROSOFT_CONSUMER_TENANT,
   requirementOf,
   restrictionRefusal,
@@ -104,14 +103,6 @@ describe("cleanRestriction", () => {
     expect(cleanRestriction({ domains: ["example.com"], tenants: [], more: 1 })).toBeNull();
     expect(cleanRestriction(null)).toBeNull();
     expect(cleanRestriction("example.com")).toBeNull();
-  });
-});
-
-describe("domainOfAddress", () => {
-  it("takes what follows the last @", () => {
-    expect(domainOfAddress("ada@Example.com")).toBe("example.com");
-    expect(domainOfAddress('"a@b"@example.com')).toBe("example.com");
-    expect(domainOfAddress("not an address")).toBeNull();
   });
 });
 

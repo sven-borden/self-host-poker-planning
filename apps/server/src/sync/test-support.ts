@@ -58,7 +58,13 @@ export function memoryRoomStore(): MemoryRoomStore {
     },
     loadRoomHeader: async (code) =>
       rooms.has(code)
-        ? { code, name: null, hasPassword: rooms.get(code)?.state.hasPassword === true }
+        ? {
+            code,
+            name: null,
+            hasPassword: rooms.get(code)?.state.hasPassword === true,
+            restriction: rooms.get(code)?.state.settings.restriction ?? null,
+            ownerId: rooms.get(code)?.state.ownerId ?? "",
+          }
         : null,
     commitRoom: async (id, expectedVersion, next) => {
       const room = byId(id);

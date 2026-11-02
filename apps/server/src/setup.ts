@@ -20,6 +20,8 @@ import type { Logger } from "./logger.ts";
 import { memoryRateLimit } from "./rate-limit.ts";
 import { type Retention, startRetention } from "./retention.ts";
 import { registerPasswordApi } from "./room-password.ts";
+import { createRoomRules } from "./room-rule.ts";
+import { registerRestrictionApi } from "./room-rule-api.ts";
 import { registerRoomApi } from "./rooms.ts";
 import type { Setup } from "./run.ts";
 import { connectScaleOut, type ScaleOut } from "./scale-out.ts";
@@ -86,10 +88,12 @@ export async function setupServer(
     }
   }
   const { runner, store, db, retention: retentionStore } = database;
+  const rules = createRoomRules(db, config);
   sync = createRoomSync({
     runner,
     store,
     access: store,
+    rules,
     history: store,
     logger,
     sessionAlive: sessionChecker(db),
@@ -128,8 +132,9 @@ export async function setupServer(
       ...opened.deps,
       registerApi: (app) => {
         registerAuthApi(app, { auth, db: database.db, config, limiter });
-        registerRoomApi(app, { auth, rooms: store, config, limiter });
-        registerPasswordApi(app, { auth, rooms: store, sync, config, limiter });
+        registerRoomApi(app, { auth, rooms: store, config, limiter, rules });
+        registerPasswordApi(app, { auth, rooms: store, sync, config, limiter, rules });
+        registerRestrictionApi(app, { auth, rooms: store, rules, limiter });
       },
       socketMiddleware: [sessionMiddleware(auth)],
       sessionCookie: cookieNaming(config.baseUrl).sessionCookie,

@@ -73,11 +73,6 @@ export function cleanRestriction(raw: unknown): Restriction | null {
   return { domains, tenants };
 }
 
-/** The domain of an address as a rule compares it, or null: `example.com` of `a@example.com`. */
-export function domainOfAddress(address: string): string | null {
-  return cleanDomain(address.slice(address.lastIndexOf("@") + 1));
-}
-
 /**
  * What of a rule can still be met on this install. A provider whose keys are gone offers nothing,
  * so what a person is told to do is what can work.

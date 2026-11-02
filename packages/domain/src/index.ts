@@ -40,7 +40,6 @@ export {
   cleanDomain,
   cleanRestriction,
   cleanTenant,
-  domainOfAddress,
   MICROSOFT_CONSUMER_TENANT,
   type RestrictionRefusal,
   type RestrictionRequirement,
