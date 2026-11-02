@@ -4,8 +4,7 @@ Self-hosted planning poker for teams: rooms of up to 16 people around a table, n
 account needed, one Docker image to run on Coolify, Azure or any Docker host. In
 English, French and German.
 
-> **Status:** design and architecture done; building wave W0. See
-> [docs/STATUS.md](docs/STATUS.md).
+> **Status:** in use and still being built. See [docs/STATUS.md](docs/STATUS.md).
 
 ## What it does
 
@@ -14,8 +13,8 @@ English, French and German.
 - The product owner reveals, or the room reveals when everyone has voted or the timer
   ends. Results show who voted what, or stay anonymous.
 - Average, median, agreement and spread after every round; history and exports.
-- Later: Google and Microsoft sign-in, Jira and Azure DevOps import, animated avatars,
-  and paid branding for companies.
+- Optional Google and Microsoft sign-in, Jira and Azure DevOps import, animated avatars.
+- Later: paid branding for companies.
 
 ## Docs
 
@@ -24,13 +23,16 @@ English, French and German.
 - [Design brief](docs/03-design-brief.md)
 - [Open questions](docs/04-open-questions.md)
 - [Decisions (ADR)](docs/05-decisions.md)
+- [Self-hosting on Azure](docs/07-self-hosting-azure.md)
 - [Glossary (English, French, German)](docs/08-glossary.md)
 - [Status](docs/STATUS.md)
 
 ## Self-hosting
 
 One Docker image serves the web app, the API and the WebSocket on port 3000; it needs a
-Postgres 17 database. `compose.yaml` runs both. You need Docker with Compose v2.
+Postgres 17 database. `compose.yaml` runs both. You need Docker with Compose v2. For Azure
+App Service with Postgres Flexible Server, follow
+[Self-hosting on Azure](docs/07-self-hosting-azure.md) instead.
 
 ```sh
 git clone https://github.com/sven-borden/self-host-poker-planning.git && cd self-host-poker-planning
@@ -65,6 +67,10 @@ Variables compose reads from `.env` (the full list is in
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | no | turn on "Sign in with Google"; both or neither, or the server does not start (see below) |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | no | turn on "Sign in with Microsoft"; both or neither, or the server does not start (see below) |
 | `MICROSOFT_TENANT_ID` | no (`common`) | who may sign in with Microsoft: `common` (any work, school or personal account), `organizations` (work and school), `consumers` (personal) or one tenant's id. The server checks the tenant in each sign-in, so for a company install this is the boundary |
+| `POKER_VAULT_KEY`, `POKER_VAULT_OLD_KEYS` | no | the key of the connectors' tokens, and during a key change the previous ones; `openssl rand -base64 32`, never `BETTER_AUTH_SECRET` (see "Connector tokens") |
+| `JIRA_CLIENT_ID`, `JIRA_CLIENT_SECRET` | no | turn on the Jira Cloud connector; both or neither, or the server does not start. It also needs `POKER_VAULT_KEY` and a sign-in provider (see "Jira Cloud") |
+| `AZURE_DEVOPS_CONNECTOR` | no | exactly `on` turns on the Azure DevOps connector, which also needs `POKER_VAULT_KEY` and a sign-in provider (see "Azure DevOps") |
+| `REDIS_URL` | no | several instances only. `compose.yaml` does not pass it: `compose.scale-out.yaml` sets it (see "Running several instances") |
 
 Compose refuses to start while a required variable is empty. `DATABASE_URL` is built
 from the bundled database; to use your own Postgres, run the image alone with
@@ -93,7 +99,7 @@ from the bundled database; to use your own Postgres, run the image alone with
     `DATABASE_URL` to its internal URL;
   - with Coolify's GitHub App as the source, every push to `main` deploys. Watch paths
     such as `!docs/**`, `!*.md`, `!**/*.md`, `!.github/**`, `!**/*.test.ts`,
-    `!**/*.test.tsx` and `!apps/web/e2e/**` skip pushes that cannot change the image. A
+    `!**/*.test.tsx`, `!apps/web/e2e/**` and `!infra/**` skip pushes that cannot change the image. A
     deploy takes about three minutes: Coolify waits out the image's 120 s start period
     before its first health check, then swaps the containers without downtime;
   - when another proxy ends TLS in front of Coolify (a NAS or a router), keep Coolify's

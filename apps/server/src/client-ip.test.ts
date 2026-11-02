@@ -43,7 +43,37 @@ describe("clientIp", () => {
     expect(clientIp(request(undefined), 1)).toBe("10.0.0.5");
     expect(clientIp(request(""), 1)).toBe("10.0.0.5");
     expect(clientIp(request("1.1.1.1, unknown"), 1)).toBe("10.0.0.5");
-    expect(clientIp(request("1.1.1.1, 198.51.100.7:4711"), 1)).toBe("10.0.0.5");
+    expect(clientIp(request("1.1.1.1, unknown:4711"), 1)).toBe("10.0.0.5");
+    expect(clientIp(request("1.1.1.1, [unknown]:4711"), 1)).toBe("10.0.0.5");
+    expect(clientIp(request("1.1.1.1, []:4711"), 1)).toBe("10.0.0.5");
+    expect(clientIp(request("1.1.1.1, 198.51.100.7:"), 1)).toBe("10.0.0.5");
+    expect(clientIp(request("1.1.1.1, [198.51.100.7:4711"), 1)).toBe("10.0.0.5");
+  });
+
+  it("drops the port App Service's front end appends, so a client keeps one key (ADR-032)", () => {
+    const entry = (forwardedFor: string) => clientIp(request(forwardedFor), 1);
+    expect(entry("203.0.113.7:51234")).toBe("203.0.113.7");
+    expect(entry("203.0.113.7:60001")).toBe("203.0.113.7");
+    // What a client sends is left of the front end's own entry, and stays ignored.
+    expect(entry("6.6.6.6:1, 203.0.113.7:51234")).toBe("203.0.113.7");
+    expect(entry("[2001:db8:0:1::7]:51234")).toBe("2001:db8:0:1::");
+    expect(entry("[2001:db8:0:1:aaaa:bbbb:cccc:dddd]:60001")).toBe("2001:db8:0:1::");
+    expect(entry("[2001:db8:0:1::7]")).toBe("2001:db8:0:1::");
+    expect(entry("[::ffff:203.0.113.7]:51234")).toBe("203.0.113.7");
+    // Without brackets: a port no group can hold, a ninth group, and one that reads as a group.
+    expect(entry("2001:db8:0:1::7:51234")).toBe("2001:db8:0:1::");
+    expect(entry("2001:db8:0:1:aaaa:bbbb:cccc:dddd:4711")).toBe("2001:db8:0:1::");
+    expect(entry("2001:db8:0:1::7:4711")).toBe("2001:db8:0:1::");
+    // The known limit of reading it as a group: `::` shrinks, and the groups after it shift.
+    expect(entry("2a01:db8::a:b:c:d:4711")).toBe("2a01:db8:0:a::");
+    expect(entry("2a01:db8::e:b:c:d:4711")).toBe("2a01:db8:0:e::");
+    expect(entry("::ffff:c000:201:4711")).toBe("::");
+    // A port of five digits is no group, so the same addresses key as they should.
+    expect(entry("2a01:db8::a:b:c:d:51234")).toBe("2a01:db8::");
+    // The port is read only at its proxy's place in the chain.
+    expect(clientIp(request("203.0.113.7:51234, 172.18.0.2"), 2)).toBe("203.0.113.7");
+    // A socket address is never rewritten: it has no port, and nothing here is forged.
+    expect(clientIp(request(undefined, "[2001:db8::1]:4711"), 0)).toBeUndefined();
   });
 
   it("strips the IPv4-mapped IPv6 prefix and answers undefined without a socket", () => {

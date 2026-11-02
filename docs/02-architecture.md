@@ -10,7 +10,7 @@ One container runs everything; Postgres holds all state.
 Browser (React SPA)
    │  HTTPS + WebSocket (Socket.IO; long-polling fallback)
    ▼
-Reverse proxy (Traefik on Coolify, Container Apps ingress on Azure, nginx…)
+Reverse proxy (Traefik on Coolify, the App Service front end on Azure, nginx…)
    ▼
 app container (Node 24)
    ├─ Hono: /api/*, Better Auth (/api/auth/*), static SPA with history fallback
@@ -1294,7 +1294,8 @@ language, and an unknown code gets a generic one.
   pinned by digest. Plain `node:24-slim` with this pruned app would measure 247 MB, under
   the 250 MB budget with 3 MB to spare; the binary-only runtime is kept for the headroom,
   for fewer packages to patch (fewer CVEs) and because it has no npm, corepack or yarn.
-  It is about 220 MB (`du`: Debian 77, Node 127, app 16). The digests do not move by
+  It is about 239 MB (#11 measured 220 with `du`: Debian 77, Node 127, app 16; the app has
+  grown since). The digests do not move by
   themselves, so Debian security fixes need the update steps in the Dockerfile header
   (README, "Base image updates"); Dependabot or Renovate is Sven's call. pnpm is installed
   by `corepack install` at the version of `packageManager` in `package.json`, the only
@@ -1352,8 +1353,30 @@ language, and an unknown code gets a generic one.
     every client of Sven's instance shares one rate-limit bucket (the Synology's). And 2
     is only safe while no client can reach Traefik without passing the Synology: a
     direct client could put any address in front of its own.
-- Azure: same image. Service still open (Container Apps by default; see
-  `docs/04-open-questions.md` and #38).
+- Azure (#38, ADR-032, guide in `docs/07-self-hosting-azure.md`): same image, on App Service
+  (Web App for Containers, Linux) with Postgres 17 on Flexible Server. `infra/main.bicep` makes
+  the plan, the site, the server in private access (no public endpoint), the virtual network, the
+  private DNS zone and a user-assigned identity with AcrPull on the operator's registry, which the
+  guide creates first, since no image is published. Settings the app relies on:
+  - Plan: one instance (more need `REDIS_URL`, ADR-016), and `@allowed` refuses every tier without
+    Always On, since the retention purge needs a live process with nobody connected. A timer needs
+    one only while someone is in the room; otherwise the next arrival resolves its deadline.
+  - `BASE_URL` comes from `site.properties.defaultHostName`, or the custom domain, in a separate
+    `config/appsettings` resource. That resource replaces the whole list, so other variables go
+    through `extraAppSettings`.
+  - Client address: one outside report says the front end writes `ip:port` to `X-Forwarded-For`,
+    and no Microsoft page says what it writes; `clientIp` drops a port and `TRUST_PROXY=1`. The
+    guide's forged-header and two-network checks test it.
+  - `WEBSITES_PORT=3000`, `WEBSITES_ENABLE_APP_SERVICE_STORAGE=false`,
+    `WEBSITES_CONTAINER_START_TIME_LIMIT=600`, `WEBSITES_CONTAINER_STOP_TIME_LIMIT=15` (the default
+    of 5 s would cut the server's shutdown of up to 10 s, and a lost ack can apply a command twice;
+    the same 15 s as `compose.yaml`), health check on `/api/health` (App Service ignores the image's
+    `HEALTHCHECK`), WebSockets on, HTTPS only.
+  - `DATABASE_URL` carries `sslmode=verify-full` and a `uriComponent`-encoded password. Node's own
+    roots hold both of Azure's, so the image needs no CA file.
+  - Build: Docker with BuildKit, or `infra/acr-task.yaml`; never `az acr build`, whose classic builder
+    cannot run the Dockerfile's `RUN --mount`.
+  - Nothing here has run on Azure yet: #38 stays open for that.
 
 | Env var | Required | Purpose |
 |---|---|---|
@@ -1363,7 +1386,7 @@ language, and an unknown code gets a generic one.
 | `PORT` | no (3000) | HTTP and Socket.IO port |
 | `ROOM_TTL_DAYS` | no (90) | retention |
 | `LOG_LEVEL` | no (info) | logging: `fatal` … `trace`, `silent` |
-| `TRUST_PROXY` | no (true) | client IPs for rate limits: the number of reverse proxies in front (each appends to `X-Forwarded-For`; the client is the entry that many places from the right). `true` = 1 (Traefik alone), `2` for a TLS proxy in front of Traefik, `false` = 0 (the socket address). Too high a number lets clients forge their address |
+| `TRUST_PROXY` | no (true) | client IPs for rate limits: the number of reverse proxies in front (each appends to `X-Forwarded-For`; the client is the entry that many places from the right, with any `:port` dropped). `true` = 1 (Traefik or App Service alone), `2` for a TLS proxy in front of Traefik, `false` = 0 (the socket address). Too high a number lets clients forge their address |
 | `STATIC_DIR` | no (`apps/web/dist`) | built web app; the image sets its own path |
 | `MIGRATIONS_DIR` | no (`apps/server/drizzle`) | SQL migrations applied at start; the image copies the folder next to `dist/` or sets this |
 | `GIT_COMMIT`, `APP_VERSION` | no | reported by `/api/health`; set at image build (build arguments; `SOURCE_COMMIT` stands in for `GIT_COMMIT`) |
@@ -1377,7 +1400,7 @@ language, and an unknown code gets a generic one.
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | no | sign-in with Microsoft Entra ID (#47), both or neither; the secret is never logged. Redirect URI: `<BASE_URL>/api/auth/callback/microsoft` |
 | `MICROSOFT_TENANT_ID` | no (`common`) | who may sign in with Microsoft: `common` (any work, school or personal account), `organizations` (work and school), `consumers` (personal) or one tenant's id (a GUID) |
 | `POKER_VAULT_KEY` | no | encrypts the connectors' tokens (#53, section 6): 32 random bytes in base64 (`openssl rand -base64 32`), never `BETTER_AUTH_SECRET`, never logged. Unset, the vault is off. Malformed, repeated or the session secret, it stops the start |
-| `JIRA_CLIENT_ID`, `JIRA_CLIENT_SECRET` | no | the Jira Cloud connector (#54, section 6), both or neither, with `POKER_VAULT_KEY` and a sign-in provider; without any of them it is dark. The secret is never logged. Redirect URI `BASE_URL/api/connectors/jira/callback`. Azure DevOps (#55) has no variable of its own: `POKER_VAULT_KEY` and a sign-in provider turn it on |
+| `JIRA_CLIENT_ID`, `JIRA_CLIENT_SECRET` | no | the Jira Cloud connector (#54, section 6), both or neither, with `POKER_VAULT_KEY` and a sign-in provider; without any of them it is dark. The secret is never logged. Redirect URI `BASE_URL/api/connectors/jira/callback` |
 | `AZURE_DEVOPS_CONNECTOR` | no | exactly `on` turns on the Azure DevOps connector (#55, section 6), with `POKER_VAULT_KEY` and a sign-in provider; any other value or none leaves it dark. Not a secret. With `on` and either missing, the start logs a warning naming the variables |
 | `POKER_VAULT_OLD_KEYS` | no | during a key change: previous keys, in the same form, comma-separated, that open tokens and seal none (README, "Connector tokens"); needs `POKER_VAULT_KEY` |
 

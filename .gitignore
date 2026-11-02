@@ -12,6 +12,12 @@ coverage/
 .env.*
 !.env.example
 
+# Azure template (docs/07-self-hosting-azure.md): infra/.env.azure is covered above, and these
+# hold real values or a compiled copy of them
+infra/*.local.bicepparam
+infra/*.parameters.json
+infra/main.json
+
 # Playwright
 test-results/
 playwright-report/

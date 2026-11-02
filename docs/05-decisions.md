@@ -2425,3 +2425,88 @@ An organisation with more than 500 projects shows the first
 500. A person who changes a project's process is believed for up to five minutes. A response's body
 is read whole, bounded by the 10 s timeout and a fixed host, as in ADR-030. A rate limit holds per
 instance (ADR-016).
+
+## ADR-032: Azure is App Service with private Postgres, from a Bicep template and plain az (2026-11-02, #38)
+
+**Decision.** Sven chose App Service (Web App for Containers on Linux) with Azure Database for
+PostgreSQL Flexible Server, Postgres 17, over Container Apps (OQ-1). `infra/main.bicep` builds it,
+and `docs/07-self-hosting-azure.md` is the guide. No image is published: the operator builds into
+their own Azure Container Registry, and the site pulls through a managed identity with AcrPull,
+so no registry password exists. **None of this has run on Azure.** It is written from Microsoft's
+documentation of this date and compiled offline, and #38 stays open for Sven's run on a fresh
+subscription. Claims below that rest on a single outside report say so.
+
+**Plain az, not azd.** azd can deploy a container to App Service (`host: appservice` in `azure.yaml`),
+so the change of service did not rule out the issue's azd. It still needs the template to own the
+site and the registry, tags on resources, and an `azure.yaml` for one image, and its remote build
+goes through the same ACR Tasks as below. The guide needs `az` for everything else anyway, so azd
+would add a tool and save two commands.
+
+**The image is not built with `az acr build`.** The Dockerfile's `RUN --mount` needs BuildKit. Microsoft
+says tasks use `docker build` and documents `DOCKER_BUILDKIT=1` only for a task file, and one project
+reports `az acr build` refusing `--mount`. Microsoft also says ACR Tasks are paused for subscriptions
+funded by free credits, and a fresh subscription may be one. So the guide's main path is Docker on the
+operator's machine, the same build CI runs, and `infra/acr-task.yaml` is the way without Docker,
+marked as less certain. Rewriting the Dockerfile for the classic builder would give up its cache
+mounts for one host.
+
+**`X-Forwarded-For` holds `ip:port`, and `TRUST_PROXY=1`.** No Microsoft page we found says what App
+Service's front end writes. One open-source project reports `203.0.113.7:51234` on a live Linux
+container (ixpantia/faucet#278), and Application Gateway documents the same form. `clientIp` read that
+as no address and fell back to the socket, the front end's, so every visitor would share one key and
+25 wrong passwords from anyone would lock a room for all, the limit per address and room (the limit of
+10 is per person). Keeping the port in the key would be worse,
+since each connection would be a new client and no limit would hold. So the port goes first, for IPv4
+and for IPv6 with or without brackets, which suits any proxy that writes this form. The guide's two
+checks are what prove it: a forged header must not change the key, which relies on the front end
+appending to what a client sends, and room creation from two networks must give two keys.
+`X-Client-IP` was dropped as an alternative: one more variable for one host, and nothing from Microsoft
+documents it either.
+
+**Always On is enforced, and a tier without it is refused.** `@allowed` lists only Basic and up. The
+retention purge needs a process that stays up with nobody connected, so a free tier would look fine
+and quietly stop purging. A timer's server-side reveal needs the process only while someone is
+connected: when the last socket leaves, the server drops its timer and the next arrival resolves the
+deadline. Basic also has virtual network integration, managed certificates, and on Linux about 50,000
+WebSockets per instance (Free has 5).
+
+**Private access, no public Postgres.** A delegated subnet, a private DNS zone linked to the network,
+and virtual network integration on the site, routing private addresses only. Routing all traffic would
+send the connectors and Sentry into a network with no way out unless a NAT gateway is added. The price
+is that `pg_dump` from a laptop does not work, and backups are Flexible Server's own. The subnet lists
+the `Microsoft.Storage` endpoint because Azure adds it with the first server and warns against removing
+it, and a second deployment with the subnet declared inline would otherwise remove it.
+
+**`sslmode=verify-full`, with `require` as the way out.** `libpqUrl` gives `sslmode` libpq's meaning, so
+`require` here does not check the certificate, unlike plain node-postgres 8. `verify-full` does, with
+Node's built-in roots, and those hold DigiCert Global Root G2 and Microsoft RSA Root CA 2017 (checked in
+the pinned base image), so the image needs no CA file. Microsoft warns that full verification may not
+work with some DNS setups in a virtual network, and `verify-ca` needs a CA file in `pg`. So
+`POKER_POSTGRES_SSLMODE=require` is a documented fallback: still encrypted, on a network nothing else is
+in. Migrations use no `CREATE EXTENSION` (`gen_random_uuid` is core), so `azure.extensions` needs nothing.
+The password is encoded with `uriComponent`, and a test holds that `pg` reads it back. The guide makes
+it from a fixed `Pp1-` and hex, because Flexible Server wants three kinds of character and plain base64
+misses that about once in 750 tries, at step 6.
+
+**No Key Vault.** References are close to simple, but a reference that fails to resolve can reach the
+container as literal `@Microsoft.KeyVault(...)` text, so a role still spreading fails a start in a
+confusing way, and a vault adds a resource, a soft-deleted name and another role for a first-time
+operator. The gain is small here: whoever can change a site's settings can get a referenced secret
+through the app anyway. `@secure()` parameters keep values out of the deployment history, no output
+carries one, and the two required ones have no default. `main.bicepparam` reads the environment, so it
+stays committed and free of values; `infra/.env.azure` is gitignored and holds them.
+
+**One way to deploy.** An upgrade is build, push and the same deployment, not `az webapp config
+container set`: `imageTag` has no default, so a redeploy cannot roll an image back, and app settings do
+not drift. `config/appsettings` replaces the whole list, so hand-made settings would be lost;
+`extraAppSettings` is their place, and the template's own settings win over it. The site gets its image
+last, in `config/web`, so that its first start already has its settings. The identity is user-assigned
+so that AcrPull exists before the first pull.
+
+**One instance, with affinity on.** More need `REDIS_URL` (ADR-016), and the plan's capacity is 1.
+Affinity matters only when App Service runs two containers for a moment, and costs a cookie that
+identifies nobody.
+
+**No cost figure.** Microsoft's pricing pages showed `$-` to a plain reader on this date, and the retail
+prices API is an Azure service, off limits for this work. The guide lists the meters and the calculator,
+and names no number rather than a guessed one.
