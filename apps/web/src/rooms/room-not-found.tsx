@@ -9,10 +9,11 @@ import { RiseIn } from "../motion/motion.tsx";
 import { JoinRoomCard } from "./join-room-card.tsx";
 
 /**
- * A room that is not there (#24): an unknown or malformed code, or a room the retention
- * purge deleted. The server cannot tell these apart (it keeps no trace of deleted rooms),
- * so the page names both: a mistyped link, or `retentionDays` without activity (from the
- * 404, when the server states it). The way back: another code, or a new room.
+ * A room that is not there (#24): an unknown or malformed code, a room the retention purge
+ * deleted, or one its product owner deleted (#49). The server cannot tell these apart (it keeps
+ * no trace of deleted rooms), so the page names all three: a mistyped link, `retentionDays`
+ * without activity (from the 404, when the server states it), or a delete. The way back: another
+ * code, or a new room.
  *
  * The code itself is never shown, in the page or in its title: it is a bearer capability
  * (docs/02-architecture.md, section 11) that a screenshot or a shared screen of this page
@@ -45,6 +46,7 @@ export function RoomNotFound({ retentionDays }: { retentionDays?: number | undef
               ? t("roomGone.expiredUnknown")
               : t("roomGone.expired", { count: retentionDays })}
           </li>
+          <li>{t("roomGone.deleted")}</li>
         </ul>
       </div>
       <JoinRoomCard title={t("roomGone.tryAnother")} primary />

@@ -102,6 +102,7 @@ describe("createRoom", () => {
   it("starts with the ADR-011 defaults, nobody inside and no round", () => {
     expect(createRoom({ ownerId: PO })).toEqual({
       ownerId: PO,
+      keeperId: PO,
       settings: {
         deck: { kind: "preset", id: "fib" },
         specials: ["?", "☕"],

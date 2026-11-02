@@ -156,6 +156,15 @@ describe("running it again", () => {
     expect(calls.filter((call) => call === "complete")).toHaveLength(1);
   });
 
+  it("settle says whether anything is left, within the wait it was given", async () => {
+    const { links, rooms } = harness();
+    await expect(links.settle("account")).resolves.toBe(true);
+    vi.mocked(rooms.moveGuest).mockResolvedValueOnce("failed");
+    await expect(links.settle("account")).resolves.toBe(false);
+    vi.mocked(rooms.moveGuest).mockImplementationOnce(() => new Promise(() => {}));
+    await expect(links.settle("account", 5)).resolves.toBe(false);
+  });
+
   it("settle is quiet for an account with no guest", async () => {
     const { calls, links } = harness({ guestsOf: async () => [] });
     await links.settle("account");
@@ -165,7 +174,7 @@ describe("running it again", () => {
   it("settle and sweep never reject: a visit goes on whatever the database says", async () => {
     const down = () => Promise.reject(new DatabaseError("read guest links", "57P01"));
     const { links, logs } = harness({ guestsOf: down, pending: down });
-    await expect(links.settle("account")).resolves.toBeUndefined();
+    await expect(links.settle("account")).resolves.toBe(false);
     await expect(links.sweep()).resolves.toBeUndefined();
     expect(logs.messages()).toContain("guest link: pending moves not read");
   });

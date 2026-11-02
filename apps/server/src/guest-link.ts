@@ -17,8 +17,9 @@
  *    one transaction.
  *
  * Everything past `begin` runs again until it is done: at once in the callback, which waits a
- * few seconds and then lets the person go on; at every `enter` of the account; and before every
- * purge, so a few minutes after a start and then daily. While the row exists the purge leaves the
+ * few seconds and then lets the person go on; at every `enter` of the account and every read of
+ * its list (#49); and before every purge, so a few minutes after a start and then daily. While
+ * the row exists the purge leaves the
  * guest and the guest's rooms alone. Each step is a no-op once done, so two instances, or a run
  * that overlaps another, cannot do it twice.
  *
@@ -50,8 +51,12 @@ export interface GuestLinks {
    * there. Otherwise resolves whether all of it moved in time; if not, it moves later.
    */
   link(guest: string, account: string): Promise<boolean>;
-  /** Runs again whatever this account's guests still have to move. Never rejects. */
-  settle(account: string): Promise<void>;
+  /**
+   * Runs again whatever this account's guests still have to move, and waits for it up to
+   * `waitMs`, or `GuestLinkOptions.waitMs`; the move goes on after that. Resolves whether nothing
+   * is left to move, as far as it knows. Never rejects.
+   */
+  settle(account: string, waitMs?: number): Promise<boolean>;
   /** Runs again every move nobody finished. Never rejects. */
   sweep(): Promise<void>;
 }
@@ -136,11 +141,11 @@ export function createGuestLinks(options: GuestLinkOptions): GuestLinks {
     return run;
   }
 
-  /** `run`, or false once `waitMs` passed; `run` goes on. */
-  async function waitFor(run: Promise<boolean>): Promise<boolean> {
+  /** `run`, or false once `ms` passed; `run` goes on. */
+  async function waitFor(run: Promise<boolean>, ms = waitMs): Promise<boolean> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<boolean>((resolve) => {
-      timer = setTimeout(() => resolve(false), waitMs);
+      timer = setTimeout(() => resolve(false), ms);
       timer.unref();
     });
     try {
@@ -156,12 +161,15 @@ export function createGuestLinks(options: GuestLinkOptions): GuestLinks {
       return waitFor(finish(guest));
     },
 
-    settle: async (account) => {
+    settle: async (account, ms) => {
       try {
         const guests = await store.guestsOf(account);
-        if (guests.length > 0) await waitFor(Promise.all(guests.map(finish)).then(() => true));
+        if (guests.length === 0) return true;
+        const moved = Promise.all(guests.map(finish)).then((runs) => runs.every(Boolean));
+        return await waitFor(moved, ms);
       } catch (error) {
         log.warn({ err: errorCode(error) }, "guest link: pending moves not read");
+        return false;
       }
     },
 

@@ -2,13 +2,11 @@ import type { SignInErrorCode } from "@pp/protocol";
 import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect } from "react";
 import { BrandMark } from "../components/shell/brand-mark.tsx";
-import { EmptyTable } from "../components/shell/empty-table.tsx";
 import { ErrorPage } from "../components/shell/error-page.tsx";
 import { LanguageSwitcher } from "../components/shell/language-switcher.tsx";
+import { NotFoundPage } from "../components/shell/not-found-page.tsx";
 import { reloadAction } from "../components/shell/reload-action.ts";
 import { ThemeToggle } from "../components/shell/theme-toggle.tsx";
-import { usePageTitle } from "../components/shell/use-page-title.ts";
-import { buttonVariants } from "../components/ui/button.tsx";
 import { errorMessage } from "../i18n/errors.ts";
 import { useT } from "../i18n/hooks.ts";
 import type { MessageKey } from "../i18n/i18n.ts";
@@ -34,7 +32,7 @@ const GUTTERS =
 
 export const Route = createRootRoute({
   component: RootLayout,
-  notFoundComponent: NotFound,
+  notFoundComponent: NotFoundPage,
   errorComponent: RootError,
 });
 
@@ -160,22 +158,5 @@ function RootError() {
     <main id="main" className={`mx-auto max-w-5xl py-12 sm:py-20 lg:py-10 ${GUTTERS}`}>
       <ErrorPage />
     </main>
-  );
-}
-
-function NotFound() {
-  const t = useT();
-  usePageTitle(t("notFound.title"));
-  return (
-    <section className="max-w-2xl">
-      <EmptyTable />
-      <h1 className="mt-6 text-3xl font-[760] [font-stretch:110%] sm:text-4xl">
-        {t("notFound.title")}
-      </h1>
-      <p className="mt-4 text-ink-2">{t("notFound.body")}</p>
-      <Link to="/" className={buttonVariants({ variant: "outline", className: "mt-8" })}>
-        {t("room.backHome")}
-      </Link>
-    </section>
   );
 }

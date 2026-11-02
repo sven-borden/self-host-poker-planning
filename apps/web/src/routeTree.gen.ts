@@ -10,12 +10,18 @@
 
 import { Route as rootRouteImport } from "./routes/__root";
 import { Route as IndexRouteImport } from "./routes/index";
+import { Route as RoomsRouteImport } from "./routes/rooms";
 import { Route as DevTableRouteImport } from "./routes/dev/table";
 import { Route as RCodeRouteImport } from "./routes/r/$code";
 
 const IndexRoute = IndexRouteImport.update({
   id: "/",
   path: "/",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const RoomsRoute = RoomsRouteImport.update({
+  id: "/rooms",
+  path: "/rooms",
   getParentRoute: () => rootRouteImport,
 } as any);
 const DevTableRoute = DevTableRouteImport.update({
@@ -31,30 +37,34 @@ const RCodeRoute = RCodeRouteImport.update({
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
+  "/rooms": typeof RoomsRoute;
   "/dev/table": typeof DevTableRoute;
   "/r/$code": typeof RCodeRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
+  "/rooms": typeof RoomsRoute;
   "/dev/table": typeof DevTableRoute;
   "/r/$code": typeof RCodeRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof IndexRoute;
+  "/rooms": typeof RoomsRoute;
   "/dev/table": typeof DevTableRoute;
   "/r/$code": typeof RCodeRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: "/" | "/dev/table" | "/r/$code";
+  fullPaths: "/" | "/rooms" | "/dev/table" | "/r/$code";
   fileRoutesByTo: FileRoutesByTo;
-  to: "/" | "/dev/table" | "/r/$code";
-  id: "__root__" | "/" | "/dev/table" | "/r/$code";
+  to: "/" | "/rooms" | "/dev/table" | "/r/$code";
+  id: "__root__" | "/" | "/rooms" | "/dev/table" | "/r/$code";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
+  RoomsRoute: typeof RoomsRoute;
   DevTableRoute: typeof DevTableRoute;
   RCodeRoute: typeof RCodeRoute;
 }
@@ -66,6 +76,13 @@ declare module "@tanstack/react-router" {
       path: "/";
       fullPath: "/";
       preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/rooms": {
+      id: "/rooms";
+      path: "/rooms";
+      fullPath: "/rooms";
+      preLoaderRoute: typeof RoomsRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/dev/table": {
@@ -87,6 +104,7 @@ declare module "@tanstack/react-router" {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  RoomsRoute: RoomsRoute,
   DevTableRoute: DevTableRoute,
   RCodeRoute: RCodeRoute,
 };

@@ -36,7 +36,8 @@ export type LiveKind =
   | "changed"
   | "final"
   | "queue"
-  | "advance";
+  | "advance"
+  | "roomName";
 
 /** What happened to the round's timer (#27), and by how many seconds when that is known. */
 export interface TimerNews {
@@ -95,6 +96,8 @@ export interface LiveEvent {
   queue?: { added: number; next: string | null };
   /** The next item starts by itself in a moment (`armed`), or it will not (#52). */
   advance?: { armed: true; next: string | null } | { armed: false };
+  /** The room's new name (#49). */
+  roomName?: string;
 }
 
 /**
@@ -117,6 +120,7 @@ const ORDER: readonly Exclude<LiveKind, "settings" | "password">[] = [
   "changed",
   "final",
   "advance",
+  "roomName",
   "queue",
 ];
 
@@ -228,6 +232,11 @@ export function liveEvents(
         continue;
       case "advanceHeld":
         events.push({ kind: "advance", who: "", name: "", advance: { armed: false } });
+        continue;
+      case "roomRenamed":
+        if (next.name !== undefined) {
+          events.push({ kind: "roomName", who: "", name: "", roomName: next.name });
+        }
         continue;
       case "revealed":
         if (cause.by === "timer") events.push({ kind: "timeUp", who: "", name: "" });
@@ -614,6 +623,8 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
           : t("live.queueAdded", { count: first.queue.added, item: first.queue.next });
     case "advance":
       return advanceSentence(t, first?.advance);
+    case "roomName":
+      return t("live.roomRenamed", { name: first?.roomName ?? "" });
     case "away":
       return one ? t("live.away", { name }) : t("live.awayMany", { count });
     case "back":

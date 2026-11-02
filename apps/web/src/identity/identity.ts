@@ -304,7 +304,7 @@ export async function setSavedAvatar(avatar: AvatarId | null): Promise<void> {
 }
 
 /**
- * Starts a sign-in with `provider`, coming back to `returnTo` (`/` or a room's path), and
+ * Starts a sign-in with `provider`, coming back to `returnTo` (`/`, `/rooms` or a room's path), and
  * resolves with the provider's address, for the page to navigate to: a form could not follow
  * a redirect there under the policy's `form-action 'self'`. Rejects with `IdentityError`.
  */

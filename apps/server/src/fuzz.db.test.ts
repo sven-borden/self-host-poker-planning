@@ -184,6 +184,8 @@ function invariantProblems(state: RoomState): string[] {
   const people = Object.entries(state.participants);
   if (people.length > MAX_MEMBERS) problems.push(`${people.length} members`);
   if (typeof state.ownerId !== "string" || state.ownerId === "") problems.push("no owner");
+  // Server-held (ADR-027): no message can set it, or take it away.
+  if (typeof state.keeperId !== "string" || state.keeperId === "") problems.push("no keeper");
   for (const [id, person] of people) {
     if (cleanName(person.name) !== person.name) problems.push(`name of ${id} not clean`);
     if (!ROLES.includes(person.role)) problems.push(`role of ${id}`);
@@ -446,6 +448,8 @@ function commandArb(ids: () => string[]) {
         "presence",
         "password",
         "endCountdown",
+        "moveGuest",
+        "renameRoom",
         "timeUp ",
         "__proto__",
         "constructor",

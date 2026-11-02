@@ -361,6 +361,28 @@ describe("projectCauses", () => {
   });
 });
 
+describe("the room's name (#49)", () => {
+  it("travels when the room has one, with its cause, and a view without one stays the same", () => {
+    const plain = createRoom({ ownerId: "po" });
+    expect(toSnapshot(plain, "po", META).room).not.toHaveProperty("name");
+    const { state, causes } = run([["po", { type: "renameRoom", name: "Sprint 12" }]], plain);
+    const snapshot = toSnapshot(state, "o", { ...META, causes });
+    expect(snapshot.room.name).toBe("Sprint 12");
+    expect(snapshot.causes).toStrictEqual([{ type: "roomRenamed" }]);
+    expect(snapshotSchema.parse(snapshot)).toStrictEqual(snapshot);
+  });
+});
+
+describe("who holds the right to delete the room (#49)", () => {
+  it("is in no snapshot, whoever reads it", () => {
+    const { state } = run([join("po"), join("ana")]);
+    expect(state.keeperId).toBe("po");
+    for (const reader of ["po", "ana"]) {
+      expect(JSON.stringify(toSnapshot(state, reader, META))).not.toContain("keeper");
+    }
+  });
+});
+
 describe("the room password (#31)", () => {
   const password = (on: boolean): [string, Command] => ["po", { type: "password", on }];
 

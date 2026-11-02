@@ -87,10 +87,13 @@ export interface RetentionStore {
 
 /**
  * Idle rooms, oldest first, locked and deleted in one statement. A room is idle when its
- * `last_active_at` is before the cutoff, it has no socket on this instance, and its owner
- * is not a signed-in user (ADR-014: those rooms stay until deleted; a guest owner, or one
+ * `last_active_at` is before the cutoff, it has no socket on this instance, and its keeper
+ * is not a signed-in user (ADR-014: those rooms stay until deleted; a guest, or someone
  * deleted already, does not keep a room), or a guest on their way to being one (#48: the
- * move has yet to reach this room). Once `for update` holds a row it re-checks the
+ * move has yet to reach this room). The keeper, not the PO (ADR-027): whoever can delete the
+ * room is whose it is, so a claim neither makes a room stay for ever nor ends a person's
+ * right to keep it. It reads `live` only for rows already past the cutoff. Once `for update`
+ * holds a row it re-checks the
  * `WHERE` on the row's latest version, so a commit or a visit that landed after the
  * statement began keeps its room, and nothing can move a locked row before `gone` deletes
  * it. `history` counts the rows the cascade deletes: the statement still sees them.
@@ -101,9 +104,14 @@ const DELETE_ROOMS = `
     where r.last_active_at < $1::timestamptz
       and r.id <> all($2::uuid[])
       and not exists (
-        select 1 from "user" u where u.id = r.owner_user_id and u.is_anonymous is not true
+        select 1 from "user" u
+        where u.id = coalesce(r.live ->> 'keeperId', r.owner_user_id)
+          and u.is_anonymous is not true
       )
-      and not exists (select 1 from guest_link l where l.guest_user_id = r.owner_user_id)
+      and not exists (
+        select 1 from guest_link l
+        where l.guest_user_id = coalesce(r.live ->> 'keeperId', r.owner_user_id)
+      )
     order by r.last_active_at
     limit $3
     for update of r skip locked

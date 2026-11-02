@@ -2,8 +2,8 @@
  * The `setup` hook `main.ts` hands to `run()`: the database (#7), then identity (#10) on
  * its pool, then Redis when `REDIS_URL` is set (#39, several instances), the room API
  * (#14) and the room sync (#15) on its runner, the retention job (#35), whose first run
- * comes a few minutes later, and a guest's way to an account (#48), between identity and
- * the room sync. Opens nothing at import time.
+ * comes a few minutes later, a guest's way to an account (#48), between identity and the
+ * room sync, and "My rooms" (#49). Opens nothing at import time.
  */
 import {
   cookieNaming,
@@ -15,8 +15,10 @@ import {
 import type { Config } from "./config.ts";
 import { type Database, setupDatabase } from "./database.ts";
 import { createGuestLinkStore } from "./db/guest-links.ts";
+import { createMyRoomsStore } from "./db/my-rooms.ts";
 import { createGuestLinks, type GuestLinks } from "./guest-link.ts";
 import type { Logger } from "./logger.ts";
+import { registerMyRoomsApi } from "./my-rooms.ts";
 import { memoryRateLimit } from "./rate-limit.ts";
 import { type Retention, startRetention } from "./retention.ts";
 import { registerPasswordApi } from "./room-password.ts";
@@ -130,6 +132,14 @@ export async function setupServer(
         registerAuthApi(app, { auth, db: database.db, config, limiter });
         registerRoomApi(app, { auth, rooms: store, config, limiter });
         registerPasswordApi(app, { auth, rooms: store, sync, config, limiter });
+        registerMyRoomsApi(app, {
+          auth,
+          rooms: createMyRoomsStore(db),
+          links,
+          sync,
+          config,
+          limiter,
+        });
       },
       socketMiddleware: [sessionMiddleware(auth)],
       sessionCookie: cookieNaming(config.baseUrl).sessionCookie,

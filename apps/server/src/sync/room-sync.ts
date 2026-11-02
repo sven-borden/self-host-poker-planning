@@ -54,6 +54,11 @@
  * with whatever presence it had, so one the room shows connected starts the account's grace: the
  * person is on their way back from the provider, and may not arrive. An account's `enter` first
  * waits for a move in progress, or runs one again.
+ *
+ * A room its owner deletes (#49, ADR-027): `roomDeleted` tells every instance, and each room's
+ * sockets hear `deleted` and close, which ends its timers. A word that never arrives (Redis away)
+ * costs little: the next run on that room, a person's command or the server's own timer or
+ * presence, finds no room and does the same, and a socket that reconnects finds no room to enter.
  */
 import { type ApplyResult, apply, type Cause, type Command, type RoomState } from "@pp/domain";
 import {
@@ -232,6 +237,13 @@ export interface RoomSync extends RealtimeHandlers {
    * who the guest's PO roles go to: a countdown stays if that person is in the room.
    */
   dropGuest(guest: string, account: string): void;
+  /**
+   * `actor`'s command on a room, from the HTTP API (#49): through the room's queue and the
+   * compare-and-set, and everyone in the room hears it, like any command.
+   */
+  commandAs(room: RoomRef, actor: string, command: Command): Promise<CmdAck>;
+  /** The room (by id) is gone from the database: its sockets, on every instance, are told. */
+  roomDeleted(id: string): void;
 }
 
 /** The Socket.IO room of a room, by its id (never its code). */
@@ -239,7 +251,7 @@ const CHANNEL_PREFIX = "room:";
 export const channelOf = (roomId: string) => `${CHANNEL_PREFIX}${roomId}`;
 
 /** A room as this instance knows it: the id for channels and logs, the code for loads. */
-interface RoomRef {
+export interface RoomRef {
   id: string;
   code: string;
 }
@@ -947,6 +959,18 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     }
   }
 
+  /**
+   * The room is gone: its sockets here hear `deleted` and close, those still entering included,
+   * and the last one to close takes the room's timers with it (`forgetIfEmpty`). A run in flight
+   * finds no sockets to send to.
+   */
+  function closeDeleted(id: string) {
+    for (const socket of socketsOf(id)) {
+      socket.emit("deleted");
+      socket.disconnect(true);
+    }
+  }
+
   /** A kicked person's sockets hear `kicked` and are closed (they keep no snapshot feed). */
   function removeKicked(id: string, who: string) {
     for (const socket of socketsOf(id)) {
@@ -1009,6 +1033,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
         await resync(room);
         return "failed";
       }
+      closeDeleted(id);
       return "unchanged";
     } catch (error) {
       log.warn({ room: id, err: errorCodeOf(error) }, `${part}: ${what} failed`);
@@ -1176,6 +1201,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       );
       if (!outcome.ok) {
         log.debug({ room: room.id, cmd: command.type, code: outcome.error }, "command not run");
+        if (outcome.error === "room_not_found") closeDeleted(room.id);
         return refuse(outcome.error === "conflict" ? "busy" : outcome.error);
       }
       // The snapshot goes out before the answer (the client expects the version it acks).
@@ -1629,6 +1655,9 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
           dropLocalGuest(guest, account);
         }
       });
+      server.on("roomDeleted", (id) => {
+        if (typeof id === "string") closeDeleted(id);
+      });
       // The adapter does not await these: a throw would be an unhandled rejection.
       server.on("present", (roomId, answer) => {
         if (typeof answer !== "function") return;
@@ -1717,6 +1746,11 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     changePassword,
     moveGuest,
     dropGuest,
+    commandAs: execute,
+    roomDeleted(id) {
+      closeDeleted(id);
+      if (shared && io && !closed) io.serverSideEmit("roomDeleted", id);
+    },
   };
 }
 

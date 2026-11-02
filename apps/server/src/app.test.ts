@@ -129,6 +129,8 @@ describe("request ids and logs", () => {
     // Where a route matched, its pattern.
     expect(loggedPath("/api/rooms/Secret1234", "/api/rooms/:code")).toBe("/api/rooms/:code");
     expect(loggedPath("/api/rooms", "/api/rooms")).toBe("/api/rooms");
+    expect(loggedPath("/api/my-rooms/Secret1234", "/api/my-rooms/:id")).toBe("/api/my-rooms/:id");
+    expect(loggedPath("/api/my-rooms/any-thing", "/api/*")).toBe("/api/my-rooms/:code");
     // Otherwise the path, with the room segment and any code-shaped segment replaced.
     expect(loggedPath("/r/Secret1234", "*")).toBe("/r/:code");
     expect(loggedPath("/R/Secret1234/extra")).toBe("/R/:code/extra");

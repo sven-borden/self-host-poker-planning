@@ -38,6 +38,13 @@ export interface IdentityStoreState {
   reset: () => void;
 }
 
+/**
+ * An account, not a guest (#47). The provider says so too: a Microsoft account whose token
+ * claimed no address has none to show (ADR-025).
+ */
+export const isSignedIn = ({ email, provider }: Pick<IdentityStoreState, "email" | "provider">) =>
+  email !== null || provider !== null;
+
 const initialState = {
   status: "idle" as IdentityStatus,
   userId: null,

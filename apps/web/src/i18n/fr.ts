@@ -517,6 +517,7 @@ export const fr: Catalog<"many"> = {
     queueAddedPlain_other: "{{count, number}} tickets ajoutés à la file.",
     advanceSoon: "Ensuite, dans {{seconds, number}} secondes : {{item}}.",
     advanceHeld: "La salle reste sur ce tour.",
+    roomRenamed: "La salle s’appelle maintenant {{name}}.",
     poVotesOn: "Le product owner vote désormais aussi.",
     poVotesOff: "Le product owner ne vote plus.",
     observersCountOn: "Les observateurs occupent désormais l’une des {{max, number}} places.",
@@ -583,6 +584,7 @@ export const fr: Catalog<"many"> = {
       "La salle a été supprimée : sur ce serveur, une salle est effacée après {{count, number}} jours sans activité.",
     expiredUnknown:
       "La salle a été supprimée : sur ce serveur, une salle est effacée après une longue période sans activité.",
+    deleted: "Le product owner de la salle l’a supprimée.",
     tryAnother: "Essayer un autre code",
     createRoom: "Créer une nouvelle salle",
   },
@@ -616,6 +618,61 @@ export const fr: Catalog<"many"> = {
       stillMoving:
         "Votre compte est connecté. Certaines de vos salles sont encore en cours de transfert : rouvrez-les dans un instant.",
     },
+  },
+  myRooms: {
+    title: "Mes salles",
+    intro:
+      "Les salles dont vous êtes propriétaire, et celles où vous avez une place en ce moment. Si vous quittez une salle ou en êtes retiré, elle disparaît de cette liste.",
+    retention_one:
+      "Vos salles restent jusqu’à ce que vous les supprimiez. Toute autre salle de cette liste peut disparaître après {{count, number}} jour sans activité.",
+    retention_many:
+      "Vos salles restent jusqu’à ce que vous les supprimiez. Toute autre salle de cette liste peut disparaître après {{count, number}} de jours sans activité.",
+    retention_other:
+      "Vos salles restent jusqu’à ce que vous les supprimiez. Toute autre salle de cette liste peut disparaître après {{count, number}} jours sans activité.",
+    signedOut:
+      "Connectez-vous pour voir les salles dont vous êtes propriétaire et celles où vous avez une place. Ce que vous avez fait en tant qu’invité vous suit.",
+    loading: "Chargement de vos salles…",
+    moving:
+      "Certaines de vos salles sont encore en route vers votre compte. Réessayez dans un instant.",
+    emptyTitle: "Pas encore de salle",
+    emptyBody: "Les salles que vous créez ou rejoignez une fois connecté apparaissent ici.",
+    owned: "Votre salle",
+    joined: "Vous avez une place",
+    claimed: "Vous êtes product owner",
+    claimedWhy:
+      "Ce rôle vous permet d’animer cette salle et de la renommer. La supprimer reste réservé à la personne à qui elle appartient : reprendre le rôle ou le recevoir ne donne pas ce droit.",
+    kept: "Votre salle, avec un autre product owner",
+    keptWhy:
+      "Quelqu’un d’autre a repris le rôle de product owner. Récupérez ce rôle dans la salle, et vous pourrez la supprimer.",
+    lastActive: "Activité {{when}}",
+    rounds_one: "{{count, number}} tour",
+    rounds_many: "{{count, number}} de tours",
+    rounds_other: "{{count, number}} tours",
+    showMore: "Afficher plus de salles",
+    cancel: "Annuler",
+    rename: "Renommer",
+    renameNamed: "Renommer {{name}}",
+    renameTitle: "Renommer cette salle",
+    nameLabel: "Nom de la salle",
+    save: "Enregistrer",
+    renamed: "Salle renommée.",
+    delete: "Supprimer",
+    deleteNamed: "Supprimer {{name}}",
+    deleteTitle: "Supprimer {{name}} ?",
+    deleteBody:
+      "La salle disparaît pour tout le monde : ses tours, son historique, sa file et les accès. C’est définitif.",
+    deleteLive: "Les personnes présentes dans la salle voient aussitôt qu’elle n’existe plus.",
+    deleteConfirm: "Supprimer cette salle",
+    deleted: "Salle supprimée.",
+    leave: "Quitter cette salle",
+    leaveNamed: "Quitter cette salle : {{name}}",
+    leaveTitle: "Quitter {{name}} ?",
+    leaveBody:
+      "Vous perdez votre place et la salle disparaît de cette liste. Le lien de la salle vous permet de la rejoindre à nouveau.",
+    leaveKept:
+      "Vous perdez votre place. La salle reste dans cette liste, car elle est toujours à vous.",
+    left: "Vous avez quitté la salle.",
+    gone: "Cette salle n’existe plus.",
   },
   password: {
     label: "Mot de passe",
@@ -797,6 +854,7 @@ export const fr: Catalog<"many"> = {
     not_participant:
       "Vous ne faites plus partie de cette salle. Rechargez la page pour la rejoindre à nouveau.",
     not_owner: "Seul le product owner peut faire cela.",
+    not_keeper: "Seule la personne à qui cette salle appartient peut la supprimer.",
     already_joined: "Vous êtes déjà dans cette salle.",
     bad_avatar: "Cet avatar n’est pas disponible. Choisissez-en un autre.",
     bad_name:

@@ -64,6 +64,13 @@
       "when": 1793594806333,
       "tag": "0008_add_connector_token",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793599821007,
+      "tag": "0009_add_room_keeper_apart_index",
+      "breakpoints": true
     }
   ]
 }
