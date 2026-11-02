@@ -62,12 +62,14 @@ async function navigate(request) {
 }
 
 async function asset(request, path) {
-  const cache = await caches.open(CACHE);
-  const stored = await cache.match(path);
+  // Cache Storage may refuse to open or to read (a damaged profile, a full disk): the page
+  // has its file from the network all the same, so neither may fail the request.
+  const cache = await caches.open(CACHE).catch(() => null);
+  const stored = await cache?.match(path).catch(() => undefined);
   if (stored) return stored;
   const response = await fetch(request);
   // Storage may be full: the page has its file all the same.
-  if (response.ok && response.type === "basic") {
+  if (cache && response.ok && response.type === "basic") {
     cache.put(path, response.clone()).catch(() => {});
   }
   return response;

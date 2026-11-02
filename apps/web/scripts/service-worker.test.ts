@@ -204,6 +204,22 @@ describe("a hashed asset", () => {
     worker.fetch.mockResolvedValue(answer("code"));
     expect(await (await worker.fire("fetch", worker.request(asset)))?.text()).toBe("code");
   });
+
+  it("still reaches the page when Cache Storage will not open", async () => {
+    const worker = await installed();
+    worker.caches.open = () => Promise.reject(new Error("unavailable"));
+    worker.fetch.mockResolvedValue(answer("code"));
+    expect(await (await worker.fire("fetch", worker.request(asset)))?.text()).toBe("code");
+  });
+
+  it("still reaches the page when the store cannot be read", async () => {
+    const worker = await installed();
+    const store = worker.stores.get("pp-shell-one");
+    if (store) store.match = () => Promise.reject(new Error("unreadable"));
+    worker.fetch.mockResolvedValue(answer("code"));
+    expect(await (await worker.fire("fetch", worker.request(asset)))?.text()).toBe("code");
+    expect(worker.fetch).toHaveBeenCalledOnce();
+  });
 });
 
 it("writes nothing to the console: a URL there could hold a room's code", () => {
