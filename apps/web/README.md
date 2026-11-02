@@ -29,6 +29,14 @@ server sends and never decides the outcome of a round.
   presentational: props in, no store. `/dev/table` (`src/routes/dev/table.tsx`, lazy,
   noindex) shows them: `?n=1..16&state=lobby|voting|revealed&observers=0..4`.
 - `src/stores/`: Zustand stores. `src/realtime/`: the typed Socket.IO client.
+- "My rooms" (#49, ADR-027): `routes/rooms.tsx` is a lazy route; `rooms/my-rooms-page.tsx` holds
+  the page and `rooms/my-rooms-api.ts` its calls, so nothing of it joins the landing page's or the
+  room's JavaScript. Who sees what comes from the identity store (`isSignedIn`, which an account
+  with no address passes too) and `signInProviders()`: an install without keys gets
+  `NotFoundPage`. `SignInRow` holds the one link to it. A room's page takes its name from the
+  snapshot once there is one, and the socket's `deleted` ends the connection with
+  `room_not_found`, so `RoomNotFound` shows at once. Copy: `myRooms.*`. Tests:
+  `rooms/my-rooms-page.test.tsx`, `e2e/my-rooms.spec.ts`.
 - `src/rooms/`: the room API (#14). `api.ts`: `createRoom({ name, deck })` (identity
   first, one session renewal on `unauthenticated`, a blank name left out) and
   `fetchRoomHeader(code)`; both reject with `RoomApiError` carrying the server's code or

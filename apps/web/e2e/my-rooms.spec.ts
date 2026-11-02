@@ -153,7 +153,7 @@ test.describe("with provider keys", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Leave this room" }).click();
 
     await expect(page.getByText("You left the room.")).toBeVisible();
-    await expect(po.getByText("Ada")).toHaveCount(0);
+    await expect(po.getByText("1 person in the room")).toBeVisible();
     await others.close();
     await context.close();
   });
@@ -161,7 +161,7 @@ test.describe("with provider keys", () => {
   test("fits a 320 px phone with a long name, with nothing for axe", async ({ browser }) => {
     const { context, page } = await signedIn(browser);
     await page.setViewportSize({ width: 320, height: 640 });
-    await createRoom(page, "A rather long room name that goes on and on and on for a while");
+    await createRoom(page, "W".repeat(60));
     await page.goto(ROOMS);
     await expect(page.locator("[data-my-room]")).toHaveCount(1);
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
@@ -170,7 +170,10 @@ test.describe("with provider keys", () => {
       (await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze()).violations.map(({ id }) => id),
     ).toEqual([]);
     await page.getByRole("button", { name: /^Delete / }).click();
-    await expect(page.getByRole("dialog")).toBeVisible();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    // Faded in, or axe reads the colours halfway.
+    await dialog.evaluate((box) => Promise.all(box.getAnimations().map((run) => run.finished)));
     expect(
       (await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze()).violations.map(({ id }) => id),
     ).toEqual([]);

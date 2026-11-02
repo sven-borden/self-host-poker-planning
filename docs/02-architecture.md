@@ -42,6 +42,7 @@ per-instance structure of the realtime path and its verdict:
 | Structure | Verdict |
 |---|---|
 | Snapshots (`broadcast`, `held`, `newest`, `sent`) | per instance, by design: each instance sends its own sockets their own `toSnapshot`. A commit tells the others `roomChanged { room, version, causes, lockout? }`; one with sockets in the room (or a socket entering it) puts it in the room's inbox, and one loop per room (`drainInbox`) loads the room once for every change waiting and sends it with the causes of every version since the one it last sent (`sent`). Its own commits and the newer states its runs find go through the same loop. A version whose signal has not arrived waits for it up to 100 ms (`GAP_WAIT_MS`; 500 ms for a server run's find, which nobody waits on); past that it goes out with the causes it has. A failed load, or one Postgres answers with an older version, is retried with a backoff (5 times), then dropped failing closed. A command answers after its snapshot went out, as with one instance |
+| A deleted room (#49) | shared: `roomDeleted` carries the room's id, and every instance tells that room's sockets `deleted` and closes them, which ends its timers. A lost word costs little: the next run on the room, a command or the server's own timer or presence, finds no room and does the same, and a socket that reconnects finds no room to enter |
 | Kicks | shared: the signal carries `kicked`, and every instance closes the person's sockets after the state that removes them went out; a late signal (for a version already sent, e.g. queued while Redis was away) spares someone the newest state shows in the room again |
 | A new password (`lockOut`, `lockouts`, `recheck`) | shared: the signal carries `lockout`; every instance runs `lockOut` before it sends the state, and also when only the state shows the password (the last one sent had none). When versions came without their signal (`blind`), every visitor's grant in a room with a password is read again before they get anything, and those without one hear `locked`: a lost lockout or kick in such a room never leaves a visitor reading it. A late lockout reads the grants again, and only while the room still has a password |
 | Presence graces | per instance, with a question: before marking someone away, the instance asks the others who is in the room (`present`); no answer counts as a failed run (retried 3 times). A state that shows someone away whom an instance holds is mended there (`presence true`). Every 30 s a sweep starts the restart grace (60 s, as after a redeploy) of people shown connected whom no instance holds (their instance stopped) |
@@ -272,6 +273,7 @@ sends it. So every tab open across that deploy kept its room instead of reloadin
 | `queue` | client → server | `{}`: the entered room's whole queue, for its PO (#52) | `{ ok: true, rev, items }` or `{ ok: false, code }`; shares `history`'s bucket |
 | `snapshot` | server → client | the viewer's projection, with `room.queue` (`{ count, rev, next }`) when items wait, never the list (ADR-024) | none |
 | `kicked` | server → client | none; the server disconnects the socket next (the web app connects again and shows the join form, #30) | none |
+| `deleted` | server → client | none; the room's owner deleted it (#49): the server disconnects the socket next, and the web app shows what an unknown room shows and stays away | none |
 
 - **Commands**: one zod schema per domain command, a discriminated union on `type`;
   `id` is the client's correlation string; `payload` may be left out on commands without
@@ -462,7 +464,7 @@ and they are committed.
 
 | Table | Content |
 |---|---|
-| `room` | `id` uuid, `code` text unique, `name` text null, `owner_user_id` text (a copy of `live.ownerId`, written by every commit), `live` jsonb (`RoomState`: settings, people, the round), `queue` jsonb null (the backlog queue, #52: part of the state `apply` sees, split off in the store and written only by a commit that changed it, ADR-024), `version` int (starts at 1), `password_hash` text null (argon2id PHC string), `password_failures` int and `password_failures_since` null (the per-room count of wrong passwords, #31), `created_at`, `last_active_at` (indexed, for the retention purge); `owner_user_id` is indexed too |
+| `room` | `id` uuid, `code` text unique, `name` text null (part of the state `apply` sees, split off in the store like the queue, so a header reads it without `live`, #49, ADR-027), `owner_user_id` text (a copy of `live.ownerId`, written by every commit), `live` jsonb (`RoomState`: settings, people, the round), `queue` jsonb null (the backlog queue, #52: part of the state `apply` sees, split off in the store and written only by a commit that changed it, ADR-024), `version` int (starts at 1), `password_hash` text null (argon2id PHC string), `password_failures` int and `password_failures_since` null (the per-room count of wrong passwords, #31), `created_at`, `last_active_at` (indexed, for the retention purge); `owner_user_id` is indexed too |
 | `room_access` | `room_id` (cascade delete), `user_id` (cascade delete with the user), `granted_at`; primary key `(room_id, user_id)`, and an index on `user_id` for the cascade from a deleted user: who may enter a room with a password without typing it (#31) |
 | `round_history` | `id` identity, `room_id` (cascade delete), `number`, unique `(room_id, number)`, `subject` jsonb, `deck` jsonb (`{ spec, specials }`), `votes` jsonb, `stats` jsonb (`computeResults`), `final` text null, `started_at`, `revealed_at`, `finished_at` |
 | `guest_link` (#48) | `guest_user_id` primary key, `account_user_id` indexed (both cascade with the user), `created_at`: a guest moving to an account. Written before anything moves, gone with the guest; while it exists the move can run again and the purge leaves the guest and its rooms alone (section 7) |
@@ -646,7 +648,7 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   `<meta name="pp-sign-in">` (ids only; no tag without keys), which the service worker cannot
   freeze, as it stores no page.
   - **Start**: the page posts `{ provider, returnTo }` to `/api/auth/sign-in/social`. The body
-    is strict, `returnTo` is `/` or `/r/<code>`, and Better Auth gets a body the server builds.
+    is strict, `returnTo` is `/`, `/rooms` or `/r/<code>`, and Better Auth gets a body the server builds.
     It answers `{ url }`, and the page navigates there: a form could not follow that redirect
     under `form-action 'self'`, and neither the policy nor COOP changed for this.
   - **State**: in the `verification` row with the PKCE verifier and the return path, and a
@@ -724,6 +726,33 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   Errors are `{ code }` with an `AckErrorCode`: `unauthenticated` 401, `not_allowed`
   403, `bad_payload` 400 (a body that does not parse), 413 (over 16 KB) or 415 (not
   JSON), `bad_room_name` 400, `rate_limited` 429, `internal` 500.
+- "My rooms" (#49, ADR-027), for a signed-in person alone: a session that is a guest's gets
+  `not_allowed` 403 on every route, no session `unauthenticated` 401. A room is named by its
+  id in these addresses, so a code stays out of them. All four check the origin, answer
+  `no-store`, and log the route and the room's id, never its code or name.
+  - `GET /api/my-rooms?after=<cursor>` answers `{ rooms, retentionDays, next?, moving? }`. A
+    row is `{ id, code, name, owned, rounds, lastActiveAt }`, the last active first, 100 to a
+    page. The rows are the rooms the person owns, and the rooms where they hold a seat now
+    (`live.participants`), found through `room_owner_user_id_idx` and `room_people_idx`. A
+    departed voter's kept card is in that index and is no seat: the row is checked again.
+    `rounds` is `live.round.number`, rounds started, read from the row: no history is
+    counted. A row says nothing about anyone else. It first runs a guest's pending move
+    (`settle`, section 7) for up to 1 s; past that, or if it fails, the list comes anyway
+    with `moving: true`. The cursor is `<microseconds>_<id>`: a `Date` would round
+    `last_active_at` to milliseconds and repeat or skip a row. A malformed cursor is
+    `bad_payload` 400 before any query.
+  - `PATCH /api/my-rooms/:id { name }` runs the server's `renameRoom` through the room's
+    queue and the compare-and-set, so everyone in the room gets a snapshot with the new
+    `room.name`. A name passes `cleanRoomName` (`bad_room_name` 400), and only the PO on the
+    fresh state may (`not_owner` 403).
+  - `DELETE /api/my-rooms/:id` is one `delete ... where id and owner_user_id = me`, judged on
+    the row's latest version: a hand-over that commits first refuses it (`not_owner` 403),
+    and a commit after it finds no room. `round_history` and `room_access` go by cascade in
+    that statement, and the queue is a column of the row. Then the room's sockets are told
+    (`deleted`) on every instance.
+  - `POST /api/my-rooms/:id/leave` runs the `leave` command as that person (`not_participant`
+    403 without a seat). The domain does not refuse a PO, as on a socket; the page offers it
+    only to someone who does not own the room.
 - Password (optional, #31). The PO sets, changes or removes it over HTTP, never over
   the socket, so a password never enters the command pipeline, its idempotency cache or
   a log line: `PUT /api/rooms/:code/password { password }` and `DELETE
@@ -856,6 +885,8 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   | Wrong passwords | a handful of guests on one address | address and room | 25 in 10 min |
   | Wrong passwords (database, every instance) | brute force | room | 50 in 10 min |
   | Password changes (`PUT`, `DELETE`) | hashing on demand | person (PO) | 30 in 10 min |
+  | "My rooms" reads (`GET /api/my-rooms`) | a query per page | person | 60 a minute |
+  | "My rooms" changes (rename, delete, leave) | broadcasts and deletes in a loop | person | 30 a minute |
   | argon2 runs at once | memory (19 MiB each) | instance | 2, 32 waiting at most 2 s, then 503 `busy` |
   | Socket messages (`enter`, `cmd`, `history`, `queue`) | the server's work | person, all sockets | 10 a second, bursts of 20 |
   | Roster commands (`join`, `leave`, `rename`, `setAvatar`, `setRole`) | broadcast and announcement floods | person | 10 a minute, bursts of 10 |

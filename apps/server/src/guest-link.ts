@@ -17,8 +17,9 @@
  *    one transaction.
  *
  * Everything past `begin` runs again until it is done: at once in the callback, which waits a
- * few seconds and then lets the person go on; at every `enter` of the account; and before every
- * purge, so a few minutes after a start and then daily. While the row exists the purge leaves the
+ * few seconds and then lets the person go on; at every `enter` of the account and every read of
+ * its list (#49); and before every purge, so a few minutes after a start and then daily. While
+ * the row exists the purge leaves the
  * guest and the guest's rooms alone. Each step is a no-op once done, so two instances, or a run
  * that overlaps another, cannot do it twice.
  *

@@ -550,7 +550,7 @@ refuses it; a popup would need `Cross-Origin-Opener-Policy` loosened. Navigating
 directive at all, so neither the policy nor COOP changed, and `e2e/fixtures.ts` holds that over
 the whole flow.
 
-**A room's code never travels.** `returnTo` is `/` or `/r/<code>` and nothing else, checked by
+**A room's code never travels.** `returnTo` is `/`, `/r/<code>` or, since #49, `/rooms`, and nothing else, checked by
 the domain's own pattern, so no spelling leaves the site. Better Auth keeps it in the
 `verification` row with the PKCE verifier (`storeStateStrategy: "database"`, set explicitly). The
 provider gets a random `state`, and `redirect_uri` is the fixed callback. This was read in
@@ -1055,3 +1055,88 @@ whatever it says (ADR-023). Keeping the seat colour with a stored seed: a field 
 purge for a move that did not finish.
 
 **Not tested.** Real Google and Microsoft tokens (`docs/04-open-questions.md`).
+
+## ADR-027: My rooms: an account's list, a name through `apply`, and a delete every instance hears (2026-11-02, #49)
+
+**Decision.** A signed-in person has a list of their rooms at `/rooms`, over `/api/my-rooms`. It
+shows the rooms they own and the rooms where they hold a seat now; they can reopen any, rename or
+delete those they own, and leave the others. A guest has no list: the server refuses a guest on
+every route, not only the page. On an install without provider keys nothing of this shows, and
+`/rooms` is the page of an unknown address.
+
+**What "joined" means.** A seat now, in `live.participants`, or ownership. Someone who left or was
+removed does not see the room, and the page says so in those words. A record of every room a
+person ever sat in would need a table, and would keep a link between a person and a room that
+nobody asked to keep. The voter who left with a card on the table is the trap: `ROOM_PEOPLE` still
+names them, so a row the index finds is checked again against `participants`.
+
+**The query.** Two index scans under a `BitmapOr`, `room_owner_user_id_idx` and `room_people_idx`,
+then a sort of that person's rooms, 100 to a page, by `(last_active_at, id)`. On 100,000 other rooms
+of 16 seats each, the query took 0.5 ms and the whole request 7 ms for a person with 100 rooms; 5 ms
+and 13 ms for a person with 5,000. A test reads the plan on 20,000 rooms, finds no sequential scan,
+and holds the median request under the 300 ms of the issue. There is no index for the order: a person
+has few rooms, and the sort is of them alone.
+
+**Rounds are a number the room already holds.** `live.round.number` counts rounds started, the one
+on the table included; a restart keeps its number. A count of `round_history` would read a room's
+whole history per row, and a stored count would need a backfill on a live database. It differs from
+the history panel by the round on the table and by rounds abandoned before a reveal, which is what
+"rounds" means to someone scanning a list.
+
+**A room's name goes through `apply`.** It was a column no command touched, and the page read it once,
+so a rename would have stayed invisible in a live room. `renameRoom` is a server command: no socket
+can send it, the PO alone may, from outside the room too, and `apply` holds the name to
+`cleanRoomName`. Like the queue, the name is part of the state `apply` sees and has a column of its
+own: `loadRoom` puts it in, `commitRoom` writes it, and `live` never holds it, so a header still
+reads no state, and no migration or backfill was needed. An instance still on the old code in a
+deploy reads no name and writes none. A snapshot carries `room.name`, optional, and a rename has its
+cause and its line for a screen reader. Protocol version stays 5: an older page drops the one snapshot
+that carries the new cause, and the next one reaches it.
+
+**A delete is one statement, and every instance hears it.** `delete from room where id = ? and
+owner_user_id = ?`, judged on the row's latest version. So ownership is read fresh without a lock: a
+hand-over that commits first refuses the delete, and any commit after it loses its compare-and-set,
+loads nothing and answers `room_not_found`. The cascades take `round_history` and `room_access` in
+that statement, and a test lists every foreign key to `room`, so a later table cannot be forgotten.
+Then `roomDeleted` tells every instance, and each closes the room's sockets after `deleted`, those
+still entering included. The last close ends the room's timers (`forgetIfEmpty`). If Redis loses
+the word, the next run on the room finds nothing and does the same. A room with a password loses its
+grants with it. Not removed, on purpose: rate-limit counters, which run out; and a sign-in's return
+path in `verification`, which runs out in ten minutes and then finds no room.
+
+**A code stays out of addresses.** These routes name a room by its id, which logs already use. The
+list gives codes to people already in those rooms, in the body of a `no-store` answer. Umami sees
+`/rooms`, a fixed route.
+
+**Settle first, within a second.** A guest's move can still be pending (ADR-025), and someone who
+enters no room would wait for the next purge. So a list runs `settle` first: one read by index when
+nothing is pending, at most a second otherwise. The move goes on; a list that could not wait says
+`moving`, and the page offers to look again. A failing move never fails a list.
+
+**Retention.** ADR-014's rule reads `room.owner_user_id`, so it holds for everything on the list
+as it stands: a room moved from a guest is the account's once its commit lands, and is held by the
+link until then. Two consequences, both on the page or in a test: a room the person only joined
+follows its own owner, so a guest's room goes after `ROOM_TTL_DAYS`, seat or no seat; and handing
+the PO role to a guest ends the room's exemption.
+
+**Leaving** is the `leave` command as that person, through the room's queue, so the room hears it as
+ever. It was cheap: `commandAs` is the room sync's own `execute`. The grant stays, as for a `leave`
+over a socket.
+
+**Considered and dropped.**
+- *A `room_member` table, to order and page by index:* it would write on every join and leave, for a
+  list of a few dozen rows.
+- *A rename beside `apply`, writing the column and sending a signal:* a second write path, and the
+  name could change under a command in flight.
+- *Delete through the runner, as a step that ends the room:* the statement is already atomic, and the
+  runner would grow a case for one caller. Its compare-and-set gives the same answer to everyone else.
+- *Disconnecting without `deleted`:* a socket the server closes does not reconnect by itself, so the
+  page would show the connection lost instead of the room gone.
+- *A new `account_required` code:* the page knows who is a guest, and `not_allowed` says enough to a
+  client that got here by hand.
+- *Showing whether a room has a password:* the list has no need of it, and says nothing it need not.
+
+**For #51.** `deleteOwned` and `roomDeleted` are what deleting an owned room needs. An account that goes
+leaves its seats in rooms it does not own: the list reads `live`, and `round.votes` can name it too.
+
+**Not tested.** Real Google and Microsoft sign-ins, as for #47.
