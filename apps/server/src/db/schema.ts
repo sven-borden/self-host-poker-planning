@@ -40,6 +40,21 @@ const instant = (name: string) => timestamp(name, { withTimezone: true, mode: "d
 export const ROOM_PEOPLE = sql`((live -> 'participants') || coalesce(live #> '{round,votes}', '{}'::jsonb))`;
 
 /**
+ * Who holds a room's right to delete it (#49, ADR-027): `live.keeperId`, or the PO in a room
+ * stored before the field (`keeperOf` in the domain).
+ */
+export const ROOM_KEEPER = sql`coalesce(live ->> 'keeperId', owner_user_id)`;
+
+/**
+ * A room whose keeper is not its PO: someone claimed the role. Nearly no room is one, so its
+ * index stays small and costs a commit nothing. It is how a keeper with no seat is found: by the
+ * list, a guest's move and, one day, an account's deletion. A query must spell the two exactly,
+ * or it scans. A keeper who is the PO is found by `room_owner_user_id_idx`.
+ */
+export const KEEPER_APART = sql`(live ->> 'keeperId')`;
+export const IS_KEEPER_APART = sql`(live ->> 'keeperId') <> owner_user_id`;
+
+/**
  * One row per room. `live` is the room's whole state (settings, people, the round) and
  * the single source of truth for it; every change goes through `apply` and a
  * compare-and-set on `version`. `password_hash` and the timestamps live beside it because
@@ -77,6 +92,7 @@ export const room = pgTable(
     index("room_owner_user_id_idx").on(t.ownerUserId),
     // A guest who signs in (#48) and "my rooms" (W5) find a person's seats through this.
     index("room_people_idx").using("gin", ROOM_PEOPLE),
+    index("room_keeper_apart_idx").on(KEEPER_APART).where(IS_KEEPER_APART),
   ],
 );
 

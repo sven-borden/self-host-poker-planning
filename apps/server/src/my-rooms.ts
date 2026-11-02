@@ -4,9 +4,15 @@
  *
  * - `GET /api/my-rooms?after=<cursor>`: a page of the rooms the caller owns or holds a seat in,
  *   after finishing a guest's move still pending (ADR-025);
- * - `PATCH /api/my-rooms/:id { name }`: renames a room, its owner only, through `apply`;
- * - `DELETE /api/my-rooms/:id`: deletes a room with all it holds, its owner only;
+ * - `PATCH /api/my-rooms/:id { name }`: renames a room, its PO only, through `apply`;
+ * - `DELETE /api/my-rooms/:id`: deletes a room with all it holds, for someone who is its PO and
+ *   its keeper (ADR-027);
  * - `POST /api/my-rooms/:id/leave`: gives up the seat, through the `leave` command.
+ *
+ * A person who has nothing to do with a room hears what an unknown id hears, so an id says
+ * nothing of whether a room exists, and nothing reaches `apply`, which would resolve the room's
+ * deadline even for a command it refuses. Someone who knows the room, by a seat or a right to it,
+ * hears why: their page may be out of date, and "no longer there" would be false.
  *
  * A room is named by its id in a path: a code is a bearer capability, and it stays out of every
  * address but the room's own. The list returns codes to people already in those rooms, and
@@ -20,7 +26,7 @@ import { z } from "zod";
 import type { AppEnv } from "./app.ts";
 import { type Auth, type SocketUser, sessionUser } from "./auth.ts";
 import type { Config } from "./config.ts";
-import type { MyRoomsCursor, MyRoomsStore } from "./db/my-rooms.ts";
+import type { FoundRoom, MyRoomsCursor, MyRoomsStore } from "./db/my-rooms.ts";
 import type { GuestLinks } from "./guest-link.ts";
 import { foreignOrigin, isJsonBody, rateLimited } from "./http.ts";
 import type { RateLimiter, RateLimitRule } from "./rate-limit.ts";
@@ -100,6 +106,21 @@ export function registerMyRoomsApi(
     }
   }
 
+  /** The room, for someone with a seat in it or a right to it; otherwise as for an unknown id. */
+  async function known(id: string, user: string): Promise<FoundRoom | null> {
+    const room = ROOM_ID.test(id) ? await rooms.find(id, user) : null;
+    return room && (room.ownerId === user || room.keeper || room.seated) ? room : null;
+  }
+
+  /** Why this person may not delete this room: the list was out of date, or lost a race. */
+  function noDelete(c: Context<AppEnv>, room: FoundRoom | null, user: string) {
+    if (!room) return c.json({ code: "room_not_found" }, 404);
+    if (room.ownerId !== user) return c.json({ code: "not_owner" }, 403);
+    return room.keeper
+      ? c.json({ code: "room_not_found" }, 404)
+      : c.json({ code: "not_keeper" }, 403);
+  }
+
   app.get("/api/my-rooms", async (c) => {
     const me = await account(c, "read", MY_ROOMS_READ_LIMIT);
     if (me instanceof Response) return me;
@@ -124,9 +145,9 @@ export function registerMyRoomsApi(
     if (!body.success) return c.json({ code: "bad_payload" }, 400);
     const name = cleanRoomName(body.data.name);
     if (name === null) return c.json({ code: "bad_room_name" }, 400);
-    const id = c.req.param("id");
-    const room = ROOM_ID.test(id) ? await rooms.find(id) : null;
+    const room = await known(c.req.param("id"), me.id);
     if (!room) return c.json({ code: "room_not_found" }, 404);
+    if (room.ownerId !== me.id) return c.json({ code: "not_owner" }, 403);
     // Judged by `apply` on the room's fresh state, in its queue: a PO who lost the role is refused.
     const ack = await sync.commandAs(room, me.id, { type: "renameRoom", name });
     if (!ack.ok) return refusal(c, ack);
@@ -138,9 +159,12 @@ export function registerMyRoomsApi(
     const me = await account(c, "change", MY_ROOMS_CHANGE_LIMIT);
     if (me instanceof Response) return me;
     const id = c.req.param("id");
-    const room = ROOM_ID.test(id) ? await rooms.find(id) : null;
-    if (!room) return c.json({ code: "room_not_found" }, 404);
-    if (!(await rooms.deleteOwned(room.id, me.id))) return c.json({ code: "not_owner" }, 403);
+    const room = await known(id, me.id);
+    if (room?.ownerId !== me.id || !room.keeper) return noDelete(c, room, me.id);
+    // The statement is the judge. It refuses a claim or a hand-over that landed since, and a
+    // second tab's delete: the row says which.
+    if (!(await rooms.deleteOwned(room.id, me.id)))
+      return noDelete(c, await known(id, me.id), me.id);
     sync.roomDeleted(room.id);
     c.var.log.info({ room: room.id }, "room deleted");
     return c.body(null, 204);
@@ -150,9 +174,9 @@ export function registerMyRoomsApi(
     const me = await account(c, "change", MY_ROOMS_CHANGE_LIMIT);
     if (me instanceof Response) return me;
     if (!isJsonBody(c)) return c.json({ code: "bad_payload" }, 415);
-    const id = c.req.param("id");
-    const room = ROOM_ID.test(id) ? await rooms.find(id) : null;
+    const room = await known(c.req.param("id"), me.id);
     if (!room) return c.json({ code: "room_not_found" }, 404);
+    if (!room.seated) return c.json({ code: "not_participant" }, 403);
     const ack = await sync.commandAs(room, me.id, { type: "leave" });
     return ack.ok ? c.body(null, 204) : refusal(c, ack);
   });

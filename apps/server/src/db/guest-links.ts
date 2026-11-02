@@ -11,7 +11,15 @@ import { and, eq, exists, sql } from "drizzle-orm";
 import { session, user } from "./auth-schema.ts";
 import { guard } from "./errors.ts";
 import type { Db } from "./rooms.ts";
-import { guestLink, ROOM_PEOPLE, room, roomAccess, roundHistory } from "./schema.ts";
+import {
+  guestLink,
+  IS_KEEPER_APART,
+  KEEPER_APART,
+  ROOM_PEOPLE,
+  room,
+  roomAccess,
+  roundHistory,
+} from "./schema.ts";
 
 export interface GuestLinkStore {
   /**
@@ -91,7 +99,10 @@ export function createGuestLinkStore(db: Db): GuestLinkStore {
         db
           .select({ id: room.id, code: room.code })
           .from(room)
-          .where(sql`${room.ownerUserId} = ${guest} or ${ROOM_PEOPLE} ? ${guest}`),
+          .where(
+            sql`${room.ownerUserId} = ${guest} or ${ROOM_PEOPLE} ? ${guest}
+              or (${KEEPER_APART} = ${guest} and ${IS_KEEPER_APART})`,
+          ),
       ),
 
     complete: (guest, account) =>

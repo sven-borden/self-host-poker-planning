@@ -373,6 +373,16 @@ describe("the room's name (#49)", () => {
   });
 });
 
+describe("who holds the right to delete the room (#49)", () => {
+  it("is in no snapshot, whoever reads it", () => {
+    const { state } = run([join("po"), join("ana")]);
+    expect(state.keeperId).toBe("po");
+    for (const reader of ["po", "ana"]) {
+      expect(JSON.stringify(toSnapshot(state, reader, META))).not.toContain("keeper");
+    }
+  });
+});
+
 describe("the room password (#31)", () => {
   const password = (on: boolean): [string, Command] => ["po", { type: "password", on }];
 

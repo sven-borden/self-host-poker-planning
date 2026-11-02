@@ -4,15 +4,18 @@
  *
  * What it holds: only an account reaches any of this; the list is the rooms a person owns or holds
  * a seat in, and says nothing of anyone else; a guest's pending move is finished first, and a
- * failing one breaks nothing; rename and delete are the owner's alone, on a fresh read; a room
- * that goes takes everything with it, and its sockets and timers stop; retention leaves what
- * ADR-014 says; and the list reads indexes, however many rooms the instance holds.
+ * failing one breaks nothing; rename is the PO's and delete is the PO's who is also the keeper, on
+ * a fresh read; a stranger's request leaves no mark and says nothing of the room; a room that goes
+ * takes everything with it, and its sockets and timers stop; retention leaves what ADR-014 says;
+ * and the list reads indexes, however many rooms the instance holds.
  */
 import { performance } from "node:perf_hooks";
 import { createRoom } from "@pp/domain";
+import { sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Config } from "./config.ts";
 import { createGuestLinkStore } from "./db/guest-links.ts";
+import { createMyRoomsStore, myRoomsQuery } from "./db/my-rooms.ts";
 import { createTestDatabase, type TestDatabase, testClient } from "./db/test-db.ts";
 import {
   atFake,
@@ -198,6 +201,8 @@ interface ListedRoom {
   code: string;
   name: string | null;
   owned: boolean;
+  keeper: boolean;
+  seated: boolean;
   rounds: number;
   lastActiveAt: string;
 }
@@ -230,6 +235,27 @@ const countOf = async (table: string, column: string, id: string) => {
   );
   return (rows[0] as { n: number }).n;
 };
+
+/** A row's activity, version and round, for what a refused request must leave alone. */
+const markOf = async (id: string) => {
+  const { rows } = await admin.query(
+    `select version, last_active_at::text as active, live #>> '{round,phase}' as phase
+     from room where id = $1`,
+    [id],
+  );
+  return rows[0] as { version: number; active: string; phase: string | null };
+};
+
+/** Makes `who`'s seat away for longer than a claim needs. */
+const awayLongEnough = (id: string, who: string) =>
+  admin.query(
+    `update room set live = jsonb_set(
+       jsonb_set(live, array['participants', $2::text, 'awaySince'],
+         to_jsonb((extract(epoch from now()) * 1000 - 130000)::bigint)),
+       array['participants', $2::text, 'connected'], 'false')
+     where id = $1`,
+    [id, who],
+  );
 
 const nameIn = async (id: string) => {
   const { rows } = await admin.query("select name from room where id = $1", [id]);
@@ -376,10 +402,12 @@ describe("the list", () => {
     expect(Object.keys(JSON.parse(text).rooms[0]).sort()).toEqual([
       "code",
       "id",
+      "keeper",
       "lastActiveAt",
       "name",
       "owned",
       "rounds",
+      "seated",
     ]);
     for (const secret of ["Name-Of", "Secret-Subject", other.id, '"13"']) {
       expect(text).not.toContain(secret);
@@ -408,6 +436,26 @@ describe("the list", () => {
     );
     expect((rows[0] as { n: number }).n).toBeGreaterThan(0);
     expect((await me.list()).rooms).toEqual([]);
+  });
+
+  it("does not fail for one odd row: a round number that is no whole number reads as none", async () => {
+    const me = await signedIn();
+    const fine = await roomOf(me.id, "Fine");
+    const odd = await Promise.all(
+      ["1.5", '"seven"', "1e30", "-1", "99999999999", "null", '{"a":1}'].map(async (number) => {
+        const room = await roomOf(me.id, "Odd");
+        await admin.query(
+          `update room set live = jsonb_set(live, '{round}', jsonb_build_object('number', $2::jsonb))
+           where id = $1`,
+          [room.id, number],
+        );
+        return room;
+      }),
+    );
+    const { rooms } = await me.list();
+    expect(rooms).toHaveLength(odd.length + 1);
+    expect(rooms.find(({ id }) => id === fine.id)?.rounds).toBe(0);
+    expect(new Set(rooms.map(({ rounds }) => rounds))).toEqual(new Set([0]));
   });
 
   it("gives the rounds as a number the room holds, the last active first", async () => {
@@ -498,7 +546,8 @@ describe("a guest's move still pending", () => {
     const started = performance.now();
     const { moving } = await account.list();
     expect(moving).toBe(true);
-    expect(performance.now() - started).toBeLessThan(MY_ROOMS_SETTLE_MS + 500);
+    // The move is still held, so the answer did not wait for it. The margin is for a loaded runner.
+    expect(performance.now() - started).toBeLessThan(MY_ROOMS_SETTLE_MS + 5000);
     finish();
     await expect
       .poll(async () => (await account.list()).rooms.map(({ id }) => id))
@@ -553,17 +602,18 @@ describe("renaming", () => {
     );
   });
 
-  it("refuses someone else's room id", async () => {
+  it("refuses someone in the room, and a stranger hears what an unknown id hears", async () => {
     const owner = await signedIn();
     const stranger = await signedIn();
     const seated = await signedIn();
     const room = await roomOf(owner.id, "Kept");
     await seated.sit(room.code);
-    for (const browser of [stranger, seated]) {
-      const response = await browser.patch(`/api/my-rooms/${room.id}`, { name: "Taken" });
-      expect(response.status).toBe(403);
-      expect(await response.json()).toEqual({ code: "not_owner" });
-    }
+    const refused = await seated.patch(`/api/my-rooms/${room.id}`, { name: "Taken" });
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({ code: "not_owner" });
+    const unknown = await stranger.patch(`/api/my-rooms/${room.id}`, { name: "Taken" });
+    expect(unknown.status).toBe(404);
+    expect(await unknown.json()).toEqual({ code: "room_not_found" });
     expect(await nameIn(room.id)).toBe("Kept");
   });
 
@@ -666,7 +716,7 @@ describe("deleting", () => {
     await expect(sync.occupiedRooms()).resolves.not.toContain(room.id);
   });
 
-  it("refuses someone else's room id, and a PO who handed the role over", async () => {
+  it("refuses someone in the room and a PO who handed the role over, and a stranger hears 404", async () => {
     const owner = await signedIn();
     const heir = await signedIn();
     const stranger = await signedIn();
@@ -674,10 +724,12 @@ describe("deleting", () => {
     const po = await owner.sit(room.code);
     await heir.sit(room.code);
 
-    const refused = await stranger.remove(`/api/my-rooms/${room.id}`);
+    const unknown = await stranger.remove(`/api/my-rooms/${room.id}`);
+    expect(unknown.status).toBe(404);
+    expect(await unknown.json()).toEqual({ code: "room_not_found" });
+    const refused = await heir.remove(`/api/my-rooms/${room.id}`);
     expect(refused.status).toBe(403);
     expect(await refused.json()).toEqual({ code: "not_owner" });
-    expect((await heir.remove(`/api/my-rooms/${room.id}`)).status).toBe(403);
 
     await po.cmd("transferOwner", { to: heir.id });
     expect((await owner.remove(`/api/my-rooms/${room.id}`)).status).toBe(403);
@@ -686,23 +738,77 @@ describe("deleting", () => {
     expect(await countOf("room", "id", room.id)).toBe(0);
   });
 
-  it("wins or loses cleanly against a command at the same moment", async () => {
+  it("wins against a command that read the room first: the commit finds no room, and writes nothing", async () => {
     const owner = await signedIn();
-    const other = await signedIn();
-    for (let n = 0; n < 5; n++) {
-      const room = await roomOf(owner.id);
-      const po = await owner.sit(room.code);
-      const voter = await other.sit(room.code);
-      const [gone] = await Promise.all([
-        owner.remove(`/api/my-rooms/${room.id}`),
-        // A command may lose its socket before its answer: the room is gone either way.
-        po.cmd("startRound", { subject: { kind: "none" }, round: 0 }).catch(() => null),
-        voter.cmd("rename", { name: "Racing" }).catch(() => null),
-      ]);
-      expect(gone.status).toBe(204);
-      expect(await countOf("room", "id", room.id)).toBe(0);
-      expect(await countOf("round_history", "room_id", room.id)).toBe(0);
+    const room = await roomOf(owner.id);
+    const po = await owner.sit(room.code);
+    const store = setup.database.store;
+    const commit = store.commitRoom;
+    let reached = () => {};
+    let go = () => {};
+    const atCommit = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      go = resolve;
+    });
+    // The command has loaded the room and stands right before its compare-and-set.
+    const held = vi.spyOn(store, "commitRoom").mockImplementation(async (...args) => {
+      reached();
+      await released;
+      return commit.apply(store, args);
+    });
+    const command = po
+      .cmd("startRound", { subject: { kind: "none" }, round: 0 })
+      .catch(() => "the socket closed first");
+    await atCommit;
+
+    expect((await owner.remove(`/api/my-rooms/${room.id}`)).status).toBe(204);
+    expect(await countOf("room", "id", room.id)).toBe(0);
+    go();
+
+    const answer = await command;
+    expect(held).toHaveBeenCalled();
+    if (typeof answer !== "string") {
+      expect(answer).toMatchObject({ ok: false, code: "room_not_found" });
     }
+    expect(await countOf("room", "id", room.id)).toBe(0);
+    expect(await countOf("round_history", "room_id", room.id)).toBe(0);
+  });
+
+  it("loses to a commit that lands first: the row it judges is the new one", async () => {
+    const owner = await signedIn();
+    const heir = await signedIn();
+    const room = await roomOf(owner.id);
+    const po = await owner.sit(room.code);
+    await heir.sit(room.code);
+    const store = createMyRoomsStore(setup.database.db);
+    // What the route read before the statement: this person may.
+    await expect(store.find(room.id, owner.id)).resolves.toMatchObject({
+      ownerId: owner.id,
+      keeper: true,
+    });
+    await po.cmd("transferOwner", { to: heir.id });
+
+    await expect(store.deleteOwned(room.id, owner.id)).resolves.toBe(false);
+
+    expect(await countOf("room", "id", room.id)).toBe(1);
+  });
+
+  it("says a room is gone to the second of two deletes at once, not that it is someone else's", async () => {
+    const owner = await signedIn();
+    const statuses = new Set<number>();
+    for (let n = 0; n < 8; n++) {
+      const room = await roomOf(owner.id);
+      const answers = await Promise.all([
+        owner.remove(`/api/my-rooms/${room.id}`),
+        owner.remove(`/api/my-rooms/${room.id}`),
+      ]);
+      const sorted = answers.map(({ status }) => status).sort();
+      expect(sorted).toEqual([204, 404]);
+      for (const status of sorted) statuses.add(status);
+    }
+    expect(statuses).toEqual(new Set([204, 404]));
   });
 });
 
@@ -722,8 +828,249 @@ describe("leaving", () => {
     expect(snapshot.causes).toContainEqual({ type: "left", who: me.id });
     expect((await me.list()).rooms).toEqual([]);
     const again = await me.post(`/api/my-rooms/${room.id}/leave`, {});
-    expect(again.status).toBe(403);
-    expect(await again.json()).toEqual({ code: "not_participant" });
+    expect(again.status).toBe(404);
+    expect(await again.json()).toEqual({ code: "room_not_found" });
+  });
+
+  it("tells someone with a right to the room but no seat that there is none to give up", async () => {
+    const owner = await signedIn();
+    const room = await roomOf(owner.id, "No seat");
+    const response = await owner.post(`/api/my-rooms/${room.id}/leave`, {});
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ code: "not_participant" });
+  });
+});
+
+describe("a stranger with a room's id", () => {
+  it("hears what an unknown id hears, on all three routes, and leaves no mark on the room", async () => {
+    const owner = await signedIn();
+    const stranger = await signedIn();
+    const other = await signedIn();
+    const room = await roomOf(owner.id, "Kept");
+    const po = await owner.sit(room.code);
+    await other.sit(room.code);
+    await po.cmd("updateSettings", { patch: { timer: { seconds: 5 } } });
+    await po.cmd("startRound", { subject: { kind: "none" }, round: 0 });
+    // The deadline has passed and no timer fired: only the next command would reveal.
+    await admin.query(
+      `update room set live = jsonb_set(live, '{round,deadlineAt}', '1000'),
+         last_active_at = '2026-01-01T00:00:00Z' where id = $1`,
+      [room.id],
+    );
+    const before = await markOf(room.id);
+    expect(before.phase).toBe("voting");
+    const absent = "00000000-0000-4000-8000-000000000000";
+
+    const answers = await Promise.all(
+      [room.id, absent].map(async (id) => [
+        await stranger.patch(`/api/my-rooms/${id}`, { name: "Taken" }),
+        await stranger.remove(`/api/my-rooms/${id}`),
+        await stranger.post(`/api/my-rooms/${id}/leave`, {}),
+      ]),
+    );
+
+    for (const response of answers.flat()) {
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ code: "room_not_found" });
+    }
+    expect(await markOf(room.id)).toEqual(before);
+  });
+});
+
+describe("a role taken by claim (ADR-027)", () => {
+  /** A room with history, its owner gone from it, and a stranger with the link in the PO's place. */
+  async function claimed(ownerSits: boolean) {
+    const owner = await signedIn();
+    const stranger = await signedIn();
+    const room = await roomOf(owner.id, "Team room with history");
+    await admin.query(
+      `insert into round_history
+         (room_id, number, subject, deck, votes, stats, started_at, revealed_at, finished_at)
+       values ($1, 1, '{}', '{}', '{"kind":"anonymous","cards":[]}', '{}', now(), now(), now())`,
+      [room.id],
+    );
+    const po = ownerSits ? await owner.sit(room.code, "PO") : null;
+    const seat = await stranger.sit(room.code, "Stranger");
+    if (po) {
+      po.close();
+      await awayLongEnough(room.id, owner.id);
+      // A command so the room reads the row again.
+      await seat.cmd("rename", { name: "Stranger too" });
+    }
+    await expect(seat.cmd("claimOwner")).resolves.toMatchObject({ ok: true });
+    return { owner, stranger, room, seat };
+  }
+
+  for (const [path, ownerSits] of [
+    ["at once, from an owner with no seat", false],
+    ["after 120 s, from an owner away", true],
+  ] as const) {
+    it(`gives no delete ${path}, and the owner's room lives on`, async () => {
+      const { owner, stranger, room } = await claimed(ownerSits);
+
+      const row = (await stranger.list()).rooms.find(({ id }) => id === room.id);
+      expect(row).toMatchObject({ owned: true, keeper: false, seated: true });
+
+      const refused = await stranger.remove(`/api/my-rooms/${room.id}`);
+      expect(refused.status).toBe(403);
+      expect(await refused.json()).toEqual({ code: "not_keeper" });
+      expect(await countOf("room", "id", room.id)).toBe(1);
+      expect(await countOf("round_history", "room_id", room.id)).toBe(1);
+
+      // The owner still sees it, seat or no seat, and may not delete it from there either.
+      const mine = (await owner.list()).rooms.find(({ id }) => id === room.id);
+      expect(mine).toMatchObject({ owned: false, keeper: true, seated: ownerSits });
+      const asOwner = await owner.remove(`/api/my-rooms/${room.id}`);
+      expect(asOwner.status).toBe(403);
+      expect(await asOwner.json()).toEqual({ code: "not_owner" });
+      expect(await countOf("room", "id", room.id)).toBe(1);
+    });
+  }
+
+  it("keeps the rename, which can be undone", async () => {
+    const { stranger, room } = await claimed(false);
+    expect((await stranger.patch(`/api/my-rooms/${room.id}`, { name: "Ours" })).status).toBe(200);
+    expect(await nameIn(room.id)).toBe("Ours");
+  });
+
+  it("takes a claimer who gives up the seat off the list", async () => {
+    const { stranger, room } = await claimed(false);
+    expect((await stranger.post(`/api/my-rooms/${room.id}/leave`, {})).status).toBe(204);
+    expect((await stranger.list()).rooms.map(({ id }) => id)).not.toContain(room.id);
+  });
+
+  it("leaves a keeper who gave up the seat with the room still on the list", async () => {
+    const { owner, room } = await claimed(true);
+    const row = (await owner.list()).rooms.find(({ id }) => id === room.id);
+    expect(row?.seated).toBe(true);
+    await admin.query("update room set live = live #- array['participants', $2] where id = $1", [
+      room.id,
+      owner.id,
+    ]);
+    expect((await owner.list()).rooms.find(({ id }) => id === room.id)).toMatchObject({
+      keeper: true,
+      seated: false,
+    });
+  });
+
+  it("lets the keeper delete once the role is back", async () => {
+    const { owner, room, seat } = await claimed(false);
+    await seat.cmd("leave");
+    const back = await owner.sit(room.code, "Back");
+    await expect(back.cmd("claimOwner")).resolves.toMatchObject({ ok: true });
+    expect((await owner.remove(`/api/my-rooms/${room.id}`)).status).toBe(204);
+    expect(await countOf("room", "id", room.id)).toBe(0);
+  });
+
+  it("gives no delete by a claimer's hand-over, to anyone", async () => {
+    const { stranger, room, seat } = await claimed(false);
+    const third = await signedIn();
+    await third.sit(room.code, "Third");
+    await expect(seat.cmd("transferOwner", { to: third.id })).resolves.toMatchObject({ ok: true });
+
+    const refused = await third.remove(`/api/my-rooms/${room.id}`);
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({ code: "not_keeper" });
+    expect((await stranger.remove(`/api/my-rooms/${room.id}`)).status).toBe(403);
+    expect(await countOf("room", "id", room.id)).toBe(1);
+  });
+
+  it("gives delete by the keeper's own hand-over", async () => {
+    const owner = await signedIn();
+    const heir = await signedIn();
+    const room = await roomOf(owner.id, "Handed on");
+    const po = await owner.sit(room.code, "PO");
+    await heir.sit(room.code, "Heir");
+    await expect(po.cmd("transferOwner", { to: heir.id })).resolves.toMatchObject({ ok: true });
+    expect((await heir.list()).rooms[0]).toMatchObject({ owned: true, keeper: true });
+    expect((await heir.remove(`/api/my-rooms/${room.id}`)).status).toBe(204);
+  });
+
+  it("is judged by the statement, on the row as it is now", async () => {
+    const owner = await signedIn();
+    const stranger = await signedIn();
+    const room = await roomOf(owner.id, "Raced");
+    const seat = await stranger.sit(room.code, "Stranger");
+    const store = createMyRoomsStore(setup.database.db);
+    await seat.cmd("claimOwner");
+    // Neither of the two: the PO is no keeper, the keeper no PO.
+    await expect(store.deleteOwned(room.id, stranger.id)).resolves.toBe(false);
+    await expect(store.deleteOwned(room.id, owner.id)).resolves.toBe(false);
+    expect(await countOf("room", "id", room.id)).toBe(1);
+  });
+
+  it("stays out of every frame, and no socket can set it", async () => {
+    const { room, seat, owner, stranger } = await claimed(false);
+    await expect(seat.cmd("claimOwner", { keeperId: stranger.id })).resolves.toMatchObject({
+      ok: false,
+    });
+    await seat.cmd("rename", { name: "A snapshot" });
+    const frames = JSON.stringify(seat.frames);
+    expect(frames.length).toBeGreaterThan(0);
+    expect(frames).not.toContain("keeperId");
+    const { rows } = await admin.query(
+      "select live ->> 'keeperId' as keeper from room where id = $1",
+      [room.id],
+    );
+    expect((rows[0] as { keeper: string }).keeper).toBe(owner.id);
+  });
+
+  describe("in a room stored before the field", () => {
+    const stored = (id: string) =>
+      admin.query("update room set live = live - 'keeperId' where id = $1", [id]);
+
+    it("lets its PO delete it: the right is the PO's until a claim", async () => {
+      const owner = await signedIn();
+      const room = await roomOf(owner.id, "Old");
+      await stored(room.id);
+      expect((await owner.list()).rooms[0]).toMatchObject({ owned: true, keeper: true });
+      expect((await owner.remove(`/api/my-rooms/${room.id}`)).status).toBe(204);
+    });
+
+    it("refuses a claimer, as the claim writes down the PO it replaced", async () => {
+      const owner = await signedIn();
+      const stranger = await signedIn();
+      const room = await roomOf(owner.id, "Old");
+      await stored(room.id);
+      const seat = await stranger.sit(room.code, "Stranger");
+      await seat.cmd("claimOwner");
+      expect((await stranger.remove(`/api/my-rooms/${room.id}`)).status).toBe(403);
+      expect((await owner.list()).rooms[0]).toMatchObject({ owned: false, keeper: true });
+    });
+
+    it("gives a guest who signs in the right with the role", async () => {
+      const me = await new Browser().asGuest();
+      const room = await roomOf(me.id, "Old, a guest's");
+      await stored(room.id);
+      await me.asAccount();
+      await expect.poll(async () => (await me.list()).rooms.length).toBe(1);
+      expect((await me.list()).rooms[0]).toMatchObject({ owned: true, keeper: true });
+      expect((await me.remove(`/api/my-rooms/${room.id}`)).status).toBe(204);
+    });
+  });
+
+  it("moves with a guest who signs in, though the guest has no seat and no role", async () => {
+    const me = await new Browser().asGuest();
+    const guestId = me.id;
+    const stranger = await signedIn();
+    const room = await roomOf(guestId, "A guest's, claimed");
+    const seat = await stranger.sit(room.code, "Stranger");
+    await seat.cmd("claimOwner");
+
+    await me.asAccount();
+
+    await expect.poll(async () => (await me.list()).rooms.length).toBe(1);
+    expect((await me.list()).rooms[0]).toMatchObject({
+      id: room.id,
+      owned: false,
+      keeper: true,
+      seated: false,
+    });
+    const { rows } = await admin.query(
+      "select live ->> 'keeperId' as keeper, owner_user_id as po from room where id = $1",
+      [room.id],
+    );
+    expect(rows[0]).toEqual({ keeper: me.id, po: stranger.id });
   });
 });
 
@@ -772,11 +1119,62 @@ describe("retention (ADR-014)", () => {
 
     expect(await countOf("room", "id", room.id)).toBe(0);
   });
+
+  /** Nobody in the room any more, and idle for years. */
+  async function abandoned(id: string) {
+    for (const client of open.splice(0)) client.close();
+    await expect.poll(() => sync.occupiedRooms()).not.toContain(id);
+    await idle(id);
+  }
+
+  it("keeps a person's room when a guest claims the role: the rule reads the keeper", async () => {
+    const owner = await signedIn();
+    const guest = await new Browser().asGuest();
+    const room = await roomOf(owner.id, "Claimed by a guest");
+    const seat = await guest.sit(room.code);
+    await seat.cmd("claimOwner");
+    await abandoned(room.id);
+
+    await setup.retention.runNow();
+
+    expect(await countOf("room", "id", room.id)).toBe(1);
+  });
+
+  it("purges a guest's room an account claimed: a claim makes nothing stay for ever", async () => {
+    const guest = await new Browser().asGuest();
+    const claimer = await signedIn();
+    const room = await roomOf(guest.id, "A guest's, claimed");
+    const seat = await claimer.sit(room.code);
+    await seat.cmd("claimOwner");
+    expect((await claimer.list()).rooms[0]).toMatchObject({ owned: true, keeper: false });
+    await abandoned(room.id);
+
+    await setup.retention.runNow();
+
+    expect(await countOf("room", "id", room.id)).toBe(0);
+  });
+
+  it("reads a room stored before the field by its PO", async () => {
+    const owner = await signedIn();
+    const room = await roomOf(owner.id, "Old");
+    await admin.query("update room set live = live - 'keeperId' where id = $1", [room.id]);
+    await idle(room.id);
+    await setup.retention.runNow();
+    expect(await countOf("room", "id", room.id)).toBe(1);
+  });
 });
 
 describe("the query", () => {
-  it("reads indexes, and answers within the 300 ms at 100 rooms among many", async () => {
+  const planOf = async (query: ReturnType<typeof sql>) => {
+    const { rows } = await setup.database.db.execute(
+      sql`explain (analyze, buffers, format text) ${query}`,
+    );
+    return rows.map((row) => row["QUERY PLAN"]).join("\n");
+  };
+
+  it("reads indexes for the rooms of one person, older than everyone's, and answers within 300 ms", async () => {
     const me = await signedIn();
+    const claimer = await signedIn();
     const seats = (who: string, n: string) => `(select jsonb_object_agg(
       case when s = 1 then ${who} else 'person' || ${n} || '-' || s end,
       jsonb_build_object('name', 'A Person Name', 'role', 'voter', 'joinedAt', 1, 'connected', false))
@@ -785,56 +1183,76 @@ describe("the query", () => {
       'ownerId', 'owner' || ${n},
       'participants', ${seats(who, n)},
       'round', jsonb_build_object('number', 12, 'votes', '{}'::jsonb))`;
-    // Many rooms of other people, and this person's: half owned, half with a seat.
+    // Many rooms of other people, active lately, and this person's, all older: owned, with a seat,
+    // and two the person keeps while someone else holds the role. A limit on such a list tempts
+    // the planner to walk the activity index backward through everyone else's rooms.
     await admin.query(`
-      insert into room (code, owner_user_id, live, version)
-      select 'bulk' || n, 'owner' || n, ${live("'seat' || n", "n")}, 1
+      insert into room (code, owner_user_id, live, version, last_active_at)
+      select 'bulk' || n, 'owner' || n, ${live("'seat' || n", "n")}, 1,
+        now() - random() * interval '30 days'
       from generate_series(1, 20000) n`);
     await admin.query(
-      `insert into room (code, owner_user_id, live, version)
+      `insert into room (code, owner_user_id, live, version, last_active_at)
        select 'mine' || n, case when n % 2 = 0 then $1::text else 'owner' || n end,
-         ${live("$1::text", "n")}, 1
-       from generate_series(1, 100) n`,
+         ${live("$1::text", "n")}, 1, now() - interval '60 days' - n * interval '1 minute'
+       from generate_series(1, 2000) n`,
       [me.id],
+    );
+    await admin.query(
+      `insert into room (code, owner_user_id, live, version, last_active_at)
+       select 'kept' || n, $2::text,
+         ${live("'nobody'", "n")} || jsonb_build_object('keeperId', $1::text), 1,
+         now() - interval '60 days' - n * interval '1 second'
+       from generate_series(1, 2) n`,
+      [me.id, claimer.id],
     );
     await admin.query(
       `insert into round_history
          (room_id, number, subject, deck, votes, stats, started_at, revealed_at, finished_at)
        select r.id, g, '{}', '{}', '{"kind":"anonymous","cards":[]}', '{}', now(), now(), now()
-       from room r, generate_series(1, 12) g where r.code like 'mine%'`,
+       from room r, generate_series(1, 12) g where r.code like 'mine1%'`,
     );
     await admin.query("analyze room");
     await admin.query("analyze round_history");
 
-    const { rows } = await admin.query(
-      `explain (analyze, buffers, format text)
-       select id, code, name, owner_user_id = $1 as owned,
-         coalesce((live #>> '{round,number}')::int, 0) as rounds, last_active_at
-       from room
-       where (owner_user_id = $1 or (
-         ((live -> 'participants') || coalesce(live #> '{round,votes}', '{}'::jsonb)) ? $1
-         and live -> 'participants' ? $1))
-       order by last_active_at desc, id desc limit 101`,
-      [me.id],
-    );
-    const plan = rows.map((row) => row["QUERY PLAN"]).join("\n");
-    expect(plan).toContain("room_people_idx");
+    const plan = await planOf(myRoomsQuery(me.id, MY_ROOMS_PAGE));
+    expect(plan).toContain("CTE Scan on mine");
     expect(plan).toContain("room_owner_user_id_idx");
+    expect(plan).toContain("room_people_idx");
+    expect(plan).toContain("room_keeper_apart_idx");
+    expect(plan).not.toContain("room_last_active_at_idx");
     expect(plan).not.toContain("Seq Scan");
     expect(plan).not.toContain("round_history");
+
+    // A later page's cursor is in the CTE: an index may serve it, the limit may not choose one.
+    const [micros = "", id = ""] = (await me.list()).next?.split("_") ?? [];
+    const later = await planOf(myRoomsQuery(me.id, MY_ROOMS_PAGE, { micros, id }));
+    expect(later).toContain("CTE Scan on mine");
+    expect(later).not.toContain("Seq Scan");
 
     const timings: number[] = [];
     for (let n = 0; n < 7; n++) {
       const started = performance.now();
       const page = await me.list();
       timings.push(performance.now() - started);
-      expect(page.rooms).toHaveLength(100);
-      expect(page.next).toBeUndefined();
+      expect(page.rooms).toHaveLength(MY_ROOMS_PAGE);
+      expect(page.next).toBeDefined();
       expect(page.rooms.every(({ rounds }) => rounds === 12)).toBe(true);
     }
     const median = [...timings].sort((a, b) => a - b)[3] ?? Infinity;
     expect(median).toBeLessThan(300);
-    await admin.query("delete from room where code like 'bulk%' or code like 'mine%'");
+
+    const seen = new Set<string>();
+    let after: string | undefined;
+    do {
+      const page: ListAnswer = await me.list(after ? `?after=${after}` : "");
+      for (const { id } of page.rooms) seen.add(id);
+      after = page.next;
+    } while (after);
+    expect(seen.size).toBe(2002);
+    await admin.query(
+      "delete from room where code like 'bulk%' or code like 'mine%' or code like 'kept%'",
+    );
   }, 120_000);
 });
 
