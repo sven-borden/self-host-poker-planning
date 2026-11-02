@@ -547,6 +547,15 @@ describe("a saved token Azure DevOps refuses", () => {
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
 
+  it("forgets the refusal when the next change works", async () => {
+    await refusedImport();
+    api.chooseSite.mockResolvedValue(undefined);
+    fireEvent.click(screen.getByRole("button", { name: "Change project" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use this project" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(screen.queryByLabelText("Personal access token")).toBeNull();
+  });
+
   it("forgets the refusal when the next import works", async () => {
     await refusedImport();
     fireEvent.click(screen.getByRole("button", { name: "Import" }));

@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
-  ConfigError,
   azureDevOpsGaps,
+  ConfigError,
   connectorGaps,
   connectorNames,
   loadConfig,
