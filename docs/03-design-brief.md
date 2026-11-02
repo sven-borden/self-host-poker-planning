@@ -1234,11 +1234,15 @@ it happens, and afterwards only what the server said (#51, ADR-029). Only an acc
   side by side from `sm`, in `--ink-2`, with the numbers of this person's rooms. "What stays" is the
   honest list: cards with no name, words typed in a room that lives on, what other people hold,
   backups until they expire, and logs that hold ids.
+- **Rooms a rule shuts the person out of.** One line in "What goes", with the number of rooms: the
+  right goes, the room stays, and with nobody who may hold it it goes after the retention period.
+  Never a room's name, and no row.
 - **Rooms with other people.** Under what stays, each room this person keeps with others in it, as a
   row parted by `--line`: its name, how long ago it was active, and a native `<select>` labelled "Who
   takes <room>": the default first, saying why it is them (runs the room now, here now and seated
-  longest, or nobody is here and seated longest), then the others in the server's order, then "Nobody:
-  delete this room". Choosing that adds a plain line saying what it does. The intro says the order, and
+  longest, or nobody is here and seated longest), then the others in the server's order, only people
+  a room's rule admits, then "Nobody: delete this room". With nobody admitted, the default says it stays
+  with no keeper. Choosing that adds a plain line saying what it does. The intro says the order, and
   what a guest taking a room means for how long it stays.
 - **The button.** With a recent sign-in, one `--bad` "Delete my account". With an older one, no
   disabled button: the reason in a line, and "Sign in again", which comes back here.

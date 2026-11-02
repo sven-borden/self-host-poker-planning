@@ -1688,7 +1688,8 @@ select_account` stays, as a person who signed out must get a choice.
 person, after a guest's pending move (`settle`, up to 5 s; past that the file says `incomplete:
 true`, and the page says so). Its shape is versioned (`ACCOUNT_EXPORT_VERSION`, `format:
 "poker-planning-account"`): `profile` (name, address, avatar, when the account began), `signIns` (the
-provider, since when, any `claimed_email`), `rooms`, `grants`, `votes` and `connections`. In it: every
+provider, since when, any `claimed_email`, any `hosted_domain`), `rooms`, `grants`, `votes` and
+`connections`. In it: every
 room that names the person, whether they keep it, sit in it, hold only the PO role or have only a
 card on the table, and in each their own seat and whether a card of theirs lies there; the rooms a
 password let them into (`room_access`), with the date; their own cards in named rounds, with the room,
@@ -1697,7 +1698,9 @@ round number, subject, the name they went by and the time. **Never in it:** a ro
 another person's name or card; a round's stats or final, which are the team's; the value of a card
 on the table, as that round may be anonymous and no file maps a person to a value there (a named
 round's card comes with `votes` once it ends). An anonymous round maps no person to a card, so it adds
-nothing. Connections go by name alone (`listConnections`).
+nothing. Connections go by name alone (`listConnections`). A room whose rule refuses the person says
+no more here than at its door (ADR-028): `{ id, withheld: true }` in `rooms`, and a grant or a card of
+theirs keeps its date and its value with no room name and no subject.
 
 **No room codes.** A code is a bearer capability, and this file may be mailed around, kept in a
 downloads folder or attached to a ticket. Rooms go by name and id. An id opens nothing, and the
@@ -1708,10 +1711,11 @@ role can be elsewhere.
 
 | The person is | Other people seated | What happens |
 |---|---|---|
-| The keeper | none | Deleted, with its history, even if someone else holds the role: nobody can take it |
+| The keeper | none | Deleted, with its history, even if someone else holds the role: nobody can take it. A keeper the rule refuses destroys nothing: below |
 | The keeper | some, nothing chosen | PO and keeper go to the first in line, below |
 | The keeper | some, one chosen | PO and keeper go to that person; if they left, as if nothing was chosen |
 | The keeper | some, a room's rule allows none of them | Nobody holds the room: below |
+| A keeper the room's rule refuses | any | No choice and no delete: the right goes to the first in line the rule allows, else nobody holds the room |
 | The keeper | some, "delete" chosen | Deleted, with `roomDeleted`: the person chose, on a page that said what it does |
 | PO by claim, someone else keeps | any | The seat goes, the role goes back to the keeper, the right stays; a keeper the rule refuses gets nothing, and the role is free |
 | Seated, someone else keeps | any | The seat goes |
@@ -1747,17 +1751,41 @@ a right they did not have.
 
 *A room's rule* (ADR-028) can refuse someone, and a person a rule refuses must never become PO, by any
 path. So `removeAccount` takes `mayTake`, the ids allowed to take the role; left out, everyone may.
-Who is allowed is a matter of real identities, which `apply` cannot read: the caller says. With others
-seated and none allowed, nobody holds the room: `ownerId` and `keeperId` both become `vacant`. A
+Who is allowed is a matter of real identities, which `apply` cannot read: `removeAccount` on the sync
+says. With nobody allowed, `keeperId` becomes `vacant`, and so does `ownerId` if the person held it. A
 claimed role that would return to a keeper who is refused goes to `vacant` too, and `keeperId` stays:
 the keeper gets nothing they did not have. In every case the person's id is gone, and `ownerChanged`
 goes out only when someone seated took the role.
 
+The one test is `mayHoldRole`, ADR-028's: it asks what the door asks, a sign-in under 30 days and a
+live session included, and a guest fails any rule. It runs in the room's own step, on the state that
+step will change, so a page's list that went stale and a request nobody's page sent both come to the
+same answer. A step cannot read, so one that finds a person it has no reading of stores nothing, the
+sync reads them (`candidateOf`, once each, at most 16 and the keeper) and goes round again, three
+times at most before a later run takes over. A room with no rule, and a seat that holds no right, read
+nobody at all. The current PO passes, as every rule passes the PO. The person going is judged with
+`goingCandidate`: their account, and no age, since their own deletion ended their sessions and took a
+sign-in minutes old, so "no live session" says nothing of them.
+
+*A keeper the rule refuses.* ADR-028 took such a keeper off "My rooms", with no delete: a keeper is
+apart from the PO only after a claim, so a delete under a rule that shuts them out would destroy a
+working room they can no longer see, for a right that needed the role. The same goes here, and more
+so, as a deletion is not a thing one undoes. The page counts such a room (`held`) and says what comes
+of it in one line, and nothing else: no seated name, no room's name, no delete, no heir. The file
+gives the id alone. On the server, `clearRooms` asks before either delete, `mayDelete` by the same
+test, and each statement holds only while the rule and the PO are what was judged, so a rule or a claim
+that lands between the two keeps the room for the runner to judge. There `heir` is dropped and `vacate`
+is set, so a crafted `{ delete: true }` or `{ to }` changes nothing and can test nothing. With someone
+allowed seated, the right goes to the first in line, as for anyone. With nobody else seated, where any
+other keeper's room goes, this one stays, with `keeperId` under `vacant`, and the person's id goes all
+the same. A PO who is someone else keeps the role.
+
 *A room nobody holds.* `ownerId` is a required id, and a seatless `ownerId` is already how a room says
 its role is free (`ownerClaimableAt: 0`), so `vacant` is a new random id in a user id's shape, made once
 per room per run. Anyone the rule allows can claim the role, and `keeperId` stays `vacant` after a
-claim, as for any claim. `vacant` names no account, so the room holds no exemption and follows
-`ROOM_TTL_DAYS`, from the hand-over, which counts as activity. `room.owner_user_id` has no foreign key
+claim, as for any claim. So a room can end with no keeper at all, which is the rule's doing: nothing
+deletes it under the people seated, and nobody who is seated may hold it. `vacant` names no account, so
+the room holds no exemption and follows `ROOM_TTL_DAYS`, from the hand-over, which counts as activity. `room.owner_user_id` has no foreign key
 and takes it as it took a keeper who has gone. It is not `ghost`: `ownerId` goes out on the wire, and
 in a named round the same id on a card would say that card was the room's holder's.
 
@@ -1769,9 +1797,13 @@ who signs in carries the right to the account (`moveGuest`) and the exemption co
 that merely goes is quiet: it moves no `last_active_at`, as a deletion elsewhere is nothing the room
 did. The page says what a guest taking a room means.
 
-*Who the page names.* The choice lists the people seated, by name, in `heirsOf`'s order, with `why`
-the first is the default. A keeper with no seat, even one shut out by a password (ADR-027), reads
-those names: it is their room, and the choice needs them. The answer holds no code.
+*Who the page names.* The choice lists the people who may take the room, by name, in `heirsOf`'s
+order, with `why` the first is the default, read at one `candidateOf` per person however many rooms
+ask. Someone a rule refuses is not named, and with nobody left the select says it stays with no
+keeper. A keeper with no seat, even one shut out by a password (ADR-027), reads those names: it is
+their room, and the choice needs them. A password is a door, and a keeper may always have it changed;
+a rule is about who may see the room at all, so a keeper it refuses reads none of this. The answer
+holds no code.
 
 **Every change to a live room goes through `apply`.** `removeAccount` is a server command, run by
 the room's runner with the compare-and-set, as `moveGuest` is. No socket can send it, the strict wire
@@ -1821,7 +1853,7 @@ random id, `name` null. It names nobody and appears in that one row. Writing nul
 
 **What goes, the whole list.** `connector_token`, in the first step, with the marker: nothing needs
 a token after that, so it never waits on a room. `user` (name, address, avatar); `session`; `account`
-(with `claimed_email`, `tenant_id`, `account_id`), `room_access`, `guest_link` on either side and the
+(with `claimed_email`, `hosted_domain`, `tenant_id`, `account_id`), `room_access`, `guest_link` on either side and the
 marker, by cascade; `verification` rows of a sign-in in progress that name the person; a
 guest still on its way to the account; in `live`: `ownerId`, `keeperId`, the seat, the vote and a kept
 name; `room.owner_user_id` by the commit; `round_history.votes`, each `who` and `name`. The queue holds
@@ -1837,7 +1869,8 @@ someone. A guest's id left in an anonymous round by an earlier merge (ADR-025), 
 A room's `ownerId` naming a keeper who has gone, as ADR-027 already allows.
 
 **What stays for a while.** In memory, all of it ending by itself: the rate limits by person
-(`account|…`, `my-rooms|…`, `rename|…`, `avatar|…`, `password|…`), at the end of their windows;
+(`account|…`, `my-rooms|…`, `rename|…`, `avatar|…`, `password|…`, `restriction|…`), at the end of their
+windows;
 socket counts and message buckets, when the sockets close; acknowledged command ids, within their
 time to live, in Redis too with several instances; presence timers, which name someone no seat holds
 and do nothing. Logs hold ids, never a name or an address, and nothing in this path logs a person's
@@ -1897,6 +1930,11 @@ the person and of their guests is dealt with, and every named round loses them, 
   `begin` stops it, as `linkOf` reads nothing for an account on its way out, and the guest is the same
   person: its sockets close, its rooms are dealt with under the default, its rounds lose it, and its
   row goes in `finish`.
+- *A join that passed its session check as the deletion ends:* an account's `join` commits only if
+  the account's row exists (`requireAccount`, as below), so it lands wholly before, and `finish` finds
+  the seat and goes round again, or wholly after, and writes nothing and is refused. No seat can name
+  an id that is gone. A guest's join does not ask: a guest's row goes only by the purge, or with its
+  account once the session that could join has ended.
 - *A guest's move in flight on another instance as the deletion ends:* a move commits only if the
   account's row exists (`AccessWrite.requireAccount`, read `for share` in the commit), and `finish`
   takes that row `for update` before it looks. So a move lands wholly before, and `finish` finds the
@@ -1959,6 +1997,11 @@ went from 184.9 to 185.0 kB. This is the "lazy catalog" of `docs/STATUS.md`'s ch
 - *A deletion with no provider left:* an install that removes its keys leaves accounts that cannot
   sign in again, so a session older than 15 minutes cannot delete. The page stays, with no button to
   press: an operator removed the way in.
+- *A room that can end with no keeper:* when nobody seated passes its rule. It has no owner who can
+  delete it until someone allowed claims the role, and even then the right stays with nobody: it
+  lives while it is used and goes after `ROOM_TTL_DAYS`.
+- *A rule's verdict on a keeper is one sign-in old:* `goingCandidate` reads what the account proved at
+  its last sign-in, as `mayHoldRole` does for anyone.
 - *A very large list of choices:* 150 in a request, and the 16 KB body before that. Only rooms the
   person changed are sent.
 - *An export of any size is built in memory:* there is no row cap on it. The limit of 5 in 10 minutes
@@ -1966,7 +2009,10 @@ went from 184.9 to 185.0 kB. This is the "lazy catalog" of `docs/STATUS.md`'s ch
 - *A "delete this room" picked before the sign-in again is lost:* the redirect drops what the page
   held, so the select comes back at the default. The person sees it, and confirms again.
 
-**Amends.** ADR-014: accounts no longer stay for ever. ADR-025's list of what holds a user id gains
+**Amends.** ADR-028 stands as written, and this reads against it so: a refused keeper keeps the right
+for as long as the account lives, and the deletion ends that the only way that ends nothing else. Its
+`mayHoldRole` is the one test here too, and #51 adds no second judgement, only `goingCandidate` for a
+person whose sessions it ended itself. ADR-014: accounts no longer stay for ever. ADR-025's list of what holds a user id gains
 `account_deletion`, an account's alone, which no guest move touches. ADR-027's question for #51 is
 answered above: a room the person keeps goes to someone or goes, and a role by claim goes back.
 

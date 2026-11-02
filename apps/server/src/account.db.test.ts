@@ -1357,6 +1357,16 @@ describe("a room's rule", () => {
     expect((await liveOf(room.id))?.live.keeperId).toBe(owner.id);
   });
 
+  it("a keeper the rule passes still chooses, though the deletion ended their sessions", async () => {
+    const me = await admitted();
+    const owner = await admitted();
+    const member = await admitted();
+    const { room } = await shutOut(me, owner);
+    await member.sit(room.code);
+    expect((await me.remove([{ id: room.id, to: member.id }])).status).toBe(200);
+    expect((await liveOf(room.id))?.live.keeperId).toBe(member.id);
+  });
+
   it("a keeper the rule passes, and a PO it does not, may still delete", async () => {
     const passes = await admitted();
     const owner = await admitted();

@@ -294,7 +294,9 @@ nothing about Redis is loaded or opened.
   connectors' tokens, and every seat. A room with nobody else goes with its history; one with other
   people goes to whoever the person chose, or by default to whoever runs it now, or to the person
   present the longest, or is deleted only if they chose that; a room that goes to a guest then
-  follows `ROOM_TTL_DAYS`. Cards in past rounds stay,
+  follows `ROOM_TTL_DAYS`. A room limited to certain accounts goes only to someone it admits. With
+  nobody admitted it stays with no keeper and follows `ROOM_TTL_DAYS`, and someone it refuses cannot
+  delete it. Cards in past rounds stay,
   with no name and nothing to tie them to anyone, so the team's results stand. Words typed in a room
   that lives on stay too: a room's name, a subject, a ticket. The server signs the person out first.
   If something fails it goes on by itself at the next purge, usually within two days, and the page

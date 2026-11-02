@@ -817,14 +817,16 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
     deadline even for a command it refuses.
 - The account page (#51, ADR-029), for a signed-in person alone, with the same refusals as "My
   rooms": `not_allowed` 403 for a guest, `unauthenticated` 401, `no-store`, the origin checked.
-  - `GET /api/account` answers `{ recent, retentionDays, alone, seats, shared, moving? }`, after a
+  - `GET /api/account` answers `{ recent, retentionDays, alone, seats, held, shared, moving? }`, after a
     guest's pending move (up to 1 s): `recent` is whether the session is young enough for a
-    deletion, `alone` and `seats` count rooms that go and seats that go, and `shared` lists the
-    rooms the person keeps with other people in them, each with its seats in `heirsOf`'s order, the
-    default first, and `why` that is the default (`runsTheRoom`, `here`, `away`). No code.
+    deletion, `alone` and `seats` count rooms that go and seats that go, `held` counts rooms the
+    person keeps whose rule refuses them, of which nothing else is said, and `shared` lists the
+    rooms the person keeps with other people in them, each with its seats in `heirsOf`'s order, only
+    those who may take it, the default first, and `why` that is the default (`runsTheRoom`, `here`,
+    `away`, or `nobody` with no seats left). No code.
   - `GET /api/account/export` answers a JSON attachment, `poker-planning-account.json`, versioned by
     `ACCOUNT_EXPORT_VERSION`: `profile`, `signIns`, `rooms`, `grants`, `votes`, `connections`, and `incomplete`
-    when a guest's move outran its 5 s. Never a code, a token, a provider's id or anyone else.
+    when a guest's move outran its 5 s. A room whose rule refuses the person is `{ id, withheld: true }`. Never a code, a token, a provider's id or anyone else.
   - `POST /api/account/delete { confirm, rooms }` takes a session started in the last 15 minutes
     (`sign_in_again` 403) and the word in any of the three languages (`bad_confirmation` 400). `rooms`
     holds at most 150 `{ id, to }` or `{ id, delete: true }`, for what the person changed. It waits
