@@ -8,7 +8,8 @@ import { createCommandRunner, MAX_RETRIES } from "./runner.ts";
 /** An in-memory `RoomStore` with the same compare-and-set rule, and hooks for the tests. */
 function memoryStore(rooms: StoredRoom[] = []) {
   const byCode = new Map(rooms.map((r) => [r.code, { ...r }]));
-  const commits: { id: string; expected: number; ended?: EndedRound }[] = [];
+  const commits: { id: string; expected: number; ended?: EndedRound; keepActivity?: boolean }[] =
+    [];
   const hooks = {
     /** Runs before each load resolves; a test can delay it or change the room behind it. */
     beforeLoad: async (_code: string): Promise<void> => {},
@@ -30,8 +31,13 @@ function memoryStore(rooms: StoredRoom[] = []) {
       const r = byCode.get(code);
       return r ? { code: r.code, name: null, hasPassword: false } : null;
     },
-    commitRoom: async (id, expected, next, ended, access) => {
-      commits.push({ id, expected, ...(ended && { ended }) });
+    commitRoom: async (id, expected, next, ended, access, keepActivity) => {
+      commits.push({
+        id,
+        expected,
+        ...(ended && { ended }),
+        ...(keepActivity && { keepActivity }),
+      });
       hooks.beforeCommit();
       const r = [...byCode.values()].find((x) => x.id === id);
       if (!r || r.version !== expected) return false;
@@ -85,6 +91,29 @@ describe("createCommandRunner", () => {
     expect(outcome).toMatchObject({ ok: true, version: 1, changed: false });
     if (outcome.ok) expect(outcome.result).toMatchObject({ ok: false, error: "not_participant" });
     expect(mem.commits).toEqual([]);
+  });
+
+  it("keeps a quiet step's commit out of history and activity (#48)", async () => {
+    const mem = memoryStore([room("ABC")]);
+    const runner = createCommandRunner(mem.store);
+    const quiet = (state: RoomState) => ({ state: { ...state }, quiet: true });
+    await runner.run("ABC", quiet);
+    expect(mem.commits).toEqual([{ id: "id-ABC", expected: 1, keepActivity: true }]);
+  });
+
+  it("does not let a quiet step swallow a round it ended (#48)", async () => {
+    const mem = memoryStore([room("ABC", revealedRoom())]);
+    const runner = createCommandRunner(mem.store);
+    const ended = revealedRoom().round;
+    const quiet = (state: RoomState) => ({
+      state: { ...state, round: nextRound(state) },
+      ...(ended && { ended }),
+      quiet: true,
+    });
+    await runner.run("ABC", quiet);
+    expect(mem.commits).toHaveLength(1);
+    expect(mem.commits[0]).toMatchObject({ ended: { round: { number: ended?.number } } });
+    expect(mem.commits[0]).not.toHaveProperty("keepActivity");
   });
 
   it("answers room_not_found for an unknown code", async () => {

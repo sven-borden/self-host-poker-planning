@@ -25,7 +25,8 @@ export interface StepResult {
   access?: AccessWrite;
   /**
    * The room's people did nothing (#48, a sign-in): `last_active_at` stays, and no history
-   * row is written. A row the step would rewrite keeps its `finished_at`.
+   * row is written. A row the step would rewrite keeps its `finished_at`. A step that ended a
+   * round is not quiet, whatever it says: that round's history and activity are real.
    */
   quiet?: boolean;
 }
@@ -115,10 +116,9 @@ export function createCommandRunner(store: RoomStore, options: RunnerOptions = {
       if (result.state === loaded.state) {
         return { ...base, version: loaded.version, changed: false, result };
       }
+      const quiet = result.quiet === true && result.ended === undefined;
       // The round it ended, or the revealed round once its final estimate is recorded (#32).
-      const round = result.quiet
-        ? undefined
-        : historyRound(loaded.state, result.state, result.ended);
+      const round = quiet ? undefined : historyRound(loaded.state, result.state, result.ended);
       const ended = round && {
         round,
         participants: names(loaded.state, result.state),
@@ -130,7 +130,7 @@ export function createCommandRunner(store: RoomStore, options: RunnerOptions = {
         result.state,
         ended,
         result.access,
-        ...(result.quiet ? ([true] as const) : []),
+        ...(quiet ? ([true] as const) : []),
       );
       if (committed === "password_required") return { ok: false, error: committed };
       if (committed) return { ...base, version: loaded.version + 1, changed: true, result };
