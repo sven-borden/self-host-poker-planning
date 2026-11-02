@@ -402,8 +402,8 @@ do. Measured in headed Edge on a desktop i7-11700F with the music audible at 60 
 1.9 %), or 0.12 % of the machine.
 
 **Alternatives.** Live oscillators (a CPU cost for as long as it plays, and a loop only as
-exact as the scheduling); audio files built ahead (bytes, `media-src` in the CSP, and the
-issue allows it but the render needs neither); adding the tail after rendering (see above); a
+exact as the scheduling); audio files built ahead (bytes and `media-src` in the CSP, which
+the render does without); adding the tail after rendering (see above); a
 fourth mood (three carry the range, and each one is more to judge by ear); keeping the source
 running silently through the reveal (work for nothing, and "off" would not mean stopped).
 

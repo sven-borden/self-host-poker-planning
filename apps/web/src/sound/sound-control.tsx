@@ -120,11 +120,7 @@ export default function SoundControl() {
           <span id={ids.mood} className="font-medium">
             {t("sound.mood")}
           </span>
-          <div
-            role="radiogroup"
-            aria-labelledby={ids.mood}
-            className="flex flex-wrap gap-2"
-          >
+          <div role="radiogroup" aria-labelledby={ids.mood} className="flex flex-wrap gap-2">
             {MOODS.map((choice) => (
               <label
                 key={choice}
