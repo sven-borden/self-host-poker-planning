@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -230,11 +230,17 @@ test("a deployment's head tags are never stored", async ({ browser }) => {
 
 /**
  * The built app on a port of its own, with no API and no headers, where a test can deploy: a
- * deployment changes the worker's build and the page, as a real one does.
+ * deployment changes the worker's build and the page, and takes away a hashed file of the old
+ * build, as a real one does.
  */
 async function deployable() {
   const dist = fileURLToPath(new URL("../dist", import.meta.url));
-  const release = { build: "first", tag: "" };
+  const release = { build: "first", tag: "", gone: "" };
+  const chunk = readdirSync(joinPath(dist, "assets")).find((name) =>
+    /^de-[A-Za-z0-9_-]+\.js$/.test(name),
+  );
+  if (!chunk) throw new Error("no German catalog chunk in dist");
+  const german = `/assets/${chunk}`;
   const server = createServer((request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
     const type = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html" }[
@@ -248,7 +254,7 @@ async function deployable() {
       response.end(source.replace(/const BUILD = "[^"]+"/, `const BUILD = "${release.build}"`));
     } else if (extname(path) !== "") {
       if (type) response.setHeader("content-type", type);
-      if (existsSync(file)) response.end(readFileSync(file));
+      if (existsSync(file) && path !== release.gone) response.end(readFileSync(file));
       else response.writeHead(404).end();
     } else {
       const html = readFileSync(joinPath(dist, "index.html"), "utf8");
@@ -258,13 +264,13 @@ async function deployable() {
   });
   await new Promise<void>((resolve) => server.listen(0, "localhost", resolve));
   const { port } = server.address() as AddressInfo;
-  return { server, release, url: `http://localhost:${port}/` };
+  return { server, release, german, url: `http://localhost:${port}/` };
 }
 
 test("a deployment drops the old build's files, leaves an open tab alone and pins nothing", async ({
   browser,
 }) => {
-  const { server, release, url } = await deployable();
+  const { server, release, url, german } = await deployable();
   const { page, context } = await newPerson(browser);
   try {
     await page.goto(url);
@@ -279,6 +285,9 @@ test("a deployment drops the old build's files, leaves an open tab alone and pin
 
     release.build = "second";
     release.tag = '<meta name="deployed" content="second">';
+    // No deployment keeps the German catalog's old name: its hash changed. The old tab has not
+    // fetched that lazy chunk yet.
+    release.gone = german;
     await page.evaluate(async () => {
       await (await navigator.serviceWorker.ready).update();
     });
@@ -287,6 +296,16 @@ test("a deployment drops the old build's files, leaves an open tab alone and pin
     expect(await page.evaluate(() => "stayed" in window)).toBe(true);
     await expect.poll(() => page.evaluate(() => "handedOver" in window)).toBe(true);
     await expect(page.locator('meta[name="deployed"]')).toHaveCount(0);
+
+    // The old tab asks for the chunk that is gone, through the new worker: a 404 as with no
+    // worker, which the app survives, and nothing of it is kept.
+    await page.getByRole("button", { name: /^Language: English$/ }).click();
+    await page.getByRole("menuitemradio", { name: "Deutsch" }).click();
+    await expect(page.getByText("Could not load this language. Reload the page")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    expect(await page.evaluate(() => "stayed" in window)).toBe(true);
+    const kept = await stored(page);
+    expect(kept.map(({ key }) => key).filter((key) => key.endsWith(german))).toEqual([]);
 
     // Its next navigation is the new deployment's.
     await page.reload();

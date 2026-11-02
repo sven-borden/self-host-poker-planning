@@ -380,7 +380,9 @@ As built (#22), for 640 px and below (the `phone:` variant) unless stated:
   has it (Android); Safari on iOS has none, so nothing happens and nothing fails. Never under
   reduced motion; never the only feedback (the card lifts, the seat turns, the live regions
   speak). On by default (#46): the "Vibrate" row in the speaker's popover turns it off on this
-  device, and shows only on a touch screen that can vibrate.
+  device, and shows wherever a touch screen is among the pointers (`any-pointer: coarse`) and the
+  browser can vibrate. Its hint describes the buzz ("A short vibration when you vote and at the
+  reveal.") and does not tell anyone what to do.
 - **No sideways scroll** from 320 to 640 px in English, French and German, in the join
   form, the lobby, voting (with a long title, and with the field focused) and after a
   reveal (`e2e/mobile.spec.ts`).
@@ -1001,7 +1003,9 @@ then French uses vous and German uses Sie.
   tag in the UI language (an English browser that picked Français) read 5,5. Swiss German
   (`gsw`) counts as German, formatted as `de-CH`.
 - **A language that cannot load** (offline, or an old chunk gone after a redeploy) keeps
-  the page in its language and shows a toast that asks for a reload.
+  the page in its language and shows a toast that asks for a reload, with a Reload button on it:
+  an installed window (#46) has no browser controls. So does every toast or room error whose
+  copy says to reload.
 - **Card faces** show the label exactly as the deck holds it, in every language. No
   preset deck holds a decimal mark (the modified Fibonacci deck uses ½, which reads the
   same everywhere), and custom labels, including those a range generates, stay as typed:

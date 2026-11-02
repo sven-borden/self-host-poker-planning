@@ -368,14 +368,16 @@ its script and style under `/assets/`, so the worker has one rule for files, and
 every URL, so it shows no code. `/api`, `/socket.io` (a sign-in's redirect, from W5, is a
 navigation there), other origins and anything but a GET get no `respondWith` at all.
 
-**Builds.** `scripts/pwa-plugin.ts` fills in a hash of the built files, so each build that
+**Builds.** `scripts/pwa-plugin.ts` fills in a hash of the built files (the bundle, and the offline
+page with its script and style, which Vite 8 keeps out of the bundle it hands a plugin), so each build that
 changes them is a new `sw.js`, which the server sends with `no-cache` and the page registers
 with `updateViaCache: "none"`. It installs, skips waiting, and on activate drops every older
 `pp-shell-*` cache. Waiting for tabs to close protects nothing here, since no worker holds a
 page in place. **An open tab is not reloaded:** it keeps running what it loaded, with its
 requests now going through the new worker. A lazy chunk of the old build that it never fetched
 is a 404 from the server, the same as with no worker at all, and the app already survives that
-(a failed chunk costs a button or asks for a reload). When the protocol has moved on, the room
+(a failed chunk costs a button or asks for a reload, and the toast or error that asks has a
+Reload button, since an installed window has no browser controls). When the protocol has moved on, the room
 tells the tab to reload (`protocol_mismatch`), and that reload is a navigation, so it reaches
 the new app. A rollback, or an image with no `sw.js`, leaves at worst a worker that stores
 hashed files and shows the offline page. To retire it, ship an `sw.js` that unregisters itself.

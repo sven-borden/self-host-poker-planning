@@ -65,7 +65,17 @@ test("a person's vote ticks and the reveal beats once, for voter and watcher", a
     await expect.poll(() => vibrated(ana.page)).toEqual([12, [20, 70, 35]]);
     await expect.poll(() => vibrated(watcher.page)).toEqual([[20, 70, 35]]);
 
-    // A later snapshot of the same reveal, and a page that opens on it, feel nothing.
+    // A later snapshot of the same reveal beats no second time: Ben renames himself, the
+    // pages show it, and only then is what they wrote down read again (the poll above stops at
+    // the first match, so it cannot tell one beat from two).
+    expect(await ben?.cmd("rename", { name: "Benito" })).toMatchObject({ ok: true });
+    for (const { page } of [ana, watcher]) {
+      await expect(page.locator("[data-seat]").filter({ hasText: "Benito" })).toHaveCount(1);
+    }
+    expect(await vibrated(ana.page)).toEqual([12, [20, 70, 35]]);
+    expect(await vibrated(watcher.page)).toEqual([[20, 70, 35]]);
+
+    // A page that opens on the revealed round feels nothing (the reload starts a new record).
     await ana.page.reload();
     await expect(ana.page.locator("[data-centre-result]")).toContainText("Suggested 5");
     expect(await vibrated(ana.page)).toEqual([]);
