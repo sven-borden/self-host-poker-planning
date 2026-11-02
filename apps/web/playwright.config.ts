@@ -71,6 +71,9 @@ export default defineConfig({
     // test-results/ only when the job fails.
     trace: "retain-on-failure",
     video: "off",
+    // A page under the service worker (#46) hides its files from `page.route`, on which many
+    // specs fail a chunk on purpose. e2e/pwa.spec.ts turns it on and plays a round with it.
+    serviceWorkers: "block",
   },
   webServer: [
     {

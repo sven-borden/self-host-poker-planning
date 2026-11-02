@@ -4,5 +4,11 @@
     "outDir": "./.tsbuild/node",
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "scripts/**/*.ts"]
+  "include": [
+    "vite.config.ts",
+    "scripts/**/*.ts",
+    "src/i18n/en.ts",
+    "src/i18n/fr.ts",
+    "src/i18n/de.ts"
+  ]
 }

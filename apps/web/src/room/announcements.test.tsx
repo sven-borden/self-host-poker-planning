@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeLanguage, fixedT, loadLanguage } from "../i18n/i18n.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { describeEvents, type LiveEvent, liveEvents, mergeEvents } from "./announcements.ts";
+import { REVEAL_PATTERN } from "./haptics.ts";
 import { LIVE_MAX_WAIT_MS, LIVE_QUIET_MS, LiveAnnouncer } from "./live-announcer.tsx";
 
 const CODE = "abcdefghij";
@@ -662,6 +663,57 @@ describe("LiveAnnouncer", () => {
       vi.advanceTimersByTime(LIVE_QUIET_MS);
     });
     expect(region()?.textContent).toBe("Cards revealed. Suggested 13. Agreement 100%.");
+  });
+
+  describe("vibration (#46)", () => {
+    const vibrate = vi.fn(() => true);
+    beforeEach(() => {
+      vibrate.mockClear();
+      Object.defineProperty(navigator, "vibrate", { value: vibrate, configurable: true });
+    });
+    afterEach(() => {
+      Reflect.deleteProperty(navigator, "vibrate");
+    });
+
+    it("beats once for the reveal a reconnect brings, though its snapshot has no causes", () => {
+      const { run } = story("ana");
+      run("me", { type: "join", name: "Me", role: "voter" });
+      run("ana", { type: "join", name: "Ana", role: "voter" });
+      run("me", { type: "startRound", subject: { kind: "none" } });
+      act(() => {
+        useRoomStore.getState().receive(run("ana", { type: "castVote", card: "13" }));
+      });
+      render(<LiveAnnouncer />);
+      // The vote and the join said nothing to feel: nothing vibrated yet.
+      expect(vibrate).not.toHaveBeenCalled();
+      const revealed = run("me", { type: "reveal" });
+      act(() => {
+        useRoomStore.getState().receive({ ...revealed, causes: [] });
+        vi.advanceTimersByTime(LIVE_QUIET_MS);
+      });
+      expect(vibrate).toHaveBeenCalledExactlyOnceWith(REVEAL_PATTERN);
+      // The same revealed round again (a later snapshot of it) is not a second reveal.
+      act(() => {
+        useRoomStore.getState().receive({ ...revealed, version: revealed.version + 1, causes: [] });
+        vi.advanceTimersByTime(LIVE_QUIET_MS);
+      });
+      expect(vibrate).toHaveBeenCalledOnce();
+    });
+
+    it("stays still for a page that opens on a round already revealed", () => {
+      const { run } = story("ana");
+      run("me", { type: "join", name: "Me", role: "voter" });
+      run("ana", { type: "join", name: "Ana", role: "voter" });
+      run("me", { type: "startRound", subject: { kind: "none" } });
+      run("ana", { type: "castVote", card: "13" });
+      const revealed = run("me", { type: "reveal" });
+      render(<LiveAnnouncer />);
+      act(() => {
+        useRoomStore.getState().receive({ ...revealed, causes: [] });
+        vi.advanceTimersByTime(LIVE_QUIET_MS);
+      });
+      expect(vibrate).not.toHaveBeenCalled();
+    });
   });
 
   it("says the same words again as a new announcement", () => {

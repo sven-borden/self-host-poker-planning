@@ -436,6 +436,15 @@ export const fr: Catalog<"many"> = {
     volume: "Volume",
     level: "{{level, number(style: percent; maximumFractionDigits: 0)}}",
   },
+  haptics: {
+    enable: "Vibrer",
+    hint: "Une brève vibration quand vous votez et à la révélation.",
+  },
+  offline: {
+    title: "Poker Planning est inaccessible",
+    body: "Vérifiez votre connexion, puis réessayez.",
+    retry: "Réessayer",
+  },
   claim: {
     away: "{{name}}, le product owner, est hors ligne.",
     gone: "Le product owner a quitté la salle.",

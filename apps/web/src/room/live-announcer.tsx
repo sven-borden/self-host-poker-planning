@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useT } from "../i18n/hooks.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { describeEvents, type LiveEvent, liveEvents, mergeEvents } from "./announcements.ts";
+import { revealTick } from "./haptics.ts";
 
 /** A batch is said once nothing new came for this long… */
 export const LIVE_QUIET_MS = 600;
@@ -14,7 +15,8 @@ export const LIVE_MAX_WAIT_MS = 1500;
  * render, which could merge two), reads its causes (and, for a snapshot without any, the
  * reveal it shows), and batches what they say. What it says is kept in the store's `said`:
  * the settings panel (#25), which hides the page from screen readers while it is open,
- * says the same words in a region of its own.
+ * says the same words in a region of its own. It also sends the reveal's haptic (#46): this
+ * is the one place that already hears each reveal once, whoever revealed.
  */
 export function LiveAnnouncer() {
   const t = useT();
@@ -44,6 +46,8 @@ export function LiveAnnouncer() {
       const previous = before.snapshot?.room.code === next.room.code ? before.snapshot.room : null;
       const events = liveEvents(next.room, next.causes, previous);
       if (events.length === 0) return;
+      // Felt with the news, for everyone; a page that opens on a revealed round felt nothing.
+      if (previous && events.some((event) => event.kind === "revealed")) revealTick();
       if (pending.length === 0) firstAt = Date.now();
       pending = mergeEvents(pending, events);
       clearTimeout(timer);

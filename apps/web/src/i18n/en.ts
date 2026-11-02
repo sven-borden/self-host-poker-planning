@@ -472,6 +472,15 @@ export const en = {
     volume: "Volume",
     level: "{{level, number(style: percent; maximumFractionDigits: 0)}}",
   },
+  haptics: {
+    enable: "Vibrate",
+    hint: "A short vibration when you vote and at the reveal.",
+  },
+  offline: {
+    title: "Cannot reach Poker Planning",
+    body: "Check your connection, then try again.",
+    retry: "Try again",
+  },
   claim: {
     away: "{{name}}, the product owner, is away.",
     gone: "The product owner left the room.",

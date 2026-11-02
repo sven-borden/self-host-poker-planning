@@ -5,7 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <meta name="description" content="Self-hosted planning poker for teams." />
+    <!-- The page's --bg in each theme. theme-init.js and theme.ts turn these for a saved theme. -->
+    <meta name="theme-color" data-scheme="light" media="(prefers-color-scheme: light)" content="#f3f5f4" />
+    <meta name="theme-color" data-scheme="dark" media="(prefers-color-scheme: dark)" content="#0d1413" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>Poker Planning</title>
     <!-- Applies the saved theme before first paint. External, not inline: the CSP forbids inline scripts. -->
     <script src="/theme-init.js"></script>

@@ -73,6 +73,44 @@ describe("applyThemeMode", () => {
   });
 });
 
+describe("the theme colour", () => {
+  const metas = () => [...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')];
+
+  const media = (meta: HTMLMetaElement) => meta.getAttribute("media");
+
+  beforeEach(() => {
+    document.head.innerHTML =
+      '<meta name="theme-color" data-scheme="light" media="(prefers-color-scheme: light)" />' +
+      '<meta name="theme-color" data-scheme="dark" media="(prefers-color-scheme: dark)" />';
+  });
+  afterEach(() => {
+    document.head.innerHTML = "";
+  });
+
+  it("follows a forced theme and goes back to the system", () => {
+    applyThemeMode("dark");
+    expect(metas().map(media)).toEqual(["not all", "all"]);
+    applyThemeMode("light");
+    expect(metas().map(media)).toEqual(["all", "not all"]);
+    applyThemeMode("system");
+    expect(metas().map(media)).toEqual([
+      "(prefers-color-scheme: light)",
+      "(prefers-color-scheme: dark)",
+    ]);
+  });
+
+  it("is set before first paint, the same way", () => {
+    writeThemeMode("dark");
+    runThemeInit();
+    expect(metas().map(media)).toEqual(["not all", "all"]);
+  });
+
+  it("stays with the system when nothing is saved", () => {
+    runThemeInit();
+    expect(metas().map(media)[0]).toBe("(prefers-color-scheme: light)");
+  });
+});
+
 describe("public/theme-init.js", () => {
   it.each(["light", "dark"] as const)("applies a saved %s theme", (mode) => {
     writeThemeMode(mode);

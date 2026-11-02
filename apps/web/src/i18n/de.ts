@@ -429,6 +429,15 @@ export const de: Catalog = {
     volume: "Lautstärke",
     level: "{{level, number(style: percent; maximumFractionDigits: 0)}}",
   },
+  haptics: {
+    enable: "Vibrieren",
+    hint: "Eine kurze Vibration bei Ihrer Stimme und beim Aufdecken.",
+  },
+  offline: {
+    title: "Poker Planning ist nicht erreichbar",
+    body: "Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+    retry: "Erneut versuchen",
+  },
   claim: {
     away: "{{name}}, der Product Owner, ist abwesend.",
     gone: "Der Product Owner hat den Raum verlassen.",
