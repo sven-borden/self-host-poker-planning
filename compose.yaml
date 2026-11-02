@@ -36,6 +36,9 @@ services:
       MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
       MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
       MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-}
+      # The connectors' tokens, off while empty (README, "Connector tokens").
+      POKER_VAULT_KEY: ${POKER_VAULT_KEY:-}
+      POKER_VAULT_OLD_KEYS: ${POKER_VAULT_OLD_KEYS:-}
     # The server drains and exits within 10 s of SIGTERM.
     stop_grace_period: 15s
     # The server writes nothing to disk and needs no privilege.

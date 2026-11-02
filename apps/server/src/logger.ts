@@ -29,6 +29,16 @@ const REDACT = [
   "*.headers.authorization",
   '*.headers["set-cookie"]',
   "*.auth",
+  // The connectors' tokens and keys (#53): a `Secret` and a `Vault` print nothing of theirs;
+  // this is for a plain string under one of these names.
+  "token",
+  "*.token",
+  "accessToken",
+  "*.accessToken",
+  "refreshToken",
+  "*.refreshToken",
+  "vaultKey",
+  "*.vaultKey",
 ];
 
 /**

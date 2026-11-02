@@ -15,6 +15,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
 import type { DbStatus } from "./app.ts";
 import type { Config } from "./config.ts";
+import { type ConnectorTokenStore, createConnectorTokenStore } from "./db/connector-tokens.ts";
 import { DatabaseError, errorCode, guard } from "./db/errors.ts";
 import { createRetentionStore, type RetentionStore } from "./db/retention.ts";
 import {
@@ -27,6 +28,7 @@ import {
 import { type CommandRunner, createCommandRunner } from "./db/runner.ts";
 import type { Logger } from "./logger.ts";
 import type { Setup } from "./run.ts";
+import type { Vault } from "./vault.ts";
 
 /** `apps/server/drizzle`, seen from `apps/server/src` (tsx) and `apps/server/dist` (bundle). */
 export const DEFAULT_MIGRATIONS_DIR = resolve(import.meta.dirname, "../drizzle");
@@ -270,6 +272,8 @@ export interface Database {
   readonly runner: CommandRunner;
   /** The retention purge and the visit touch (#35), on the pool. */
   readonly retention: RetentionStore;
+  /** The connectors' tokens (#53): nothing calls it yet, #54 and #55 will. */
+  readonly connectorTokens: ConnectorTokenStore;
   /** `select 1`: `ok`, or `error` on any failure. `/api/health` gives it 2 s. */
   checkDb(): Promise<DbStatus>;
   /** Ends the pool once the running queries are done; calling it again changes nothing. */
@@ -280,13 +284,20 @@ export interface DatabaseOptions extends MigrateOptions {
   migrationsDir?: string;
   /** Pool size. */
   max?: number;
+  /** The keys of the connectors' tokens; left out, the vault is off. */
+  vault?: Vault | undefined;
 }
 
 /** Migrates, then opens the pool. Rejects with a `DatabaseError` and leaves nothing open. */
 export async function openDatabase(
   url: string,
   logger: Logger,
-  { migrationsDir = DEFAULT_MIGRATIONS_DIR, max = 10, ...migrateOptions }: DatabaseOptions = {},
+  {
+    migrationsDir = DEFAULT_MIGRATIONS_DIR,
+    max = 10,
+    vault,
+    ...migrateOptions
+  }: DatabaseOptions = {},
 ): Promise<Database> {
   await migrateDatabase(url, migrationsDir, logger, migrateOptions);
   migrateOptions.signal?.throwIfAborted();
@@ -314,6 +325,7 @@ export async function openDatabase(
     store,
     runner: createCommandRunner(store),
     retention: createRetentionStore(pool),
+    connectorTokens: createConnectorTokenStore(pool, vault),
     checkDb: async () => {
       try {
         await pool.query("select 1");
@@ -343,6 +355,7 @@ export async function setupDatabase(
   const database = await openDatabase(config.databaseUrl, logger, {
     migrationsDir: config.migrationsDir ? resolve(config.migrationsDir) : DEFAULT_MIGRATIONS_DIR,
     signal,
+    vault: config.vault,
   });
   return {
     database,

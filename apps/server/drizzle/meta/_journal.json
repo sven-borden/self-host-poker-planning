@@ -50,6 +50,13 @@
       "when": 1793587499722,
       "tag": "0006_add_room_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793592570177,
+      "tag": "0007_add_connector_token",
+      "breakpoints": true
     }
   ]
 }

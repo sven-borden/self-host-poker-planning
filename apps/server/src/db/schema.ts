@@ -136,3 +136,23 @@ export const roundHistory = pgTable(
   },
   (t) => [unique("round_history_room_id_number_unique").on(t.roomId, t.number)],
 );
+
+/**
+ * The token of one account at one connector (#53, ADR-026). `sealed_token` is `vault.ts`'s
+ * text, bound to this `user_id` and `connector`, and the row holds nothing else about the
+ * token. It goes with the account by cascade (#51, and the purge, though a guest holds none:
+ * `connector-tokens.ts` refuses one). The primary key also serves that cascade.
+ */
+export const connectorToken = pgTable(
+  "connector_token",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    connector: text("connector").notNull(),
+    sealedToken: text("sealed_token").notNull(),
+    createdAt: instant("created_at").notNull().defaultNow(),
+    updatedAt: instant("updated_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.connector] })],
+);
