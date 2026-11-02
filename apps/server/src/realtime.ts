@@ -85,6 +85,8 @@ export interface InterServerEvents {
   guestLinked(guest: unknown, account: unknown): void;
   /** A room (by id) was deleted (#49): its sockets, wherever they are, hear it and close. */
   roomDeleted(room: unknown): void;
+  /** An account is going (#51): its sockets, wherever they are, hear it and close. */
+  accountDeleted(who: unknown): void;
 }
 
 export type RealtimeServer = Server<

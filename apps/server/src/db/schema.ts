@@ -124,9 +124,13 @@ export const roomAccess = pgTable(
 /** The deck a round was played with: its spec and the special cards it allowed. */
 export type HistoryDeck = { spec: DeckSpec; specials: SpecialCard[] };
 
-/** One vote of a named round. `name` is null when the voter had left the room. */
+/**
+ * One vote of a named round. `name` is null when the voter had left the room. `who` and `name` are
+ * both null for someone who deleted their account (#51, ADR-029): the card stays, and such entries
+ * stand last, by card, so a place in the list says nothing.
+ */
 export type NamedHistoryVote = {
-  who: UserId;
+  who: UserId | null;
   name: string | null;
   card: Card;
   changedAfterReveal?: true;
@@ -188,6 +192,23 @@ export const guestLink = pgTable(
   },
   (t) => [index("guest_link_account_user_id_idx").on(t.accountUserId)],
 );
+
+/** What a person chose for a room they keep, with other people in it (#51, ADR-029). */
+export type RoomChoice = { delete: true } | { to: UserId };
+
+/**
+ * An account on its way out (#51, ADR-029). The row is written before anything changes, in one
+ * transaction with the end of the person's sessions, and goes with the `user` row, last of all.
+ * While it exists the deletion can always be run again, and nobody can sign in to that account.
+ * `choices`, by room id, are what the person chose, so a run that resumes does as they said.
+ */
+export const accountDeletion = pgTable("account_deletion", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  choices: jsonb("choices").$type<Record<string, RoomChoice>>().notNull().default({}),
+  createdAt: instant("created_at").notNull().defaultNow(),
+});
 
 /**
  * The token of one account at one connector (#53, ADR-026). `sealed_token` is `vault.ts`'s

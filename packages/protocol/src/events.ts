@@ -52,6 +52,12 @@ export interface ServerToClientEvents {
    * shows what an unknown room shows. An older client ignores it and shows the connection lost.
    */
   deleted: () => void;
+  /**
+   * This person deleted their account (#51, ADR-029), perhaps elsewhere: the server closes the
+   * socket next, and the page reloads as a new guest. An older client ignores it and shows the
+   * connection lost, and a reload does the same for it.
+   */
+  accountDeleted: () => void;
 }
 
 export type ParsedEnter =

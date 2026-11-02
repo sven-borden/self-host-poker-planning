@@ -158,11 +158,16 @@ export function socialRoutes(config: Config): string[] {
 }
 
 /**
- * Where a sign-in may return to, as a path of this site: the landing page, "My rooms" (#49) or
- * a room.
+ * Where a sign-in may return to, as a path of this site: the landing page, "My rooms" (#49), the
+ * account page (#51) or a room.
  */
 export function isReturnPath(path: string): boolean {
-  return path === "/" || path === "/rooms" || (path.startsWith("/r/") && isRoomCode(path.slice(3)));
+  return (
+    path === "/" ||
+    path === "/rooms" ||
+    path === "/account" ||
+    (path.startsWith("/r/") && isRoomCode(path.slice(3)))
+  );
 }
 
 /**
@@ -251,6 +256,11 @@ function outcome(config: Config, path: string, failure?: SignInOutcome["failure"
   const location = `${config.baseUrl}${path}`;
   if (!failure) return { location };
   return { location: `${location}?${SIGN_IN_ERROR_PARAM}=${failure.code}`, failure };
+}
+
+/** A sign-in to an account being deleted (#51, ADR-029): no session, and the page says why. */
+export function accountGoingOutcome(config: Config): SignInOutcome {
+  return outcome(config, "/", { code: "account_going", reason: "account_going" });
 }
 
 /**

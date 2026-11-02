@@ -35,6 +35,7 @@ import { and, eq, gt, sql } from "drizzle-orm";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
+import type { AccountDeletions } from "./account-deletion.ts";
 import type { AppEnv } from "./app.ts";
 import type { Config } from "./config.ts";
 import { authSchema, session, user } from "./db/auth-schema.ts";
@@ -46,6 +47,7 @@ import type { Logger } from "./logger.ts";
 import { memoryRateLimit, type RateLimiter } from "./rate-limit.ts";
 import type { SocketMiddleware } from "./realtime.ts";
 import {
+  accountGoingOutcome,
   claimedAddress,
   idTokenClaims,
   isAlarming,
@@ -183,8 +185,9 @@ function microsoftClaim(providerId: string, idToken: string | null | undefined):
  * stay out of the error reports (`debug`; they hold no more than a fixed message): `finishSignIn`
  * writes the one line that says what came of it, at `error` when someone should look.
  * `stillMoving`: the person is signed in, and the page should hear that a room has yet to move.
+ * `accountGoing`: this account is being deleted (#51), and the sign-in ends here.
  */
-const inCallback = new AsyncLocalStorage<{ stillMoving: boolean }>();
+const inCallback = new AsyncLocalStorage<{ stillMoving: boolean; accountGoing: boolean }>();
 
 /** What a handler knows about the person behind a socket: `socket.data.user`. */
 export interface SocketUser {
@@ -202,6 +205,7 @@ export function authOptions(
   logger: Logger,
   limiter: RateLimiter = memoryRateLimit(),
   links?: Pick<GuestLinks, "link">,
+  deletions?: Pick<AccountDeletions, "refuses">,
 ) {
   const { secure } = cookieNaming(config.baseUrl);
   const log = logger.child({ source: "better-auth" });
@@ -311,8 +315,16 @@ export function authOptions(
       },
       session: {
         create: {
-          // No tracking by default: neither the address nor the user agent is stored.
-          before: async (data) => ({ data: { ...data, ipAddress: null, userAgent: null } }),
+          // No tracking by default: neither the address nor the user agent is stored. An account
+          // on its way out (#51, ADR-029) gets no session: this also starts its deletion again.
+          before: async (data) => {
+            if (await deletions?.refuses(data.userId)) {
+              const callback = inCallback.getStore();
+              if (callback) callback.accountGoing = true;
+              throw new Error("account going");
+            }
+            return { data: { ...data, ipAddress: null, userAgent: null } };
+          },
         },
       },
     },
@@ -362,8 +374,9 @@ export function createAuth(
   logger: Logger,
   limiter?: RateLimiter,
   links?: Pick<GuestLinks, "link">,
+  deletions?: Pick<AccountDeletions, "refuses">,
 ) {
-  return betterAuth(authOptions(config, db, logger, limiter, links));
+  return betterAuth(authOptions(config, db, logger, limiter, links, deletions));
 }
 
 export type Auth = ReturnType<typeof createAuth>;
@@ -377,11 +390,14 @@ export async function sessionUser(auth: Auth, headers: Headers): Promise<SocketU
   return (await sessionOf(auth, headers))?.user ?? null;
 }
 
-/** `sessionUser` plus the session's id (not its token), which a socket keeps. */
+/**
+ * `sessionUser` plus the session's id (not its token), which a socket keeps, and when it started,
+ * which a later visit does not move: a sign-in is the only thing that starts one.
+ */
 export async function sessionOf(
   auth: Auth,
   headers: Headers,
-): Promise<{ user: SocketUser; sessionId: string } | null> {
+): Promise<{ user: SocketUser; sessionId: string; startedAt: Date } | null> {
   const result = await guard("read session", () =>
     auth.api.getSession({ headers, query: { disableRefresh: true } }).catch((error: unknown) => {
       if (isAPIError(error) && error.statusCode < 500) return null;
@@ -396,6 +412,7 @@ export async function sessionOf(
       isAnonymous: result.user.isAnonymous === true,
     },
     sessionId: result.session.id,
+    startedAt: new Date(result.session.createdAt),
   };
 }
 
@@ -590,14 +607,17 @@ export function registerAuthApi(
    */
   async function finishSignIn(c: Context<AppEnv>, provider: string): Promise<Response> {
     let response: Response | null = null;
-    const callback = { stillMoving: false };
+    const callback = { stillMoving: false, accountGoing: false };
     try {
       response = await inCallback.run(callback, () => askBetterAuth(c, c.req.raw));
     } catch (error) {
       // Never the error itself: its message or its cause's can hold a token or a code.
-      c.var.log.error({ code: errorCode(error) }, "auth request failed");
+      if (!callback.accountGoing)
+        c.var.log.error({ code: errorCode(error) }, "auth request failed");
     }
-    const { location, failure } = signInOutcome(response, config);
+    const { location, failure } = callback.accountGoing
+      ? accountGoingOutcome(config)
+      : signInOutcome(response, config);
     if (failure) {
       const level = isAlarming(failure.reason) ? "error" : "warn";
       c.var.log[level]({ ...failure, provider }, "sign-in did not finish");

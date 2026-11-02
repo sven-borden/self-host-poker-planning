@@ -2,9 +2,12 @@
  * The `setup` hook `main.ts` hands to `run()`: the database (#7), then identity (#10) on
  * its pool, then Redis when `REDIS_URL` is set (#39, several instances), the room API
  * (#14) and the room sync (#15) on its runner, the retention job (#35), whose first run
- * comes a few minutes later, a guest's way to an account (#48), between identity and the
- * room sync, and "My rooms" (#49). Opens nothing at import time.
+ * comes a few minutes later, a guest's way to an account (#48) and an account's deletion (#51),
+ * between identity and the room sync, "My rooms" (#49) and the account page (#51). Opens nothing
+ * at import time.
  */
+import { registerAccountApi } from "./account.ts";
+import { type AccountDeletions, createAccountDeletions } from "./account-deletion.ts";
 import {
   cookieNaming,
   createAuth,
@@ -14,6 +17,8 @@ import {
 } from "./auth.ts";
 import type { Config } from "./config.ts";
 import { type Database, setupDatabase } from "./database.ts";
+import { createAccountDataStore } from "./db/account-data.ts";
+import { createAccountDeletionStore } from "./db/account-deletions.ts";
 import { createGuestLinkStore } from "./db/guest-links.ts";
 import { createMyRoomsStore } from "./db/my-rooms.ts";
 import { createGuestLinks, type GuestLinks } from "./guest-link.ts";
@@ -54,6 +59,7 @@ export async function setupServer(
     auth: ReturnType<typeof createAuth>;
     retention: Retention;
     links: GuestLinks;
+    deletions: AccountDeletions;
   }
 > {
   const opened = await setupDatabase(config, logger, signal);
@@ -71,9 +77,18 @@ export async function setupServer(
     },
     logger,
   });
+  const deletions = createAccountDeletions({
+    store: createAccountDeletionStore(database.db),
+    rooms: {
+      removeAccount: (room, who, ghost, heir) => sync.removeAccount(room, who, ghost, heir),
+      roomDeleted: (id) => sync.roomDeleted(id),
+      dropAccount: (who) => sync.dropAccount(who),
+    },
+    logger,
+  });
   let auth: ReturnType<typeof createAuth>;
   try {
-    auth = createAuth(config, database.db, logger, limiter, links);
+    auth = createAuth(config, database.db, logger, limiter, links, deletions);
   } catch (error) {
     await database.close();
     throw error;
@@ -96,7 +111,7 @@ export async function setupServer(
     logger,
     sessionAlive: sessionChecker(db),
     touchRoom: (roomId) => retentionStore.touchRoom(roomId, config.roomTtlDays),
-    settleLinks: (account) => links.settle(account),
+    settleLinks: (account) => Promise.all([links.settle(account), deletions.resume(account)]),
     ...(tuning.presenceGraceMs !== undefined && { presenceGraceMs: tuning.presenceGraceMs }),
     ...(tuning.presenceRestartGraceMs !== undefined && {
       presenceRestartGraceMs: tuning.presenceRestartGraceMs,
@@ -114,7 +129,10 @@ export async function setupServer(
     ttlDays: config.roomTtlDays,
     logger,
     occupied: () => sync.occupiedRooms(),
-    beforePurge: () => links.sweep(),
+    beforePurge: async () => {
+      await links.sweep();
+      await deletions.sweep();
+    },
     ...(tuning.retentionStartDelayMs !== undefined && {
       startDelayMs: tuning.retentionStartDelayMs,
       jitterMs: 0,
@@ -126,6 +144,7 @@ export async function setupServer(
     auth,
     retention,
     links,
+    deletions,
     deps: {
       ...opened.deps,
       registerApi: (app) => {
@@ -137,6 +156,15 @@ export async function setupServer(
           rooms: createMyRoomsStore(db),
           links,
           sync,
+          config,
+          limiter,
+        });
+        registerAccountApi(app, {
+          auth,
+          data: createAccountDataStore(db),
+          tokens: database.connectorTokens,
+          deletions,
+          links,
           config,
           limiter,
         });

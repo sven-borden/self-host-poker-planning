@@ -55,12 +55,24 @@
  * person is on their way back from the provider, and may not arrive. An account's `enter` first
  * waits for a move in progress, or runs one again.
  *
+ * An account deleted for good (#51, ADR-029, `account-deletion.ts`): `dropAccount` closes the
+ * person's sockets, on every instance, after they hear `accountDeleted`, and `removeAccount` runs
+ * the domain's command in the room's queue. The room hears a `leave` or a hand-over. Timers that
+ * name the person find no seat and do nothing.
+ *
  * A room its owner deletes (#49, ADR-027): `roomDeleted` tells every instance, and each room's
  * sockets hear `deleted` and close, which ends its timers. A word that never arrives (Redis away)
  * costs little: the next run on that room, a person's command or the server's own timer or
  * presence, finds no room and does the same, and a socket that reconnects finds no room to enter.
  */
-import { type ApplyResult, apply, type Cause, type Command, type RoomState } from "@pp/domain";
+import {
+  type ApplyResult,
+  apply,
+  type Cause,
+  type Command,
+  keeperOf,
+  type RoomState,
+} from "@pp/domain";
 import {
   type CmdAck,
   type EnterAck,
@@ -237,6 +249,16 @@ export interface RoomSync extends RealtimeHandlers {
    * who the guest's PO roles go to: a countdown stays if that person is in the room.
    */
   dropGuest(guest: string, account: string): void;
+  /**
+   * The account `who` goes from the room (#51), through the room's queue and the compare-and-set.
+   * `ghost` takes over a revealed card; `heir` is whom the person chose for a room they keep.
+   * `failed` as for `moveGuest`, and safe to run again. A run that moves no right is quiet: a
+   * deletion elsewhere is nothing the room's people did. A hand-over counts as activity, so
+   * a guest who takes a room gets the whole of `ROOM_TTL_DAYS` from here.
+   */
+  removeAccount(room: RoomRef, who: string, ghost: string, heir?: string): Promise<ServerRun>;
+  /** The person's sockets, on every instance, hear `accountDeleted` and are closed (#51). */
+  dropAccount(who: string): void;
   /**
    * `actor`'s command on a room, from the HTTP API (#49): through the room's queue and the
    * compare-and-set, and everyone in the room hears it, like any command.
@@ -1589,7 +1611,11 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
         const command: Command = { type: "moveGuest", guest, account };
         const result = apply(state, command, { actor: SERVER_ACTOR, now: now() });
         if (result.state === state) return result;
-        return { ...result, quiet: true, access: { moveGrant: { from: guest, to: account } } };
+        return {
+          ...result,
+          quiet: true,
+          access: { moveGrant: { from: guest, to: account }, requireAccount: account },
+        };
       });
       if (!outcome.ok) {
         if (outcome.error !== "conflict") return "unchanged";
@@ -1626,6 +1652,52 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     if (watched.has(id) && !isHere(id, account)) graces.start(id, account);
   }
 
+  async function removeAccount(
+    room: RoomRef,
+    who: string,
+    ghost: string,
+    heir?: string,
+  ): Promise<ServerRun> {
+    try {
+      const outcome = await runner.run(room.code, (state) => {
+        const command: Command = {
+          type: "removeAccount",
+          who,
+          ghost,
+          ...(heir !== undefined && { heir }),
+        };
+        const result = apply(state, command, { actor: SERVER_ACTOR, now: now() });
+        return result.state === state
+          ? result
+          : { ...result, quiet: keeperOf(result.state) === keeperOf(state) };
+      });
+      if (!outcome.ok) {
+        if (outcome.error === "room_not_found") closeDeleted(room.id);
+        if (outcome.error !== "conflict") return "unchanged";
+        log.warn({ room: room.id }, "account deletion: every attempt lost the compare-and-set");
+        return "failed";
+      }
+      void publish(room, outcome, { serverRun: true });
+      if (!outcome.changed) return "unchanged";
+      graces.cancel(room.id, who);
+      awayFailures.get(room.id)?.delete(who);
+      return "changed";
+    } catch (error) {
+      if (!(error instanceof DatabaseError)) throw error;
+      log.warn({ room: room.id, err: error.code }, "account deletion: a room did not change");
+      await resync(room);
+      return "failed";
+    }
+  }
+
+  function dropLocalAccount(who: string) {
+    for (const socket of io?.sockets.sockets.values() ?? []) {
+      if (socket.data.user?.id !== who) continue;
+      socket.emit("accountDeleted");
+      socket.disconnect(true);
+    }
+  }
+
   function dropLocalGuest(guest: string, account: string) {
     // A socket's close runs its handlers synchronously, so they see who is leaving and why.
     guestLeaving = { guest, account };
@@ -1657,6 +1729,9 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       });
       server.on("roomDeleted", (id) => {
         if (typeof id === "string") closeDeleted(id);
+      });
+      server.on("accountDeleted", (who) => {
+        if (typeof who === "string") dropLocalAccount(who);
       });
       // The adapter does not await these: a throw would be an unhandled rejection.
       server.on("present", (roomId, answer) => {
@@ -1746,6 +1821,11 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     changePassword,
     moveGuest,
     dropGuest,
+    removeAccount,
+    dropAccount(who) {
+      dropLocalAccount(who);
+      if (shared && io && !closed) io.serverSideEmit("accountDeleted", who);
+    },
     commandAs: execute,
     roomDeleted(id) {
       closeDeleted(id);
