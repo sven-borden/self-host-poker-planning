@@ -520,9 +520,9 @@ describe("queueBatches", () => {
       `42123${JSON.stringify(["cmd", { id: "x".repeat(64), type: "queueAdd", payload: { items } }])}`,
     ).length;
 
-  it("takes two commands for 200 ordinary tickets and six for 500", () => {
+  it("takes two commands for 200 ordinary tickets and five for 500", () => {
     expect(queueBatches(ordinary(200))).toHaveLength(2);
-    expect(queueBatches(ordinary(MAX_QUEUE_ITEMS))).toHaveLength(6);
+    expect(queueBatches(ordinary(MAX_QUEUE_ITEMS))).toHaveLength(5);
     expect(queueBatches(ordinary(MAX_QUEUE_ITEMS)).flat()).toEqual(ordinary(MAX_QUEUE_ITEMS));
     for (const batch of queueBatches(ordinary(MAX_QUEUE_ITEMS))) {
       expect(command(batch)).toBeLessThan(MAX_MESSAGE_BYTES);

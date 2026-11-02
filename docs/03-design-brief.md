@@ -593,7 +593,9 @@ anyone until there is a queue.
   phone, as the history. The title takes the focus, not the paste box: a phone's keyboard
   would cover the list. A paste box, the hint, "Add to the queue", one line of what happened
   ("198 items added. 2 duplicates dropped."), then the items in order, then "Clear the queue",
-  which asks first. The text stays in the box when a send fails.
+  which asks first. What went in leaves the box; lines that did not, refused or past the limit,
+  stay in it, and the line says so. A list that stops halfway says how many went in, the reason
+  under it, and the rest stays in the box to add again: nothing goes in twice.
 - **A row.** A grip, the key in mono (a link when the item has one) over the title of up to two
   lines, then Up, Down and Remove. 32 px with a mouse, 44 px on a phone. The grip is for a
   pointer and hidden from screen readers; the buttons name their item ("Move PAY-3 up") and do
@@ -610,8 +612,11 @@ anyone until there is a queue.
   table so that nothing above it moves.
 - **Auto-advance.** A switch in the settings' round group. After a recorded final the line reads
   "Next: PAY-3, in 8 s", in plain text with no animation, the same under reduced motion, and
-  the PO gets "Stay on this round". Ten seconds, for the reading (ADR-024). A round that starts
-  under the PO's focus moves it to the hand, as "Next round" does.
+  the PO gets "Stay on this round". Ten seconds, for the reading (ADR-024). Staying holds for the
+  round: changing the final starts nothing. The countdown needs the PO: when they leave, or their
+  last tab closes, it ends and the line goes back to "Next: PAY-3". A round that starts under the
+  PO's focus moves it to the hand, as "Next round" does, from Stay as from the decision; a focus
+  on Stay when the room stays goes back to the decision.
 - **Said once.** The room hears what a paste added ("12 items added to the queue. Next:
   PAY-1."), the PO reads it in the sheet instead; a move or a removal is nobody else's news,
   and the sheet's own status says it to the PO. The countdown is said when it starts

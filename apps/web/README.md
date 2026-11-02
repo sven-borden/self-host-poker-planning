@@ -600,11 +600,12 @@ server sends and never decides the outcome of a round.
 ## The queue (#52)
 
 `room/paste-queue.ts` turns a paste into items, pure and without a network: `parsePaste(text,
-{ known, room })` and `queueBatches(items)`, which splits a list that does not fit one socket
-message (`MAX_MESSAGE_BYTES`). Do not import `@pp/protocol` values there: `WIRE_LIMITS` sits
+{ known, room, bytes })`, `pasteLeft(result, sent)`, what stays in the box, and
+`queueBatches(items)`, which splits a list into commands that fit one socket message
+(`MAX_MESSAGE_BYTES`): 200 ordinary tickets take two, 500 take five. Do not import `@pp/protocol` values there: `WIRE_LIMITS` sits
 beside the zod schemas and would pull 27 kB of zod into the sheet's chunk. Its samples are in
-`paste-queue.test.ts`, reconstructed from the products' documented columns; replace them with
-real lists when they exist.
+`paste-queue.test.ts`, reconstructed, each saying what it rests on; replace them with real
+lists when they exist.
 
 `room/queue-button.tsx` loads `room/queue-panel.tsx` on the first press, as "History" does. The
 button sits inside the subject field's form, and React carries a submit up the component

@@ -70,8 +70,10 @@ are in `docs/02-architecture.md`, section 4.
 The backlog queue (#52, ADR-024) is in `apply-queue.ts`: `cleanQueueItem` (each field through
 `cleanSubject`, no second validator), `itemSubject` (what round an item starts),
 `queueIdentity` (what makes two items the same ticket, for the page's count too) and the
-list's changes. `MAX_QUEUE_ITEMS` is 500. `startNext` and the countdown (`advanceAt`,
-`AUTO_ADVANCE_MS`, resolved like a timer's deadline) are in `apply.ts`.
+list's changes. A queue holds `MAX_QUEUE_ITEMS` (500) and `MAX_QUEUE_BYTES` (256 KB of JSON), a
+title `MAX_ITEM_TITLE_BYTES`. `startNext` and the countdown (`advanceAt`, `AUTO_ADVANCE_MS`,
+resolved like a timer's deadline, `stayed`, and the server's `endCountdown`, the one command that
+resolves no deadline first) are in `apply.ts`. `startRound` carries the round it was pressed for.
 
 - Never mutate the input; return the input object itself when nothing changed.
 - A success carries `ended` when the command replaced or abandoned a round

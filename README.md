@@ -288,7 +288,7 @@ nothing about Redis is loaded or opened.
   [architecture, section 8](docs/02-architecture.md#8-rooms-access-and-security)). Set
   `TRUST_PROXY` to the number of proxies in front: too low, and every visitor shares one
   address, so the per-address limits apply to everyone at once.
-- **Inputs**: names, room names, subjects, decks, passwords and every payload (16 KB over HTTP, 128 KB on a socket, for a pasted list)
+- **Inputs**: names, room names, subjects, decks, passwords and every payload (16 KB over HTTP and on a socket)
   are bounded on the server; a fuzz test sends malformed messages to a real server on
   every pull request.
 - **Dependencies**: CI fails on a high or critical advisory in a production dependency.

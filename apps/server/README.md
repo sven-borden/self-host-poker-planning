@@ -129,7 +129,7 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 - The server answers with codes (`{ code: "not_found" }`, ack codes), never sentences.
 - Socket payloads are `unknown` at runtime: `parseEnter` and `toDomainCommand` run on
   every message, junk answers `bad_payload`, a missing ack callback is fine, a throwing
-  handler answers `internal`. Messages are capped at 128 KB. A handshake middleware may be
+  handler answers `internal`. Messages are capped at 16 KB and may hold no binary. A handshake middleware may be
   async; a throw or a rejection refuses the socket with `internal` and logs one line.
 - Socket.IO accepts a handshake only without an `Origin` header (a non-browser client) or
   with `Origin` equal to `BASE_URL`'s origin, on both transports (`allowRequest`). So

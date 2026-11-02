@@ -208,7 +208,7 @@ describe("a paste", () => {
     // The first batch's answer was lost, and the page sends it again: nothing changes.
     expect((await po.cmd("queueAdd", { items: tickets(75) })).ok).toBe(true);
     expect((await storedRoom(code))?.queue).toEqual(stored);
-    const added = await po.cmd("queueAdd", { items: tickets(160) });
+    const added = await po.cmd("queueAdd", { items: tickets(160).slice(100) });
     expect(added.ok).toBe(true);
     expect((await storedRoom(code))?.queue.items).toHaveLength(160);
   });

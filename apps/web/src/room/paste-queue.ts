@@ -431,7 +431,7 @@ export function pasteLeft(result: PasteResult, sent = result.items.length): stri
 
 /**
  * A list in commands that each fit one socket message: 200 ordinary tickets take two, 500
- * take six. Each command stands alone, so a failure in between leaves the first ones in:
+ * take five. Each command stands alone, so a failure in between leaves the first ones in:
  * the page says how many, and keeps the rest in the box (`pasteLeft`).
  */
 export function queueBatches(items: readonly QueueEntry[]): QueueEntry[][] {
