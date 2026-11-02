@@ -2,13 +2,13 @@ import { apply, createRoom, DEFAULT_SETTINGS, type Participant, type RoomState }
 import { toSnapshot } from "@pp/protocol";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { ARROW_SETTLE_MS } from "../components/ui/segment.ts";
 import { changeLanguage } from "../i18n/i18n.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { LiveAnnouncer } from "./live-announcer.tsx";
 import { RoomSettingsButton } from "./settings-button.tsx";
 import { type ControlProps, GROUPS, type SettingGroup, SettingsPanel } from "./settings-panel.tsx";
 import { SETTING_KEYS } from "./settings-words.ts";
-import { ARROW_SETTLE_MS } from "./timer-setting.tsx";
 
 const mocks = vi.hoisted(() => ({ sendCommand: vi.fn(), commandSender: vi.fn() }));
 vi.mock("../realtime/room-connection.ts", () => ({

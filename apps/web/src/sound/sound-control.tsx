@@ -1,14 +1,14 @@
 import { Volume2Icon, VolumeXIcon } from "lucide-react";
-import { useId, useRef, useSyncExternalStore } from "react";
+import { type RefObject, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover.tsx";
-import { SEGMENT } from "../components/ui/segment.ts";
+import { ARROW_SETTLE_MS, SEGMENT } from "../components/ui/segment.ts";
 import { Switch } from "../components/ui/switch.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { useBackgroundMusic } from "./background-music.ts";
 import { useAudioWhile, useSoundEffects } from "./sound-effects.ts";
 import { preview, soundRunning, subscribeSound, unlock } from "./sound-engine.ts";
-import { MOODS, setSoundPrefs, useSoundPrefs } from "./sound-prefs.ts";
+import { MOODS, type Mood, setSoundPrefs, useSoundPrefs } from "./sound-prefs.ts";
 
 /** A slider dragged across its length plays its preview this often, not at every step. */
 const PREVIEW_GAP_MS = 180;
@@ -16,6 +16,23 @@ const PREVIEW_GAP_MS = 180;
 const SWITCH_TARGET = "relative after:absolute after:-inset-x-2 after:-inset-y-3.5";
 
 const running = () => soundRunning();
+
+/**
+ * The mood to render: each step of the arrow keys would be a render nobody can cancel, up to
+ * 15 MB each, so they wait to rest. A click, a tap, Space or another tab count at once.
+ */
+function useSettledMood(mood: Mood, arrowed: RefObject<boolean>) {
+  const [settled, setSettled] = useState(mood);
+  useEffect(() => {
+    if (!arrowed.current) {
+      setSettled(mood);
+      return;
+    }
+    const waiting = setTimeout(() => setSettled(mood), ARROW_SETTLE_MS);
+    return () => clearTimeout(waiting);
+  }, [mood, arrowed]);
+  return settled;
+}
 
 /**
  * The person's sound (#44, #45): a speaker in the top bar that opens two switches, the sound
@@ -37,8 +54,10 @@ export default function SoundControl() {
   };
   const { on, volume, music, mood } = useSoundPrefs();
   const audible = on || music;
+  /** The last key went to an arrow: the mood it picks waits for the keys to rest. */
+  const arrowed = useRef(false);
   useSoundEffects(on);
-  useBackgroundMusic(music, mood);
+  useBackgroundMusic(music, useSettledMood(mood, arrowed));
   useAudioWhile(audible, volume);
   const started = useSyncExternalStore(subscribeSound, running, () => false);
   const lastPreview = useRef(0);
@@ -120,7 +139,17 @@ export default function SoundControl() {
           <span id={ids.mood} className="font-medium">
             {t("sound.mood")}
           </span>
-          <div role="radiogroup" aria-labelledby={ids.mood} className="flex flex-wrap gap-2">
+          <div
+            role="radiogroup"
+            aria-labelledby={ids.mood}
+            className="flex flex-wrap gap-2"
+            onKeyDown={(event) => {
+              arrowed.current = event.key.startsWith("Arrow");
+            }}
+            onPointerDown={() => {
+              arrowed.current = false;
+            }}
+          >
             {MOODS.map((choice) => (
               <label
                 key={choice}

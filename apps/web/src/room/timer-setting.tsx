@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
-import { SEGMENT } from "../components/ui/segment.ts";
+import { ARROW_SETTLE_MS, SEGMENT } from "../components/ui/segment.ts";
 import { Switch } from "../components/ui/switch.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
@@ -16,12 +16,6 @@ const choiceOf = (seconds: number | null): Choice =>
     : (TIMER_PRESETS as readonly number[]).includes(seconds)
       ? (seconds as Choice)
       : "custom";
-
-/**
- * Arrow keys walk the lengths one by one: each would be a change the room hears. The
- * field shows each at once, and sends the one the PO stops on for this long.
- */
-export const ARROW_SETTLE_MS = 400;
 
 /**
  * The PO's timer setting (#27), in the settings panel's "Voting and reveal" group: the

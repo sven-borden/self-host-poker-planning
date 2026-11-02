@@ -2,6 +2,7 @@ import { apply, type Command, createRoom, type RoomState } from "@pp/domain";
 import { type Snapshot, toSnapshot } from "@pp/protocol";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { ARROW_SETTLE_MS } from "../components/ui/segment.ts";
 import { changeLanguage, loadLanguage } from "../i18n/i18n.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { audioContext, FakeAudioContext, fakeAudio } from "./fake-audio.ts";
@@ -412,18 +413,139 @@ describe("the room's sound", () => {
       expect(said()).toBe("Sound: on");
     });
 
-    it("changes mood under the music, and remembers it", async () => {
+    /** A render held back: the mood's loop, when `finish` is called. */
+    function heldRender(mood: Mood) {
+      let finish = () => {};
+      renderLoop.mockReturnValueOnce(
+        new Promise<AudioBuffer>((resolve) => {
+          finish = () => resolve({ duration: 48, mood } as unknown as AudioBuffer);
+        }),
+      );
+      return () => finish();
+    }
+
+    it("plays the old mood on until the new one is ready, then fades one under the other", async () => {
+      musicOn();
+      room();
+      render(<SoundControl />);
+      await gesture();
+      await playing();
+      const audio = audioContext();
+      const [, oldFade, ...none] = audio.gains;
+      expect(none).toEqual([]);
+      open();
+      const finish = heldRender("tide");
+      fireEvent.click(screen.getByRole("radio", { name: "Tide" }));
+      expect(savedPrefs()).toMatchObject({ music: true, mood: "tide" });
+      await waitFor(() => expect(renderLoop).toHaveBeenLastCalledWith("tide"));
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(source()?.stop).not.toHaveBeenCalled();
+      expect(oldFade?.gain.setTargetAtTime).toHaveBeenCalledTimes(1);
+
+      audio.currentTime = 30;
+      finish();
+      await waitFor(() => expect(audio.sources).toHaveLength(2));
+      // Stopped under its fade, and the new one starts from nothing: no step in either.
+      expect(source()?.stop.mock.calls[0]?.[0]).toBeGreaterThan(30);
+      expect(oldFade?.gain.setTargetAtTime).toHaveBeenLastCalledWith(0, 30, expect.any(Number));
+      expect(oldFade?.gain.setValueAtTime).toHaveBeenCalledTimes(1);
+      const newFade = audio.gains[2]?.gain;
+      expect(newFade?.setValueAtTime).toHaveBeenCalledWith(0, 30);
+      expect(newFade?.setTargetAtTime).toHaveBeenCalledWith(1, 30, expect.any(Number));
+      expect(audio.sources[1]?.buffer).toMatchObject({ mood: "tide" });
+    });
+
+    it("ends the old mood at a reveal while the new one renders", async () => {
+      musicOn();
+      const run = room();
+      render(<SoundControl />);
+      await gesture();
+      await playing();
+      open();
+      const finish = heldRender("tide");
+      fireEvent.click(screen.getByRole("radio", { name: "Tide" }));
+      await waitFor(() => expect(renderLoop).toHaveBeenLastCalledWith("tide"));
+      await show(run("me", { type: "reveal" }));
+      expect(source()?.stop).toHaveBeenCalledTimes(1);
+      finish();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(audioContext().sources).toHaveLength(1);
+    });
+
+    it("follows a reveal that arrives as the mood changes", async () => {
+      musicOn();
+      const run = room();
+      render(<SoundControl />);
+      await gesture();
+      await playing();
+      open();
+      heldRender("tide");
+      await act(async () => {
+        useRoomStore.setState({ snapshot: run("me", { type: "reveal" }) });
+        fireEvent.click(screen.getByRole("radio", { name: "Tide" }));
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      });
+      expect(source()?.stop).toHaveBeenCalledTimes(1);
+    });
+
+    it("waits for the arrow keys to rest, and a click acts at once", async () => {
       musicOn();
       room();
       render(<SoundControl />);
       await gesture();
       await playing();
       open();
-      fireEvent.click(screen.getByRole("radio", { name: "Tide" }));
-      expect(savedPrefs()).toMatchObject({ music: true, mood: "tide" });
-      expect(source()?.stop).toHaveBeenCalledTimes(1);
-      await waitFor(() => expect(audioContext().sources).toHaveLength(2));
+      renderLoop.mockClear();
+      const radio = (name: string) => screen.getByRole<HTMLInputElement>("radio", { name });
+      fireEvent.keyDown(radio("Dusk"), { key: "ArrowRight" });
+      fireEvent.click(radio("Tide"));
+      fireEvent.keyDown(radio("Tide"), { key: "ArrowRight" });
+      fireEvent.click(radio("Embers"));
+      expect(radio("Embers").checked).toBe(true);
+      expect(savedPrefs()).toMatchObject({ mood: "embers" });
+      await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
+      expect(renderLoop).not.toHaveBeenCalled();
+      await act(() => new Promise((resolve) => setTimeout(resolve, ARROW_SETTLE_MS)));
+      await waitFor(() => expect(renderLoop).toHaveBeenCalledTimes(1));
+      expect(renderLoop).toHaveBeenLastCalledWith("embers");
+
+      fireEvent.pointerDown(radio("Tide"));
+      fireEvent.click(radio("Tide"));
+      await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
+      expect(renderLoop).toHaveBeenCalledTimes(2);
       expect(renderLoop).toHaveBeenLastCalledWith("tide");
+    });
+
+    it("renders nothing for arrow keys that come back to where they began", async () => {
+      musicOn();
+      room();
+      render(<SoundControl />);
+      await gesture();
+      await playing();
+      open();
+      renderLoop.mockClear();
+      const radio = (name: string) => screen.getByRole("radio", { name });
+      fireEvent.keyDown(radio("Dusk"), { key: "ArrowRight" });
+      fireEvent.click(radio("Tide"));
+      fireEvent.keyDown(radio("Tide"), { key: "ArrowLeft" });
+      fireEvent.click(radio("Dusk"));
+      await act(() => new Promise((resolve) => setTimeout(resolve, ARROW_SETTLE_MS + 50)));
+      expect(renderLoop).not.toHaveBeenCalled();
+    });
+
+    it("waits for a quiet moment before it renders", async () => {
+      const idle: Array<() => void> = [];
+      const ask = vi.fn((work: () => void, _options: IdleRequestOptions) => idle.push(work));
+      vi.stubGlobal("requestIdleCallback", ask);
+      musicOn();
+      room();
+      render(<SoundControl />);
+      await gesture();
+      expect(ask.mock.calls[0]?.[1]).toMatchObject({ timeout: expect.any(Number) });
+      expect(renderLoop).not.toHaveBeenCalled();
+      idle.shift()?.();
+      await playing();
+      expect(renderLoop).toHaveBeenCalledTimes(1);
     });
 
     it("drops a mood rendered too late", async () => {
@@ -457,6 +579,46 @@ describe("the room's sound", () => {
       await new Promise((resolve) => setTimeout(resolve));
       expect(audioContext().sources).toEqual([]);
       expect(said()).toBe("Sound: on");
+    });
+
+    it("asks again at the next gesture after a failed render", async () => {
+      renderLoop.mockRejectedValueOnce(new Error("chunk gone"));
+      musicOn();
+      room();
+      render(<SoundControl />);
+      await gesture();
+      await waitFor(() => expect(renderLoop).toHaveBeenCalledTimes(1));
+      await new Promise((resolve) => setTimeout(resolve));
+      await gesture();
+      await playing();
+      expect(renderLoop).toHaveBeenCalledTimes(2);
+    });
+
+    it("asks again at the next round after a failed render", async () => {
+      renderLoop.mockRejectedValueOnce(new Error("chunk gone"));
+      musicOn();
+      const run = room();
+      await act(async () => {
+        useRoomStore.setState({ snapshot: run("me", { type: "reveal" }) });
+      });
+      render(<SoundControl />);
+      await gesture();
+      await waitFor(() => expect(renderLoop).toHaveBeenCalledTimes(1));
+      await new Promise((resolve) => setTimeout(resolve));
+      await show(run("me", { type: "startRound", subject: { kind: "none" } }));
+      await playing();
+      expect(renderLoop).toHaveBeenCalledTimes(2);
+    });
+
+    it("renders once however many gestures follow", async () => {
+      musicOn();
+      room();
+      render(<SoundControl />);
+      await gesture();
+      await playing();
+      await gesture();
+      await gesture();
+      expect(renderLoop).toHaveBeenCalledTimes(1);
     });
 
     it("offers the moods only while the music is on", async () => {
