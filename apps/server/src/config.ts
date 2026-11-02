@@ -2,12 +2,14 @@
  * The server's configuration, read from the environment once by `run()` and passed down.
  * Nothing else reads `process.env`. A bad or missing variable throws `ConfigError`, whose
  * message names the variables and a fixed reason, never a value: `DATABASE_URL` and
- * `REDIS_URL` may hold a password, `BETTER_AUTH_SECRET` signs the sessions, and the provider
- * secrets of `GOOGLE_CLIENT_SECRET` and `MICROSOFT_CLIENT_SECRET` open sign-in.
+ * `REDIS_URL` may hold a password, `BETTER_AUTH_SECRET` signs the sessions, the provider
+ * secrets of `GOOGLE_CLIENT_SECRET` and `MICROSOFT_CLIENT_SECRET` open sign-in, and
+ * `POKER_VAULT_KEY` and `POKER_VAULT_OLD_KEYS` open the connectors' tokens.
  */
 import { SIGN_IN_PROVIDERS, type SignInProvider } from "@pp/protocol";
 import { z } from "zod";
 import { type CspSources, parseCspSources } from "./security-headers.ts";
+import { isVaultKey, reusesSecret, Vault, vaultKeyId } from "./vault.ts";
 
 export const LOG_LEVELS = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];
@@ -75,6 +77,11 @@ export interface Config {
    * address: `social-sign-in.ts` uses the providers' own, and a test holds that.
    */
   readonly socialProviders: SocialProviders;
+  /**
+   * The keys of the connectors' tokens (#53, ADR-026), from `POKER_VAULT_KEY` and
+   * `POKER_VAULT_OLD_KEYS`. Unset (the default), the vault is off. Prints no key.
+   */
+  readonly vault: Vault | undefined;
 }
 
 /** The providers `config` has keys for, in the order the page shows them. */
@@ -109,13 +116,17 @@ const REASONS = {
   MICROSOFT_CLIENT_ID: "must be the application (client) id from the Microsoft Entra admin center",
   MICROSOFT_CLIENT_SECRET: "must be a client secret value from the Microsoft Entra admin center",
   MICROSOFT_TENANT_ID: "must be common, organizations, consumers or a tenant id (a GUID)",
+  POKER_VAULT_KEY:
+    "must be 32 random bytes in base64 on one line, with no line break or space, such as the output of openssl rand -base64 32, and must not be BETTER_AUTH_SECRET",
+  POKER_VAULT_OLD_KEYS:
+    "must be keys like POKER_VAULT_KEY separated by commas with no space or line break, each listed once, none of them POKER_VAULT_KEY or BETTER_AUTH_SECRET",
   BETTER_AUTH_SECRET:
     "must be at least 32 random characters, such as the output of openssl rand -base64 32",
 } as const;
 type Variable = keyof typeof REASONS;
 const VARIABLES = Object.keys(REASONS) as Variable[];
 
-/** Variables that work only together: each is required when the other is set. */
+/** Variables that work only together: the first is required when the second is set. */
 const PAIRED: Partial<Record<Variable, Variable>> = {
   UMAMI_URL: "UMAMI_WEBSITE_ID",
   UMAMI_WEBSITE_ID: "UMAMI_URL",
@@ -123,6 +134,7 @@ const PAIRED: Partial<Record<Variable, Variable>> = {
   GOOGLE_CLIENT_SECRET: "GOOGLE_CLIENT_ID",
   MICROSOFT_CLIENT_ID: "MICROSOFT_CLIENT_SECRET",
   MICROSOFT_CLIENT_SECRET: "MICROSOFT_CLIENT_ID",
+  POKER_VAULT_KEY: "POKER_VAULT_OLD_KEYS",
 };
 
 function parsesAsUrl(value: string, protocols: readonly string[]): URL | undefined {
@@ -252,8 +264,32 @@ const schema = z.object({
     .string()
     .refine((v) => ["common", "organizations", "consumers"].includes(v) || GUID.test(v))
     .default("common"),
+  POKER_VAULT_KEY: z.string().refine(isVaultKey).optional(),
+  POKER_VAULT_OLD_KEYS: z
+    .string()
+    .transform((v) => v.split(","))
+    .refine((keys) => keys.every(isVaultKey))
+    .optional(),
   BETTER_AUTH_SECRET: z.string().min(32).refine(isRealSecret),
 });
+
+/**
+ * The vault variable that repeats a key or takes the session secret's, if any. Two copies of
+ * a key are usually a new key that was never pasted; a key that is also the session secret
+ * falls with it, and the vault exists so that a leak of one thing does not open another.
+ */
+function vaultClash(
+  key: string | undefined,
+  oldKeys: readonly string[],
+  authSecret: string,
+): Variable | undefined {
+  if (key !== undefined && reusesSecret(key, authSecret)) return "POKER_VAULT_KEY";
+  const ids = [key, ...oldKeys].flatMap((value) => (value ? [vaultKeyId(value)] : []));
+  const repeated = new Set(ids).size < ids.length;
+  return repeated || oldKeys.some((old) => reusesSecret(old, authSecret))
+    ? "POKER_VAULT_OLD_KEYS"
+    : undefined;
+}
 
 export class ConfigError extends Error {
   /** The offending variable names, in a fixed order. Never their values. */
@@ -282,6 +318,11 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
   const missing = (name: Variable) => input[name] === undefined;
   for (const [name, other] of Object.entries(PAIRED) as [Variable, Variable][]) {
     if (missing(name) && !missing(other)) bad.add(name);
+  }
+  if (parsed.success) {
+    const { POKER_VAULT_KEY: key, POKER_VAULT_OLD_KEYS: old = [] } = parsed.data;
+    const clash = vaultClash(key, old, parsed.data.BETTER_AUTH_SECRET);
+    if (clash) bad.add(clash);
   }
   if (!parsed.success || bad.size > 0) {
     throw new ConfigError(
@@ -327,5 +368,6 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
           : undefined,
     }),
     betterAuthSecret: v.BETTER_AUTH_SECRET,
+    vault: v.POKER_VAULT_KEY ? new Vault(v.POKER_VAULT_KEY, v.POKER_VAULT_OLD_KEYS) : undefined,
   });
 }

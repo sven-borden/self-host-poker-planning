@@ -57,6 +57,13 @@
       "when": 1793592215270,
       "tag": "0007_add_guest_link_and_people_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793594806333,
+      "tag": "0008_add_connector_token",
+      "breakpoints": true
     }
   ]
 }

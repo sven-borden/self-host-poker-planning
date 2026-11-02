@@ -82,8 +82,9 @@ from the bundled database; to use your own Postgres, run the image alone with
   - turn on "Advanced > Build > Source commit availability: Available during build",
     otherwise `/api/health` reports `commit: unknown`;
   - set "Build arguments" to "Managed manually in Dockerfile" (no injected build
-    arguments), and for `DATABASE_URL` and `BETTER_AUTH_SECRET` uncheck "Available at
-    Buildtime": a build argument in scope of a `RUN` stays readable in `docker history`.
+    arguments), and for `DATABASE_URL`, `BETTER_AUTH_SECRET`, `POKER_VAULT_KEY` and
+    `POKER_VAULT_OLD_KEYS` uncheck "Available at Buildtime": a build argument in scope of a
+    `RUN` stays readable in `docker history`.
     The Dockerfile declares no `ARG` that could carry a secret, so keep secrets at runtime;
   - leave Coolify's own HTTP health check off: it runs curl or wget inside the container
     and the image has neither. The image's `HEALTHCHECK` is used;
@@ -104,7 +105,8 @@ from the bundled database; to use your own Postgres, run the image alone with
 - **Backups**: everything lives in the database (volume `poker-planning_pgdata`). Back it
   up before upgrading and on a schedule, for example
   `docker compose exec -T db pg_dump -U poker -Fc poker > poker-$(date +%F).dump`, and
-  restore with `pg_restore`. `docker compose down -v` deletes the volume. Before you
+  restore with `pg_restore`. `docker compose down -v` deletes the volume. A dump holds the
+  connectors' tokens encrypted: their key is not in it (see "Connector tokens"). Before you
   start the server on a restored database, raise `ROOM_TTL_DAYS` or run
   `update room set last_active_at = now()` on it: the retention purge deletes every room
   idle past the period 3 to 5 minutes after the start (see "Privacy").
@@ -156,6 +158,61 @@ told so. Starting a sign-in is limited per client
 address (30 a minute), so get the client address right first (see "Behind a reverse proxy").
 With two proxies that takes both steps: the second must trust the first, and then
 `TRUST_PROXY=2`. Until both are done, every visitor shares one limit of 30 a minute.
+
+### Connector tokens
+
+The Jira and Azure DevOps connectors, still to come (#54, #55), keep each person's token encrypted
+with AES-256-GCM, under a key that lives in the environment and never in the database. A guest
+holds no token. Without a key the server runs as usual and the connectors stay off. To turn it
+on, set a key and recreate the container (`docker compose up -d`: `restart` does not read
+`.env` again):
+
+```bash
+openssl rand -base64 32   # POKER_VAULT_KEY in .env, or in Coolify's variables; runtime only
+```
+
+It must be its own key: the server refuses the value of `BETTER_AUTH_SECRET`, anything but 32
+bytes of base64, and a key listed twice, naming the variable and never the value.
+
+**Changing the key** needs no downtime, no code change and no maintenance window. Every token
+stays readable at every step:
+
+0. Optional, and worth it: run the command of step 2 once now and note the `keyId` in its line.
+   It is the id of the key you are about to replace.
+1. Generate a new key. Make it `POKER_VAULT_KEY`, put the previous key in
+   `POKER_VAULT_OLD_KEYS` (commas between several, no spaces, no line break), and **recreate**
+   the container: `docker compose up -d`, or redeploy in Coolify. `docker compose restart` is
+   not enough: it starts the old container again with the values it was created with, and only
+   `up -d` reads `.env` again.
+2. Re-encrypt what is stored, in the running container:
+   `docker compose exec app node dist/main.mjs vault:rotate`, or `node dist/main.mjs vault:rotate`
+   in Coolify's terminal. It logs one line of counts and exits 0 only when every token is on the
+   new key. It is safe to run again, and alongside people using the app. Tokens also move by
+   themselves when they are used. **Check the line**: `keyId` must be a different id from step 0
+   (the same id means the container still has the old key: do step 1 again), `rotated` is the
+   number of connected people on the first run, and `offKey`, `unknownKey` and `corrupt` are 0.
+3. Remove the previous key from `POKER_VAULT_OLD_KEYS` and recreate the container again
+   (`docker compose up -d`). Not before step 2 has exited 0.
+
+With several instances, first add the new key to `POKER_VAULT_OLD_KEYS` everywhere and recreate
+them, then do step 1: otherwise an instance that has not been recreated yet meets tokens it cannot
+open, and asks those people to connect again until it has.
+
+If the command exits 1, read the counts. `unknownKey` above 0: a token was sealed with a key
+that is not in the variables; add it to `POKER_VAULT_OLD_KEYS` and run again. `corrupt` above 0:
+the row does not verify, because it was changed, copied to another account, or written by a
+format this version does not know; the server never writes one, so ask who can write to the
+database. `offKey` above 0 with the others at 0: some tokens are not on the new key yet, because
+another instance still runs with an older one and keeps writing there; recreate it with the new
+key and run again. Rows are never deleted for this. For `unknownKey` and `corrupt` the person
+connects again, which replaces the row, and until then the count stays.
+
+**Backups**: a dump holds these tokens encrypted, and a dump alone opens nothing. To restore them
+you must also keep `POKER_VAULT_KEY`, and any older key that was in use when the dump was taken,
+and you should keep those somewhere other than the backups: side by side they protect nothing.
+Losing the key means every person connects Jira or Azure DevOps again, and nothing else: rooms,
+accounts and history do not depend on it. If a key leaked along with a dump, change the key and
+also revoke the tokens at Jira or Azure DevOps, since rotating does not make a stolen copy useless.
 
 ### Running several instances
 
@@ -220,6 +277,10 @@ nothing about Redis is loaded or opened.
   and none of the provider's tokens, so nothing here can reach a person's Google or Microsoft
   account afterwards. The email is shown to its owner alone, on the landing page, and nowhere in
   a room, where a screen may be shared.
+- **Connectors**, once they exist (#54, #55), only for an account that connects Jira or Azure
+  DevOps: the token, encrypted
+  with a key kept outside the database, and when it was connected. It goes when the person
+  disconnects, and with the account. It is never logged.
 - **For how long**: a room idle for `ROOM_TTL_DAYS` days (default 90) is deleted with
   its history and its password grants. Activity is any change in the room, and opening
   it (counted at most once a day, or once a 24th of a shorter period). A guest's session

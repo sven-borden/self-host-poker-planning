@@ -8,26 +8,54 @@ import type { LogLevel } from "./config.ts";
 
 export type { Logger };
 
-const REDACT = [
+/**
+ * Field names that hold a secret wherever they are logged: at the top level, one level down
+ * (`a.token`) and two down (`a.b.token`, `list[0].token`). pino's `*` stands for exactly one
+ * level, so each depth is a path of its own, and pino matches case: `Authorization` is not
+ * `authorization`. Deeper than three keys is not covered, and neither is a secret under a
+ * name that is not here. So a provider's reply goes into a `Secret` at once (`vault.ts`),
+ * which prints nothing wherever it sits, and is never logged as a plain object.
+ */
+const SECRET_NAMES = [
   "databaseUrl",
-  "*.databaseUrl",
+  "DATABASE_URL",
   "betterAuthSecret",
-  "*.betterAuthSecret",
+  "BETTER_AUTH_SECRET",
   "password",
-  "*.password",
   "secret",
-  "*.secret",
+  "client_secret",
+  "clientSecret",
   "cookie",
-  "*.cookie",
   "authorization",
-  "*.authorization",
-  "headers.cookie",
-  "headers.authorization",
-  'headers["set-cookie"]',
-  // A Socket.IO handshake or a Node request logged whole: its headers and its auth payload.
-  "*.headers.cookie",
-  "*.headers.authorization",
-  '*.headers["set-cookie"]',
+  "Authorization",
+  // The connectors' tokens and keys (#53): a `Secret` and a `Vault` print nothing of theirs;
+  // this is for a plain string under one of these names.
+  "token",
+  "accessToken",
+  "access_token",
+  "refreshToken",
+  "refresh_token",
+  "idToken",
+  "id_token",
+  "apiToken",
+  "api_token",
+  "pat",
+  "sealedToken",
+  "sealed_token",
+  "vaultKey",
+  "POKER_VAULT_KEY",
+  "POKER_VAULT_OLD_KEYS",
+];
+
+/** Headers of a request or handshake logged whole, in either case, at three depths. */
+const HEADERS = ["cookie", "Cookie", "authorization", "Authorization", "set-cookie", "Set-Cookie"];
+const headerPath = (prefix: string, name: string) =>
+  /^[a-z_$][\w$]*$/i.test(name) ? `${prefix}headers.${name}` : `${prefix}headers["${name}"]`;
+
+const REDACT = [
+  ...SECRET_NAMES.flatMap((name) => [name, `*.${name}`, `*.*.${name}`]),
+  ...HEADERS.flatMap((name) => ["", "*.", "*.*."].map((prefix) => headerPath(prefix, name))),
+  // A Socket.IO handshake logged whole: its auth payload.
   "*.auth",
 ];
 
