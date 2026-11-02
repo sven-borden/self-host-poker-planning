@@ -102,6 +102,7 @@ beforeEach(() => {
 
 afterEach(() => {
   fake.failTokens = false;
+  fake.garbleIdTokens = false;
 });
 
 afterAll(async () => {
@@ -615,6 +616,21 @@ describe("a sign-in that fails", () => {
         reason: "invalid_code",
         provider: "google",
       }),
+    );
+  });
+
+  it("lands on the app when Better Auth throws, with the code of the error alone", async () => {
+    const browser = new Browser();
+    const callback = await atProvider(await start(browser, "google"), person());
+    fake.garbleIdTokens = true;
+    const response = await browser.go(callback);
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(`${ORIGIN}/?sign_in_error=failed`);
+    expect(logs.lines).toContainEqual(
+      expect.objectContaining({ msg: "auth request failed", level: 50 }),
+    );
+    expect(logs.lines).toContainEqual(
+      expect.objectContaining({ msg: "sign-in did not finish", reason: "exception" }),
     );
   });
 

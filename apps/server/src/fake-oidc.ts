@@ -48,6 +48,8 @@ export interface FakeOidc {
   readonly codes: string[];
   /** True: the token address answers 500, as a provider that is down. */
   failTokens: boolean;
+  /** True: the id token is not a token at all, which Better Auth's decoding throws on. */
+  garbleIdTokens: boolean;
   close(): Promise<void>;
 }
 
@@ -107,6 +109,7 @@ export async function startFakeOidc(port = 0): Promise<FakeOidc> {
     issued: [] as IssuedTokens[],
     codes: [] as string[],
     failTokens: false,
+    garbleIdTokens: false,
   };
 
   function authorize(url: URL, response: ServerResponse) {
@@ -162,7 +165,7 @@ export async function startFakeOidc(port = 0): Promise<FakeOidc> {
     const issued = {
       accessToken: `fake-access-${randomBytes(12).toString("hex")}`,
       refreshToken: `fake-refresh-${randomBytes(12).toString("hex")}`,
-      idToken: idToken(code),
+      idToken: state.garbleIdTokens ? "not-a-jwt" : idToken(code),
     };
     state.issued.push(issued);
     json(response, 200, {
