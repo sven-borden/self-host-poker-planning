@@ -463,8 +463,9 @@ describe("leaving", () => {
   });
 });
 
-describe("rooms a rule hides (#50)", () => {
+describe("a room nobody holds (#51)", () => {
   it("says what a room with no keeper comes to, and that one with a keeper has one", async () => {
+    asAccount();
     serve({
       "GET /api/my-rooms": () => json(page([{ ...CLAIMED, noKeeper: true }], { retentionDays: 1 })),
     });
@@ -478,7 +479,9 @@ describe("rooms a rule hides (#50)", () => {
     expect(await screen.findByText(/the person it belongs to/)).toBeTruthy();
     expect(screen.queryByText(/Nobody can delete it/)).toBeNull();
   });
+});
 
+describe("rooms a rule hides (#50)", () => {
   it("says that a recent sign-in brings the others back", async () => {
     asAccount();
     serve({ "GET /api/my-rooms": () => json(page([ROOM_A], { signInAgain: true })) });
