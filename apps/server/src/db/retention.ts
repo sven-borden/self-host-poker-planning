@@ -89,7 +89,8 @@ export interface RetentionStore {
  * Idle rooms, oldest first, locked and deleted in one statement. A room is idle when its
  * `last_active_at` is before the cutoff, it has no socket on this instance, and its owner
  * is not a signed-in user (ADR-014: those rooms stay until deleted; a guest owner, or one
- * deleted already, does not keep a room). Once `for update` holds a row it re-checks the
+ * deleted already, does not keep a room), or a guest on their way to being one (#48: the
+ * move has yet to reach this room). Once `for update` holds a row it re-checks the
  * `WHERE` on the row's latest version, so a commit or a visit that landed after the
  * statement began keeps its room, and nothing can move a locked row before `gone` deletes
  * it. `history` counts the rows the cascade deletes: the statement still sees them.
@@ -102,6 +103,7 @@ const DELETE_ROOMS = `
       and not exists (
         select 1 from "user" u where u.id = r.owner_user_id and u.is_anonymous is not true
       )
+      and not exists (select 1 from guest_link l where l.guest_user_id = r.owner_user_id)
     order by r.last_active_at
     limit $3
     for update of r skip locked
@@ -117,9 +119,10 @@ const DELETE_ROOMS = `
 
 /**
  * Guests nobody can use any more: anonymous, at least a day old, without a session that
- * has not expired (a guest's session lasts `ROOM_TTL_DAYS` after the last visit), and
- * owning no room. Their sessions, accounts and grants go by cascade. A signed-in user
- * (`is_anonymous` false or null) is never one.
+ * has not expired (a guest's session lasts `ROOM_TTL_DAYS` after the last visit), owning
+ * no room, and not on their way to an account (#48: a sign-in ended the sessions, and the
+ * move needs the guest until it is done). Their sessions, accounts and grants go by
+ * cascade. A signed-in user (`is_anonymous` false or null) is never one.
  */
 const DELETE_GUESTS = `
   with doomed as (
@@ -130,6 +133,7 @@ const DELETE_GUESTS = `
         select 1 from session s where s.user_id = u.id and s.expires_at > $1::timestamptz
       )
       and not exists (select 1 from room r where r.owner_user_id = u.id)
+      and not exists (select 1 from guest_link l where l.guest_user_id = u.id)
     limit $3
     for update of u skip locked
   ),

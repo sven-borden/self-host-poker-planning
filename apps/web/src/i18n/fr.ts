@@ -599,6 +599,8 @@ export const fr: Catalog<"many"> = {
         "Ce site n’accepte pas ce compte Microsoft. Essayez-en un autre, ou continuez sans compte.",
       rateLimited: "Trop de tentatives de connexion. Attendez une minute, puis réessayez.",
       failed: "La connexion n’a pas abouti. Réessayez, ou continuez sans compte.",
+      stillMoving:
+        "Votre compte est connecté. Certaines de vos salles sont encore en cours de transfert : rouvrez-les dans un instant.",
     },
   },
   password: {

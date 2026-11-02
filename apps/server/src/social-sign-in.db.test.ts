@@ -584,17 +584,18 @@ describe("signing in", () => {
     expect(logs.raw.join("\n")).not.toContain(code);
   });
 
-  it("keeps the guest and what it owns, and leaves a place for #48", async () => {
+  it("hands what the guest owns to the account, and the guest is gone (`guest-link.db.test.ts`)", async () => {
     const browser = new Browser();
     const guestId = await browser.guest();
     const { id } = await roomOf(guestId);
     await signIn(browser, "google", person());
+    const userId = (await browser.session())?.user.id;
     const { rows } = await admin.query(
-      `select u.id, u.is_anonymous, r.owner_user_id from "user" u
-       join room r on r.owner_user_id = u.id where r.id = $1`,
-      [id],
+      `select r.owner_user_id, u.id as guest from room r
+       left join "user" u on u.id = $2 where r.id = $1`,
+      [id, guestId],
     );
-    expect(rows).toEqual([{ id: guestId, is_anonymous: true, owner_user_id: guestId }]);
+    expect(rows).toEqual([{ owner_user_id: userId, guest: null }]);
   });
 
   it("sets a state cookie that is __Host- on https, and needs it on the way back", async () => {
@@ -641,20 +642,44 @@ describe("an address that is already someone's", () => {
     ["claims it verified", true],
     ["calls it unverified", false],
     ["says nothing of it", undefined],
-  ])("refuses a Microsoft sign-in that %s", async (_, emailVerified) => {
+  ])("keeps a Microsoft sign-in that %s apart from its owner", async (_, emailVerified) => {
     const email = `claimed${people}@example.com`;
     const { userId } = await owner(email);
     const taker = person({ email, emailVerified, tenant: OTHER_TENANT });
     const other = new Browser();
-    const location = await signIn(other, "microsoft", taker);
-    expect(new URL(location ?? "").searchParams.get("sign_in_error")).toBe("account_exists");
-    expect(await other.session()).toBeNull();
+    expect(await signIn(other, "microsoft", taker)).toBe(`${ORIGIN}/`);
+    const session = await other.session();
+    expect(session?.user.id).toBeTruthy();
+    expect(session?.user.id).not.toBe(userId);
     expect(await accounts(userId)).toHaveLength(1);
-    expect(await usersWith(email)).toHaveLength(1);
-    const { rows } = await admin.query("select id from account where account_id = $1", [
-      `${OTHER_TENANT}:${taker.id}`,
-    ]);
-    expect(rows).toEqual([]);
+    expect(await usersWith(email)).toEqual([expect.objectContaining({ id: userId })]);
+  });
+
+  it("does not lock out the owner of an address a Microsoft sign-in claimed first", async () => {
+    const email = `squatted${people}@example.com`;
+    const squatter = new Browser();
+    await signIn(squatter, "microsoft", person({ email, tenant: OTHER_TENANT }));
+    const real = person({ email });
+    const browser = new Browser();
+    expect(await signIn(browser, "google", real)).toBe(`${ORIGIN}/`);
+    const [first, second] = [await squatter.session(), await browser.session()];
+    expect(first?.user.id).toBeTruthy();
+    expect(second?.user.id).not.toBe(first?.user.id);
+    expect(await usersWith(email)).toEqual([expect.objectContaining({ id: second?.user.id })]);
+    expect(second?.user.email).toBe(email);
+    expect(first?.user.email).toBe(email);
+  });
+
+  it("never gives a second Microsoft sign-in of one address the first one's user", async () => {
+    const email = `shared${people}@example.com`;
+    const one = new Browser();
+    const two = new Browser();
+    await signIn(one, "microsoft", person({ email }));
+    await signIn(two, "microsoft", person({ email, tenant: OTHER_TENANT }));
+    const ids = [(await one.session())?.user.id, (await two.session())?.user.id];
+    expect(ids[0]).toBeTruthy();
+    expect(ids[1]).toBeTruthy();
+    expect(ids[0]).not.toBe(ids[1]);
   });
 
   it("refuses a new Google id on it: a reassigned address, or a domain bought again", async () => {
@@ -675,11 +700,20 @@ describe("an address that is already someone's", () => {
     expect(await accounts(userId)).toHaveLength(1);
   });
 
-  it("never stores a Microsoft address as verified, whatever the token says", async () => {
+  it("stores a Microsoft address as a claim, and never as verified or as `user.email`", async () => {
     const who = person({ emailVerified: true });
-    await signIn(new Browser(), "microsoft", who);
-    expect(await usersWith(who.email ?? "")).toEqual([
-      expect.objectContaining({ email_verified: false }),
+    const browser = new Browser();
+    await signIn(browser, "microsoft", who);
+    const userId = (await browser.session())?.user.id ?? "";
+    expect(await usersWith(who.email ?? "")).toEqual([]);
+    const { rows } = await admin.query<{ email: string; email_verified: boolean }>(
+      `select email, email_verified from "user" where id = $1`,
+      [userId],
+    );
+    expect(rows[0]?.email_verified).toBe(false);
+    expect(rows[0]?.email).toMatch(/^[0-9a-f]{64}@microsoft\.invalid$/);
+    expect(await accounts(userId)).toEqual([
+      expect.objectContaining({ claimed_email: who.email, tenant_id: TENANT }),
     ]);
   });
 });
@@ -873,8 +907,16 @@ describe("a sign-in that fails", () => {
   });
 
   it("explains a provider that gives no email", async () => {
-    const location = await signIn(new Browser(), "microsoft", person({ email: undefined }));
+    const location = await signIn(new Browser(), "google", person({ email: undefined }));
     expect(codeIn(location)).toBe("no_email");
+  });
+
+  it("lets a Microsoft account in without an address: `oid` and `tid` are who it is", async () => {
+    const browser = new Browser();
+    expect(await signIn(browser, "microsoft", person({ email: undefined }))).toBe(`${ORIGIN}/`);
+    const session = await browser.session();
+    expect(session?.user.provider).toBe("microsoft");
+    expect(session?.user).not.toHaveProperty("email");
   });
 });
 

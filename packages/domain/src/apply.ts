@@ -359,7 +359,9 @@ function moveGuest(state: RoomState, guest: UserId, account: UserId): Step {
     ...(movesOwner && { ownerId: account }),
     participants: movedSeat(state, guest, account),
   };
-  return done(round && votes && votes !== round.votes ? withRound(next, { ...round, votes }) : next);
+  return done(
+    round && votes && votes !== round.votes ? withRound(next, { ...round, votes }) : next,
+  );
 }
 
 /** The round's votes after the move; the same object when they stay as they are. */

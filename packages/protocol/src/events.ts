@@ -39,6 +39,11 @@ export interface ServerToClientEvents {
    * socket left it, and its next `enter` asks for the password. An older client ignores it.
    */
   locked: () => void;
+  /**
+   * This browser's guest signed in, in another tab (#48): the server closes the socket next,
+   * and the page reloads into the account. An older client ignores it and stays offline.
+   */
+  signedIn: () => void;
 }
 
 export type ParsedEnter =

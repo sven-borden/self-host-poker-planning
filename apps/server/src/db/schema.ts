@@ -6,6 +6,7 @@
  * still run.
  */
 import type { Card, DeckSpec, Results, RoomState, SpecialCard, Subject, UserId } from "@pp/domain";
+import { sql } from "drizzle-orm";
 import {
   bigint,
   index,
@@ -21,6 +22,13 @@ import {
 import { user } from "./auth-schema.ts";
 
 const instant = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
+
+/**
+ * Everyone a room's `live` names: its seats and the votes of the round on the table, whose
+ * keys are user ids, as one JSON object. `(…) ? id` finds a person's rooms through
+ * `room_people_idx`, and only this exact expression can use that index.
+ */
+export const ROOM_PEOPLE = sql`((live -> 'participants') || coalesce(live #> '{round,votes}', '{}'::jsonb))`;
 
 /**
  * One row per room. `live` is the room's whole state (settings, people, the round) and
@@ -54,6 +62,8 @@ export const room = pgTable(
   (t) => [
     index("room_last_active_at_idx").on(t.lastActiveAt),
     index("room_owner_user_id_idx").on(t.ownerUserId),
+    // A guest who signs in (#48) and "my rooms" (W5) find a person's seats through this.
+    index("room_people_idx").using("gin", ROOM_PEOPLE),
   ],
 );
 
@@ -122,5 +132,30 @@ export const roundHistory = pgTable(
     revealedAt: instant("revealed_at").notNull(),
     finishedAt: instant("finished_at").notNull(),
   },
-  (t) => [unique("round_history_room_id_number_unique").on(t.roomId, t.number)],
+  (t) => [
+    unique("round_history_room_id_number_unique").on(t.roomId, t.number),
+    // A person's named rounds, by containment: a guest who signs in (#48), account deletion (#51).
+    index("round_history_votes_idx").using("gin", t.votes.op("jsonb_path_ops")),
+  ],
+);
+
+/**
+ * A guest who signed in, and the account everything they hold is moving to (#48, ADR-025). The
+ * row is written before anything moves, in one transaction with the end of the guest's sessions,
+ * and goes with the guest once all of it has moved. While it exists the move can always be run
+ * again, and the purge leaves the guest and the guest's rooms alone. Nothing else ever links a
+ * guest to an account, and this row never leaves the server.
+ */
+export const guestLink = pgTable(
+  "guest_link",
+  {
+    guestUserId: text("guest_user_id")
+      .primaryKey()
+      .references(() => user.id, { onDelete: "cascade" }),
+    accountUserId: text("account_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: instant("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("guest_link_account_user_id_idx").on(t.accountUserId)],
 );

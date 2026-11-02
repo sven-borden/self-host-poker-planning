@@ -129,11 +129,13 @@ const SIGN_IN_FAILURES = {
   tenant_not_allowed: "signIn.errors.tenantNotAllowed",
   rate_limited: "signIn.errors.rateLimited",
   failed: "signIn.errors.failed",
+  still_moving: "signIn.errors.stillMoving",
 } as const satisfies Record<SignInErrorCode, MessageKey>;
 
 /**
  * A sign-in ends in a full-page redirect, so what went wrong arrives with the page: said once,
- * in the reader's language. Going back at the provider is no error, and does not look like one.
+ * in the reader's language. Going back at the provider is no error, and does not look like one;
+ * nor do rooms still on their way to the account (#48): that person is signed in.
  */
 function SignInToast() {
   const t = useT();
@@ -142,7 +144,7 @@ function SignInToast() {
     if (code === null) return;
     const message = t(SIGN_IN_FAILURES[code]);
     void import("sonner").then(({ toast }) => {
-      if (code === "cancelled") toast(message, { id: "sign-in" });
+      if (code === "cancelled" || code === "still_moving") toast(message, { id: "sign-in" });
       else toast.error(message, { id: "sign-in" });
     });
   }, [t]);

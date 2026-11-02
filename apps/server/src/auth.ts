@@ -18,9 +18,15 @@
  *
  * A provider's tokens are not kept: nothing here calls a provider after sign-in. The account
  * hooks below clear them before the row is written.
+ *
+ * A guest who signs in keeps everything they hold (#48, ADR-025): `onLinkAccount` hands the
+ * guest and the account to `guest-link.ts`. A plain error from it ends the sign-in with no
+ * cookie, and the person stays the guest they were; Better Auth would let an `APIError` through
+ * with the new session's cookie still on the answer, so none is thrown there.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { cleanName, isAvatarId } from "@pp/domain";
+import { SIGN_IN_ERROR_PARAM } from "@pp/protocol";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { isAPIError } from "better-auth/api";
@@ -34,11 +40,13 @@ import type { Config } from "./config.ts";
 import { authSchema, session, user } from "./db/auth-schema.ts";
 import { errorCode, guard } from "./db/errors.ts";
 import type { Db } from "./db/rooms.ts";
+import type { GuestLinks } from "./guest-link.ts";
 import { foreignOrigin, isJsonBody, rateLimited, requestIp } from "./http.ts";
 import type { Logger } from "./logger.ts";
 import { memoryRateLimit, type RateLimiter } from "./rate-limit.ts";
 import type { SocketMiddleware } from "./realtime.ts";
 import {
+  claimedAddress,
   idTokenClaims,
   isAlarming,
   SOCIAL_SIGN_IN_LIMIT,
@@ -165,12 +173,18 @@ function microsoftTenant(providerId: string, idToken: string | null | undefined)
   return typeof tenant === "string" ? tenant : null;
 }
 
+/** The address a Microsoft token claims, which is kept beside `tid` and proves nothing. */
+function microsoftClaim(providerId: string, idToken: string | null | undefined): string | null {
+  return providerId === "microsoft" ? claimedAddress(idTokenClaims(idToken ?? undefined)) : null;
+}
+
 /**
  * Set while a provider's callback runs. Anyone can send one, so Better Auth's lines about it
  * stay out of the error reports (`debug`; they hold no more than a fixed message): `finishSignIn`
  * writes the one line that says what came of it, at `error` when someone should look.
+ * `stillMoving`: the person is signed in, and the page should hear that a room has yet to move.
  */
-const inCallback = new AsyncLocalStorage<true>();
+const inCallback = new AsyncLocalStorage<{ stillMoving: boolean }>();
 
 /** What a handler knows about the person behind a socket: `socket.data.user`. */
 export interface SocketUser {
@@ -187,6 +201,7 @@ export function authOptions(
   db: Db,
   logger: Logger,
   limiter: RateLimiter = memoryRateLimit(),
+  links?: Pick<GuestLinks, "link">,
 ) {
   const { secure } = cookieNaming(config.baseUrl);
   const log = logger.child({ source: "better-auth" });
@@ -208,10 +223,13 @@ export function authOptions(
       // An address never makes two sign-ins one person. Implicit linking joins a new identity to
       // the user with the same address when the provider calls it verified: a Microsoft tenant
       // can claim anyone's, and a Google address can be reassigned, or its domain bought again.
-      // The newcomer would sign in as that user. Explicit linking stays for #48.
+      // The newcomer would sign in as that user. `/link-social` stays closed (ADR-025).
       accountLinking: { disableImplicitLinking: true },
-      // `input: false`: only the hook below writes it.
-      additionalFields: { tenantId: { type: "string", required: false, input: false } },
+      // `input: false`: only the hook below writes them.
+      additionalFields: {
+        tenantId: { type: "string", required: false, input: false },
+        claimedEmail: { type: "string", required: false, input: false },
+      },
     },
     // Guests keep their identity as long as their rooms live: a session lasts
     // ROOM_TTL_DAYS after the last visit; a visit extends it at most once a day.
@@ -285,6 +303,7 @@ export function authOptions(
               ...data,
               ...NO_PROVIDER_TOKENS,
               tenantId: microsoftTenant(data.providerId, data.idToken),
+              claimedEmail: microsoftClaim(data.providerId, data.idToken),
             },
           }),
         },
@@ -302,15 +321,32 @@ export function authOptions(
       additionalFields: { avatar: { type: "string", required: false, input: false } },
       validateUserInfo: ({ source }) => tenantRefusal(source, config),
     },
-    // The guest stays: the plugin would delete it on a sign-in, with the rooms it owns and
-    // what it did in them, and the new user has none of that yet. #48 moves them to the
-    // account here, in `onLinkAccount({ anonymousUser, newUser })`.
-    plugins: [anonymous({ disableDeleteAnonymousUser: true })],
+    // The plugin would delete the guest right after `onLinkAccount`, whatever came of it, and
+    // its grants and the link row with it: `guest-link.ts` deletes the guest once all of it has
+    // moved, and not before.
+    plugins: [
+      anonymous({
+        disableDeleteAnonymousUser: true,
+        ...(links && {
+          onLinkAccount: async ({ anonymousUser, newUser }) => {
+            const moved = await links.link(anonymousUser.user.id, newUser.user.id);
+            const callback = inCallback.getStore();
+            if (callback && !moved) callback.stillMoving = true;
+          },
+        }),
+      }),
+    ],
   } satisfies BetterAuthOptions;
 }
 
-export function createAuth(config: Config, db: Db, logger: Logger, limiter?: RateLimiter) {
-  return betterAuth(authOptions(config, db, logger, limiter));
+export function createAuth(
+  config: Config,
+  db: Db,
+  logger: Logger,
+  limiter?: RateLimiter,
+  links?: Pick<GuestLinks, "link">,
+) {
+  return betterAuth(authOptions(config, db, logger, limiter, links));
 }
 
 export type Auth = ReturnType<typeof createAuth>;
@@ -483,7 +519,8 @@ export function registerAuthApi(
   /**
    * A session, with the provider of an account as `user.provider`: in a room the page names it
    * rather than the address. `/list-accounts` stays closed; this one field is all the page gets.
-   * One account row a person until #48 links a second.
+   * A Microsoft account's `user.email` is no address (`microsoftAddress`): the page gets the one
+   * its token claimed, if any, which is its owner's to see. One account row a person.
    */
   async function readSession(c: Context<AppEnv>): Promise<Response> {
     const answer = await forward(c, c.req.raw);
@@ -494,7 +531,14 @@ export function registerAuthApi(
     try {
       const { internalAdapter } = await auth.$context;
       const [first] = await internalAdapter.findAccounts(account.data.user.id);
-      const user = { ...account.data.user, provider: first?.providerId };
+      const { email: stored, ...shown } = account.data.user;
+      const claimed = first ? Reflect.get(first, "claimedEmail") : undefined;
+      const email = first?.providerId === "microsoft" ? claimed : stored;
+      const user = {
+        ...shown,
+        ...(typeof email === "string" && { email }),
+        provider: first?.providerId,
+      };
       return rewrite(answer, { ...account.data, user });
     } catch (error) {
       // As in `forward`: never the error itself.
@@ -529,8 +573,9 @@ export function registerAuthApi(
    */
   async function finishSignIn(c: Context<AppEnv>, provider: string): Promise<Response> {
     let response: Response | null = null;
+    const callback = { stillMoving: false };
     try {
-      response = await inCallback.run(true, () => askBetterAuth(c, c.req.raw));
+      response = await inCallback.run(callback, () => askBetterAuth(c, c.req.raw));
     } catch (error) {
       // Never the error itself: its message or its cause's can hold a token or a code.
       c.var.log.error({ code: errorCode(error) }, "auth request failed");
@@ -543,7 +588,8 @@ export function registerAuthApi(
     const headers = new Headers(response?.headers);
     headers.delete("content-length");
     headers.delete("content-type");
-    headers.set("location", location);
+    const moving = !failure && callback.stillMoving;
+    headers.set("location", moving ? `${location}?${SIGN_IN_ERROR_PARAM}=still_moving` : location);
     headers.set("cache-control", "no-store");
     return new Response(null, { status: 302, headers });
   }

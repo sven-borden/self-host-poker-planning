@@ -77,6 +77,8 @@ export interface InterServerEvents {
   present(roomId: unknown, answer: (people: string[]) => void): void;
   /** The rooms (by id) with a socket on the instance that answers. */
   occupied(answer: (rooms: string[]) => void): void;
+  /** A guest signed in (#48): their sockets, wherever they are, hear `signedIn` and close. */
+  guestLinked(guest: unknown): void;
 }
 
 export type RealtimeServer = Server<
