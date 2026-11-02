@@ -100,3 +100,31 @@ describe("the refused enter", () => {
     expect(enterAckSchema.safeParse({ ok: false, code: "password_required" }).success).toBe(true);
   });
 });
+
+describe("a stored rule that is no rule", () => {
+  it.each([[null], ["example.com"], [{ domains: "example.com", tenants: [] }]])(
+    "%j shows the PO an empty rule to take off, and breaks no snapshot",
+    (stored) => {
+      const state = room();
+      (state.settings as { restriction: unknown }).restriction = stored;
+      const snapshot = view(state, "po");
+      expect(snapshot.room.settings.restriction).toEqual({
+        domains: [],
+        organisation: false,
+        tenants: [],
+      });
+      expect(snapshotSchema.safeParse(snapshot).success).toBe(true);
+    },
+  );
+});
+
+describe("an old sign-in", () => {
+  it("is a refused `enter` that says what would pass, as the rule's other codes are", () => {
+    const ack = {
+      ok: false,
+      code: "session_too_old",
+      requirement: { domains: ["example.com"], organisation: false },
+    };
+    expect(enterAckSchema.safeParse(ack).success).toBe(true);
+  });
+});

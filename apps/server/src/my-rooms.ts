@@ -220,8 +220,9 @@ export function registerMyRoomsApi(
     // A keeper the rule refuses keeps the right (ADR-028): the room is theirs, and with the role
     // out of reach, as neither a claim nor a hand-over can reach them, the role cannot ask it.
     const rule = room && (await shutOut(room, me)) ? room.rule : null;
-    if (!rule && (room?.ownerId !== me.id || !room.keeper)) return noDelete(c, room, me.id);
-    if (!room) return noDelete(c, room, me.id);
+    if (!room || (!rule && (room.ownerId !== me.id || !room.keeper))) {
+      return noDelete(c, room, me.id);
+    }
     // The statement is the judge. It refuses a claim or a hand-over that landed since, and a
     // second tab's delete: the row says which.
     const deleted = rule

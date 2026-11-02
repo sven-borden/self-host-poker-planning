@@ -48,10 +48,12 @@ export function registerRestrictionApi(
     state: RoomState,
     identities: ReadonlyMap<UserId, AccessIdentity>,
   ): [UserId, AccessIdentity | null][] {
-    const seated = Object.keys(state.participants).map((id) => [id, identities.get(id) ?? null]);
-    return (seated as [UserId, AccessIdentity | null][]).filter(
-      ([id, identity]) => roomRefusal(state, id, identity, rules.providers) !== null,
-    );
+    const refused: [UserId, AccessIdentity | null][] = [];
+    for (const id of Object.keys(state.participants)) {
+      const identity = identities.get(id) ?? null;
+      if (roomRefusal(state, id, identity, rules.providers)) refused.push([id, identity]);
+    }
+    return refused;
   }
 
   app.get("/api/rooms/:code/restriction", async (c) => {

@@ -146,3 +146,53 @@ test("someone seated stays until they reload, the PO sees a count, and the PO st
   await seated.context.close();
   await po.context.close();
 });
+
+test("the PO removes everyone who would not pass, without being shown who", async ({ browser }) => {
+  const po = await newPerson(browser);
+  const url = await poAtTheTable(po.page, po.context, person("Pia Product", "example.com"));
+
+  const seated = await newPerson(browser);
+  await seated.page.goto(url);
+  await seated.page.getByRole("textbox", { name: "Your name" }).fill("Gus Guest");
+  await seated.page.getByRole("button", { name: "Join the room" }).click();
+  await expect(seated.page.getByRole("heading", { name: "You", exact: true })).toBeVisible();
+
+  const dialog = await setRule(po.page, "example.com");
+  await expect(dialog.locator("[data-restriction-outsiders]")).toContainText(
+    "1 person here would not pass.",
+  );
+  await dialog.getByRole("button", { name: "Remove everyone who would not pass" }).click();
+  await expect(dialog.locator("[data-restriction-remove-ask]")).toContainText(
+    "1 person leaves the room now",
+  );
+  await dialog.getByRole("button", { name: "Remove them" }).click();
+  await expect(dialog.locator("[data-restriction-outsiders]")).toHaveCount(0);
+  await expect(seated.page.getByRole("heading", { name: "You", exact: true })).toHaveCount(0);
+  await seated.context.close();
+  await po.context.close();
+});
+
+test("a domain of 63 letters does not widen the refused screen at 320 px", async ({ browser }) => {
+  const po = await newPerson(browser);
+  const url = await poAtTheTable(po.page, po.context, person("Pia Product", "example.com"));
+  const long = `${"a".repeat(63)}.example.com`;
+  const dialog = await setRule(
+    po.page,
+    `example.com
+${long}`,
+  );
+  await expect(dialog.getByRole("button", { name: "Remove the rule" })).toBeVisible();
+
+  const guest = await newPerson(browser);
+  await guest.page.setViewportSize({ width: 320, height: 640 });
+  await guest.page.goto(url);
+  await expect(guest.page.locator("[data-room-restricted]")).toContainText(long);
+  await expect(guest.page.locator("[data-room-restricted]")).toContainText("example.com or");
+  const width = await guest.page.evaluate(() => ({
+    page: document.documentElement.scrollWidth,
+    view: document.documentElement.clientWidth,
+  }));
+  expect(width.page).toBeLessThanOrEqual(width.view);
+  await guest.context.close();
+  await po.context.close();
+});

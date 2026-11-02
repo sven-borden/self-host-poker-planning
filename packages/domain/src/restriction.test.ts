@@ -255,3 +255,45 @@ describe("updateSettings with a rule", () => {
     ]);
   });
 });
+
+describe("a stored rule is read as strictly as a typed one", () => {
+  const malformed = [
+    null,
+    "example.com",
+    {},
+    { domains: "example.com", tenants: [] },
+    { domains: ["example.com"] },
+    { domains: [1], tenants: [] },
+    { domains: ["*.example.com"], tenants: [] },
+    { domains: [], tenants: [] },
+    { domains: ["example.com"], tenants: [], extra: true },
+  ] as unknown as Restriction[];
+
+  it.each(malformed.map((value) => [JSON.stringify(value), value]))("%s refuses", (_, value) => {
+    expect(requirementOf(value as Restriction, BOTH)).toEqual({ domains: [], organisation: false });
+    expect(restrictionRefusal(value as Restriction, google("example.com"), BOTH)).toBe(
+      "restriction_unavailable",
+    );
+    const state = createRoom({ ownerId: "po" });
+    state.settings.restriction = value as Restriction;
+    expect(roomRefusal(state, "someone", google("example.com"), BOTH)).toBe(
+      "restriction_unavailable",
+    );
+    expect(roomRefusal(state, "po", null, BOTH)).toBeNull();
+  });
+
+  it("stays on the room when another setting changes, so that change opens nothing", () => {
+    for (const value of malformed) {
+      const state = createRoom({ ownerId: "po" });
+      state.participants.po = { name: "PO", role: "voter", joinedAt: 1, connected: true };
+      state.settings.restriction = value;
+      const { state: next } = apply(
+        state,
+        { type: "updateSettings", patch: { poVotes: false } },
+        { actor: "po", now: 1000 },
+      );
+      expect(Object.hasOwn(next.settings, "restriction")).toBe(true);
+      expect(next.settings.restriction).toEqual(value);
+    }
+  });
+});

@@ -1543,7 +1543,8 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       // needs a grant. Only the PO passes the rule on the state.
       if (isGated(loaded.state, user.id)) {
         // This socket sits in the room's channel already, so a lockout from here on finds it.
-        const lockedBefore = lockouts.get(loaded.id) ?? 0;
+        const { id } = loaded;
+        const lockedBefore = lockouts.get(id) ?? 0;
         // Read when a state first asks for them: a rule or a password may land between loads.
         let identity: AccessIdentity | null | undefined;
         let granted: boolean | undefined;
@@ -1554,7 +1555,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
             if (refused) return refused;
           }
           if (!state.hasPassword || isMember(state, user.id)) return null;
-          granted ??= await hasAccess(loaded?.id ?? "", user.id);
+          granted ??= await hasAccess(id, user.id);
           return granted ? null : ("password_required" as const);
         };
         const first = await refusal(loaded.state);

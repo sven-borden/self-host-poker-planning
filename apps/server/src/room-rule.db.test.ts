@@ -18,6 +18,8 @@
 import { createRoom, type Restriction, type RoomState } from "@pp/domain";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Config } from "./config.ts";
+import { DatabaseError } from "./db/errors.ts";
+import { createMyRoomsStore } from "./db/my-rooms.ts";
 import { createTestDatabase, type TestDatabase, testClient } from "./db/test-db.ts";
 import {
   atFake,
@@ -28,8 +30,6 @@ import {
   routeProvidersTo,
   startFakeOidc,
 } from "./fake-oidc.ts";
-import { createMyRoomsStore } from "./db/my-rooms.ts";
-import { DatabaseError } from "./db/errors.ts";
 import { hashPassword } from "./password.ts";
 import { RESTRICTION_READ_LIMIT, RESTRICTION_REMOVE_LIMIT } from "./room-rule-api.ts";
 import { createServer, type PokerServer } from "./server.ts";
@@ -215,6 +215,9 @@ function person(overrides: Partial<FakePerson> = {}): FakePerson {
     ...overrides,
   };
 }
+
+/** A Google account the domain rule refuses, with an address of its own. */
+const outsider = () => person({ email: `person${people + 1}@elsewhere.example` });
 
 const SECRET_NAME = "The confidential room";
 
@@ -831,7 +834,7 @@ describe("the one invariant: no frame without a judgement of its gate", () => {
     const room = await roomOf(po);
     const owner = await poBrowser.sit(room.code, "The PO");
     const browser = new Browser();
-    await browser.signIn("google", person({ email: "someone@elsewhere.example" }));
+    await browser.signIn("google", outsider());
     const seated = await browser.sit(room.code, "An outsider");
     await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
     const locked = hears(seated, "locked");
@@ -974,6 +977,8 @@ describe("the one invariant: no frame without a judgement of its gate", () => {
         patch: { restriction: { domains: ["other.example"], tenants: [] } },
       }),
     );
+    await settled(client).catch(() => {});
+    const before = client.received.length;
     const second = holdLoad(room.code);
     const again = client.enter(room.code);
     await second.reading;
@@ -984,7 +989,7 @@ describe("the one invariant: no frame without a judgement of its gate", () => {
     expect((await again).ok).toBe(false);
     second.restore();
     await settled(client).catch(() => {});
-    expect(client.received).toEqual([]);
+    expect(client.received.length).toBe(before);
     expect(client.frames.join("\n")).not.toContain("Not for the refused");
   });
 
@@ -1103,7 +1108,7 @@ describe.skipIf(!process.env.TEST_REDIS_URL)("the one invariant across two insta
   it("an HTTP leave on one instance reaches a socket on the other", async () => {
     const { room, owner } = await poOnA();
     const browser = new Browser(() => a);
-    await browser.signIn("google", person({ email: "someone@elsewhere.example" }));
+    await browser.signIn("google", outsider());
     const seated = await onB(browser).sit(room.code, "An outsider");
     await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
     const locked = hears(seated, "locked");
@@ -1357,10 +1362,7 @@ describe('"My rooms" and a room with a rule', () => {
   /** A room its keeper left, with a rule on it, whose role someone the rule passes claimed. */
   async function handedOver() {
     const keeperBrowser = new Browser();
-    const keeper = await keeperBrowser.signIn(
-      "google",
-      person({ email: "maker@elsewhere.example" }),
-    );
+    const keeper = await keeperBrowser.signIn("google", outsider());
     const room = await roomOf(keeper);
     const owner = await keeperBrowser.sit(room.code, "The maker");
     const colleagueBrowser = new Browser();
@@ -1381,7 +1383,7 @@ describe('"My rooms" and a room with a rule', () => {
     const room = await roomOf(po);
     const owner = await poBrowser.sit(room.code, "The PO");
     const browser = new Browser();
-    await browser.signIn("google", person({ email: "someone@elsewhere.example" }));
+    await browser.signIn("google", outsider());
     await browser.sit(room.code, "An outsider");
     expect(JSON.stringify(await list(browser))).toContain(room.code);
     await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));

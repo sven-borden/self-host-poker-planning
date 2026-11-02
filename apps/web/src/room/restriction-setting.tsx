@@ -9,15 +9,15 @@ import { OctagonXIcon, TriangleAlertIcon, UsersRoundIcon } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
-import { codeOf, failureMessage } from "./failure.ts";
 import { signInProviders } from "../identity/sign-in.ts";
 import {
   fetchRoomRestriction,
-  removeRoomOutsiders,
   type RoomRestrictionInfo,
+  removeRoomOutsiders,
 } from "../rooms/api.ts";
 import { useIdentityStore } from "../stores/identity-store.ts";
 import { useRoomStore } from "../stores/room-store.ts";
+import { codeOf, failureMessage } from "./failure.ts";
 import type { ControlProps } from "./settings-panel.tsx";
 
 const FIELD_CLASS =

@@ -152,6 +152,41 @@ describe("the refused screen", () => {
     expect(screen.queryByRole("button", { name: "Sign in with Google" })).toBeNull();
   });
 
+  it.each([
+    ["en", "To join, sign in with a Google account on a.com, b.com, or c.com."],
+    ["fr", "a.com, b.com ou c.com"],
+    ["de", "a.com, b.com oder c.com"],
+  ] as const)("names the domains as a choice, in %s", async (language, words) => {
+    await changeLanguage(language);
+    useIdentityStore.getState().setIdentity({ userId: "g", name: null });
+    render(<RoomView />);
+    refuse("sign_in_required", ["a.com", "b.com", "c.com"], false);
+    expect(document.querySelector("[data-room-restricted]")?.textContent).toContain(words);
+    await changeLanguage("en");
+  });
+
+  it("breaks a long domain instead of pushing the page wider", () => {
+    useIdentityStore.getState().setIdentity({ userId: "g", name: null });
+    render(<RoomView />);
+    const long = `${"a".repeat(63)}.example`;
+    refuse("sign_in_required", [long], false);
+    const line = screen.getByText((text) => text.includes(long));
+    expect(line.className).toContain("wrap-anywhere");
+  });
+
+  it("asks for a new sign-in, says why, and shows the way to it", () => {
+    asAccount("google");
+    render(<RoomView />);
+    refuse("session_too_old", ["example.com"], false);
+    const root = document.querySelector("[data-room-restricted]") as HTMLElement;
+    expect(root.getAttribute("data-room-restricted")).toBe("session_too_old");
+    expect(root.querySelector("[data-room-refusal]")?.textContent).toBe(
+      "Your sign-in is more than 30 days old. This room asks for a recent one, as signing in again is how your provider confirms you are still there. Sign out, then sign in.",
+    );
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
+    expect(isRestrictionRefusal("session_too_old")).toBe(true);
+  });
+
   it("offers both, when either passes", () => {
     useIdentityStore.getState().setIdentity({ userId: "g", name: null });
     render(<RoomView />);
@@ -378,10 +413,105 @@ describe("the PO's row", () => {
     const dialog = await openPanel();
     await waitFor(() =>
       expect(dialog.querySelector("[data-restriction-outsiders]")?.textContent).toBe(
-        "2 people here would not pass. They stay until they reload the page or leave.",
+        "2 people here would not pass. They stay until they reload the page, lose their connection or leave.",
       ),
     );
     expect(dialog.querySelector("[data-restriction-outsiders]")?.textContent).not.toContain("Ana");
+  });
+
+  it("asks for the count once a change has landed, never while it is on its way", async () => {
+    asAccount("google");
+    serverAnswers({ outsiders: 0, own: { domain: "example.com", tenant: null } });
+    let land: (ack: { ok: true; version: number }) => void = () => {};
+    const send = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          land = resolve;
+        }),
+    );
+    mocks.commandSender.mockReturnValue(send);
+    render(<RoomSettingsButton />);
+    show(room(), PO);
+    const dialog = await openPanel();
+    await waitFor(() => expect(mocks.fetch).toHaveBeenCalledTimes(1));
+    fireEvent.change(field(dialog, "Email domains"), { target: { value: "example.com" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save the rule" }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    // The row already shows the rule; a read now would answer for the room before it.
+    await act(async () => {});
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+
+    serverAnswers({ outsiders: 1, own: { domain: "example.com", tenant: null } });
+    await act(async () => {
+      const result = apply(
+        state,
+        {
+          type: "updateSettings",
+          patch: { restriction: { domains: ["example.com"], tenants: [] } },
+        },
+        { actor: PO, now: 1 },
+      );
+      show(result.state, PO);
+      land({ ok: true, version });
+    });
+    await waitFor(() =>
+      expect(dialog.querySelector("[data-restriction-outsiders]")?.textContent).toContain(
+        "1 person here would not pass.",
+      ),
+    );
+  });
+
+  it("removes those who would not pass, once asked, and shows the server's new count", async () => {
+    asAccount("google");
+    serverAnswers({ outsiders: 2, own: { domain: "example.com", tenant: null } });
+    render(<RoomSettingsButton />);
+    show(room({ domains: ["example.com"], tenants: [] }), PO);
+    const dialog = await openPanel();
+    const remove = await within(dialog).findByRole("button", {
+      name: "Remove everyone who would not pass",
+    });
+    fireEvent.click(remove);
+    expect(dialog.querySelector("[data-restriction-remove-ask]")?.textContent).toContain(
+      "2 people leave the room now",
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Remove everyone who would not pass" }),
+    );
+    mocks.fetch.mockReset();
+    mocks.fetch.mockImplementation(async (path: string) =>
+      Response.json(
+        path.endsWith("/remove-outsiders")
+          ? { removed: 2 }
+          : { outsiders: 0, own: { domain: "example.com", tenant: null } },
+      ),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove them" }));
+    await waitFor(() => expect(dialog.querySelector("[data-restriction-outsiders]")).toBeNull());
+    const [path, init] = mocks.fetch.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe(`/api/rooms/${CODE}/restriction/remove-outsiders`);
+    expect(init.method).toBe("POST");
+    expect(document.activeElement?.textContent).toBe("Save the rule");
+  });
+
+  it("says why a removal failed, and leaves the question open", async () => {
+    asAccount("google");
+    serverAnswers({ outsiders: 1, own: { domain: "example.com", tenant: null } });
+    render(<RoomSettingsButton />);
+    show(room({ domains: ["example.com"], tenants: [] }), PO);
+    const dialog = await openPanel();
+    fireEvent.click(
+      await within(dialog).findByRole("button", { name: "Remove everyone who would not pass" }),
+    );
+    mocks.fetch.mockImplementation(async () =>
+      Response.json({ code: "rate_limited" }, { status: 429 }),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove them" }));
+    await waitFor(() =>
+      expect(dialog.querySelector("[data-restriction-remove-ask]")?.textContent).toContain(
+        "Too many tries.",
+      ),
+    );
   });
 
   it("is a change like any other: refused, it rolls back and says why", async () => {
