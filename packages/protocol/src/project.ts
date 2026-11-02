@@ -24,6 +24,7 @@ import type {
   CauseView,
   ParticipantView,
   QueueSummary,
+  RestrictionView,
   RoomSettingsView,
   RoundView,
   Snapshot,
@@ -54,7 +55,7 @@ export function toSnapshot(state: RoomState, viewer: UserId, meta: SnapshotMeta)
       code: meta.code,
       ownerId: state.ownerId,
       ...ownerClaimable(state),
-      settings: settingsView(state.settings, state.hasPassword === true),
+      settings: settingsView(state, viewer),
       participants: people.map(([id, p]) => participantView(id, p, state.ownerId)),
       you: Object.hasOwn(state.participants, viewer) ? viewer : null,
       round: state.round ? roundView(state.round, order, viewer) : null,
@@ -114,9 +115,11 @@ function causeView(cause: Cause, hideVoter: boolean): CauseView | null {
     case "timeUp":
       return { type: cause.type };
     case "settingsUpdated":
-      return cause.password === undefined
-        ? { type: cause.type }
-        : { type: cause.type, password: cause.password };
+      return {
+        type: cause.type,
+        ...(cause.password !== undefined ? { password: cause.password } : {}),
+        ...(cause.restriction ? { restriction: true as const } : {}),
+      };
     case "finalSet":
       return { type: cause.type, card: cause.card };
     case "ownerChanged":
@@ -181,10 +184,27 @@ function deckView(deck: DeckSpec): DeckSpec {
 }
 
 /**
+ * The room's rule (#50) for those it let in. Its domains are no secret, the join screen names
+ * them; a tenant's id goes to the PO alone, whose panel edits it. It names no person: nothing
+ * of anyone's address, provider or tenant is in the state, so nothing of it can reach a view.
+ */
+function restrictionView({ restriction }: RoomSettings, isOwner: boolean): RestrictionView | null {
+  if (restriction === undefined) return null;
+  const { domains, tenants } = restriction;
+  return {
+    domains: [...domains],
+    organisation: tenants.length > 0,
+    ...(isOwner ? { tenants: [...tenants] } : {}),
+  };
+}
+
+/**
  * The settings, and whether the room has a password (#31): never the hash, which `live`
  * never holds.
  */
-function settingsView(s: RoomSettings, hasPassword: boolean): RoomSettingsView {
+function settingsView(state: RoomState, viewer: UserId): RoomSettingsView {
+  const s = state.settings;
+  const restriction = restrictionView(s, viewer === state.ownerId);
   return {
     deck: deckView(s.deck),
     specials: [...s.specials],
@@ -195,9 +215,10 @@ function settingsView(s: RoomSettings, hasPassword: boolean): RoomSettingsView {
     allowChangeAfterReveal: s.allowChangeAfterReveal,
     poVotes: s.poVotes,
     observersCount: s.observersCount,
-    hasPassword,
+    hasPassword: state.hasPassword === true,
     // A room stored before #52 has none.
     autoAdvance: s.autoAdvance === true,
+    ...(restriction ? { restriction } : {}),
   };
 }
 
