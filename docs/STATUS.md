@@ -105,6 +105,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 - The Jira Cloud connector from #54 (ADR-030), merged and dark: import by JQL or sprint, the
   final estimate written back. An estimate goes by itself only for a final the same tab
   recorded. Never run against real Atlassian. Live at 2ea5945.
+- The Azure DevOps connector from #55 (ADR-031), merged and dark behind
+  `AZURE_DEVOPS_CONNECTOR=on`: a personal access token, WIQL or saved queries, the estimate
+  written back. A refusal never deletes a token. Never run with a valid token. Live at 3e6c7d1.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -115,12 +118,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- #55: an implementer in `../pp-wt-55`, the Azure DevOps connector on #54's seam, by personal
-  access token. Its live check needs Sven's test organisation.
-- #54 is merged and stays open until the live check at Sven's Jira site.
+- Nothing in flight. All that is left needs Sven (Owner items).
+- #54 and #55 are merged and stay open until the live checks at Sven's site and organisation.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
-- **Agents again, issue after issue, until the end of 2026-11-02** (Sven, 2026-11-01): the
-  main session orchestrates and does not stop between issues (see `CLAUDE.md`).
+- **Agents again, issue after issue, until the end of 2026-11-02** (Sven, 2026-11-01). The
+  unblocked work ran out that day at W6; the session stopped and reported.
 
 ## Next
 
@@ -208,6 +210,12 @@ issues are merged.
   Your call there: keep the classic scopes or narrow them, as `write:jira-work` also allows
   deleting issues. Expect a press, not a write, after a reload or in a second tab. Then #54 can
   close.
+- **#55: Azure DevOps.** After sign-in has keys: a test organisation, a token made as in the
+  README's "Azure DevOps", and a second person with their own. Runtime in Coolify:
+  `AZURE_DEVOPS_CONNECTOR=on` and `POKER_VAULT_KEY`. First question: does `vso.work_write` alone
+  list projects? If not, the page and the README must say to tick Project and Team: Read too. Try
+  the refused tokens in PR #115 and tell me what each page says. Then #55 can close. Later: decide
+  whether to build Entra OAuth, as Microsoft warns against tokens as long-term credentials.
 - **After #46**: install the app on a phone and check the icon, the name "Poker" and the bar
   colour, and on Android feel the reveal's beats. No real phone has run it. #46 closed with
   the icon judged by eye and Lighthouse's check replaced by Chromium's.
