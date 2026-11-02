@@ -13,11 +13,16 @@ import { loadConfig } from "./config.ts";
 import type { Db } from "./db/rooms.ts";
 import { createLogger } from "./logger.ts";
 import {
+  idTokenClaims,
+  isAlarming,
   isReturnPath,
+  microsoftIdentity,
   signInOutcome,
   signInRequest,
   socialProviderOptions,
   socialRoutes,
+  tenantAdmitted,
+  tenantRefusal,
 } from "./social-sign-in.ts";
 import { testConfig, VALID_ENV } from "./test-support.ts";
 
@@ -116,6 +121,18 @@ describe("signInOutcome", () => {
     expect(failed("error=invalid_code")).toEqual({ code: "failed", reason: "invalid_code" });
     expect(failed(`error=${CODE}`)).toEqual({ code: "failed", reason: "other" });
     expect(failed("error=%3Cscript%3E")).toEqual({ code: "failed", reason: "other" });
+    expect(failed("error=tenant_not_allowed&error_description=x")).toEqual({
+      code: "tenant_not_allowed",
+      reason: "tenant_not_allowed",
+    });
+  });
+
+  it("takes a word of the prototype for no reason at all", () => {
+    for (const error of ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"]) {
+      const { location, failure } = signInOutcome(redirect(`${BASE}/?error=${error}`), config);
+      expect(location, error).toBe(`${BASE}/?sign_in_error=failed`);
+      expect(failure, error).toEqual({ code: "failed", reason: "other" });
+    }
   });
 
   it("carries the code, and nothing else of the query, to the page", () => {
@@ -139,6 +156,125 @@ describe("signInOutcome", () => {
       location: `${BASE}/?sign_in_error=rate_limited`,
       failure: { code: "rate_limited", reason: "rate_limited" },
     });
+  });
+});
+
+const TENANT = "11111111-2222-3333-4444-555555555555";
+const CONSUMER_TENANT = "9188040d-6c67-4c5b-b112-36a304b66dad";
+const token = (claims: unknown) =>
+  `h.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.s`;
+
+describe("what a failure's reason is worth", () => {
+  it("alarms when this server, its keys or a provider failed", () => {
+    for (const reason of [
+      "internal_server_error",
+      "invalid_code",
+      "unable_to_create_user",
+      "unable_to_get_user_info",
+      "status_500",
+      "status_503",
+    ]) {
+      expect(isAlarming(reason), reason).toBe(true);
+    }
+  });
+
+  it("does not alarm on what a stranger's link or a person going back can cause", () => {
+    for (const reason of [
+      "state_mismatch",
+      "state_not_found",
+      "no_code",
+      "access_denied",
+      "account_not_linked",
+      "tenant_not_allowed",
+      "rate_limited",
+      "other",
+      "exception",
+      "status_400",
+    ]) {
+      expect(isAlarming(reason), reason).toBe(false);
+    }
+  });
+});
+
+describe("a Microsoft sign-in", () => {
+  it("is a tenant and an object id, whatever else the token says", () => {
+    const identity = microsoftIdentity(
+      token({ oid: "o", tid: TENANT, name: "Ada", email: "a@example.com", email_verified: true }),
+    );
+    expect(identity?.data.oid).toBe(`${TENANT}:o`);
+    expect(identity?.data.tid).toBe(TENANT);
+    expect(identity?.user).toEqual({ name: "Ada", email: "a@example.com", emailVerified: false });
+  });
+
+  it("never calls an address verified, nor does it make one up", () => {
+    expect(microsoftIdentity(token({ oid: "o", tid: TENANT }))?.user).toEqual({
+      emailVerified: false,
+    });
+  });
+
+  it("is nobody without both ids, or without a token", () => {
+    for (const claims of [
+      { tid: TENANT },
+      { oid: "o" },
+      { oid: "", tid: TENANT },
+      { oid: "o", tid: "" },
+      { oid: 1, tid: TENANT },
+      { oid: "o", tid: null },
+      "text",
+      null,
+    ]) {
+      expect(microsoftIdentity(token(claims)), JSON.stringify(claims)).toBeNull();
+    }
+    expect(microsoftIdentity(undefined)).toBeNull();
+    expect(microsoftIdentity("not-a-jwt")).toBeNull();
+    expect(idTokenClaims("a.%%%.b")).toBeNull();
+  });
+
+  it("is not reached through the provider's own reading", async () => {
+    const built = socialProviderOptions(config);
+    const identity = await built.microsoft?.getUserInfo({
+      idToken: token({ oid: "o", tid: TENANT, email_verified: true }),
+    });
+    expect(identity?.user.emailVerified).toBe(false);
+    expect(built.google).not.toHaveProperty("getUserInfo");
+  });
+});
+
+describe("the tenant of a Microsoft sign-in", () => {
+  const other = "99999999-9999-9999-9999-999999999999";
+
+  it.each([
+    ["common", TENANT, true],
+    ["common", CONSUMER_TENANT, true],
+    ["organizations", TENANT, true],
+    ["organizations", CONSUMER_TENANT, false],
+    ["organizations", CONSUMER_TENANT.toUpperCase(), false],
+    ["consumers", CONSUMER_TENANT, true],
+    ["consumers", TENANT, false],
+    [TENANT, TENANT, true],
+    [TENANT, TENANT.toUpperCase(), true],
+    [TENANT.toUpperCase(), TENANT, true],
+    [TENANT, other, false],
+    [TENANT, CONSUMER_TENANT, false],
+  ])("%s, a token of %s: %s", (mode, tid, admitted) => {
+    expect(tenantAdmitted(mode, tid)).toBe(admitted);
+  });
+
+  it("admits no token without a tenant, in any mode", () => {
+    for (const mode of ["common", "organizations", "consumers", TENANT]) {
+      for (const tid of [undefined, null, 1, {}]) expect(tenantAdmitted(mode, tid)).toBe(false);
+    }
+  });
+
+  it("refuses by the install's variable, and only for Microsoft", () => {
+    const company = testConfig({ ...KEYS, MICROSOFT_TENANT_ID: TENANT });
+    const signIn = (providerId: string, profile?: Record<string, unknown>) =>
+      tenantRefusal({ oauth: { providerId, profile } }, company);
+    expect(signIn("microsoft", { tid: TENANT })).toBeUndefined();
+    expect(signIn("microsoft", { tid: other })).toEqual({ error: "tenant_not_allowed" });
+    expect(signIn("microsoft")).toEqual({ error: "tenant_not_allowed" });
+    expect(signIn("google", { tid: other })).toBeUndefined();
+    expect(tenantRefusal({}, company)).toBeUndefined();
   });
 });
 
@@ -193,7 +329,7 @@ describe("the provider addresses", () => {
       "clientSecret",
       "disableDefaultScope",
       "disableIdTokenSignIn",
-      "disableProfilePhoto",
+      "getUserInfo",
       "prompt",
       "scope",
       "tenantId",

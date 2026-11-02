@@ -19,6 +19,7 @@
  * A provider's tokens are not kept: nothing here calls a provider after sign-in. The account
  * hooks below clear them before the row is written.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import { cleanName, isAvatarId } from "@pp/domain";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -27,6 +28,7 @@ import { anonymous } from "better-auth/plugins";
 import { and, eq, gt, sql } from "drizzle-orm";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { z } from "zod";
 import type { AppEnv } from "./app.ts";
 import type { Config } from "./config.ts";
 import { authSchema, session, user } from "./db/auth-schema.ts";
@@ -37,11 +39,14 @@ import type { Logger } from "./logger.ts";
 import { memoryRateLimit, type RateLimiter } from "./rate-limit.ts";
 import type { SocketMiddleware } from "./realtime.ts";
 import {
+  idTokenClaims,
+  isAlarming,
   SOCIAL_SIGN_IN_LIMIT,
   signInOutcome,
   signInRequest,
   socialProviderOptions,
   socialRoutes,
+  tenantRefusal,
 } from "./social-sign-in.ts";
 
 export const AUTH_BASE_PATH = "/api/auth";
@@ -80,10 +85,11 @@ export const RENAME_LIMITS = {
 } as const;
 
 /**
- * The only Better Auth endpoints the app forwards, as `METHOD path`. Everything else under
- * `/api/auth` is a JSON 404 before Better Auth (and its limiter, which keeps a counter per
- * path) sees it: `/list-sessions` would hand out raw session tokens, `/update-user` would
- * take any name past the domain's rules (`POST /api/me/name` replaces it).
+ * The only Better Auth endpoints the app forwards, as `METHOD path`, spelled exactly. Everything
+ * else under `/api/auth`, an encoded spelling of these included, is a JSON 404 before Better
+ * Auth (and its limiter, which keeps a counter per path) sees it: `/list-sessions` would hand
+ * out raw session tokens, `/update-user` would take any name past the domain's rules
+ * (`POST /api/me/name` replaces it).
  */
 export const AUTH_ROUTES: ReadonlySet<string> = new Set([
   "GET /get-session",
@@ -118,6 +124,12 @@ const AUTH_COOKIES = [
 ] as const;
 
 /**
+ * A sign-in may wait at the provider as long as its `verification` row lives (10 minutes): Better
+ * Auth's 5 for this cookie would end a sign-in through MFA or a password reset in `failed`.
+ */
+const STATE_COOKIE_SECONDS = 600;
+
+/**
  * The cookie names for a `BASE_URL`. On https: `__Host-pp.*`, which the browser accepts
  * only with `Secure`, `Path=/` and no `Domain`, so a sibling site (`other.example.com`)
  * cannot plant a session cookie of its own that would be sent first (`__Secure-` allows a
@@ -148,17 +160,17 @@ const NO_PROVIDER_TOKENS = {
  * token itself is not kept, and it came straight from the provider's token endpoint over TLS.
  */
 function microsoftTenant(providerId: string, idToken: string | null | undefined): string | null {
-  if (providerId !== "microsoft" || !idToken) return null;
-  try {
-    const claims: unknown = JSON.parse(
-      Buffer.from(idToken.split(".")[1] ?? "", "base64url").toString(),
-    );
-    const tenant = Reflect.get(Object(claims), "tid");
-    return typeof tenant === "string" ? tenant : null;
-  } catch {
-    return null;
-  }
+  if (providerId !== "microsoft") return null;
+  const tenant = idTokenClaims(idToken ?? undefined)?.tid;
+  return typeof tenant === "string" ? tenant : null;
 }
+
+/**
+ * Set while a provider's callback runs. Anyone can send one, so Better Auth's lines about it
+ * stay out of the error reports (`debug`; they hold no more than a fixed message): `finishSignIn`
+ * writes the one line that says what came of it, at `error` when someone should look.
+ */
+const inCallback = new AsyncLocalStorage<true>();
 
 /** What a handler knows about the person behind a socket: `socket.data.user`. */
 export interface SocketUser {
@@ -193,6 +205,11 @@ export function authOptions(
       storeStateStrategy: "database",
       // Nothing to refresh: a later sign-in leaves the row as it is.
       updateAccountOnSignIn: false,
+      // An address never makes two sign-ins one person. Implicit linking joins a new identity to
+      // the user with the same address when the provider calls it verified: a Microsoft tenant
+      // can claim anyone's, and a Google address can be reassigned, or its domain bought again.
+      // The newcomer would sign in as that user. Explicit linking stays for #48.
+      accountLinking: { disableImplicitLinking: true },
       // `input: false`: only the hook below writes it.
       additionalFields: { tenantId: { type: "string", required: false, input: false } },
     },
@@ -214,7 +231,13 @@ export function authOptions(
       cookiePrefix: "pp",
       useSecureCookies: false,
       cookies: Object.fromEntries(
-        AUTH_COOKIES.map((name) => [name, { name: `${cookiePrefix(secure)}${name}` }]),
+        AUTH_COOKIES.map((name) => [
+          name,
+          {
+            name: `${cookiePrefix(secure)}${name}`,
+            ...(name === "state" && { attributes: { maxAge: STATE_COOKIE_SECONDS } }),
+          },
+        ]),
       ),
       defaultCookieAttributes: { httpOnly: true, sameSite: "lax", path: "/", secure },
       ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
@@ -223,12 +246,12 @@ export function authOptions(
     telemetry: { enabled: false },
     // Better Auth logs errors with the error object as an argument, sometimes as the
     // message: only a message that is one of its error codes (`INTERNAL_SERVER_ERROR`)
-    // is kept, as `code`, and nothing else.
+    // is kept, as `code`, and nothing else: no argument reaches a log.
     logger: {
       level: "warn",
       disableColors: true,
       log: (level, message) =>
-        log[level](
+        log[inCallback.getStore() ? "debug" : level](
           typeof message === "string" && AUTH_LOG_CODE.test(message) ? { code: message } : {},
           "better-auth reported a problem",
         ),
@@ -274,8 +297,11 @@ export function authOptions(
         },
       },
     },
-    // `input: false`: only `POST /api/me/avatar` writes it, by the domain's list.
-    user: { additionalFields: { avatar: { type: "string", required: false, input: false } } },
+    user: {
+      // `input: false`: only `POST /api/me/avatar` writes it, by the domain's list.
+      additionalFields: { avatar: { type: "string", required: false, input: false } },
+      validateUserInfo: ({ source }) => tenantRefusal(source, config),
+    },
     // The guest stays: the plugin would delete it on a sign-in, with the rooms it owns and
     // what it did in them, and the new user has none of that yet. #48 moves them to the
     // account here, in `onLinkAccount({ anonymousUser, newUser })`.
@@ -371,6 +397,11 @@ export function withoutTokens(value: unknown): unknown {
   );
 }
 
+/** A session's body when it is an account's, not a guest's or none. */
+const accountSession = z.looseObject({
+  user: z.looseObject({ id: z.string(), isAnonymous: z.literal(false) }),
+});
+
 /** `response` with another JSON body; its other headers (Set-Cookie included) are kept. */
 function rewrite(response: Response, body: unknown, extra: Record<string, string> = {}): Response {
   const headers = new Headers(response.headers);
@@ -450,6 +481,30 @@ export function registerAuthApi(
   }
 
   /**
+   * A session, with the provider of an account as `user.provider`: in a room the page names it
+   * rather than the address. `/list-accounts` stays closed; this one field is all the page gets.
+   * One account row a person until #48 links a second.
+   */
+  async function readSession(c: Context<AppEnv>): Promise<Response> {
+    const answer = await forward(c, c.req.raw);
+    if (answer.status !== 200) return answer;
+    const session = await jsonOf(answer);
+    const account = accountSession.safeParse(session);
+    if (!account.success) return rewrite(answer, session);
+    try {
+      const { internalAdapter } = await auth.$context;
+      const [first] = await internalAdapter.findAccounts(account.data.user.id);
+      const user = { ...account.data.user, provider: first?.providerId };
+      return rewrite(answer, { ...account.data, user });
+    } catch (error) {
+      // As in `forward`: never the error itself.
+      c.var.log.error({ code: errorCode(error) }, "auth request failed");
+      c.header("Cache-Control", "no-store");
+      return c.json({ code: "internal" }, 500);
+    }
+  }
+
+  /**
    * Starts a sign-in: Better Auth gets a body of our making (`signInRequest`) and answers
    * with the provider's URL, in JSON, for the page to navigate to.
    */
@@ -475,13 +530,16 @@ export function registerAuthApi(
   async function finishSignIn(c: Context<AppEnv>, provider: string): Promise<Response> {
     let response: Response | null = null;
     try {
-      response = await askBetterAuth(c, c.req.raw);
+      response = await inCallback.run(true, () => askBetterAuth(c, c.req.raw));
     } catch (error) {
       // Never the error itself: its message or its cause's can hold a token or a code.
       c.var.log.error({ code: errorCode(error) }, "auth request failed");
     }
     const { location, failure } = signInOutcome(response, config);
-    if (failure) c.var.log.warn({ ...failure, provider }, "sign-in did not finish");
+    if (failure) {
+      const level = isAlarming(failure.reason) ? "error" : "warn";
+      c.var.log[level]({ ...failure, provider }, "sign-in did not finish");
+    }
     const headers = new Headers(response?.headers);
     headers.delete("content-length");
     headers.delete("content-type");
@@ -493,13 +551,16 @@ export function registerAuthApi(
   app.on(["GET", "POST"], `${AUTH_BASE_PATH}/*`, async (c) => {
     const path = c.req.path.slice(AUTH_BASE_PATH.length);
     const route = `${c.req.method} ${path}`;
-    if (!routes.has(route)) return c.notFound();
+    // `c.req.path` is decoded, and Better Auth gets the raw URL: `get%2Dsession` would pass here
+    // and reach its limiter as a new key, and `/callback/%67oogle` would use up a `state`.
+    if (!routes.has(route) || new URL(c.req.url).pathname !== c.req.path) return c.notFound();
     // Better Auth checks the Origin too, but skips it when NODE_ENV is test: this check
     // holds everywhere. A browser always sends Origin on a POST.
     if (c.req.method === "POST" && foreignOrigin(c, config)) {
       c.header("Cache-Control", "no-store");
       return c.json({ code: "not_allowed" }, 403);
     }
+    if (route === "GET /get-session") return readSession(c);
     if (route === "POST /sign-in/social") return startSignIn(c);
     if (path.startsWith("/callback/")) return finishSignIn(c, path.slice("/callback/".length));
     return forward(c, c.req.raw);

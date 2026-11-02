@@ -5,9 +5,10 @@
  * providers' own addresses: this file's `fetch` sends those to the fake.
  *
  * What it holds: the allowlist, the narrow body, the return path, that no provider token is
- * stored, that a room's code never goes to a provider, that a guest loses nothing, that a
- * failed callback ends on a page with a code, that the rate limit holds, that no snapshot gains
- * an email, that retention keeps a signed-in owner's room, and that no code, token, `state` or
+ * stored, that a room's code never goes to a provider, that a guest loses nothing, that an
+ * address never joins two identities, that `MICROSOFT_TENANT_ID` is a boundary, that a failed
+ * callback ends on a page with a code, that the rate limit holds, that no snapshot gains an
+ * email, that retention keeps a signed-in owner's room, and that no code, token, `state` or
  * secret reaches a log line, stdout or stderr (all captured for the whole file).
  */
 import { format } from "node:util";
@@ -52,6 +53,8 @@ const KEYS = {
   MICROSOFT_TENANT_ID: "organizations",
 } as const;
 const TENANT = "11111111-2222-3333-4444-555555555555";
+const OTHER_TENANT = "99999999-9999-9999-9999-999999999999";
+const CONSUMER_TENANT = "9188040d-6c67-4c5b-b112-36a304b66dad";
 
 const logs = collectLogs("trace");
 const printed: string[] = [];
@@ -116,6 +119,12 @@ afterAll(async () => {
   // After the whole file, failure paths included.
   const everything = [...logs.raw, ...printed].join("\n");
   for (const secret of [...secrets, ...fake.codes]) expect(everything).not.toContain(secret);
+  const states = fake.authorizations.map((query) => query.get("state") ?? "");
+  expect(states.length).toBeGreaterThan(0);
+  for (const state of states) {
+    expect(state).toHaveLength(32);
+    expect(everything).not.toContain(state);
+  }
   for (const issued of fake.issued) {
     expect(everything).not.toContain(issued.accessToken);
     expect(everything).not.toContain(issued.refreshToken);
@@ -171,6 +180,7 @@ class Browser {
         email: string;
         image: string | null;
         isAnonymous: boolean | null;
+        provider?: string;
       };
       session: Record<string, unknown>;
     } | null;
@@ -249,6 +259,35 @@ const accounts = (userId: string) =>
     .query<Record<string, unknown>>("select * from account where user_id = $1", [userId])
     .then((result) => result.rows);
 
+const usersWith = (email: string) =>
+  admin
+    .query<{ id: string; email_verified: boolean }>(
+      `select id, email_verified from "user" where email = $1`,
+      [email],
+    )
+    .then((result) => result.rows);
+
+const stateRows = (state: string | null) =>
+  admin
+    .query("select id from verification where identifier = $1", [`auth-state:${state}`])
+    .then((result) => result.rows);
+
+const signInLines = () => logs.lines.filter((line) => line.msg === "sign-in did not finish");
+
+/** A server of its own with these variables, for what a test changes in the config. */
+async function withServer(env: Record<string, string>, run: (at: string) => Promise<void>) {
+  const own = testConfig({ DATABASE_URL: t.url, ...KEYS, ...env });
+  const ownSetup = await setupServer(own, logs.logger);
+  const ownServer = createServer(own, { ...ownSetup.deps, logger: logs.logger });
+  await ownServer.listen();
+  try {
+    await run(base(ownServer));
+  } finally {
+    await ownServer.close();
+    await ownSetup.database.close();
+  }
+}
+
 describe("the routes sign-in adds", () => {
   it("forwards a callback by GET for a configured provider, and nothing new besides", async () => {
     const browser = new Browser();
@@ -277,6 +316,30 @@ describe("the routes sign-in adds", () => {
       expect(`${method} ${path} ${response.status}`).toBe(`${method} ${path} 404`);
       expect(await response.json()).toEqual({ code: "not_found" });
     }
+  });
+
+  it("refuses an encoded spelling of a route before Better Auth or its limiter sees it", async () => {
+    const browser = new Browser();
+    const callback = await atProvider(await start(browser, "google"), person());
+    const { search } = new URL(callback, ORIGIN);
+    for (const [method, path] of [
+      ["GET", "/api/auth/get%2Dsession"],
+      ["GET", "/api/%61uth/get-session"],
+      ["POST", "/api/auth/sign-in/%73ocial"],
+      ["POST", "/api/auth/sign%2Dout"],
+      ["POST", "/api/auth/sign-in/%61nonymous"],
+      ["GET", `/api/auth/callback/%67oogle${search}`],
+    ] as const) {
+      const response = await browser.go(path, {
+        method,
+        headers: { origin: ORIGIN, "content-type": "application/json" },
+        ...(method === "POST" && { body: "{}" }),
+      });
+      expect(`${method} ${path} ${response.status}`).toBe(`${method} ${path} 404`);
+      expect(await response.json()).toEqual({ code: "not_found" });
+    }
+    // The `state` is still there: Better Auth never saw that callback, and the real one works.
+    expect((await browser.go(callback)).headers.get("location")).toBe(`${ORIGIN}/`);
   });
 
   it("does not exist at all on an install without keys", async () => {
@@ -474,13 +537,25 @@ describe("signing in", () => {
     expect(await accounts(session?.user.id ?? "")).toEqual([
       expect.objectContaining({
         provider_id: "microsoft",
-        account_id: who.id,
+        account_id: `${TENANT}:${who.id}`,
         tenant_id: TENANT,
         access_token: null,
         refresh_token: null,
         id_token: null,
       }),
     ]);
+  });
+
+  it("tells the page which provider an account signs in with, and nothing about a guest", async () => {
+    const google = new Browser();
+    await google.guest();
+    expect((await google.session())?.user).not.toHaveProperty("provider");
+    await signIn(google, "google", person());
+    expect((await google.session())?.user.provider).toBe("google");
+    const microsoft = new Browser();
+    await signIn(microsoft, "microsoft", person());
+    expect((await microsoft.session())?.user.provider).toBe("microsoft");
+    expect(JSON.stringify(await microsoft.session())).not.toContain("token");
   });
 
   it("puts a provider's name through the domain's rules", async () => {
@@ -548,7 +623,137 @@ describe("signing in", () => {
     expect(line).toMatch(/; SameSite=Lax/i);
     expect(line).toMatch(/; Path=\/(;|$)/);
     expect(line).not.toMatch(/; Domain=/i);
+    // As long as the `verification` row lives: a sign-in through MFA outlasts Better Auth's 5.
+    expect(line).toMatch(/; Max-Age=600(;|$)/i);
     await admin.query("delete from verification");
+  });
+});
+
+describe("an address that is already someone's", () => {
+  async function owner(email: string) {
+    const who = person({ email });
+    const browser = new Browser();
+    await signIn(browser, "google", who);
+    return { who, userId: (await browser.session())?.user.id ?? "" };
+  }
+
+  it.each([
+    ["claims it verified", true],
+    ["calls it unverified", false],
+    ["says nothing of it", undefined],
+  ])("refuses a Microsoft sign-in that %s", async (_, emailVerified) => {
+    const email = `claimed${people}@example.com`;
+    const { userId } = await owner(email);
+    const taker = person({ email, emailVerified, tenant: OTHER_TENANT });
+    const other = new Browser();
+    const location = await signIn(other, "microsoft", taker);
+    expect(new URL(location ?? "").searchParams.get("sign_in_error")).toBe("account_exists");
+    expect(await other.session()).toBeNull();
+    expect(await accounts(userId)).toHaveLength(1);
+    expect(await usersWith(email)).toHaveLength(1);
+    const { rows } = await admin.query("select id from account where account_id = $1", [
+      `${OTHER_TENANT}:${taker.id}`,
+    ]);
+    expect(rows).toEqual([]);
+  });
+
+  it("refuses a new Google id on it: a reassigned address, or a domain bought again", async () => {
+    const email = `reused${people}@example.com`;
+    const { userId } = await owner(email);
+    const other = new Browser();
+    const location = await signIn(other, "google", person({ email, emailVerified: true }));
+    expect(new URL(location ?? "").searchParams.get("sign_in_error")).toBe("account_exists");
+    expect(await other.session()).toBeNull();
+    expect(await accounts(userId)).toHaveLength(1);
+  });
+
+  it("still lets its owner in, on the same user", async () => {
+    const { who, userId } = await owner(`kept${people}@example.com`);
+    const again = new Browser();
+    expect(await signIn(again, "google", who)).toBe(`${ORIGIN}/`);
+    expect((await again.session())?.user.id).toBe(userId);
+    expect(await accounts(userId)).toHaveLength(1);
+  });
+
+  it("never stores a Microsoft address as verified, whatever the token says", async () => {
+    const who = person({ emailVerified: true });
+    await signIn(new Browser(), "microsoft", who);
+    expect(await usersWith(who.email ?? "")).toEqual([
+      expect.objectContaining({ email_verified: false }),
+    ]);
+  });
+});
+
+describe("the tenant of a Microsoft sign-in", () => {
+  it("keeps two tenants apart that share an object id", async () => {
+    const first = person({ tenant: TENANT });
+    const second = person({ id: first.id, tenant: OTHER_TENANT });
+    const one = new Browser();
+    const two = new Browser();
+    await signIn(one, "microsoft", first);
+    await signIn(two, "microsoft", second);
+    const [userOne, userTwo] = [(await one.session())?.user, (await two.session())?.user];
+    expect(userOne?.id).toBeTruthy();
+    expect(userTwo?.id).toBeTruthy();
+    expect(userOne?.id).not.toBe(userTwo?.id);
+    expect(userOne?.email).toBe(first.email);
+    expect(userTwo?.email).toBe(second.email);
+    expect(await accounts(userTwo?.id ?? "")).toEqual([
+      expect.objectContaining({ account_id: `${OTHER_TENANT}:${first.id}` }),
+    ]);
+  });
+
+  it("writes nothing for a tenant the install does not admit, and says so in the room", async () => {
+    const before = logs.lines.length;
+    const browser = new Browser();
+    const guestId = await browser.guest();
+    const code = roomCode();
+    const who = person({ tenant: CONSUMER_TENANT });
+    const location = await signIn(browser, "microsoft", who, `/r/${code}`);
+    expect(location).toBe(`${ORIGIN}/r/${code}?sign_in_error=tenant_not_allowed`);
+    expect((await browser.session())?.user.id).toBe(guestId);
+    expect(await usersWith(who.email ?? "")).toEqual([]);
+    const { rows } = await admin.query("select id from account where account_id = $1", [
+      `${CONSUMER_TENANT}:${who.id}`,
+    ]);
+    expect(rows).toEqual([]);
+    // A person with the wrong account is no alarm.
+    const written = logs.lines.slice(before);
+    expect(written.filter((line) => Number(line.level) >= 50)).toEqual([]);
+    expect(written).toContainEqual(
+      expect.objectContaining({ level: 40, reason: "tenant_not_allowed", provider: "microsoft" }),
+    );
+  });
+
+  it.each([
+    ["one tenant", TENANT, TENANT, OTHER_TENANT],
+    ["personal accounts", "consumers", CONSUMER_TENANT, TENANT],
+    ["work and school", "organizations", TENANT, CONSUMER_TENANT],
+    ["anyone", "common", CONSUMER_TENANT, null],
+  ])("holds for %s, end to end", async (_, mode, admitted, refused) => {
+    await withServer({ MICROSOFT_TENANT_ID: mode }, async (at) => {
+      const member = new Browser(at);
+      const who = person({ tenant: admitted });
+      expect(await signIn(member, "microsoft", who)).toBe(`${ORIGIN}/`);
+      expect((await member.session())?.user.email).toBe(who.email);
+      if (refused === null) return;
+      const stranger = new Browser(at);
+      const location = await signIn(stranger, "microsoft", person({ tenant: refused }));
+      expect(location).toBe(`${ORIGIN}/?sign_in_error=tenant_not_allowed`);
+      expect(await stranger.session()).toBeNull();
+    });
+  });
+
+  it("holds on a later sign-in too, once an install has narrowed", async () => {
+    const who = person({ tenant: OTHER_TENANT });
+    await signIn(new Browser(), "microsoft", who);
+    await withServer({ MICROSOFT_TENANT_ID: TENANT }, async (at) => {
+      const browser = new Browser(at);
+      expect(await signIn(browser, "microsoft", who)).toBe(
+        `${ORIGIN}/?sign_in_error=tenant_not_allowed`,
+      );
+      expect(await browser.session()).toBeNull();
+    });
   });
 });
 
@@ -591,10 +796,17 @@ describe("a sign-in that fails", () => {
   it("takes a callback once", async () => {
     const browser = new Browser();
     const callback = await atProvider(await start(browser, "google"), person());
-    const state = browser.jar.get(STATE_COOKIE) ?? "";
+    const state = new URL(callback, ORIGIN).searchParams.get("state");
+    const cookie = browser.jar.get(STATE_COOKIE) ?? "";
+    expect(await stateRows(state)).toHaveLength(1);
     expect((await browser.go(callback)).headers.get("location")).toBe(`${ORIGIN}/`);
-    browser.jar.set(STATE_COOKIE, state);
+    // The row and the cookie are the protection. The outcome alone proves nothing: the
+    // stand-in's code is single-use too, so a replay fails either way.
+    expect(await stateRows(state)).toEqual([]);
+    expect(browser.jar.has(STATE_COOKIE)).toBe(false);
+    browser.jar.set(STATE_COOKIE, cookie);
     expect(codeIn((await browser.go(callback)).headers.get("location"))).toBe("failed");
+    expect(signInLines().at(-1)).toMatchObject({ reason: "state_mismatch" });
   });
 
   it("wants a state at all", async () => {
@@ -612,11 +824,37 @@ describe("a sign-in that fails", () => {
     expect(logs.lines).toContainEqual(
       expect.objectContaining({
         msg: "sign-in did not finish",
+        level: 50,
         code: "failed",
         reason: "invalid_code",
         provider: "google",
       }),
     );
+  });
+
+  it("keeps a stranger's link out of the error reports", async () => {
+    const before = logs.lines.length;
+    await new Browser().go("/api/auth/callback/google?state=junk&code=junk");
+    await new Browser().go("/api/auth/callback/google?code=junk");
+    await new Browser().go("/api/auth/callback/microsoft?error=server_error");
+    const written = logs.lines.slice(before);
+    expect(written.filter((line) => Number(line.level) >= 50)).toEqual([]);
+    expect(written).toContainEqual(
+      expect.objectContaining({
+        msg: "sign-in did not finish",
+        level: 40,
+        reason: "state_mismatch",
+      }),
+    );
+  });
+
+  it("reports a Microsoft token it cannot read", async () => {
+    const browser = new Browser();
+    const callback = await atProvider(await start(browser, "microsoft"), person());
+    fake.garbleIdTokens = true;
+    const response = await browser.go(callback);
+    expect(codeIn(response.headers.get("location"))).toBe("failed");
+    expect(signInLines().at(-1)).toMatchObject({ level: 50, reason: "unable_to_get_user_info" });
   });
 
   it("lands on the app when Better Auth throws, with the code of the error alone", async () => {
@@ -632,19 +870,6 @@ describe("a sign-in that fails", () => {
     expect(logs.lines).toContainEqual(
       expect.objectContaining({ msg: "sign-in did not finish", reason: "exception" }),
     );
-  });
-
-  it("says which way in an email already has, and links nothing it cannot trust", async () => {
-    const email = `same${people}@example.com`;
-    const browser = new Browser();
-    await signIn(browser, "google", person({ email }));
-    const owner = (await browser.session())?.user.id ?? "";
-    // Entra's `email` claim is not verified (OQ-6): it must not reach the Google account.
-    const other = new Browser();
-    const location = await signIn(other, "microsoft", person({ email, emailVerified: undefined }));
-    expect(codeIn(location)).toBe("account_exists");
-    expect(await other.session()).toBeNull();
-    expect(await accounts(owner)).toHaveLength(1);
   });
 
   it("explains a provider that gives no email", async () => {
