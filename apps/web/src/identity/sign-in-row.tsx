@@ -17,7 +17,7 @@ const PROVIDERS = {
   microsoft: { label: "signIn.microsoft", logo: microsoftLogo, brand: "Microsoft" },
 } as const;
 
-const busyClass = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
+export const busyClass = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
 
 /**
  * Signing in, quietly, wherever a person has a moment for it (#47): the "You" panel, the join

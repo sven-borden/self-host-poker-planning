@@ -341,6 +341,17 @@ describe("who may ask", () => {
     expect(await me.whoAmI()).not.toBe("");
   });
 
+  it("refuses another site on the two reads as well", async () => {
+    const me = await signedIn();
+    const foreign = { headers: { origin: "https://evil.example" } };
+    for (const path of ["/api/account", "/api/account/export"]) {
+      const answer = await me.go(path, foreign);
+      expect(answer.status).toBe(403);
+      expect(answer.headers.get("cache-control")).toBe("no-store");
+      expect(await answer.json()).toEqual({ code: "not_allowed" });
+    }
+  });
+
   it("takes the word in any of the three languages, and nothing else", async () => {
     const me = await signedIn();
     const wrong = await me.remove([], "delete it");
@@ -467,6 +478,66 @@ describe("the export", () => {
     }
   });
 
+  it("holds every room that names the person, and the grants, with no code", async () => {
+    const me = await signedIn();
+    const other = await new Browser().asGuest();
+
+    // The PO role alone: claimed, and left, while someone else keeps the room.
+    const onlyRole = await roomOf(me.id, "Only The Role");
+    await admin.query(
+      `update room set live = jsonb_set(live, '{keeperId}', to_jsonb($2::text)) where id = $1`,
+      [onlyRole.id, other.id],
+    );
+
+    // A card alone: it stayed on the table after the person left.
+    const onlyCard = await roomOf(other.id, "Only A Card", { revealWhenAllVoted: false });
+    const po = await other.sit(onlyCard.code);
+    const seat = await me.sit(onlyCard.code);
+    await po.cmd("startRound", { subject: { kind: "none" } });
+    await seat.cmd("castVote", { card: "13", round: 1 });
+    await po.cmd("reveal");
+    await seat.cmd("leave");
+
+    // A password let the person in, and they never sat down.
+    const entered = await roomOf(other.id, "Let In");
+    await admin.query("insert into room_access (room_id, user_id) values ($1, $2)", [
+      entered.id,
+      me.id,
+    ]);
+
+    const text = await (await me.go("/api/account/export")).text();
+    const file = JSON.parse(text) as {
+      rooms: { id: string; seat: unknown; cardOnTable: boolean }[];
+      grants: { room: { id: string; name: string } }[];
+    };
+    const inFile = (id: string) => file.rooms.find((room) => room.id === id);
+    expect(inFile(onlyRole.id)).toMatchObject({
+      name: "Only The Role",
+      productOwner: true,
+      keeper: false,
+      seat: null,
+      cardOnTable: false,
+    });
+    expect(inFile(onlyCard.id)).toMatchObject({
+      name: "Only A Card",
+      productOwner: false,
+      keeper: false,
+      seat: null,
+      cardOnTable: true,
+    });
+    expect(file.grants).toMatchObject([{ room: { id: entered.id, name: "Let In" } }]);
+    for (const absent of [onlyRole.code, onlyCard.code, entered.code, other.id, '"13"']) {
+      expect(text).not.toContain(absent);
+    }
+  });
+
+  it("says so in the file when a guest's move has not landed", async () => {
+    const me = await signedIn();
+    vi.spyOn(setup.links, "settle").mockResolvedValue(false);
+    const file = (await (await me.go("/api/account/export")).json()) as { incomplete?: true };
+    expect(file.incomplete).toBe(true);
+  });
+
   it("has a limit of its own", async () => {
     const me = await signedIn();
     for (let i = 0; i < ACCOUNT_EXPORT_LIMIT.max; i++) {
@@ -517,6 +588,62 @@ describe("the page's overview", () => {
       },
     ]);
     expect(JSON.stringify(answer)).not.toContain(shared.code);
+  });
+});
+
+describe("the default on the page", () => {
+  it("says whoever runs the room, and that is who takes it", async () => {
+    const me = await signedIn();
+    const first = await new Browser().asGuest();
+    const second = await new Browser().asGuest();
+    const room = await roomOf(me.id, "Claimed From Me");
+    const seat = await me.sit(room.code);
+    await first.sit(room.code, "Seated First");
+    const runner = await second.sit(room.code, "Runs It");
+    await awayLongEnough(room.id, me.id);
+    await expect(runner.cmd("claimOwner")).resolves.toMatchObject({ ok: true });
+    await seat.cmd("leave");
+
+    const overview = (await (await me.go("/api/account")).json()) as {
+      shared: { why: string; seats: { id: string }[] }[];
+    };
+    expect(overview.shared[0]?.why).toBe("runsTheRoom");
+    expect(overview.shared[0]?.seats.map(({ id }) => id)).toEqual([second.id, first.id]);
+
+    expect((await me.remove()).status).toBe(200);
+    const stored = await liveOf(room.id);
+    expect(stored?.owner_user_id).toBe(second.id);
+    expect(stored?.live.keeperId).toBe(second.id);
+  });
+
+  it("puts someone here before someone who sat longer and is away, and says why", async () => {
+    const me = await signedIn();
+    const first = await new Browser().asGuest();
+    const second = await new Browser().asGuest();
+    const room = await roomOf(me.id, "Partly Away");
+    await me.sit(room.code);
+    await first.sit(room.code);
+    await second.sit(room.code);
+    await awayLongEnough(room.id, first.id);
+
+    const overview = (await (await me.go("/api/account")).json()) as {
+      shared: { why: string; seats: { id: string }[] }[];
+    };
+    expect(overview.shared[0]?.why).toBe("here");
+    expect(overview.shared[0]?.seats.map(({ id }) => id)).toEqual([second.id, first.id]);
+
+    expect((await me.remove()).status).toBe(200);
+    expect((await liveOf(room.id))?.live.keeperId).toBe(second.id);
+  });
+
+  it("says when nobody is here", async () => {
+    const me = await signedIn();
+    const first = await new Browser().asGuest();
+    const room = await roomOf(me.id, "All Away");
+    await first.sit(room.code);
+    await awayLongEnough(room.id, first.id);
+    const overview = (await (await me.go("/api/account")).json()) as { shared: { why: string }[] };
+    expect(overview.shared[0]?.why).toBe("away");
   });
 });
 
@@ -786,6 +913,46 @@ describe("each kind of room", () => {
     expect(await liveOf(room.id)).toBeUndefined();
   });
 
+  it("does not destroy a room whose keeper has no seat when a seated person goes", async () => {
+    const me = await signedIn();
+    const keeper = await signedIn();
+    const room = await roomOf(keeper.id, "Keeper Away");
+    await me.sit(room.code);
+    expect((await me.remove()).status).toBe(200);
+    const stored = await liveOf(room.id);
+    expect(stored?.live.keeperId).toBe(keeper.id);
+    expect(stored?.live.participants).toEqual({});
+  });
+
+  it("a room nobody may take holds no id of the person, follows the period, and can be claimed", async () => {
+    const me = await signedIn();
+    const other = await new Browser().asGuest();
+    const room = await roomOf(me.id);
+    const stays = await other.sit(room.code);
+    const vacant = "b".repeat(32);
+    await expect(
+      sync.removeAccount(room, { who: me.id, ghost: "a".repeat(32), vacant, mayTake: [] }),
+    ).resolves.toBe("changed");
+    const stored = await liveOf(room.id);
+    expect(stored?.owner_user_id).toBe(vacant);
+    expect(stored?.live.keeperId).toBe(vacant);
+    expect(JSON.stringify(stored)).not.toContain(me.id);
+    await expect(store().roomsOf(me.id)).resolves.toEqual([]);
+
+    const seen = stays.received.length;
+    await expect(stays.cmd("claimOwner")).resolves.toMatchObject({ ok: true });
+    await stays.waitFor((s) => s.room.ownerId === other.id, 3000, seen);
+    expect((await liveOf(room.id))?.live.keeperId).toBe(vacant);
+
+    await admin.query(
+      "update room set last_active_at = now() - interval '200 days' where id = $1",
+      [room.id],
+    );
+    await setup.database.retention.purge({ ttlDays: 90 });
+    expect(await liveOf(room.id)).toBeUndefined();
+    await setup.deletions.sweep();
+  });
+
   it("a guest who takes a room gets the whole period, and no exemption", async () => {
     const me = await signedIn();
     const other = await new Browser().asGuest();
@@ -802,6 +969,29 @@ describe("each kind of room", () => {
       [room.id],
     );
     expect(rows[0]).toEqual({ fresh: true });
+
+    // That period is all it has: idle past it, a real purge takes the room a guest keeps.
+    await admin.query(
+      "update room set last_active_at = now() - interval '200 days' where id = $1",
+      [room.id],
+    );
+    await setup.database.retention.purge({ ttlDays: 90 });
+    expect(await liveOf(room.id)).toBeUndefined();
+  });
+
+  it("someone signed in who takes a room holds the exemption from then on", async () => {
+    const me = await signedIn();
+    const other = await signedIn();
+    const room = await roomOf(me.id);
+    await me.sit(room.code);
+    await other.sit(room.code);
+    expect((await me.remove()).status).toBe(200);
+    await admin.query(
+      "update room set last_active_at = now() - interval '200 days' where id = $1",
+      [room.id],
+    );
+    await setup.database.retention.purge({ ttlDays: 90 });
+    expect((await liveOf(room.id))?.live.keeperId).toBe(other.id);
   });
 
   it("a seat that goes fakes no activity", async () => {
@@ -1025,6 +1215,78 @@ describe("what fails, and how it comes out", () => {
     expect((await liveOf(room.id))?.owner_user_id).toBe(me.id);
   });
 
+  it("one room nobody can read stops the last step alone, and a repair lets it finish", async () => {
+    const me = await signedIn();
+    const other = await new Browser().asGuest();
+    const guest = await new Browser().asGuest();
+
+    const broken = await roomOf(me.id, "Broken");
+    await me.sit(broken.code);
+    await other.sit(broken.code);
+    const handed = await roomOf(me.id, "Handed Over");
+    await me.sit(handed.code);
+    await other.sit(handed.code);
+    const theirs = await roomOf(other.id, "Theirs");
+    const po = await other.sit(theirs.code, "Stays");
+    const seat = await me.sit(theirs.code, "Going");
+    await playRound(po, [
+      [seat, "5"],
+      [po, "3"],
+    ]);
+    const guestsRoom = await roomOf(other.id, "Guest Seat");
+    await other.sit(guestsRoom.code);
+    await guest.sit(guestsRoom.code);
+    await admin.query("insert into guest_link (guest_user_id, account_user_id) values ($1, $2)", [
+      guest.id,
+      me.id,
+    ]);
+    vi.spyOn(sync, "moveGuest").mockResolvedValue("failed");
+    await admin.query(
+      `insert into connector_token (user_id, connector, sealed_token)
+       values ($1, 'jira', 'v1.key.iv.sealed')`,
+      [me.id],
+    );
+    const intact = (await liveOf(broken.id))?.live;
+    await admin.query(
+      `update room set live = jsonb_set(live, '{round}', '"not a round"') where id = $1`,
+      [broken.id],
+    );
+
+    expect(await (await me.remove()).json()).toEqual({ finished: false });
+
+    expect((await liveOf(handed.id))?.live.keeperId).toBe(other.id);
+    expect(JSON.stringify(await liveOf(handed.id))).not.toContain(me.id);
+    expect(JSON.stringify(await liveOf(theirs.id))).not.toContain(me.id);
+    expect(JSON.stringify(await liveOf(guestsRoom.id))).not.toContain(guest.id);
+    const round = await roundOf(theirs.id, 1);
+    expect(JSON.stringify(round)).not.toContain(me.id);
+    expect(JSON.stringify(round)).not.toContain("Going");
+    expect(round?.votes.votes?.map(({ card }) => card).sort()).toEqual(["3", "5"]);
+    const { rows: tokens } = await admin.query("select 1 from connector_token where user_id = $1", [
+      me.id,
+    ]);
+    expect(tokens).toHaveLength(0);
+    // Only what `finish` does is left: the row, the marker, the guest.
+    const { rows: marker } = await admin.query(
+      "select 1 from account_deletion where user_id = $1",
+      [me.id],
+    );
+    expect(marker).toHaveLength(1);
+    const { rows: users } = await admin.query('select 1 from "user" where id = any($1)', [
+      [me.id, guest.id],
+    ]);
+    expect(users).toHaveLength(2);
+    expect(JSON.stringify((await liveOf(broken.id))?.live)).toContain(me.id);
+
+    await admin.query("update room set live = $2 where id = $1", [broken.id, intact]);
+    await setup.deletions.sweep();
+    expect((await liveOf(broken.id))?.live.keeperId).toBe(other.id);
+    const { rows: gone } = await admin.query('select 1 from "user" where id = any($1)', [
+      [me.id, guest.id],
+    ]);
+    expect(gone).toHaveLength(0);
+  });
+
   it("says `finished: false`, keeps the marker, and finishes at the next sweep", async () => {
     const me = await signedIn();
     const other = await new Browser().asGuest();
@@ -1233,11 +1495,104 @@ describe("what fails, and how it comes out", () => {
     await setup.links.sweep();
   });
 
+  it("gives a guest's move its moment before the marker stops it", async () => {
+    const me = await signedIn();
+    const guest = await new Browser().asGuest();
+    const room = await roomOf(guest.id, "Still Moving");
+    await admin.query("insert into guest_link (guest_user_id, account_user_id) values ($1, $2)", [
+      guest.id,
+      me.id,
+    ]);
+    const move = vi.spyOn(sync, "moveGuest");
+    expect(await (await me.remove()).json()).toEqual({ finished: true });
+    expect(move).toHaveBeenCalled();
+    expect(await liveOf(room.id)).toBeUndefined();
+  });
+
+  it("the page says when a guest's rooms are still moving", async () => {
+    const me = await signedIn();
+    const guest = await new Browser().asGuest();
+    const room = await roomOf(guest.id);
+    await admin.query("insert into guest_link (guest_user_id, account_user_id) values ($1, $2)", [
+      guest.id,
+      me.id,
+    ]);
+    const move = vi.spyOn(sync, "moveGuest").mockResolvedValue("failed");
+    expect(await (await me.go("/api/account")).json()).toMatchObject({ moving: true });
+    move.mockRestore();
+    await setup.links.sweep();
+    const settled = await (await me.go("/api/account")).json();
+    expect(settled).not.toHaveProperty("moving");
+    expect((await liveOf(room.id))?.live.keeperId).toBe(me.id);
+  });
+
+  it("the last step sees a seat that committed while it waited for the row", async () => {
+    const me = await signedIn();
+    const other = await signedIn();
+    const room = await roomOf(other.id);
+    const client = await admin.connect();
+    await client.query("begin");
+    await client.query('select 1 from "user" where id = $1 for share', [me.id]);
+    await client.query(
+      `update room set live = jsonb_set(live, array['participants', $2::text],
+         '{"name":"Late","role":"voter","joinedAt":1,"connected":true}') where id = $1`,
+      [room.id, me.id],
+    );
+    const attempt = store().finish(me.id);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await client.query("commit");
+    client.release();
+    await expect(attempt).resolves.toBe(false);
+    const { rows } = await admin.query('select 1 from "user" where id = $1', [me.id]);
+    expect(rows).toHaveLength(1);
+    await admin.query("delete from room where id = $1", [room.id]);
+  });
+
+  it("the last step sees a guest's link that committed while it waited for the row", async () => {
+    const me = await signedIn();
+    const guest = await new Browser().asGuest();
+    const other = await new Browser().asGuest();
+    const room = await roomOf(other.id);
+    await other.sit(room.code);
+    await guest.sit(room.code);
+    const client = await admin.connect();
+    await client.query("begin");
+    await client.query("insert into guest_link (guest_user_id, account_user_id) values ($1, $2)", [
+      guest.id,
+      me.id,
+    ]);
+    const attempt = store().finish(me.id);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await client.query("commit");
+    client.release();
+    await expect(attempt).resolves.toBe(false);
+    const { rows } = await admin.query("select 1 from guest_link where account_user_id = $1", [
+      me.id,
+    ]);
+    expect(rows).toHaveLength(1);
+    await store().begin(me.id, {});
+    await setup.deletions.sweep();
+    const { rows: gone } = await admin.query('select 1 from "user" where id = any($1)', [
+      [me.id, guest.id],
+    ]);
+    expect(gone).toHaveLength(0);
+    expect(JSON.stringify(await liveOf(room.id))).not.toContain(guest.id);
+  });
+
   it("the first step ends the sessions with the marker, and leaves a guest alone", async () => {
     const me = await signedIn();
     const guest = await new Browser().asGuest();
+    await admin.query(
+      `insert into connector_token (user_id, connector, sealed_token)
+       values ($1, 'jira', 'v1.key.iv.sealed')`,
+      [me.id],
+    );
     await store().begin(me.id, {});
     await store().begin(guest.id, {});
+    const { rows: tokens } = await admin.query("select 1 from connector_token where user_id = $1", [
+      me.id,
+    ]);
+    expect(tokens).toHaveLength(0);
     const { rows: sessions } = await admin.query(
       "select user_id from session where user_id = any($1)",
       [[me.id, guest.id]],

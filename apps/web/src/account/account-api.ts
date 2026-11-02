@@ -9,12 +9,18 @@ export interface RoomSeat {
   readonly name: string;
 }
 
-/** A room this person keeps, with other people in it: the longest seated first. */
+/** Why the first seat is the default: the same order as the server's (`heirsOf`). */
+export type DefaultReason = "runsTheRoom" | "here" | "away";
+
+const DEFAULT_REASONS: readonly unknown[] = ["runsTheRoom", "here", "away"];
+
+/** A room this person keeps, with other people in it: the default first. */
 export interface SharedRoom {
   readonly id: string;
   readonly name: string | null;
   readonly lastActiveAt: string;
   readonly seats: readonly RoomSeat[];
+  readonly why: DefaultReason;
 }
 
 export interface AccountOverview {
@@ -40,7 +46,13 @@ function toRoom(raw: unknown): SharedRoom {
   const name = field(raw, "name");
   const lastActiveAt = field(raw, "lastActiveAt");
   const seats = field(raw, "seats");
-  if (typeof id !== "string" || typeof lastActiveAt !== "string" || !Array.isArray(seats)) {
+  const why = field(raw, "why");
+  if (
+    typeof id !== "string" ||
+    typeof lastActiveAt !== "string" ||
+    !Array.isArray(seats) ||
+    !DEFAULT_REASONS.includes(why)
+  ) {
     throw new RoomApiError("internal");
   }
   return {
@@ -51,6 +63,7 @@ function toRoom(raw: unknown): SharedRoom {
       id: String(field(seat, "id")),
       name: String(field(seat, "name")),
     })),
+    why: why as DefaultReason,
   };
 }
 

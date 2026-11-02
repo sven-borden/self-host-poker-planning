@@ -17,7 +17,7 @@ const en = {
 
   exportTitle: "Your data",
   exportBody:
-    "Download a JSON file of what this server holds about you: your profile, how you sign in, your rooms, your own cards in named rounds and your connections. It holds nobody else’s name or card. Anonymous rounds are not in it: nothing ties you to a card there.",
+    "Download a JSON file of what this server holds about you: your profile, how you sign in, your rooms, the rooms a password let you into, your own cards in named rounds and your connections. It holds nobody else’s name or card. Anonymous rounds are not in it: nothing ties you to a card there.",
   exportCodes:
     "Rooms appear by their name and id, never by their code: a code opens a room, and this file may travel.",
   exportAction: "Download my data",
@@ -49,14 +49,16 @@ const en = {
 
   sharedTitle: "Rooms with other people in them",
   sharedIntro:
-    "These rooms are yours, and other people sit in them. Choose who takes each one: the room and the right to delete it go to that person. If you choose nobody, the person seated longest takes it. A room goes only if you say so.",
+    "These rooms are yours, and other people sit in them. Choose who takes each one: the room and the right to delete it go to that person. If you choose nobody, it goes to whoever runs the room now, if they are here; otherwise to the person here who has been seated longest; otherwise to the person seated longest. A room goes only if you say so.",
   sharedGuest_one:
     "A room that goes to a guest stays for as long as it is used: after {{count, number}} day without activity, it is deleted.",
   sharedGuest_other:
     "A room that goes to a guest stays for as long as it is used: after {{count, number}} days without activity, it is deleted.",
   unnamed: "Room without a name",
   takerLabel: "Who takes {{name}}",
-  takerDefault: "{{name}} (seated longest)",
+  takerRunning: "{{name}} (runs the room now)",
+  takerHere: "{{name}} (here now, seated longest)",
+  takerAway: "{{name}} (nobody is here, seated longest)",
   takerDelete: "Nobody: delete this room",
   deleteChosen:
     "This room goes for everyone in it, with its history, the moment your account does.",
@@ -87,10 +89,12 @@ const en = {
     "What remains is what this page said: backups until they expire, copies other people hold, and logs that hold ids.",
   goingTitle: "Your account is being deleted",
   goingBody:
-    "You are signed out everywhere, and nobody can use the account. Some of it has not gone yet: that finishes by itself, within a day, and you have nothing more to do. Signing in with this account says so until it is done.",
+    "You are signed out everywhere, and nobody can use the account. Some of it has not gone yet: that finishes by itself, within two days, and you have nothing more to do. A rare fault can take longer. Signing in with this account says so until it is done.",
   lostTitle: "You are signed out",
   lostBody:
     "The server did not answer in time, and you are signed out. That is how a deletion starts, so it most likely went through, and it finishes by itself. If you sign in and your account is still there, nothing was deleted.",
+  outBody:
+    "Your session ended before this request arrived, so this request deleted nothing. Sign in to delete your account or to download your data.",
   home: "Back to the start",
 };
 
@@ -106,7 +110,7 @@ const fr: Copy & Partial<Record<`${"goesAlone" | "goesSeats" | "sharedGuest"}_ma
 
   exportTitle: "Vos données",
   exportBody:
-    "Téléchargez un fichier JSON de ce que ce serveur détient à votre sujet : votre profil, votre mode de connexion, vos salles, vos propres cartes dans les tours nominatifs et vos connexions. Il ne contient ni le nom ni la carte de personne d’autre. Les tours anonymes n’y figurent pas : rien ne vous y relie à une carte.",
+    "Téléchargez un fichier JSON de ce que ce serveur détient à votre sujet : votre profil, votre mode de connexion, vos salles, les salles ouvertes par un mot de passe, vos propres cartes dans les tours nominatifs et vos connexions. Il ne contient ni le nom ni la carte de personne d’autre. Les tours anonymes n’y figurent pas : rien ne vous y relie à une carte.",
   exportCodes:
     "Les salles y figurent par leur nom et leur identifiant, jamais par leur code : un code ouvre une salle, et ce fichier peut circuler.",
   exportAction: "Télécharger mes données",
@@ -141,7 +145,7 @@ const fr: Copy & Partial<Record<`${"goesAlone" | "goesSeats" | "sharedGuest"}_ma
 
   sharedTitle: "Salles où d’autres personnes sont présentes",
   sharedIntro:
-    "Ces salles sont les vôtres, et d’autres personnes y ont une place. Choisissez qui reprend chacune : la salle et le droit de la supprimer vont à cette personne. Sans choix de votre part, la personne présente depuis le plus longtemps la reprend. Une salle ne disparaît que si vous le demandez.",
+    "Ces salles sont les vôtres, et d’autres personnes y ont une place. Choisissez qui reprend chacune : la salle et le droit de la supprimer vont à cette personne. Sans choix de votre part, elle revient à la personne qui la dirige en ce moment si elle est là ; sinon à la personne ici depuis le plus longtemps ; sinon à celle qui y a sa place depuis le plus longtemps. Une salle ne disparaît que si vous le demandez.",
   sharedGuest_one:
     "Une salle reprise par un invité reste tant qu’elle sert : après {{count, number}} jour sans activité, elle est supprimée.",
   sharedGuest_many:
@@ -150,7 +154,9 @@ const fr: Copy & Partial<Record<`${"goesAlone" | "goesSeats" | "sharedGuest"}_ma
     "Une salle reprise par un invité reste tant qu’elle sert : après {{count, number}} jours sans activité, elle est supprimée.",
   unnamed: "Salle sans nom",
   takerLabel: "Qui reprend {{name}}",
-  takerDefault: "{{name}} (présence la plus ancienne)",
+  takerRunning: "{{name}} (dirige la salle en ce moment)",
+  takerHere: "{{name}} (ici en ce moment, présence la plus ancienne)",
+  takerAway: "{{name}} (personne n’est là, présence la plus ancienne)",
   takerDelete: "Personne : supprimer cette salle",
   deleteChosen:
     "Cette salle disparaît pour tous ses participants, avec son historique, dès que votre compte disparaît.",
@@ -181,10 +187,12 @@ const fr: Copy & Partial<Record<`${"goesAlone" | "goesSeats" | "sharedGuest"}_ma
     "Ce qui reste est ce que cette page annonçait : les sauvegardes jusqu’à leur expiration, les copies détenues par d’autres et les journaux qui contiennent des identifiants.",
   goingTitle: "Votre compte est en cours de suppression",
   goingBody:
-    "Toutes vos sessions sont fermées, et plus personne ne peut utiliser le compte. Une partie n’a pas encore disparu : cela se termine tout seul, en un jour au plus, et vous n’avez plus rien à faire. Une connexion avec ce compte le signale jusqu’à la fin.",
+    "Toutes vos sessions sont fermées, et plus personne ne peut utiliser le compte. Une partie n’a pas encore disparu : cela se termine tout seul, en deux jours au plus, et vous n’avez plus rien à faire. Une panne rare peut prendre plus de temps. Une connexion avec ce compte le signale jusqu’à la fin.",
   lostTitle: "Votre session est fermée",
   lostBody:
     "Le serveur n’a pas répondu à temps, et votre session est fermée. C’est ainsi que commence une suppression : elle a très probablement abouti, et elle se termine toute seule. Si vous vous connectez et que votre compte est toujours là, rien n’a été supprimé.",
+  outBody:
+    "Votre session s’est fermée avant l’arrivée de cette demande : cette demande n’a donc rien supprimé. Connectez-vous pour supprimer votre compte ou télécharger vos données.",
   home: "Retour à l’accueil",
 };
 
@@ -198,7 +206,7 @@ const de: Copy = {
 
   exportTitle: "Ihre Daten",
   exportBody:
-    "Laden Sie eine JSON-Datei mit dem herunter, was dieser Server über Sie speichert: Ihr Profil, Ihre Anmeldung, Ihre Räume, Ihre eigenen Karten in Runden mit Namen und Ihre Verbindungen. Sie enthält weder Namen noch Karten anderer Personen. Anonyme Runden fehlen darin: Dort verbindet Sie nichts mit einer Karte.",
+    "Laden Sie eine JSON-Datei mit dem herunter, was dieser Server über Sie speichert: Ihr Profil, Ihre Anmeldung, Ihre Räume, die Räume, die Ihnen ein Passwort geöffnet hat, Ihre eigenen Karten in Runden mit Namen und Ihre Verbindungen. Sie enthält weder Namen noch Karten anderer Personen. Anonyme Runden fehlen darin: Dort verbindet Sie nichts mit einer Karte.",
   exportCodes:
     "Räume stehen darin mit Name und ID, nie mit ihrem Code: Ein Code öffnet einen Raum, und diese Datei kann weitergegeben werden.",
   exportAction: "Meine Daten herunterladen",
@@ -231,14 +239,16 @@ const de: Copy = {
 
   sharedTitle: "Räume mit anderen Personen",
   sharedIntro:
-    "Diese Räume gehören Ihnen, und andere Personen haben dort einen Platz. Wählen Sie, wer jeden Raum übernimmt: Der Raum und das Recht, ihn zu löschen, gehen an diese Person. Ohne Wahl übernimmt die Person, die am längsten dabei ist. Ein Raum verschwindet nur, wenn Sie das sagen.",
+    "Diese Räume gehören Ihnen, und andere Personen haben dort einen Platz. Wählen Sie, wer jeden Raum übernimmt: Der Raum und das Recht, ihn zu löschen, gehen an diese Person. Ohne Wahl geht er an die Person, die ihn gerade leitet, falls sie da ist, sonst an die Person, die da ist und am längsten dabei ist, sonst an die Person, die am längsten dabei ist. Ein Raum verschwindet nur, wenn Sie das sagen.",
   sharedGuest_one:
     "Ein Raum, den ein Gast übernimmt, bleibt, solange er genutzt wird: Nach {{count, number}} Tag ohne Aktivität wird er gelöscht.",
   sharedGuest_other:
     "Ein Raum, den ein Gast übernimmt, bleibt, solange er genutzt wird: Nach {{count, number}} Tagen ohne Aktivität wird er gelöscht.",
   unnamed: "Raum ohne Namen",
   takerLabel: "Wer übernimmt {{name}}",
-  takerDefault: "{{name}} (am längsten dabei)",
+  takerRunning: "{{name}} (leitet den Raum gerade)",
+  takerHere: "{{name}} (gerade da, am längsten dabei)",
+  takerAway: "{{name}} (niemand ist da, am längsten dabei)",
   takerDelete: "Niemand: diesen Raum löschen",
   deleteChosen:
     "Dieser Raum verschwindet für alle darin, mit seinem Verlauf, sobald Ihr Konto verschwindet.",
@@ -270,10 +280,12 @@ const de: Copy = {
     "Was bleibt, ist, was diese Seite genannt hat: Sicherungen, bis sie ablaufen, Kopien anderer Personen und Protokolle mit IDs.",
   goingTitle: "Ihr Konto wird gelöscht",
   goingBody:
-    "Sie sind überall abgemeldet, und niemand kann das Konto mehr nutzen. Ein Teil ist noch nicht verschwunden: Das erledigt sich von selbst, innerhalb eines Tages, und Sie müssen nichts mehr tun. Eine Anmeldung mit diesem Konto sagt das, bis es erledigt ist.",
+    "Sie sind überall abgemeldet, und niemand kann das Konto mehr nutzen. Ein Teil ist noch nicht verschwunden: Das erledigt sich von selbst, innerhalb von zwei Tagen, und Sie müssen nichts mehr tun. Ein seltener Fehler kann länger dauern. Eine Anmeldung mit diesem Konto sagt das, bis es erledigt ist.",
   lostTitle: "Sie sind abgemeldet",
   lostBody:
     "Der Server hat nicht rechtzeitig geantwortet, und Sie sind abgemeldet. So beginnt eine Löschung: Sie ist sehr wahrscheinlich durchgegangen und erledigt sich von selbst. Wenn Sie sich anmelden und Ihr Konto noch da ist, wurde nichts gelöscht.",
+  outBody:
+    "Ihre Sitzung endete, bevor diese Anfrage ankam, also hat diese Anfrage nichts gelöscht. Melden Sie sich an, um Ihr Konto zu löschen oder Ihre Daten herunterzuladen.",
   home: "Zurück zum Anfang",
 };
 

@@ -17,7 +17,7 @@ import { Input } from "../components/ui/input.tsx";
 import { useFormat, useLanguage, useT } from "../i18n/hooks.ts";
 import { ensureIdentity, startSignIn } from "../identity/identity.ts";
 import { signInProviders } from "../identity/sign-in.ts";
-import { SignInRow } from "../identity/sign-in-row.tsx";
+import { busyClass, SignInRow } from "../identity/sign-in-row.tsx";
 import { RiseIn } from "../motion/motion.tsx";
 import { codeOf, failureMessage } from "../room/failure.ts";
 import { isSignedIn, useIdentityStore } from "../stores/identity-store.ts";
@@ -33,16 +33,26 @@ import { type AccountT, useAccountT } from "./account-copy.ts";
 
 const PROVIDER_NAMES = { google: "Google", microsoft: "Microsoft" } as const;
 
-/** What a person picked for a room: a seat's id, or this. Nothing picked is the longest seated. */
+/** What a person picked for a room: a seat's id, or this. Nothing picked is the first seat. */
 const DELETE_ROOM = "delete";
+
+/** How the select says who the default is, and why. */
+const DEFAULT_TAKER = {
+  runsTheRoom: "takerRunning",
+  here: "takerHere",
+  away: "takerAway",
+} as const satisfies Record<SharedRoom["why"], Parameters<AccountT>[0]>;
 
 type Load =
   | { status: "loading" }
   | { status: "failed"; code: string }
   | { status: "ready"; overview: AccountOverview };
 
-/** How a deletion ended: all gone, on its way, or a request nobody heard the end of. */
-type Ending = "done" | "going" | "lost";
+/**
+ * How a deletion ended: all gone, on its way, a request nobody heard the end of, or a request the
+ * server refused because the session had already ended, so it deleted nothing.
+ */
+type Ending = "done" | "going" | "lost" | "signedOut";
 
 /**
  * The account page (#51, ADR-029): a person's way to their data, and out. An account's alone:
@@ -258,7 +268,7 @@ function ExportSection() {
       <p className="m-0 max-w-prose text-ink-2">{t("exportCodes")}</p>
       <Button
         variant="outline"
-        className="self-start"
+        className={`self-start ${busyClass}`}
         data-account-export
         aria-disabled={busy || undefined}
         onClick={download}
@@ -388,7 +398,7 @@ function SharedRow({
           onChange={(event) => pick(event.target.value)}
           className="h-11 w-full min-w-0 rounded-md border border-input bg-background px-2 text-base focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-hidden md:text-sm"
         >
-          <option value="">{t("takerDefault", { name: first?.name ?? "" })}</option>
+          <option value="">{t(DEFAULT_TAKER[room.why], { name: first?.name ?? "" })}</option>
           {rest.map((seat) => (
             <option key={seat.id} value={seat.id}>
               {seat.name}
@@ -437,6 +447,7 @@ function SignInAgain({ tooOld }: { tooOld: boolean }) {
           <Button
             key={id}
             variant="outline"
+            className={busyClass}
             aria-disabled={busy || undefined}
             onClick={() => again(id)}
           >
@@ -450,10 +461,10 @@ function SignInAgain({ tooOld }: { tooOld: boolean }) {
 }
 
 /** What went wrong, under a form. */
-function Failure({ message }: { message: string | null }) {
+function Failure({ id, message }: { id?: string; message: string | null }) {
   if (message === null) return null;
   return (
-    <p role="alert" className="m-0 flex items-start gap-2 text-sm">
+    <p id={id} role="alert" className="m-0 flex items-start gap-2 text-sm">
       <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
       {message}
     </p>
@@ -476,6 +487,9 @@ function returnFocus(event: Event) {
 /** A refusal that says what happened: the person is who they were, and nothing changed. */
 const REFUSED: ReadonlySet<string> = new Set(["bad_confirmation", "rate_limited", "bad_payload"]);
 
+/** The server would not listen to this session: this request deleted nothing. */
+const NOT_HEARD: ReadonlySet<string> = new Set(["unauthenticated", "not_allowed"]);
+
 function ConfirmDialog({
   choices,
   close,
@@ -491,13 +505,29 @@ function ConfirmDialog({
   const shell = useT();
   const [language] = useLanguage();
   const inputId = useId();
+  const failureId = useId();
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const [wrongWord, setWrongWord] = useState(false);
   const word = ACCOUNT_DELETE_WORDS[language];
   const ready = isAccountDeleteWord(typed);
 
-  /** Every way a deletion ended: only what the server said may be said to the person. */
+  function refuse(code: string) {
+    setWrongWord(code === "bad_confirmation");
+    setFailure(failureMessage(shell, code));
+  }
+
+  /** Whether this browser is still the account, now. Rejects with no answer. */
+  async function stillSignedIn() {
+    await ensureIdentity({ force: true });
+    return isSignedIn(useIdentityStore.getState());
+  }
+
+  /**
+   * Every way a deletion ended: only what the server said may be said to the person. It stays busy
+   * until it knows, so that nothing can close the dialog on an answer still to come.
+   */
   async function run() {
     let finished: boolean;
     try {
@@ -505,25 +535,31 @@ function ConfirmDialog({
     } catch (error) {
       const code = codeOf(error);
       if (code === "sign_in_again") return tooOld();
-      setBusy(false);
-      if (REFUSED.has(code)) return setFailure(failureMessage(shell, code));
-      // A failure that does not say how far it got: who this browser is now does.
-      try {
-        await ensureIdentity({ force: true });
-      } catch {
-        return setFailure(t("noAnswer"));
+      if (REFUSED.has(code)) {
+        setBusy(false);
+        return refuse(code);
       }
-      if (isSignedIn(useIdentityStore.getState())) return setFailure(t("nothingDeleted"));
-      return ended("lost");
+      if (NOT_HEARD.has(code)) {
+        const still = await stillSignedIn().catch(() => false);
+        setBusy(false);
+        return still ? setFailure(t("nothingDeleted")) : ended("signedOut");
+      }
+      // A failure that does not say how far it got: who this browser is now does.
+      const still = await stillSignedIn().catch(() => null);
+      setBusy(false);
+      if (still === null) return setFailure(t("noAnswer"));
+      return still ? setFailure(t("nothingDeleted")) : ended("lost");
     }
     ended(finished ? "done" : "going");
   }
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy || !ready) return;
+    if (busy) return;
+    if (!ready) return refuse("bad_confirmation");
     setBusy(true);
     setFailure(null);
+    setWrongWord(false);
     void run();
   }
 
@@ -545,20 +581,32 @@ function ConfirmDialog({
               autoComplete="off"
               spellCheck={false}
               maxLength={32}
-              onChange={(event) => setTyped(event.target.value)}
+              aria-invalid={wrongWord || undefined}
+              aria-describedby={failure === null ? undefined : failureId}
+              onChange={(event) => {
+                setTyped(event.target.value);
+                setFailure(null);
+                setWrongWord(false);
+              }}
             />
           </div>
-          <Failure message={failure} />
+          <Failure id={failureId} message={failure} />
           <DialogFooter>
             <Button
               type="button"
               variant="outline"
-              onClick={close}
+              className={busyClass}
+              onClick={() => !busy && close()}
               aria-disabled={busy || undefined}
             >
               {t("cancel")}
             </Button>
-            <Button type="submit" variant="destructive" aria-disabled={busy || !ready || undefined}>
+            <Button
+              type="submit"
+              variant="destructive"
+              className={busyClass}
+              aria-disabled={busy || undefined}
+            >
               {busy ? t("deleting") : t("confirmAction")}
             </Button>
           </DialogFooter>
@@ -572,11 +620,13 @@ const ENDINGS = {
   done: ["doneTitle", "doneBody"],
   going: ["goingTitle", "goingBody"],
   lost: ["lostTitle", "lostBody"],
+  signedOut: ["lostTitle", "outBody"],
 } as const satisfies Record<Ending, readonly Parameters<AccountT>[0][]>;
 
 /**
  * The end: what became of the account, in the words the server's answer allows, on a page that
- * asks nothing more. The browser turns into a fresh guest behind it.
+ * asks nothing more, except a way back in for someone whose request deleted nothing. The browser
+ * turns into a fresh guest behind it.
  */
 function Ended({ ending }: { ending: Ending }) {
   const t = useAccountT();
@@ -600,6 +650,7 @@ function Ended({ ending }: { ending: Ending }) {
       </h1>
       <p className="m-0 max-w-prose">{t(body)}</p>
       {ending === "done" && <p className="m-0 max-w-prose text-ink-2">{t("doneRemains")}</p>}
+      {ending === "signedOut" && <SignInRow className="max-w-xl" />}
       <a href="/" className={buttonVariants({ variant: "outline", className: "self-start" })}>
         {t("home")}
       </a>

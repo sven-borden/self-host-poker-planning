@@ -24,6 +24,7 @@ const SHARED = {
     { id: "ann", name: "Ann" },
     { id: "ben", name: "Ben" },
   ],
+  why: "here",
 };
 
 const OVERVIEW = { recent: true, retentionDays: 90, alone: 2, seats: 1, shared: [SHARED] };
@@ -170,13 +171,36 @@ describe("what the page says", () => {
     await renderAccount();
     const select = await screen.findByLabelText("Who takes Sprint planning");
     expect((select as HTMLSelectElement).selectedOptions[0]?.textContent).toBe(
-      "Ann (seated longest)",
+      "Ann (here now, seated longest)",
     );
     await confirmDeletion();
     expect(calls.find(({ key }) => key === "POST /api/account/delete")?.body).toEqual({
       confirm: "DELETE",
       rooms: [],
     });
+  });
+
+  it("says why the default is who it is, as the server's order has it", async () => {
+    const rooms = [
+      { ...SHARED, id: "a", name: "Runs", why: "runsTheRoom" },
+      { ...SHARED, id: "b", name: "Away", why: "away" },
+    ];
+    serve({ "GET /api/account": () => json({ ...OVERVIEW, shared: rooms }) });
+    asAccount();
+    await renderAccount();
+    const shown = async (label: string) =>
+      ((await screen.findByLabelText(label)) as HTMLSelectElement).selectedOptions[0]?.textContent;
+    expect(await shown("Who takes Runs")).toBe("Ann (runs the room now)");
+    expect(await shown("Who takes Away")).toBe("Ann (nobody is here, seated longest)");
+    expect(screen.getByText(/whoever runs the room now/)).toBeTruthy();
+  });
+
+  it("refuses an answer that gives no reason for the default", async () => {
+    const { why: _, ...silent } = SHARED;
+    serve({ "GET /api/account": () => json({ ...OVERVIEW, shared: [silent] }) });
+    asAccount();
+    await renderAccount();
+    expect(await screen.findByRole("alert")).toBeTruthy();
   });
 
   it("sends a chosen person and a chosen delete, and warns of the second", async () => {
@@ -249,6 +273,72 @@ describe("the confirmation", () => {
     expect(calls.map(({ key }) => key)).not.toContain("POST /api/account/delete");
   });
 
+  it("says why at the field when the word is wrong, for a click and for Enter", async () => {
+    const calls = serve({ "GET /api/account": () => json(OVERVIEW) });
+    asAccount();
+    await renderAccount();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete my account" }));
+    const dialog = await screen.findByRole("dialog");
+    const field = screen.getByLabelText(/Type DELETE/);
+    fireEvent.change(field, { target: { value: "dele" } });
+    const press = dialog.querySelector('button[type="submit"]');
+    if (!press) throw new Error("no submit button");
+    expect(press.getAttribute("aria-disabled")).toBeNull();
+    fireEvent.click(press);
+    const reason = await screen.findByRole("alert");
+    expect(reason.textContent).toContain("That is not the word asked for");
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+    expect(field.getAttribute("aria-describedby")).toBe(reason.id);
+    fireEvent.change(field, { target: { value: "delet" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(field.getAttribute("aria-invalid")).toBeNull();
+    const form = dialog.querySelector("form");
+    if (!form) throw new Error("no form");
+    fireEvent.submit(form);
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(calls.map(({ key }) => key)).not.toContain("POST /api/account/delete");
+  });
+
+  it("says the server's own refusal of the word at the field", async () => {
+    serve({
+      "GET /api/account": () => json(OVERVIEW),
+      "POST /api/account/delete": () => json({ code: "bad_confirmation" }, 400),
+    });
+    asAccount();
+    await renderAccount();
+    await confirmDeletion();
+    expect((await screen.findByRole("alert")).textContent).toContain("not the word");
+    expect(screen.getByLabelText(/Type DELETE/).getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("cannot be cancelled while the request runs, and the answer still reaches the page", async () => {
+    let answer: (response: Response) => void = () => {};
+    serve({
+      "GET /api/account": () => json(OVERVIEW),
+      "GET /api/auth/get-session": () => json(GUEST_SESSION),
+    });
+    const pending = new Promise<Response>((resolve) => {
+      answer = resolve;
+    });
+    const real = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (input === "/api/account/delete") return pending;
+      return real?.(input, init) as Promise<Response>;
+    });
+    asAccount();
+    await renderAccount();
+    await confirmDeletion();
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    expect(cancel.getAttribute("aria-disabled")).toBe("true");
+    expect(cancel.className).toContain("aria-disabled:pointer-events-none");
+    fireEvent.click(cancel);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    await act(async () => {
+      answer(json({ finished: true }));
+    });
+    expect(await screen.findByRole("heading", { name: "Your account is deleted" })).toBeTruthy();
+  });
+
   it("says a refusal where it happened, with the dialog still open", async () => {
     serve({
       "GET /api/account": () => json(OVERVIEW),
@@ -289,7 +379,8 @@ describe("after the request", () => {
     await renderAccount();
     await confirmDeletion();
     expect(await screen.findByRole("heading", { name: /is being deleted/ })).toBeTruthy();
-    expect(screen.getByText(/finishes by itself, within a day/)).toBeTruthy();
+    expect(screen.getByText(/finishes by itself, within two days/)).toBeTruthy();
+    expect(screen.getByText(/A rare fault can take longer/)).toBeTruthy();
     expect(screen.queryByText("Your account is deleted")).toBeNull();
   });
 
@@ -297,6 +388,51 @@ describe("after the request", () => {
     serve({
       "GET /api/account": () => json(OVERVIEW),
       "POST /api/account/delete": () => json({ code: "internal" }, 500),
+      "GET /api/auth/get-session": () => json(SESSION),
+    });
+    asAccount();
+    await renderAccount();
+    await confirmDeletion();
+    expect(await screen.findByText(/Nothing was deleted/)).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("does not call a refused session a deletion: this request deleted nothing", async () => {
+    for (const [status, code] of [
+      [401, "unauthenticated"],
+      [403, "not_allowed"],
+    ] as const) {
+      serve({
+        "GET /api/account": () => json(OVERVIEW),
+        "POST /api/account/delete": () => json({ code }, status),
+        "GET /api/auth/get-session": () => json(GUEST_SESSION),
+      });
+      asAccount();
+      await renderAccount();
+      await confirmDeletion();
+      expect(await screen.findByRole("heading", { name: "You are signed out" })).toBeTruthy();
+      expect(screen.getByText(/this request deleted nothing/)).toBeTruthy();
+      expect(screen.queryByText(/most likely went through/)).toBeNull();
+      expect(await screen.findByRole("button", { name: /Google/ })).toBeTruthy();
+      cleanup();
+    }
+  });
+
+  it("says the same when nothing can say who this browser is: the server's word stands", async () => {
+    serve({
+      "GET /api/account": () => json(OVERVIEW),
+      "POST /api/account/delete": () => json({ code: "unauthenticated" }, 401),
+    });
+    asAccount();
+    await renderAccount();
+    await confirmDeletion();
+    expect(await screen.findByText(/this request deleted nothing/)).toBeTruthy();
+  });
+
+  it("says nothing went when the server refused and the browser is still signed in", async () => {
+    serve({
+      "GET /api/account": () => json(OVERVIEW),
+      "POST /api/account/delete": () => json({ code: "not_allowed" }, 403),
       "GET /api/auth/get-session": () => json(SESSION),
     });
     asAccount();
