@@ -163,6 +163,10 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
   device. A speaker in the top bar opens the switch and the volume. No `AudioContext` before
   a gesture; a hidden tab hears everything. A lazy chunk; the room route loads 179.3 kB. Live
   at 4e1ae00.
+- Installable from #46 (ADR-022): a manifest, icons and a service worker that stores no page,
+  only `/assets/*` and an offline page, and never touches `/api` or `/socket.io`; a haptic
+  beat at the reveal with a "Vibrate" switch where the device can. The room route loads
+  179.6 kB. Live at 093050c.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -173,7 +177,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- W4's #45 and #46, each with an implementer agent.
+- #45 (PR #106): review findings being fixed in `../pp-wt-45`.
+- #47: an implementer in `../pp-wt-47`. The PR will say `Refs #47`: the issue stays open
+  until the sign-ins work on poker.borden.ch with Sven's keys.
 - **Agents again, issue after issue, until the end of 2026-11-02** (Sven, 2026-11-01): the
   main session orchestrates and does not stop between issues (see `CLAUDE.md`).
 
@@ -245,6 +251,9 @@ issues are merged.
   Suggested 5." names the last voter beside the group's suggestion (no card is paired
   with a name). Also the German count "0/7 haben abgestimmt" (was "haben bisher
   abgestimmt", shortened to fit 360 px), if another wording is wanted.
+- **After #46**: install the app on a phone and check the icon, the name "Poker" and the bar
+  colour, and on Android feel the reveal's beats. No real phone has run it. #46 closed with
+  the icon judged by eye and Lighthouse's check replaced by Chromium's.
 - **After #44**: turn the sound on at poker.borden.ch and listen. Nobody has heard these
   yet; they were measured, not judged. The sounds are numbers in `sound-recipes.ts`. A real
   iPhone is untested too.
