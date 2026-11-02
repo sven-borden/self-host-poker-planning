@@ -867,6 +867,46 @@ describe("the one invariant: no frame without a judgement of its gate", () => {
     expect(owner.received.length).toBe(before);
   });
 
+  it("a PO who entered under the rule holds no judgement of it, so a claim sends them out", async () => {
+    const browser = new Browser();
+    const po = await browser.signIn("microsoft", person({ tenant: OTHER_TENANT }));
+    const room = await roomOf(po, DOMAIN_RULE);
+    const owner = browser.socket();
+    await expect(owner.enter(room.code)).resolves.toMatchObject({ ok: true });
+    const colleagueBrowser = new Browser();
+    await colleagueBrowser.signIn("google", person());
+    const colleague = await colleagueBrowser.sit(room.code, "Colleague");
+    const locked = hears(owner, "locked");
+    await must(colleague.cmd("claimOwner"));
+    await locked;
+    const before = owner.received.length;
+    await must(colleague.cmd("startRound", { subject: { kind: "title", text: "After the claim" } }));
+    await settled(owner);
+    expect(owner.received.length).toBe(before);
+  });
+
+  it("a visitor read again and let in is not read again for the next frame", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po, DOMAIN_RULE);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    await browser.signIn("google", person());
+    const visitor = browser.socket();
+    await expect(visitor.enter(room.code)).resolves.toMatchObject({ ok: true });
+    await must(
+      owner.cmd("updateSettings", {
+        patch: { restriction: { domains: ["example.com", "other.example"], tenants: [] } },
+      }),
+    );
+    await visitor.waitFor((s) => s.room.settings.restriction?.domains.length === 2);
+    await must(owner.cmd("rename", { name: "Goes straight out" }));
+    const { snapshot } = await visitor.waitFor(
+      (s) => s.room.participants[0]?.name === "Goes straight out",
+    );
+    // Read again, it would go out alone, with no causes.
+    expect(snapshot.causes).toEqual([{ type: "renamed", who: po }]);
+  });
+
   it("an `enter` that loaded just before the rule committed is read as soon as it is in", async () => {
     const { browser: poBrowser, id: po } = await signedInPo();
     const room = await roomOf(po);
@@ -946,6 +986,32 @@ describe("the one invariant: no frame without a judgement of its gate", () => {
     await settled(client).catch(() => {});
     expect(client.received).toEqual([]);
     expect(client.frames.join("\n")).not.toContain("Past the door");
+  });
+
+  it("someone the first load refuses never holds a pass, so no frame meets them at a second", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po, DOMAIN_RULE);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    await browser.guest();
+    const client = await connected(browser.socket());
+    const hold = holdLoad(room.code, 2);
+    const entering = client.enter(room.code);
+    // The answer comes without a second load; were there one, this frame would fall inside it.
+    const first = await Promise.race([
+      entering.then(() => "answered"),
+      hold.reading.then(() => "held"),
+    ]);
+    // Answered, the rename's own load must not be the one held.
+    if (first === "answered") hold.restore();
+    await must(owner.cmd("rename", { name: "Not for the door" }));
+    await owner.waitFor((s) => s.room.participants[0]?.name === "Not for the door");
+    hold.release();
+    expect((await entering).ok).toBe(false);
+    hold.restore();
+    await settled(client).catch(() => {});
+    expect(client.received).toEqual([]);
+    expect(client.frames.join(" ")).not.toContain("Not for the door");
   });
 
   it("a refused socket keeps no pass: a later `enter` that is refused hears nothing meanwhile", async () => {

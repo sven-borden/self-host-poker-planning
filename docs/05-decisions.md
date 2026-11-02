@@ -1427,7 +1427,7 @@ the server, `new URL` in the panel): the domain package has no `URL`, and accept
 ASCII form is what the join screen shows too: it cannot be spoofed by a look-alike letter, at the
 price of reading badly. Both are URL parsers, which answer the host of whatever they are given:
 `bücher.example/x` reads as `bücher.example`, and an address `a@example.com/ü` as `example.com`. So
-nothing with a character no host holds (`/ \\ @ : ? # % [ ]`) reaches one, and on the server what
+nothing with a character no host holds (`/ \ @ : ? # % [ ]`) reaches one, and on the server what
 IDNA gives back must be what went in, or a soft hyphen or a full stop of another script would be
 quietly mapped: the entry stays as typed, and `cleanDomain` refuses it, as it takes ASCII alone. Plain
 ASCII never meets a parser, which would turn `a@b.com/x` into `b.com`: `cleanDomain` refuses a
