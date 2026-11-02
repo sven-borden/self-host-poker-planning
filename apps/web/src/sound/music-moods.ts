@@ -45,8 +45,9 @@ export interface Composition {
   /** How long the loop is, in beats. */
   beats: number;
   /**
-   * Scales the whole mood. It brings its loudest sample to about 0.095 at full volume, under
-   * the quietest sound effect's peak (the tick's 0.11), with `e2e/sound.spec.ts` watching.
+   * Scales the whole mood: a sustained sound is as loud as its RMS, so that is what it sets,
+   * to about 0.05 (-26 dBFS) at full volume, with no sample over 0.25 and the moods within
+   * 2 dB of each other. Measured, with `e2e/sound.spec.ts` watching (ADR-021).
    */
   level: number;
   parts: readonly Part[];
@@ -131,7 +132,7 @@ function struck(notes: ReadonlyArray<readonly [number, string]>, gain: number): 
 const DUSK: Composition = {
   bpm: 60,
   beats: 48,
-  level: 0.086,
+  level: 0.21,
   parts: [
     {
       tone: PAD,
@@ -178,7 +179,7 @@ const DUSK: Composition = {
 const TIDE: Composition = {
   bpm: 40,
   beats: 32,
-  level: 0.084,
+  level: 0.205,
   parts: [
     {
       tone: SWELL,
@@ -220,7 +221,7 @@ const TIDE: Composition = {
 const EMBERS: Composition = {
   bpm: 50,
   beats: 40,
-  level: 0.112,
+  level: 0.29,
   parts: [
     {
       tone: LOW,

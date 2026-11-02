@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import { SOUNDS } from "../src/sound/sound-recipes.ts";
 import { expect, test } from "./fixtures.ts";
 import {
   createRoom,
@@ -36,6 +37,19 @@ async function listen(page: Page) {
     const tap = new WeakMap<BaseAudioContext, AnalyserNode>();
     const entries = new WeakMap<object, (typeof voices)[number]>();
     const loops: AudioBuffer[] = [];
+    const renders = { started: 0, finished: 0 };
+    const startRendering = OfflineAudioContext.prototype.startRendering;
+    OfflineAudioContext.prototype.startRendering = function (this: OfflineAudioContext) {
+      renders.started += 1;
+      const rendering = startRendering.call(this);
+      rendering.then(
+        () => {
+          renders.finished += 1;
+        },
+        () => {},
+      );
+      return rendering;
+    };
     const Real = window.AudioContext;
     window.AudioContext = class extends Real {
       constructor(options?: AudioContextOptions) {
@@ -97,7 +111,7 @@ async function listen(page: Page) {
       analyser.getFloatTimeDomainData(samples);
       return Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length);
     };
-    Object.assign(window, { __sound: { contexts, voices, loops, output } });
+    Object.assign(window, { __sound: { contexts, voices, loops, output, renders } });
   });
 }
 
@@ -107,6 +121,14 @@ const heard = (page: Page) =>
       .__sound as unknown as { contexts: AudioContext[]; voices: Voice[] };
     return { contexts: contexts.map((context) => context.state), voices };
   });
+
+/** How many offline renders the page started and finished since it loaded. */
+const renders = (page: Page) =>
+  page.evaluate(
+    () =>
+      (window as unknown as { __sound: { renders: { started: number; finished: number } } }).__sound
+        .renders,
+  );
 
 /** The voices that are loops. */
 const looped = async (page: Page) => (await heard(page)).voices.filter((voice) => voice.loop);
@@ -302,6 +324,7 @@ test("the music plays while voting, fades on the reveal, and comes back", async 
     // With only the music on: the effects' switch does not hold the context.
     await turnMusicOn(page);
     await expect.poll(() => asked.length, { timeout: 20_000 }).toBeGreaterThan(0);
+    await expect.poll(async () => (await renders(page)).finished, { timeout: 20_000 }).toBe(1);
     // No round yet: rendered, and silent.
     expect(await looped(page)).toEqual([]);
 
@@ -351,11 +374,17 @@ test("after a reload the music waits for a gesture, and starts if voting is open
       "Sound: on, from your first click or key press",
     );
     await expect(handCard(page, "5")).toBeEnabled();
+    // Longer than a render waits for a quiet moment: this one is not on its way.
+    await page.waitForTimeout(1_200);
     expect(await heard(page)).toEqual({ contexts: [], voices: [] });
+    expect(asked).toEqual([]);
+    expect(await renders(page)).toEqual({ started: 0, finished: 0 });
 
     await page.getByRole("region", { name: "You" }).click({ position: { x: 4, y: 4 } });
     await expect(soundButton(page)).toHaveAccessibleName("Sound: on");
     await expect.poll(async () => (await looped(page)).length, { timeout: 20_000 }).toBe(1);
+    expect(asked).not.toEqual([]);
+    expect(await renders(page)).toEqual({ started: 1, finished: 1 });
     await expect.poll(() => loudness(page), { timeout: 8_000 }).toBeGreaterThan(0.002);
   } finally {
     close();
@@ -419,7 +448,57 @@ test("the music stops, falling away, when the person leaves the room", async ({
   }
 });
 
-test("every loop closes on itself, and stays under the effects", async ({ browser, baseURL }) => {
+test("a change of mood leaves no gap: the old one plays until the new one is ready", async ({
+  browser,
+  baseURL,
+}) => {
+  const { page, context } = await newPerson(browser);
+  await listen(page);
+  const { owner, close } = await table(page, baseURL ?? "", context);
+  try {
+    await startRound(page, owner);
+    await turnMusicOn(page);
+    await expect.poll(async () => (await looped(page)).length, { timeout: 20_000 }).toBe(1);
+    await expect.poll(() => loudness(page), { timeout: 8_000 }).toBeGreaterThan(0.002);
+
+    await soundButton(page).click();
+    await page.getByRole("radio", { name: "Tide" }).check();
+    await expect.poll(async () => (await renders(page)).started).toBe(2);
+    const [playing, ...none] = await looped(page);
+    expect(none).toEqual([]);
+    expect(playing?.stopsIn).toBeUndefined();
+    expect(await loudness(page)).toBeGreaterThan(0.002);
+
+    await expect.poll(async () => (await looped(page)).length, { timeout: 20_000 }).toBe(2);
+    // The old one falls away under the new one, stopped ahead of time and never at once.
+    const [falling] = await looped(page);
+    expect(falling?.takenBack).toBe(false);
+    expect(falling?.stopsIn).toBeGreaterThan(1.2);
+    expect(await loudness(page)).toBeGreaterThan(0.002);
+  } finally {
+    close();
+    await context.close();
+  }
+});
+
+/** Each mood's loudness at full volume, as a root mean square, and how much either way. */
+const MUSIC_RMS = 0.05;
+const MUSIC_RMS_RANGE = 1.2;
+/** A sample may not pass this at full volume. */
+const MUSIC_PEAK = 0.25;
+/** How far apart the moods may be, as a ratio: 2 dB. */
+const MOODS_APART = 10 ** (2 / 20);
+/** The reveal's strongest note must stand this far over the music's RMS: 10 dB. */
+const REVEAL_CLEAR = 10 ** (10 / 20);
+/** No more than this across the seam, against the biggest step in the 5 ms either side. */
+const SEAM_STEP = 1.4;
+/** How far the level over 50 ms may differ across the seam, either way, as a ratio. */
+const SEAM_LEVELS = 1.15;
+
+test("every loop closes on itself, at the agreed level, under the reveal", async ({
+  browser,
+  baseURL,
+}) => {
   const { page, context } = await newPerson(browser);
   await listen(page);
   const { owner, close } = await table(page, baseURL ?? "", context);
@@ -427,6 +506,8 @@ test("every loop closes on itself, and stays under the effects", async ({ browse
     await startRound(page, owner);
     await turnMusicOn(page);
     await soundButton(page).click();
+    const levels: number[] = [];
+    const revealGains = SOUNDS.reveal.map((voice) => voice.gain);
     for (const [index, mood] of ["Dusk", "Tide", "Embers"].entries()) {
       await page.getByRole("radio", { name: mood }).check();
       await expect
@@ -437,14 +518,20 @@ test("every loop closes on itself, and stays under the effects", async ({ browse
       console.log(mood, JSON.stringify(report));
       expect(report.seconds).toBe(48);
       expect(report.channels).toBe(2);
-      // The loudest sample is under the quietest effect's peak, the tick's 0.11.
-      expect(report.peak).toBeLessThan(0.11);
-      expect(report.peak).toBeGreaterThan(0.05);
-      expect(report.seamStep).toBeLessThanOrEqual(report.largestStep);
-      expect(report.edgeLevels).toBeGreaterThan(0.75);
-      expect(report.edgeLevels).toBeLessThan(1.33);
-      expect(report.playedSeamStep).toBeLessThanOrEqual(report.playedLargestStep);
+      levels.push(report.rms);
+      expect(report.rms).toBeGreaterThan(MUSIC_RMS / MUSIC_RMS_RANGE);
+      expect(report.rms).toBeLessThan(MUSIC_RMS * MUSIC_RMS_RANGE);
+      expect(report.peak).toBeLessThanOrEqual(MUSIC_PEAK);
+      // The reveal stands clear of the music, and the two together do not clip.
+      expect(Math.max(...revealGains) / report.rms).toBeGreaterThan(REVEAL_CLEAR);
+      expect(report.peak + revealGains.reduce((sum, gain) => sum + gain)).toBeLessThan(1);
+      expect(report.edgeLevels).toBeGreaterThan(1 / SEAM_LEVELS);
+      expect(report.edgeLevels).toBeLessThan(SEAM_LEVELS);
+      for (const { seamStep, nearStep } of report.seams) {
+        expect(seamStep).toBeLessThanOrEqual(SEAM_STEP * nearStep);
+      }
     }
+    expect(Math.max(...levels) / Math.min(...levels)).toBeLessThan(MOODS_APART);
   } finally {
     close();
     await context.close();
@@ -452,8 +539,10 @@ test("every loop closes on itself, and stays under the effects", async ({ browse
 });
 
 /**
- * The numbers of one loop the page really plays: the step across the seam against the biggest
- * inside it, the level either side, and the same step at 48 kHz as a source node plays it.
+ * The numbers of one loop the page really plays: its level, the step across the seam against
+ * the steps around it, as stored and as a source node plays it at 44.1 and 48 kHz, and the
+ * level either side. Against the biggest step anywhere a seam proves little: a loop has much
+ * bigger steps than the one a note cut short leaves.
  */
 async function seamReport(index: number) {
   const { loops } = (window as unknown as { __sound: { loops: AudioBuffer[] } }).__sound;
@@ -467,45 +556,64 @@ async function seamReport(index: number) {
     }
     return largest;
   };
+  /** The step across a seam at `at`, resampled or not, and the biggest in the 5 ms each side. */
+  const across = (channels: Float32Array[], at: number, rate: number) => {
+    const near = Math.floor(rate / 200);
+    const steps = { rate, seamStep: 0, nearStep: 0 };
+    for (const samples of channels) {
+      steps.seamStep = Math.max(steps.seamStep, largestStep(samples.subarray(at - 8, at + 8)));
+      steps.nearStep = Math.max(
+        steps.nearStep,
+        largestStep(samples.subarray(at - 8 - near, at - 8)),
+        largestStep(samples.subarray(at + 8, at + 8 + near)),
+      );
+    }
+    return steps;
+  };
 
-  const tenth = Math.floor(loop.sampleRate / 10);
+  const channels = Array.from({ length: loop.numberOfChannels }, (_, channel) =>
+    loop.getChannelData(channel),
+  );
+  const span = Math.floor(loop.sampleRate / 20);
   const report = {
     seconds: loop.duration,
     channels: loop.numberOfChannels,
+    rms: 0,
     peak: 0,
-    largestStep: 0,
-    seamStep: 0,
     edgeLevels: 1,
-    playedLargestStep: 0,
-    playedSeamStep: 0,
+    seams: [] as Array<{ rate: number; seamStep: number; nearStep: number }>,
   };
-  for (let channel = 0; channel < loop.numberOfChannels; channel += 1) {
-    const samples = loop.getChannelData(channel);
+  let power = 0;
+  for (const samples of channels) {
+    power += rms(samples) ** 2 / channels.length;
     for (const sample of samples) report.peak = Math.max(report.peak, Math.abs(sample));
-    report.largestStep = Math.max(report.largestStep, largestStep(samples));
-    const seam = Math.abs((samples[0] ?? 0) - (samples[samples.length - 1] ?? 0));
-    report.seamStep = Math.max(report.seamStep, seam);
-    const edges = rms(samples.subarray(0, tenth)) / rms(samples.subarray(samples.length - tenth));
+    const edges = rms(samples.subarray(0, span)) / rms(samples.subarray(samples.length - span));
     // Whichever channel is further from level on both sides of the seam.
     if (Math.abs(Math.log(edges)) > Math.abs(Math.log(report.edgeLevels))) {
       report.edgeLevels = edges;
     }
   }
+  report.rms = Math.sqrt(power);
+
+  // The end of the loop and then its start, as a looping source reads them.
+  const wrapped = channels.map((samples) => {
+    const both = new Float32Array(2 * span);
+    both.set(samples.subarray(samples.length - span));
+    both.set(samples.subarray(0, span), span);
+    return both;
+  });
+  report.seams.push(across(wrapped, span, loop.sampleRate));
 
   // Three seconds as played: one up to the seam, and two past it.
-  const rate = 48_000;
-  const offline = new OfflineAudioContext(2, 3 * rate, rate);
-  const source = offline.createBufferSource();
-  source.buffer = loop;
-  source.loop = true;
-  source.connect(offline.destination);
-  source.start(0, loop.duration - 1);
-  const played = await offline.startRendering();
-  for (let channel = 0; channel < played.numberOfChannels; channel += 1) {
-    const samples = played.getChannelData(channel);
-    const around = samples.subarray(rate - 8, rate + 8);
-    report.playedSeamStep = Math.max(report.playedSeamStep, largestStep(around));
-    report.playedLargestStep = Math.max(report.playedLargestStep, largestStep(samples));
+  for (const rate of [44_100, 48_000]) {
+    const offline = new OfflineAudioContext(2, 3 * rate, rate);
+    const source = offline.createBufferSource();
+    source.buffer = loop;
+    source.loop = true;
+    source.connect(offline.destination);
+    source.start(0, loop.duration - 1);
+    const played = await offline.startRendering();
+    report.seams.push(across([played.getChannelData(0), played.getChannelData(1)], rate, rate));
   }
   return report;
 }
