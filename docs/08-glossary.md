@@ -43,7 +43,7 @@ every informal form; a review still reads the screens.
 | seat, place | la place | der Platz | "Prenez place", "Nehmen Sie Platz". A room has 16. |
 | at the table | à la table | am Tisch | |
 | away | hors ligne | abwesend | |
-| to join | rejoindre | beitreten | French "entrer" stays where it is natural: "vous pourrez entrer", "la salle est libre", a person coming in. German: "dem Raum beitreten" in sentences; the one button says "Raum betreten", because "Raum beitreten" is not a sentence. |
+| to join | rejoindre | beitreten | French "entrer" stays where it is natural, for a person coming in through a free seat: "Vous pouvez entrer", "Entrée dans la salle…". German: "dem Raum beitreten" in sentences; the one button says "Raum betreten", because "Raum beitreten" is not a sentence. |
 | to remove (someone) | retirer | entfernen | Not "expulser", not "rauswerfen". |
 | to run a room | animer | leiten | French: not "diriger". |
 | to hand over, to claim (the role) | confier, prendre | übergeben, übernehmen | |
