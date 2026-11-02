@@ -820,3 +820,94 @@ suggests a CSV export, and copying from a sheet is a flow that parses), and for 
 Microsoft documents only an "HTML-formatted table", whose plain-text flavour, which a textarea
 gets, nobody here has seen. Sven pastes one real list from each tool into the box, and the
 samples are replaced with what comes out. `paste-queue.test.ts` says what each one rests on.
+
+## ADR-026: The connectors' tokens are sealed to their row, with keys from the environment (2026-11-02, #53)
+
+**Decision.** A connector's token is stored as AES-256-GCM ciphertext, one row per account and
+connector, in `connector_token`, and goes with the account by `on delete cascade`. Node's
+`crypto` does it all: no new dependency. Nothing reaches this yet: no route, socket event or
+page, until #54 and #55. Like every integration it is optional. Without `POKER_VAULT_KEY` the
+server starts as it did, and `saveToken` and `readToken` answer `vault_off`.
+
+**The format says what it needs.** One line of text, `v1.<key id>.<iv>.<tag>.<ciphertext>`: the
+format version, 8 hex digits of key id, then in base64url a fresh random 96-bit IV for each
+encryption, the 128-bit tag and the ciphertext. A random IV is safe far past anything this table
+will see (2^32 encryptions under one key is the limit for 96 bits). The ciphertext has the
+token's length: nothing pads it, since a length tells nothing useful about an opaque token.
+
+**A value is bound to its row.** The additional authenticated data is the JSON array of the
+format, the key id, the user and the connector. JSON quotes each, so ids cannot run together. A
+value copied onto another user or connector does not open, and neither does one whose key id was
+edited. So no statement can move a token: anything that merges two accounts must have the person
+connect again. A guest holds no token, so #48's move has nothing to do here.
+
+**The key id comes from the key.** It is 32 bits of a SHA-256 over a fixed label and the key,
+safe in a dump, and the operator names nothing. `POKER_VAULT_KEY` is then plainly what
+`openssl rand -base64 32` prints. Ids typed by hand could give a new key the old key's id, and
+every old row would look tampered with; here a missing key and a changed row are different
+answers. Two keys with one id can only be one key listed twice (a chance clash of 32 bits is
+caught by the same check), usually a new key that was never pasted, so that stops the start.
+
+**Keys.** `POKER_VAULT_KEY` seals and opens; `POKER_VAULT_OLD_KEYS`, comma-separated, only opens.
+`config.ts` checks both like every opt-in variable: `ConfigError` names the variable, never a
+value. Refused: anything but exactly 32 bytes of plain base64, one byte repeated, a key listed
+twice, old keys without a current one, and a key equal to `BETTER_AUTH_SECRET`, as text or as the
+same bytes. Nothing is derived from that secret, or a session secret's leak would open the tokens,
+and changing one would lose the other.
+
+**Rotation needs no downtime and no code.** An operator generates a key, makes it
+`POKER_VAULT_KEY`, moves the previous one to `POKER_VAULT_OLD_KEYS` and restarts; every token
+stays readable from then on. `node dist/main.mjs vault:rotate`, one-off in the running container,
+then re-encrypts every row to the current key, and the old key can go. With several instances the
+new key goes into `POKER_VAULT_OLD_KEYS` everywhere first, so that no instance meets a value it
+cannot open while the others restart. A subcommand of `main.mjs` means one bundle and no new
+path in the image. It reads the server's variables, so it cannot run with other keys, and opens a
+one-connection pool of its own; it does not migrate, since the running image already has. It logs
+one line of counts and exits 0 when every row is on the current key, 1 otherwise.
+
+**Rotating is safe to repeat.** Each row is one `update` that compares the sealed value it read,
+and no two seals are alike. So a token saved while the run reads is never overwritten by the older
+one, no lock is needed against the server or a second run, and a run stopped halfway has lost
+nothing. A read that finds a token on an old key does the same on the way out, ignoring a failed
+write: the token is already open, and the command picks up what this misses. Neither moves
+`updated_at`, which says when the token last changed.
+
+**A failed decryption is a state.** `readToken` answers `unreadable` with `unknown_key` (its key is
+not among the server's) or `corrupt` (changed, moved, or a format this version cannot read). A
+caller shows "connect again" for both, and connecting again overwrites the row. The row is never
+deleted: a key that was dropped too soon can come back and everything opens again. The rotation
+leaves such rows as they are, counts them and exits 1.
+
+**Who may hold one is decided in the statement.** The `insert` selects from `user` where
+`is_anonymous is not true`, the purge's own reading, so a guest gets `no_account` with no check to
+race. The store refuses because no page exists yet to do so, and a page should not be what
+stands between a guest and the table.
+
+**Only the store's small API is public.** `saveToken`, `readToken`, `deleteToken`,
+`listConnections` and `enabled` on `database.connectorTokens`. A token is opaque text up to
+16 KiB, so a connector seals what it needs (access token, refresh token, expiry, site) as one
+JSON text. The row has no other column about it: a site's name is no secret, but no column is
+kept for a screen that does not exist.
+
+**Nothing prints.** `Secret` and `Vault` keep their values in private fields, and print a fixed
+text to `pino`, `JSON.stringify`, `util.inspect` and a template string; a `KeyObject` holds the
+key. Only ciphertext reaches a query, so only ciphertext could reach a driver error, and `guard`
+strips those too. `open` catches what Node throws and returns its state. `logger.ts` adds `token`,
+`accessToken`, `refreshToken` and `vaultKey` to the redact list, for a plain string logged by
+mistake. The store logs nothing, and the rotation logs no user.
+
+**Backups.** A dump holds ciphertext, and the key is in the environment: that split is the whole
+point, so they are kept apart. Restoring tokens takes the dump and every key its rows were sealed
+with. Losing the keys costs everyone a new connection and nothing else.
+
+**Alternatives.** `POKER_VAULT_KEY=<id>:<base64>`: the trap above, and one more thing to type.
+Separate columns for the key id and the IV: the rotation reads every row anyway, and one opaque
+value keeps a future format to one column. A key derived for each user: AAD gives the binding
+without a KDF. Postgres's `pgcrypto`: the key and the token would travel in query text, into a
+server's logs. Deleting a row that fails to open: a wrong key would then erase everything. A
+rotation inside the server at start: every instance would run it, and it would hide how far it
+got. Re-encrypting on use alone: a row nobody reads would keep the old key alive forever.
+
+**Not tested.** `pg_dump` itself: the test reads every row of every table through SQL, which sees
+the same values. A rotation across a real rolling deploy of several instances. No key has been set
+on Sven's instance, and nothing uses the vault until #54.

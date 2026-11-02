@@ -1,6 +1,8 @@
+import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { ConfigError, loadConfig, socialProviderIds } from "./config.ts";
 import { SECRET, VALID_ENV } from "./test-support.ts";
+import { Secret, Vault } from "./vault.ts";
 
 function configError(env: Record<string, string | undefined>): ConfigError {
   try {
@@ -374,5 +376,99 @@ describe("loadConfig", () => {
     }
     expect(loadConfig({ ...VALID_ENV, CSP_REPORT_ONLY: "0" }).cspReportOnly).toBe(false);
     expect(loadConfig({ ...VALID_ENV, CSP_REPORT_ONLY: "1" }).cspReportOnly).toBe(true);
+  });
+});
+
+describe("the vault keys (#53)", () => {
+  const newKey = () => randomBytes(32).toString("base64");
+  const row = { userId: "user-a", connector: "jira" };
+
+  it("are off without POKER_VAULT_KEY, and an empty value counts as unset", () => {
+    expect(loadConfig(VALID_ENV).vault).toBeUndefined();
+    expect(
+      loadConfig({ ...VALID_ENV, POKER_VAULT_KEY: "", POKER_VAULT_OLD_KEYS: "" }).vault,
+    ).toBeUndefined();
+  });
+
+  it("build a vault that seals with the key and opens with the old ones", () => {
+    const [key, one, two] = [newKey(), newKey(), newKey()];
+    const { vault } = loadConfig({
+      ...VALID_ENV,
+      POKER_VAULT_KEY: key,
+      POKER_VAULT_OLD_KEYS: `${one},${two}`,
+    });
+    const sealed = vault?.seal(new Secret("fake-token"), row) ?? "";
+    expect(new Vault(key).open(sealed, row).ok).toBe(true);
+    const older = new Vault(two).seal(new Secret("fake-token"), row);
+    expect(vault?.open(older, row)).toMatchObject({ ok: true, onCurrentKey: false });
+  });
+
+  it("do not print themselves with the config", () => {
+    const key = newKey();
+    const config = loadConfig({ ...VALID_ENV, POKER_VAULT_KEY: key });
+    expect(JSON.stringify(config)).not.toContain(key);
+  });
+
+  it("stop the start when malformed, naming the variable and no value", () => {
+    const short = randomBytes(16).toString("base64");
+    const long = randomBytes(48).toString("base64");
+    const blank = Buffer.alloc(32).toString("base64");
+    for (const value of [SECRET, short, long, blank, `${newKey()}\n`]) {
+      const error = configError({ ...VALID_ENV, POKER_VAULT_KEY: value });
+      expect(error.variables).toEqual(["POKER_VAULT_KEY"]);
+      expect(error.message).toContain("POKER_VAULT_KEY must be 32 random bytes in base64");
+      expect(error.message).not.toContain(value);
+
+      const key = newKey();
+      const old = configError({
+        ...VALID_ENV,
+        POKER_VAULT_KEY: key,
+        POKER_VAULT_OLD_KEYS: `${newKey()},${value}`,
+      });
+      expect(old.variables).toEqual(["POKER_VAULT_OLD_KEYS"]);
+      expect(old.message).not.toContain(value);
+      expect(old.message).not.toContain(key);
+    }
+  });
+
+  it("stop the start when a key is listed twice", () => {
+    const [key, old] = [newKey(), newKey()];
+    for (const list of [key, `${old},${old}`, `${old},${key}`]) {
+      const error = configError({
+        ...VALID_ENV,
+        POKER_VAULT_KEY: key,
+        POKER_VAULT_OLD_KEYS: list,
+      });
+      expect(error.variables).toEqual(["POKER_VAULT_OLD_KEYS"]);
+      expect(error.message).not.toContain(key);
+      expect(error.message).not.toContain(old);
+    }
+  });
+
+  it("need a current key when old ones are listed", () => {
+    expect(configError({ ...VALID_ENV, POKER_VAULT_OLD_KEYS: newKey() }).message).toContain(
+      "POKER_VAULT_KEY is required when POKER_VAULT_OLD_KEYS is set",
+    );
+  });
+
+  it("may not be BETTER_AUTH_SECRET, however it is written", () => {
+    const key = newKey();
+    const bytes = Buffer.from(key, "base64");
+    for (const secret of [key, bytes.toString("base64url")]) {
+      const same = configError({
+        ...VALID_ENV,
+        BETTER_AUTH_SECRET: secret,
+        POKER_VAULT_KEY: key,
+      });
+      expect(same.variables).toEqual(["POKER_VAULT_KEY"]);
+      expect(same.message).not.toContain(key);
+      const old = configError({
+        ...VALID_ENV,
+        BETTER_AUTH_SECRET: secret,
+        POKER_VAULT_KEY: newKey(),
+        POKER_VAULT_OLD_KEYS: key,
+      });
+      expect(old.variables).toEqual(["POKER_VAULT_OLD_KEYS"]);
+    }
   });
 });

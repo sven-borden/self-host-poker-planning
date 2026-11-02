@@ -267,7 +267,7 @@ const schema = z.object({
   POKER_VAULT_KEY: z.string().refine(isVaultKey).optional(),
   POKER_VAULT_OLD_KEYS: z
     .string()
-    .transform((v) => v.split(",").map((key) => key.trim()))
+    .transform((v) => v.split(","))
     .refine((keys) => keys.every(isVaultKey))
     .optional(),
   BETTER_AUTH_SECRET: z.string().min(32).refine(isRealSecret),

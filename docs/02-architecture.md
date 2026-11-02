@@ -558,13 +558,44 @@ visit that lands during the run keeps the room; `round_history` and `room_access
 cascade, the password counters are columns of the row. Then orphan guests, also by 500:
 anonymous users at least a day old (a sign-in writes the user before its session) with no
 session that has not expired and no room they own (`room_owner_user_id_idx`); their
-sessions, accounts and grants go by cascade (`room_access_user_id_idx`), and a signed-in
-user is never one. Last, the ended windows of wrong passwords (#31) of the rooms that
+sessions, accounts and grants go by cascade (`room_access_user_id_idx`), as would a
+connector token (a guest holds none), and a signed-in user is never one. Last, the ended windows of wrong passwords (#31) of the rooms that
 stay are cleared, without touching `last_active_at`, and so are the `verification` rows
 of sign-ins nobody finished. One `info` line per run: `rooms`,
 `history`, `guests`, `passwordWindows`, `verifications`, `interrupted`, `durationMs`; a failure logs its
 code alone. A restored backup, a lowered `ROOM_TTL_DAYS` or a long downtime makes every
 room past the period go in the first run after the start (README, "Privacy").
+
+### Connector tokens (#53, ADR-026)
+
+`connector_token`, one row per account and connector, is the only table the vault writes:
+`user_id` (references `user`, `on delete cascade`), `connector`, `sealed_token`, `created_at`,
+`updated_at`, primary key `(user_id, connector)`, which also serves the cascade. Only the sealed
+value says anything about the token.
+
+`vault.ts` is AES-256-GCM through Node's `crypto`. A sealed value is
+`v1.<key id>.<iv>.<tag>.<ciphertext>`: format, 8 hex digits derived from the key, then base64url
+of a fresh random 96-bit IV, the 128-bit tag and the ciphertext. The additional authenticated
+data holds the format, the key id, the user and the connector, so a value does not open on any
+other row. `POKER_VAULT_KEY` seals and opens, `POKER_VAULT_OLD_KEYS` only opens; `config.ts` turns
+them into `config.vault`, which is undefined when the vault is off.
+
+`db/connector-tokens.ts` is the only way to the table, on `database.connectorTokens`:
+`saveToken` (`saved`, `vault_off`, `no_account` for a guest or nobody, `too_large` past 16 KiB),
+`readToken` (`ok` with a `Secret`, `vault_off`, `not_connected`, or `unreadable` with `unknown_key`
+or `corrupt`; the row stays), `deleteToken`, `listConnections` and `enabled`. The last two and
+`deleteToken` work with the vault off. Nothing calls it before #54 and #55.
+
+A read that finds an old key re-encrypts the row on the way out. `node dist/main.mjs vault:rotate`
+(`vault-rotation.ts`, `rotateTokens`) does every row in batches of 200, one compare-and-set per
+row, beside a running server; run twice or stopped halfway, it is harmless. It logs one line of
+counts (`scanned`, `rotated`, `current`, `unreadable`) and exits 0 only when every row is on the
+current key. Steps for operators: README, "Connector tokens".
+
+A token never reaches a log, an error or Sentry: `Secret` and `Vault` print a fixed text however
+they are logged, queries carry ciphertext only, and `guard` keeps driver text out. A dump holds
+ciphertext; the keys live in the environment. The purge needs no step of its own: a user it
+deletes takes its rows by cascade, and #51 will too.
 
 ## 7. Identity
 
@@ -1149,6 +1180,8 @@ language, and an unknown code gets a generic one.
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | no | sign-in with Google (#47, section 7), both or neither; the secret is never logged. Redirect URI: `<BASE_URL>/api/auth/callback/google` |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | no | sign-in with Microsoft Entra ID (#47), both or neither; the secret is never logged. Redirect URI: `<BASE_URL>/api/auth/callback/microsoft` |
 | `MICROSOFT_TENANT_ID` | no (`common`) | who may sign in with Microsoft: `common` (any work, school or personal account), `organizations` (work and school), `consumers` (personal) or one tenant's id (a GUID) |
+| `POKER_VAULT_KEY` | no | encrypts the connectors' tokens (#53, section 6): 32 random bytes in base64 (`openssl rand -base64 32`), never `BETTER_AUTH_SECRET`, never logged. Unset, the vault is off. Malformed, repeated or the session secret, it stops the start |
+| `POKER_VAULT_OLD_KEYS` | no | during a key change: previous keys, in the same form, comma-separated, that open tokens and seal none (README, "Connector tokens"); needs `POKER_VAULT_KEY` |
 
 ## 13. Testing
 

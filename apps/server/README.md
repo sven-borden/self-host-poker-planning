@@ -33,6 +33,11 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   instance holds the lock, the code alone on a failure, never a rejection. Without `now`
   (production) the purge reads Postgres's clock. `stop()` clears the timer, aborts a run
   at its next batch and waits for it; `runNow()` is for tests.
+- `src/vault.ts`: the vault (#53, ADR-026). `Vault` seals and opens with AES-256-GCM, binding a
+  value to its user and connector; `Secret` holds a token and prints `[secret]`. `src/db/connector-tokens.ts`:
+  `createConnectorTokenStore(pool, vault)`, on `database.connectorTokens`, and `rotateTokens`.
+  `src/vault-rotation.ts`: `runVaultRotation(env, destination?)`, what `node dist/main.mjs
+  vault:rotate` runs; it answers with an exit code.
 - `src/auth.ts`: identity. `createAuth(config, db, logger)` builds Better Auth (Drizzle
   adapter, anonymous plugin, options in `authOptions`); `registerAuthApi` mounts
   `/api/auth/*`, and `POST /api/me/name` and `/api/me/avatar`; `sessionMiddleware(auth)` is the socket

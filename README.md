@@ -104,7 +104,8 @@ from the bundled database; to use your own Postgres, run the image alone with
 - **Backups**: everything lives in the database (volume `poker-planning_pgdata`). Back it
   up before upgrading and on a schedule, for example
   `docker compose exec -T db pg_dump -U poker -Fc poker > poker-$(date +%F).dump`, and
-  restore with `pg_restore`. `docker compose down -v` deletes the volume. Before you
+  restore with `pg_restore`. `docker compose down -v` deletes the volume. A dump holds the
+  connectors' tokens encrypted: their key is not in it (see "Connector tokens"). Before you
   start the server on a restored database, raise `ROOM_TTL_DAYS` or run
   `update room set last_active_at = now()` on it: the retention purge deletes every room
   idle past the period 3 to 5 minutes after the start (see "Privacy").
@@ -153,6 +154,47 @@ another provider or a new id is refused and told so. Starting a sign-in is limit
 address (30 a minute), so get the client address right first (see "Behind a reverse proxy").
 With two proxies that takes both steps: the second must trust the first, and then
 `TRUST_PROXY=2`. Until both are done, every visitor shares one limit of 30 a minute.
+
+### Connector tokens
+
+The Jira and Azure DevOps connectors keep each person's token encrypted with AES-256-GCM, under a
+key that lives in the environment and never in the database. A guest holds no token. Without a
+key the server runs as usual and the connectors stay off, and turning this on needs no migration
+of yours:
+
+```bash
+openssl rand -base64 32   # POKER_VAULT_KEY in .env, or in Coolify's variables; runtime only
+```
+
+It must be its own key: the server refuses the value of `BETTER_AUTH_SECRET`, anything but 32
+bytes of base64, and a key listed twice, naming the variable and never the value.
+
+**Changing the key** needs no downtime, no code change and no maintenance window. Every token
+stays readable at every step:
+
+1. Generate a new key. Make it `POKER_VAULT_KEY`, put the previous key in
+   `POKER_VAULT_OLD_KEYS` (commas between several, no spaces), and restart or redeploy.
+2. Re-encrypt what is stored, in the running container:
+   `docker compose exec app node dist/main.mjs vault:rotate`, or `node dist/main.mjs vault:rotate`
+   in Coolify's terminal. It logs one line of counts and exits 0 when every token is on the new
+   key. It is safe to run again, and alongside people using the app. Tokens also move by themselves
+   when they are used.
+3. Remove the previous key from `POKER_VAULT_OLD_KEYS` and restart.
+
+With several instances, first add the new key to `POKER_VAULT_OLD_KEYS` everywhere and restart
+them, then do step 1: otherwise an instance that has not restarted yet meets tokens it cannot
+open, and asks those people to connect again until it has.
+
+If the command exits 1 with `unreadable` above 0, some tokens cannot be opened: a key is missing
+from the variables (add it and run again) or the row was changed. Rows are never deleted for this.
+Those people connect again, which replaces the row, and until then the count stays.
+
+**Backups**: a dump holds these tokens encrypted, and a dump alone opens nothing. To restore them
+you must also keep `POKER_VAULT_KEY`, and any older key that was in use when the dump was taken,
+and you should keep those somewhere other than the backups: side by side they protect nothing.
+Losing the key means every person connects Jira or Azure DevOps again, and nothing else: rooms,
+accounts and history do not depend on it. If a key leaked along with a dump, change the key and
+also revoke the tokens at Jira or Azure DevOps, since rotating does not make a stolen copy useless.
 
 ### Running several instances
 
@@ -217,6 +259,9 @@ nothing about Redis is loaded or opened.
   and none of the provider's tokens, so nothing here can reach a person's Google or Microsoft
   account afterwards. The email is shown to its owner alone, on the landing page, and nowhere in
   a room, where a screen may be shared.
+- **Connectors**, only for an account that connects Jira or Azure DevOps: the token, encrypted
+  with a key kept outside the database, and when it was connected. It goes when the person
+  disconnects, and with the account. It is never logged.
 - **For how long**: a room idle for `ROOM_TTL_DAYS` days (default 90) is deleted with
   its history and its password grants. Activity is any change in the room, and opening
   it (counted at most once a day, or once a 24th of a shorter period). A guest's session
