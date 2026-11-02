@@ -15,7 +15,30 @@ import { failureMessage } from "../room/failure.ts";
 // a connection came back, and what a refusal says. The rest of the UI loads when it is needed.
 
 /** A tracker's name as a person reads it. A brand: the same in every language. */
-export const SYSTEM_NAMES: Readonly<Record<ConnectorName, string>> = { jira: "Jira" };
+export const SYSTEM_NAMES: Readonly<Record<ConnectorName, string>> = {
+  jira: "Jira",
+  "azure-devops": "Azure DevOps",
+};
+
+/** What a round's `system` says, for each connector. */
+export const ROUND_SYSTEMS = { jira: "jira", "azure-devops": "ado" } as const satisfies Record<
+  ConnectorName,
+  string
+>;
+
+/** The connector a round's `system` belongs to. */
+export const connectorOf = (system: "jira" | "ado"): ConnectorName =>
+  system === "ado" ? "azure-devops" : "jira";
+
+/** Where Azure DevOps' words differ: a site is a project there, and an organisation is around it. */
+const AZURE_MESSAGES = {
+  connector_no_site: "connector.azure.errors.connector_no_site",
+  connector_bad_site: "connector.azure.errors.connector_bad_site",
+  connector_bad_field: "connector.azure.errors.connector_bad_field",
+  connector_other_site: "connector.azure.errors.connector_other_site",
+  connector_no_source: "connector.azure.errors.connector_no_source",
+  connector_field_refused: "connector.azure.errors.connector_field_refused",
+} as const;
 
 /** True when this install has the connector. Not the same as this person having connected. */
 export function connectorOn(name: ConnectorName): boolean {
@@ -57,6 +80,9 @@ export function connectorMessage(
   const system = SYSTEM_NAMES[name];
   if (code === "connector_rate_limited" && retryAfter !== undefined) {
     return t("connector.errors.connector_rate_limited_wait", { system, seconds: retryAfter });
+  }
+  if (name === "azure-devops" && Object.hasOwn(AZURE_MESSAGES, code)) {
+    return t(AZURE_MESSAGES[code as keyof typeof AZURE_MESSAGES]);
   }
   // The key is only known at run time; i18n.test.ts holds every code to a message.
   return (t as (key: string, values: object) => string)(`connector.errors.${code}`, { system });

@@ -34,10 +34,10 @@ import {
 /** Where a person removes the grant Atlassian keeps: 3LO has no revoke endpoint. */
 const GRANTS_URL = "https://id.atlassian.com/manage-profile/apps";
 
-const FIELD =
+export const FIELD =
   "min-h-11 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-line/30";
-const LABEL = "text-sm font-medium";
-const HINT = "m-0 text-sm text-ink-2";
+export const LABEL = "text-sm font-medium";
+export const HINT = "m-0 text-sm text-ink-2";
 
 /** What the section says of a connection that came back. */
 const RESULT_MESSAGES = {
@@ -48,12 +48,12 @@ const RESULT_MESSAGES = {
 } as const;
 
 /** A refusal: its code, and how long the tracker asked to wait. */
-interface Problem {
+export interface Problem {
   code: string;
   retryAfter?: number;
 }
 
-function problemOf(error: unknown): Problem {
+export function problemOf(error: unknown): Problem {
   if (!(error instanceof RoomApiError)) return { code: "unknown" };
   return {
     code: error.code,
@@ -66,7 +66,7 @@ function problemOf(error: unknown): Problem {
  * once that is drawn, and not to the sheet's root, where the sheet's focus trap leaves it. A focus
  * the person already moved somewhere stays there.
  */
-function returnFocus(section: HTMLElement | null, selector: string, frames = 30) {
+export function returnFocus(section: HTMLElement | null, selector: string, frames = 30) {
   requestAnimationFrame(() => {
     const active = document.activeElement;
     const lost =
@@ -91,22 +91,10 @@ export function importReport(t: TFunction, view: ConnectorImportView): string {
   return parts.join(" ");
 }
 
-/**
- * The tracker's part of the queue's sheet (#54, ADR-030), a chunk of its own: connect, pick a site
- * and the estimate's field, import. Every step asks the server, and the page holds names and
- * numbers only. Connecting leaves the page; the sheet opens again on the way back and says how
- * it went. The room's code is sent to this server alone: it stays out of the tracker's address.
- */
-export function ConnectorSection({ name = "jira" }: { name?: ConnectorName }) {
-  const t = useT();
-  const signedIn = useIdentityStore(isSignedIn);
-  const code = useRoomStore((state) => state.snapshot?.room.code);
-  const system = SYSTEM_NAMES[name];
+/** A person's connection to a tracker, and how a change at the server or a refusal lands on it. */
+export function useConnection(name: ConnectorName, signedIn: boolean) {
   const [connection, setConnection] = useState<ConnectionView | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [result] = useState(connectorResult);
-  const section = useRef<HTMLElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -141,6 +129,25 @@ export function ConnectorSection({ name = "jira" }: { name?: ConnectorName }) {
       return false;
     }
   }
+
+  return { connection, problem, setProblem, load, report, change };
+}
+
+/**
+ * The tracker's part of the queue's sheet (#54, ADR-030), a chunk of its own: connect, pick a site
+ * and the estimate's field, import. Every step asks the server, and the page holds names and
+ * numbers only. Connecting leaves the page; the sheet opens again on the way back and says how
+ * it went. The room's code is sent to this server alone: it stays out of the tracker's address.
+ */
+export function ConnectorSection({ name = "jira" }: { name?: ConnectorName }) {
+  const t = useT();
+  const signedIn = useIdentityStore(isSignedIn);
+  const code = useRoomStore((state) => state.snapshot?.room.code);
+  const system = SYSTEM_NAMES[name];
+  const { connection, problem, setProblem, report, change } = useConnection(name, signedIn);
+  const [busy, setBusy] = useState(false);
+  const [result] = useState(connectorResult);
+  const section = useRef<HTMLElement>(null);
 
   async function connect() {
     if (code === undefined || busy) return;
@@ -280,14 +287,17 @@ function Connected({ name, code, connection, change, onProblem, returnTo }: Conn
   );
 }
 
-function SitePicker({
+export function SitePicker({
   name,
   current,
+  words,
   onPick,
   onProblem,
 }: {
   name: ConnectorName;
   current: string | undefined;
+  /** What a site is called at this tracker, when it is not a site. */
+  words?: { label: string; save: string; none: string };
   onPick: (id: string) => Promise<void>;
   onProblem: (problem: Problem) => void;
 }) {
@@ -316,7 +326,9 @@ function SitePicker({
   }, [name]);
 
   if (sites === null) return null;
-  if (sites.length === 0) return <p className={HINT}>{t("connector.noSites", { system })}</p>;
+  if (sites.length === 0) {
+    return <p className={HINT}>{words?.none ?? t("connector.noSites", { system })}</p>;
+  }
   return (
     <form
       noValidate
@@ -329,7 +341,7 @@ function SitePicker({
       }}
     >
       <label htmlFor={id} className={LABEL}>
-        {t("connector.site")}
+        {words?.label ?? t("connector.site")}
       </label>
       <select
         id={id}
@@ -345,7 +357,7 @@ function SitePicker({
         ))}
       </select>
       <Button type="submit" variant="outline" className="self-start">
-        {t("connector.siteSave")}
+        {words?.save ?? t("connector.siteSave")}
       </Button>
     </form>
   );

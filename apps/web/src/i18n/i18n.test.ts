@@ -175,6 +175,8 @@ describe("catalogs", () => {
       // The connector (#54): words Jira and the French use alike.
       "connector.site",
       "connector.sprint",
+      // Azure DevOps (#55): the same word in both.
+      "connector.azure.organization",
     ],
     de: [
       "app.name",
@@ -211,6 +213,8 @@ describe("catalogs", () => {
       // The connector (#54): Jira's own words in German too.
       "connector.board",
       "connector.sprint",
+      // Azure DevOps (#55): the same word in both.
+      "connector.azure.organization",
     ],
   };
 

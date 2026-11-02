@@ -359,7 +359,7 @@ describe("the built web app", () => {
       ),
     };
     const html = await (await app({ staticDir: root }, keys).app.request("/")).text();
-    expect(html).toContain('<meta name="pp-connectors" content="jira">');
+    expect(html).toContain('<meta name="pp-connectors" content="jira azure-devops">');
     expect(html).not.toContain("jira-secret-not-for-the-page");
     const { POKER_VAULT_KEY: _, ...noVault } = keys;
     const dark = await (await app({ staticDir: root }, noVault).app.request("/")).text();

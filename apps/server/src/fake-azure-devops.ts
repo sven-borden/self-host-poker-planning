@@ -112,6 +112,8 @@ export interface FakeWrite {
 /** An answer forced on the next calls whose path holds `match`. */
 export interface FakeAzureFailure {
   match: string;
+  /** Only this method; any by default. */
+  method?: string;
   status: number;
   retryAfter?: string;
   times?: number;
@@ -605,8 +607,10 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
   }
 
   /** The first failure that matches, taken: true when it answered. */
-  function forced(path: string, response: ServerResponse): boolean {
-    const failure = fake.fail.find(({ match }) => path.includes(match));
+  function forced(method: string, path: string, response: ServerResponse): boolean {
+    const failure = fake.fail.find(
+      (each) => path.includes(each.match) && (each.method ?? method) === method,
+    );
     if (failure === undefined) return false;
     failure.times = (failure.times ?? 1) - 1;
     if (failure.times <= 0) fake.fail.splice(fake.fail.indexOf(failure), 1);
@@ -640,7 +644,7 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
     }
     fake.calls.push(`${request.method} ${path}`);
     fake.queries.push(url.search);
-    if (forced(path, response)) return;
+    if (forced(request.method ?? "", path, response)) return;
     if (path === "/_signin") {
       json(response, 500, refusal("A redirect was followed: this should never be read."));
       return;

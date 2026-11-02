@@ -988,9 +988,64 @@ export const en = {
       history: "Write to {{system}}",
       done: "Written to {{system}}.",
     },
+    azure: {
+      lede: "Import a saved query or a WIQL query into the queue, and send estimates back. You connect with a token of your own, and nobody else in the room uses it.",
+      organization: "Organisation",
+      organizationHint: "Its name alone: what follows dev.azure.com/ in your address bar.",
+      token: "Personal access token",
+      tokenScope:
+        "Make one for this organisation alone, with a single scope ticked: Work Items, Read & write.",
+      tokenLink: "Make a token",
+      tokenUse:
+        "It is used only to read what you import and to write your estimates. It stays here, encrypted, until it expires or you disconnect, so give it the shortest life that suits you.",
+      project: "Project",
+      projectIs: "Project: {{project}}",
+      projectSave: "Use this project",
+      projectChange: "Change project",
+      noProjects: "This token reaches no project in that organisation.",
+      fieldAuto:
+        "Estimates go to the field each item’s type carries: Story Points, Effort or Size.",
+      fieldPick: "Choose a field",
+      fieldReset: "Use each type’s own field",
+      fieldType: "Work item type",
+      fieldHint: "Items of a type without this field keep to Story Points, Effort or Size.",
+      fieldNone: "This type has no number field.",
+      fieldCancel: "Cancel",
+      bySaved: "A saved query",
+      byWiql: "A WIQL query",
+      saved: "Saved query",
+      noSaved: "This project has no saved query you can see.",
+      savedMore: "Some folders were not read, so this list is not complete.",
+      wiql: "WIQL query",
+      wiqlHint:
+        "For example: Select [System.Id] From WorkItems Where [System.TeamProject] = @project. It goes to Azure DevOps and is not kept here.",
+      nothingAsked: "Pick a saved query or type a query first.",
+      disconnectNote:
+        "This deletes your token here. It still exists at Microsoft until it expires or you revoke it:",
+      revokeLink: "revoke it in Azure DevOps",
+      errors: {
+        connector_no_site: "Pick an Azure DevOps project in the queue first.",
+        connector_bad_site: "That project is not on your list any more.",
+        connector_bad_field: "That field is not a number field of this work item type.",
+        connector_other_site:
+          "This item belongs to another Azure DevOps organisation than the one you are connected to.",
+        connector_no_source: "This item did not come from Azure DevOps.",
+        connector_field_refused:
+          "Azure DevOps refused this number on this item: a rule of its type may forbid it.",
+      },
+    },
     errors: {
       connector_sign_in: "Sign in with an account to use {{system}}.",
       connector_not_connected: "Connect {{system}} in the queue first.",
+      connector_bad_organization:
+        "That is no organisation’s name. Give the name alone, with no address around it.",
+      connector_bad_token:
+        "{{system}} did not take this token. It may be mistyped, expired, or made for another organisation.",
+      connector_no_access:
+        "This token’s account cannot reach that organisation. Check its name, and that you are a member.",
+      connector_scope:
+        "This token lacks the one scope needed: Work Items, Read & write. Edit it, or make another.",
+      connector_no_organization: "{{system}} has no organisation of that name.",
       connector_reconnect: "{{system}} no longer accepts this connection. Connect again.",
       connector_setup:
         "{{system}} refused this although the connection was just renewed, so connecting again will not help. Whoever runs this server should check the scopes of its {{system}} app.",
@@ -1011,6 +1066,9 @@ export const en = {
       connector_bad_query: "{{system}} could not run this query. Check it and try again.",
       connector_field_refused:
         "{{system}} refused the field on this item: it may not be on the item’s screen.",
+      connector_no_estimate_field: "This item has no estimate field, so nothing was written.",
+      connector_query_cap:
+        "This query finds more than {{system}} gives back. Narrow it and try again.",
       connector_unavailable: "{{system}} is not answering properly. Try again later.",
       connector_timeout: "{{system}} took too long to answer. Try again.",
     },

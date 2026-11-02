@@ -988,9 +988,66 @@ export const fr: Catalog<"many"> = {
       history: "Écrire dans {{system}}",
       done: "Écrit dans {{system}}.",
     },
+    azure: {
+      lede: "Importez une requête enregistrée ou une requête WIQL dans la file, et renvoyez les estimations. Vous vous connectez avec votre propre jeton, et personne d’autre dans la salle ne s’en sert.",
+      organization: "Organisation",
+      organizationHint:
+        "Son nom seul\u{202f}: ce qui suit dev.azure.com/ dans votre barre d’adresse.",
+      token: "Jeton d’accès personnel",
+      tokenScope:
+        "Créez-en un pour cette seule organisation, avec une seule autorisation cochée\u{202f}: Work Items, Read & write.",
+      tokenLink: "Créer un jeton",
+      tokenUse:
+        "Il sert uniquement à lire ce que vous importez et à écrire vos estimations. Il reste ici, chiffré, jusqu’à son expiration ou votre déconnexion\u{202f}: donnez-lui la durée la plus courte qui vous convient.",
+      project: "Projet",
+      projectIs: "Projet\u{202f}: {{project}}",
+      projectSave: "Utiliser ce projet",
+      projectChange: "Changer de projet",
+      noProjects: "Ce jeton n’atteint aucun projet dans cette organisation.",
+      fieldAuto:
+        "Les estimations vont dans le champ que porte le type de chaque élément\u{202f}: Story Points, Effort ou Size.",
+      fieldPick: "Choisir un champ",
+      fieldReset: "Utiliser le champ de chaque type",
+      fieldType: "Type d’élément de travail",
+      fieldHint:
+        "Les éléments d’un type sans ce champ s’en tiennent à Story Points, Effort ou Size.",
+      fieldNone: "Ce type n’a aucun champ numérique.",
+      fieldCancel: "Annuler",
+      bySaved: "Une requête enregistrée",
+      byWiql: "Une requête WIQL",
+      saved: "Requête enregistrée",
+      noSaved: "Ce projet n’a aucune requête enregistrée visible pour vous.",
+      savedMore: "Certains dossiers n’ont pas été lus\u{202f}: cette liste n’est pas complète.",
+      wiql: "Requête WIQL",
+      wiqlHint:
+        "Par exemple\u{202f}: Select [System.Id] From WorkItems Where [System.TeamProject] = @project. Elle part vers Azure DevOps et n’est pas conservée ici.",
+      nothingAsked: "Choisissez d’abord une requête enregistrée ou saisissez une requête.",
+      disconnectNote:
+        "Cela supprime votre jeton ici. Il existe toujours chez Microsoft jusqu’à son expiration ou sa révocation\u{202f}:",
+      revokeLink: "le révoquer dans Azure DevOps",
+      errors: {
+        connector_no_site: "Choisissez d’abord un projet Azure DevOps dans la file.",
+        connector_bad_site: "Ce projet n’est plus dans votre liste.",
+        connector_bad_field: "Ce champ n’est pas un champ numérique de ce type d’élément.",
+        connector_other_site:
+          "Cet élément appartient à une autre organisation Azure DevOps que celle à laquelle vous êtes connecté.",
+        connector_no_source: "Cet élément ne vient pas d’Azure DevOps.",
+        connector_field_refused:
+          "Azure DevOps a refusé ce nombre sur cet élément\u{202f}: une règle de son type l’interdit peut-être.",
+      },
+    },
     errors: {
       connector_sign_in: "Connectez-vous avec un compte pour utiliser {{system}}.",
       connector_not_connected: "Connectez d’abord {{system}} dans la file.",
+      connector_bad_organization:
+        "Ce n’est pas un nom d’organisation. Donnez le nom seul, sans adresse autour.",
+      connector_bad_token:
+        "{{system}} n’a pas accepté ce jeton. Il est peut-être mal saisi, expiré ou créé pour une autre organisation.",
+      connector_no_access:
+        "Le compte de ce jeton n’atteint pas cette organisation. Vérifiez son nom, et que vous en êtes membre.",
+      connector_scope:
+        "Il manque à ce jeton la seule autorisation nécessaire\u{202f}: Work Items, Read & write. Modifiez-le ou créez-en un autre.",
+      connector_no_organization: "{{system}} n’a aucune organisation de ce nom.",
       connector_reconnect: "{{system}} n’accepte plus cette connexion. Connectez-le de nouveau.",
       connector_setup:
         "{{system}} a refusé alors que la connexion venait d’être renouvelée : la refaire ne changera rien. La personne qui gère ce serveur doit vérifier les autorisations de son application {{system}}.",
@@ -1013,6 +1070,10 @@ export const fr: Catalog<"many"> = {
         "{{system}} n’a pas pu exécuter cette requête. Vérifiez-la et réessayez.",
       connector_field_refused:
         "{{system}} a refusé le champ sur ce ticket : il n’est peut-être pas sur son écran.",
+      connector_no_estimate_field:
+        "Cet élément n’a pas de champ d’estimation\u{202f}: rien n’a été écrit.",
+      connector_query_cap:
+        "Cette requête trouve plus que ce que {{system}} renvoie. Resserrez-la et réessayez.",
       connector_unavailable: "{{system}} ne répond pas correctement. Réessayez plus tard.",
       connector_timeout: "{{system}} a mis trop de temps à répondre. Réessayez.",
     },

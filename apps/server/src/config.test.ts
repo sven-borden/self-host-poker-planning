@@ -190,9 +190,9 @@ describe("loadConfig", () => {
     const vault = { POKER_VAULT_KEY: randomBytes(32).toString("base64") };
     const names = (env: Record<string, string>) =>
       connectorNames(loadConfig({ ...VALID_ENV, ...env }));
-    expect(names({ ...jira, ...google, ...vault })).toEqual(["jira"]);
+    expect(names({ ...jira, ...google, ...vault })).toEqual(["jira", "azure-devops"]);
     expect(names({})).toEqual([]);
-    expect(names({ ...google, ...vault })).toEqual([]);
+    expect(names({ ...google, ...vault })).not.toContain("jira");
     expect(names({ ...jira, ...google })).toEqual([]);
     expect(names({ ...jira, ...vault })).toEqual([]);
     expect(loadConfig({ ...VALID_ENV, ...jira }).jira).toEqual({
@@ -200,6 +200,18 @@ describe("loadConfig", () => {
       clientSecret: "jira-secret",
     });
     expect(loadConfig(VALID_ENV).jira).toBeUndefined();
+  });
+
+  it("has Azure DevOps with the vault and a way to sign in, and no key of its own (#55)", () => {
+    const google = { GOOGLE_CLIENT_ID: "g", GOOGLE_CLIENT_SECRET: "s" };
+    const vault = { POKER_VAULT_KEY: randomBytes(32).toString("base64") };
+    const names = (env: Record<string, string>) =>
+      connectorNames(loadConfig({ ...VALID_ENV, ...env }));
+    expect(names({ ...google, ...vault })).toEqual(["azure-devops"]);
+    expect(names(google)).toEqual([]);
+    expect(names(vault)).toEqual([]);
+    expect(names({})).toEqual([]);
+    expect(connectorGaps(loadConfig({ ...VALID_ENV, ...vault }))).toEqual([]);
   });
 
   it("names the missing half of a provider's keys, never the value (#47)", () => {

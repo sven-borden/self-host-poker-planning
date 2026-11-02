@@ -69,7 +69,7 @@ const ITEM_ID = /^[1-9][0-9]{0,9}$/;
 /** A field's reference name: `Custom.Points`. It goes into a JSON Patch path. */
 const FIELD_ID = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+$/;
 /** A project's or a type's name: it goes into a path, so it can be no step and no separator. */
-const NAME_IN_PATH = /^(?!\.+$)[^/\\?#%\u0000-\u001f]{1,128}$/;
+const NAME_IN_PATH = /^(?!\.+$)[^/\\?#%\p{Cc}]{1,128}$/u;
 const CONTINUATION = /^[\w=+/-]{1,512}$/;
 
 /** Numbers a person can set. An `integer` field refuses 2.5 itself, and that is a code too. */
