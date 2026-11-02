@@ -112,6 +112,7 @@ describe("createRoom", () => {
         allowChangeAfterReveal: false,
         poVotes: true,
         observersCount: true,
+        autoAdvance: false,
       },
       participants: {},
       round: null,
@@ -1379,6 +1380,7 @@ describe("updateSettings", () => {
       allowChangeAfterReveal: true,
       poVotes: true,
       observersCount: true,
+      autoAdvance: false,
     });
   });
 
@@ -1388,6 +1390,7 @@ describe("updateSettings", () => {
       ...before,
       // As jsonb hands it back: keys in another order than canonicalSettings writes them.
       settings: {
+        autoAdvance: false,
         observersCount: true,
         poVotes: true,
         allowChangeAfterReveal: false,

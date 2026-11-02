@@ -127,6 +127,8 @@ export function canonicalSettings(s: RoomSettings): RoomSettings {
     allowChangeAfterReveal: s.allowChangeAfterReveal,
     poVotes: s.poVotes,
     observersCount: s.observersCount,
+    // A room stored before #52 has none: off.
+    autoAdvance: s.autoAdvance === true,
   };
 }
 
@@ -165,6 +167,7 @@ const BOOLEAN_KEYS = [
   "allowChangeAfterReveal",
   "poVotes",
   "observersCount",
+  "autoAdvance",
 ] as const;
 const SETTINGS_KEYS: readonly string[] = [
   "deck",

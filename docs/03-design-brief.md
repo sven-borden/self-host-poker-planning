@@ -591,6 +591,47 @@ As built (#33):
 - **Live.** The round on the table is not listed, even with a final recorded; it appears
   in an open panel as soon as the next round starts, without a reload.
 
+## The queue
+
+The PO walks through a backlog without retyping it (#52, ADR-024). An empty queue looks as the
+room always did, with one exception the PO alone sees: "Queue" beside the subject field, an
+icon below 900 px, with the count once items wait. Nothing else in the room changes for
+anyone until there is a queue.
+
+- **The sheet.** A lazy modal sheet, from the right on a wide screen and from the bottom on a
+  phone, as the history. The title takes the focus, not the paste box: a phone's keyboard
+  would cover the list. A paste box, the hint, "Add to the queue", one line of what happened
+  ("198 items added. 2 duplicates dropped."), then the items in order, then "Clear the queue",
+  which asks first. What went in leaves the box; lines that did not, refused or past the limit,
+  stay in it, and the line says so. A list that stops halfway says how many went in, the reason
+  under it, and the rest stays in the box to add again: nothing goes in twice.
+- **A row.** A grip, the key in mono (a link when the item has one) over the title of up to two
+  lines, then Up, Down and Remove. 32 px with a mouse, 44 px on a phone. The grip is for a
+  pointer and hidden from screen readers; the buttons name their item ("Move PAY-3 up") and do
+  the same. A drag shows a brass line where the row will land, and scrolls at the sheet's
+  edges. The first row's Up and the last row's Down stay focusable and do nothing
+  (`aria-disabled`). After a move the focus stays on the button; after a removal it goes to the
+  next row's Remove. The browser skips rows out of view (`content-visibility`).
+- **The field.** The hint says what an empty field starts: "Empty, the next item starts:
+  PAY-3. A subject you type goes first and the queue waits."
+- **The button.** "Next item" while the field is empty and an item waits, "Next round"
+  otherwise. In the lobby it stays "Start voting".
+- **Next up.** After a reveal a line under the decision says "Next: PAY-3" to everyone. Not
+  while voting: the ticket on the table is the one to think about. The line sits under the
+  table so that nothing above it moves.
+- **Auto-advance.** A switch in the settings' round group. After a recorded final the line reads
+  "Next: PAY-3, in 8 s", in plain text with no animation, the same under reduced motion, and
+  the PO gets "Stay on this round". Ten seconds, for the reading (ADR-024). Staying holds for the
+  round: changing the final starts nothing. The countdown needs the PO: when they leave, or their
+  last tab closes, it ends and the line goes back to "Next: PAY-3". A round that starts under the
+  PO's focus moves it to the hand, as "Next round" does, from Stay as from the decision; a focus
+  on Stay when the room stays goes back to the decision.
+- **Said once.** The room hears what a paste added ("12 items added to the queue. Next:
+  PAY-1."), the PO reads it in the sheet instead; a move or a removal is nobody else's news,
+  and the sheet's own status says it to the PO. The countdown is said when it starts
+  ("Next in 10 seconds: PAY-3."), never second by second, and "The room stays on this
+  round." when it stops.
+
 ## Summary and exports
 
 As built (#34):

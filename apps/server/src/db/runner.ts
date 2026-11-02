@@ -130,6 +130,7 @@ export function createCommandRunner(store: RoomStore, options: RunnerOptions = {
         result.state,
         ended,
         result.access,
+        result.state.queue !== loaded.state.queue,
         ...(quiet ? ([true] as const) : []),
       );
       if (committed === "password_required") return { ok: false, error: committed };

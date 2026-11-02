@@ -3,6 +3,7 @@ import {
   MAX_DECK_CARDS,
   MAX_NAME_LENGTH,
   MAX_PASSWORD_LENGTH,
+  MAX_QUEUE_ITEMS,
   MAX_ROOM_NAME_LENGTH,
   MAX_TIMER_SECONDS,
   MIN_PASSWORD_LENGTH,
@@ -31,6 +32,7 @@ export const ERROR_VALUES: { [C in CodesWithValues]: Params<Key<C>> } = {
   bad_seconds: { min: MIN_TIMER_SECONDS, max: MAX_TIMER_SECONDS / 60 },
   deck_too_many_cards: { max: MAX_DECK_CARDS },
   card_too_long: { max: MAX_CARD_LENGTH },
+  queue_full: { max: MAX_QUEUE_ITEMS },
 };
 
 /** True for a code this version has a message for. */

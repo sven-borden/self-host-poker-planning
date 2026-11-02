@@ -8,6 +8,7 @@ import {
   join,
   newGuest,
   newPerson,
+  ownAddress,
   sameUser,
 } from "./support.ts";
 
@@ -114,6 +115,57 @@ test("the room: join screen, voting, revealed, the decision bar, settings, rules
     await audit(page, "history with a round opened");
   } finally {
     for (const guest of guests) guest.close();
+    await ben.context.close();
+  }
+});
+
+test("the queue: the sheet, the line under the table and the countdown", async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(240_000);
+  // Its own address: a room more on the shared one spends the suite's 20 rooms in 10 minutes.
+  await page.setExtraHTTPHeaders(ownAddress());
+  await createRoom(page);
+  await join(page, "Ana");
+  const ben = await newPerson(browser);
+  try {
+    await ben.page.goto(page.url());
+    await join(ben.page, "Ben");
+    await page.locator("[data-queue-open]").click();
+    const sheet = page.getByRole("dialog", { name: "Queue" });
+    await expect(sheet.getByText("Nothing in the queue yet.")).toBeVisible();
+    await audit(page, "queue sheet, empty");
+    await sheet
+      .getByRole("textbox", { name: "Paste your tickets" })
+      .fill(
+        "PAY-1 Checkout fails on expired card\nhttps://acme.atlassian.net/browse/PAY-2 Refund\nA plain line\nPAY-1 Again",
+      );
+    await sheet.getByRole("button", { name: "Add to the queue" }).click();
+    await expect(sheet.locator("[data-queue-item]")).toHaveCount(3);
+    await audit(page, "queue sheet, with items");
+    await sheet.getByRole("button", { name: "Clear the queue" }).click();
+    await expect(sheet.getByRole("button", { name: "Keep them" })).toBeVisible();
+    await audit(page, "queue sheet, asking to clear");
+    await sheet.getByRole("button", { name: "Keep them" }).click();
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "Room settings" }).click();
+    await page.getByRole("switch", { name: "Start the next item by itself" }).click();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Start voting" }).click();
+    await handCard(page, "5").click();
+    await handCard(ben.page, "5").click();
+    await expect(page.getByRole("button", { name: "Record 5" })).toBeVisible();
+    await expect(page.locator("[data-next-up]")).toBeVisible();
+    await audit(page, "next up, PO");
+    await audit(ben.page, "next up, voter");
+    await page.getByRole("button", { name: "Record 5" }).click();
+    await page.getByRole("button", { name: "Stay on this round" }).focus();
+    await page.getByRole("button", { name: "Stay on this round" }).click();
+    await expect(page.getByRole("button", { name: "Stay on this round" })).toHaveCount(0);
+    await audit(page, "next up, held");
+  } finally {
     await ben.context.close();
   }
 });

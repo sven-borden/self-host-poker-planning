@@ -47,8 +47,15 @@
     {
       "idx": 6,
       "version": "7",
-      "when": 1793586644749,
-      "tag": "0006_add_guest_link_and_people_indexes",
+      "when": 1793587499722,
+      "tag": "0006_add_room_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793592215270,
+      "tag": "0007_add_guest_link_and_people_indexes",
       "breakpoints": true
     }
   ]

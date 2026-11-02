@@ -604,6 +604,29 @@ server sends and never decides the outcome of a round.
   browser's visits to them there; a person is passed in the address, not set on the server, so
   tests can run side by side. It proves the flow with the worker on too.
 
+## The queue (#52)
+
+`room/paste-queue.ts` turns a paste into items, pure and without a network: `parsePaste(text,
+{ known, room, bytes })`, `pasteLeft(result, sent)`, what stays in the box, and
+`queueBatches(items)`, which splits a list into commands that fit one socket message
+(`MAX_MESSAGE_BYTES`): 200 ordinary tickets take two, 500 take five. Do not import `@pp/protocol` values there: `WIRE_LIMITS` sits
+beside the zod schemas and would pull 27 kB of zod into the sheet's chunk. Its samples are in
+`paste-queue.test.ts`, reconstructed, each saying what it rests on; replace them with real
+lists when they exist.
+
+`room/queue-button.tsx` loads `room/queue-panel.tsx` on the first press, as "History" does. The
+button sits inside the subject field's form, and React carries a submit up the component
+tree out of the sheet's portal, so the paste form stops its submit's propagation; without
+that a paste starts a round. The sheet holds the list itself: `requestQueue` on open, again
+150 ms after the snapshot's `count` or `rev` moved or the PO's own command ended. The PO's own
+changes show at once (`working` drops an answer read before them), and the list draws in a
+transition so a long one stays out of a single task. Rows are `memo`, with plain buttons.
+
+`useNextRound(onFailure, nextItem)` starts `startNext` while the draft is blank and an item
+waits, and says so as `fromQueue`, which names `Decision`'s button. `room/next-up.tsx` is the line
+under the table and the countdown; `useDeadlinePing` in `timer.tsx` is the vote timer's ping
+for any deadline. An item is named by `itemName` in `subject.ts`.
+
 ## Rules
 
 - `pnpm dev` runs Vite on 5173 and proxies `/api` and `/socket.io` (WebSocket too) to

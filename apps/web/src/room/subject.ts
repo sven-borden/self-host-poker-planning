@@ -1,4 +1,4 @@
-import { cardLength, cleanSubject, MAX_LINK_LENGTH, MAX_TITLE_LENGTH } from "@pp/domain";
+import { cardLength, cleanSubject, keyLabel, MAX_LINK_LENGTH, MAX_TITLE_LENGTH } from "@pp/domain";
 import type { RoundView } from "@pp/protocol";
 import type { TFunction } from "../i18n/i18n.ts";
 
@@ -77,10 +77,7 @@ export function safeHref(url: string): string | null {
   return cleanSubject({ kind: "link", url }) === null ? null : url;
 }
 
-/** A link's key as its chip reads: a Jira key as is, an Azure DevOps id as "#12345". */
-export function keyLabel(key: string): string {
-  return /^[0-9]+$/.test(key) ? `#${key}` : key;
-}
+export { keyLabel };
 
 /** At most this many characters of a link show; the full link is in its title. */
 const SHORT_URL_LENGTH = 40;
@@ -99,13 +96,23 @@ export function shortUrl(url: string): string {
 }
 
 /**
+ * What a queue item is called: its key's chip, else its title, else its short link. A
+ * snapshot's next item holds one of the three, the PO's list all that it has.
+ */
+export function itemName(item: { key?: string; title?: string; url?: string }): string {
+  if (item.key !== undefined) return keyLabel(item.key);
+  return item.title ?? shortUrl(item.url ?? "");
+}
+
+/**
  * How the live region names a round: its key ("ABC-123", "#12345"), its title, or
- * "Round N" (no subject, or a link without a key, which would read badly aloud). A
+ * "Round N" (no subject, or a bare link without a key, which would read badly aloud). A
  * title's closing `.`, `?`, `!` or `…` is left out: the sentence ends with its own.
  */
 export function subjectName(t: TFunction, round: Pick<RoundView, "number" | "subject">): string {
   const { subject } = round;
-  if (subject.kind === "title") return subject.text.replace(END_PUNCTUATION, "") || subject.text;
   if (subject.kind === "link" && subject.key !== undefined) return keyLabel(subject.key);
+  const title = subject.kind === "title" ? subject.text : subject.kind === "link" && subject.title;
+  if (title) return title.replace(END_PUNCTUATION, "") || title;
   return t("round.number", { round: round.number });
 }

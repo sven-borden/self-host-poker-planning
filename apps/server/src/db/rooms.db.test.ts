@@ -94,6 +94,79 @@ describe("insertRoom and loadRoom", () => {
   });
 });
 
+describe("the queue's column (#52)", () => {
+  const queued = (state: RoomState) => ({
+    ...state,
+    queue: { items: [{ id: 1, title: "One" }], lastId: 1, rev: 1 },
+  });
+
+  it("comes back in the state, and stays out of `live`", async () => {
+    const room = await insert(votingRoom());
+    const next = queued(room.state);
+    expect(await a.store.commitRoom(room.id, FIRST_VERSION, next)).toBe(true);
+    expect((await a.store.loadRoom(room.code))?.state).toEqual(next);
+    const sql = testClient(t.url);
+    try {
+      const { rows } = await sql.query("select live from room where id = $1", [room.id]);
+      expect(rows[0]?.live).not.toHaveProperty("queue");
+    } finally {
+      await sql.end();
+    }
+  });
+
+  it("starts with the room when a state already has one", async () => {
+    const room = await insert(queued(votingRoom()));
+    expect((await a.store.loadRoom(room.code))?.state.queue?.lastId).toBe(1);
+  });
+
+  it("is left alone by a commit that did not change it", async () => {
+    const room = await insert(queued(votingRoom()));
+    // A stale copy without the queue: a commit that says "unchanged" must not write it.
+    const { queue: _, ...rest } = room.state;
+    expect(
+      await a.store.commitRoom(room.id, FIRST_VERSION, rest, undefined, undefined, false),
+    ).toBe(true);
+    expect((await a.store.loadRoom(room.code))?.state.queue?.lastId).toBe(1);
+  });
+
+  it("is written or not with the compare-and-set: a lost commit stores neither", async () => {
+    const room = await insert(votingRoom());
+    expect(await a.store.commitRoom(room.id, FIRST_VERSION + 1, queued(room.state))).toBe(false);
+    expect((await a.store.loadRoom(room.code))?.state.queue).toBeUndefined();
+  });
+
+  it("clears when the state holds none", async () => {
+    const room = await insert(queued(votingRoom()));
+    const { queue: _, ...rest } = room.state;
+    expect(await a.store.commitRoom(room.id, FIRST_VERSION, rest)).toBe(true);
+    expect((await a.store.loadRoom(room.code))?.state).toEqual(rest);
+  });
+
+  it("is read by the runner, and written only when a step changed it", async () => {
+    const room = await insert(queued(votingRoom()));
+    const runner = createCommandRunner(a.store);
+    const seen: boolean[] = [];
+    const commit = a.store.commitRoom;
+    const spied: RoomStore = {
+      ...a.store,
+      commitRoom: (...args) => {
+        seen.push(args[5] ?? true);
+        return commit(...args);
+      },
+    };
+    const spiedRunner = createCommandRunner(spied);
+    const change = (state: RoomState) => ({
+      state: { ...state, queue: { items: [], lastId: 1, rev: 2 } },
+    });
+    const keep = (state: RoomState) => ({ state: { ...state } });
+    expect((await spiedRunner.run(room.code, keep)).ok).toBe(true);
+    expect((await spiedRunner.run(room.code, change)).ok).toBe(true);
+    expect(seen).toEqual([false, true]);
+    expect((await runner.run(room.code, keep)).ok).toBe(true);
+    expect((await a.store.loadRoom(room.code))?.state.queue?.rev).toBe(2);
+  });
+});
+
 describe("commitRoom", () => {
   it("writes once per version and copies the owner", async () => {
     const room = await insert(votingRoom());

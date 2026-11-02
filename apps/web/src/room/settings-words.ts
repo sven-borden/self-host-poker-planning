@@ -38,6 +38,7 @@ export const SETTING_KEYS = [
   "whoCanReveal",
   "revealNames",
   "allowChangeAfterReveal",
+  "autoAdvance",
   "poVotes",
   "observersCount",
 ] as const satisfies readonly (keyof RoomSettingsView)[];

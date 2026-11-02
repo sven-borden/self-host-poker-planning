@@ -64,11 +64,27 @@ export async function connectGuest(base: string, cookie: string): Promise<Guest>
   });
   const ask = (event: string, body: unknown) =>
     socket.timeout(10_000).emitWithAck(event as never, body as never) as Promise<Ack>;
+  // A page sends the round on its table with a start: so does a guest, unless told.
+  let round = 0;
+  const follow = (snapshot: unknown) => {
+    const seen = snapshot as { room: { round: { number: number } | null } };
+    round = seen.room.round?.number ?? 0;
+  };
+  socket.on("snapshot", follow);
   return {
     cookie,
     socket,
-    enter: (code) => ask("enter", { code, protocol: PROTOCOL_VERSION }),
-    cmd: (type, payload) => ask("cmd", { id: `e2e-${++commandIds}`, type, payload }),
+    enter: async (code) => {
+      const ack = await ask("enter", { code, protocol: PROTOCOL_VERSION });
+      if (ack.ok) follow(ack.snapshot);
+      return ack;
+    },
+    cmd: (type, payload) =>
+      ask("cmd", {
+        id: `e2e-${++commandIds}`,
+        type,
+        payload: type === "startRound" ? { round, ...payload } : payload,
+      }),
     history: (request = {}) => ask("history", request) as unknown as Promise<HistoryAck>,
     close: () => socket.disconnect(),
   };

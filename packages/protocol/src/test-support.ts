@@ -89,6 +89,8 @@ const secondsArb = fc.integer({ min: 5, max: 60 });
  * votes land; the others meet `round_changed`, or match a later round.
  */
 const roundArb = fc.constantFrom(1, 1, 1, 2, 3);
+/** The round a start was pressed for: the lobby, a round played, or one already gone. */
+const startedFromArb = fc.constantFrom(0, 1, 1, 2, 3);
 /** Mostly the first start of a round; sometimes a press made after a deck change (#26). */
 const restartArb = fc.constantFrom(0, 0, 0, 1);
 
@@ -119,7 +121,11 @@ export const clientCommandArb: fc.Arbitrary<ClientCommand> = fc.oneof(
   { weight: 1, arbitrary: fc.record({ type: fc.constant("kick" as const), who: personArb }) },
   {
     weight: 2,
-    arbitrary: fc.record({ type: fc.constant("startRound" as const), subject: subjectArb }),
+    arbitrary: fc.record({
+      type: fc.constant("startRound" as const),
+      subject: subjectArb,
+      round: startedFromArb,
+    }),
   },
   {
     weight: 10,

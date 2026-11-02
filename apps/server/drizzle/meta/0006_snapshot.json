@@ -1,76 +1,9 @@
 {
-  "id": "398b8e44-b710-4bcc-ad50-6fd9ed8e672d",
+  "id": "d433a5f4-6521-40e3-aab4-6b17f254b9f8",
   "prevId": "f987e406-109b-4c92-9a0b-5148c062fdd7",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.guest_link": {
-      "name": "guest_link",
-      "schema": "",
-      "columns": {
-        "guest_user_id": {
-          "name": "guest_user_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "account_user_id": {
-          "name": "account_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "guest_link_account_user_id_idx": {
-          "name": "guest_link_account_user_id_idx",
-          "columns": [
-            {
-              "expression": "account_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "guest_link_guest_user_id_user_id_fk": {
-          "name": "guest_link_guest_user_id_user_id_fk",
-          "tableFrom": "guest_link",
-          "tableTo": "user",
-          "columnsFrom": ["guest_user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "guest_link_account_user_id_user_id_fk": {
-          "name": "guest_link_account_user_id_user_id_fk",
-          "tableFrom": "guest_link",
-          "tableTo": "user",
-          "columnsFrom": ["account_user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.room": {
       "name": "room",
       "schema": "",
@@ -105,6 +38,12 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
+        },
+        "queue": {
+          "name": "queue",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         },
         "version": {
           "name": "version",
@@ -175,21 +114,6 @@
           "isUnique": false,
           "concurrently": false,
           "method": "btree",
-          "with": {}
-        },
-        "room_people_idx": {
-          "name": "room_people_idx",
-          "columns": [
-            {
-              "expression": "((live -> 'participants') || coalesce(live #> '{round,votes}', '{}'::jsonb))",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "gin",
           "with": {}
         }
       },
@@ -360,24 +284,7 @@
           "notNull": true
         }
       },
-      "indexes": {
-        "round_history_votes_idx": {
-          "name": "round_history_votes_idx",
-          "columns": [
-            {
-              "expression": "votes",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last",
-              "opclass": "jsonb_path_ops"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "gin",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "round_history_room_id_room_id_fk": {
           "name": "round_history_room_id_room_id_fk",
@@ -487,12 +394,6 @@
         },
         "tenant_id": {
           "name": "tenant_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claimed_email": {
-          "name": "claimed_email",
           "type": "text",
           "primaryKey": false,
           "notNull": false

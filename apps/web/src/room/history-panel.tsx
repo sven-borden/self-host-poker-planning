@@ -383,7 +383,7 @@ function Ended({ at }: { at: number }) {
   );
 }
 
-/** The subject: a title (two lines at most), a link with its key, or nothing. */
+/** The subject: a title (two lines at most), a link with its key and title, or nothing. */
 function Subject({ round }: { round: HistoryRoundView }) {
   const t = useT();
   const { subject } = round;
@@ -410,7 +410,7 @@ function Subject({ round }: { round: HistoryRoundView }) {
     );
   }
   return (
-    <p className="m-0 flex min-w-0">
+    <p className="m-0 flex min-w-0 flex-wrap items-center gap-x-2">
       <a
         data-history-subject="link"
         href={href}
@@ -428,6 +428,11 @@ function Subject({ round }: { round: HistoryRoundView }) {
         )}{" "}
         <span className="sr-only">{t("round.opensInNewTab")}</span>
       </a>
+      {subject.title === undefined ? null : (
+        <bdi title={subject.title} className="line-clamp-2 min-w-0 font-semibold break-words">
+          {subject.title}
+        </bdi>
+      )}
     </p>
   );
 }
