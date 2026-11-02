@@ -113,6 +113,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
   in private access, Bicep in `infra/`, `docs/07-self-hosting-azure.md`. **Never run on Azure.**
   The server takes the port off an `X-Forwarded-For` entry, and compose now passes the optional
   variables the README promised. Live at 7ae63ef.
+- The French and German review from #41: vous and Sie everywhere, a test on the tone, and a
+  glossary in `docs/08-glossary.md`. The page's description now follows the language. Live at
+  c301db6. **W3 is complete** but for #38's live run.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -123,22 +126,26 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- #41, PR #117, reviewed and fixed, on its last CI run. The local reveal budget below is being
-  diagnosed.
+- Nothing in flight. What is left needs Sven (Owner items), or his word on the mode.
 - #38 is merged and stays open until Sven's run on a fresh subscription.
 - #54 and #55 are merged and stay open until the live checks at Sven's site and organisation.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
-- **Agents again, issue after issue, until the end of 2026-11-02** (Sven, 2026-11-01). The
-  unblocked work ran out that day at W6 and the session stopped; his answers the same day
-  started it again.
+- **The agent run ended with 2026-11-02** (Sven, 2026-11-01). Nothing chains now: ask him which
+  mode applies.
 
 ## Next
 
-- W3 (#33–#41): all merged but #41, in flight. #38 waits for its live run.
+- W3 (#33–#41): all merged. #38 stays open for its live run.
 - W7 waits for his OQ-3 (#56). The comparison is written and with him, in a private page: the
   repo is public. His decision becomes ADR-033, not the ADR-016 the issues name.
-- The local reveal budget fails on clean `main` since 2026-11-02 (named reveal, 1 run of 4
-  clean, worst 67 ms; #43 had 10 of 10). CI passes at the first try. Cause not looked for.
+- The local reveal budget fails on Windows, not in the code: #43's own commit fails it today.
+  Chromium's nominal 4x overshoots here (layout x7.5 to 8.3, x3.4 to 4.7 on Linux), which leaves
+  this machine on the 50 ms line. CI stays the judge; keep the budget. What tipped it between
+  2026-11-01 20:09 and 2026-11-02 00:13 is unknown. Build log, 2026-11-02.
+- Test fixes found by that diagnosis, ready for a chore: `reveal-performance.spec.ts` sets the
+  rate from a benchmark taken under the throttle, or reports only off CI, and `REFERENCE_MS` is
+  measured again. `jira.spec.ts` polls the write count, `sign-in.spec.ts` counts its 2.5 s from
+  the click, and its audit waits for the enter fade. All three fail locally and pass in CI.
 - Image size: 239 MB of 250 MB after #40 (236 MB before). A dependency of more than a few MB
   needs a look first. The Dockerfile's header comments still quote 220 MB and 247 MB.
 - Chores to fold into a later issue: a lazy catalog for the panels' copy (settings and
@@ -236,6 +243,9 @@ issues are merged.
   doubtful first: Azure's validation at step 6, then the forged-header check at step 7, on which
   every rate limit rests. Say what differed. Then #38 can close. Also add `!infra/**` to
   Coolify's watch paths, or a push touching only `infra/` deploys.
+- **After #41**: read "Choices for Sven" in PR #117. Two are yours alone: the German catalogue
+  writes `ß`, which Swiss German does not; and on your own Azure tenant, check whether its French
+  says "Étendues" for scopes and whether a localised page shows "Work Items, Read & write".
 - **#56**: licence and pricing model for branding (OQ-3). Read the comparison and answer the six
   questions at its end.
 
