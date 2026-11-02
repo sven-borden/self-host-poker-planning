@@ -8,6 +8,7 @@ import {
   join,
   newGuest,
   newPerson,
+  ownAddress,
   sameUser,
 } from "./support.ts";
 
@@ -123,6 +124,8 @@ test("the queue: the sheet, the line under the table and the countdown", async (
   browser,
 }) => {
   test.setTimeout(240_000);
+  // Its own address: a room more on the shared one spends the suite's 20 rooms in 10 minutes.
+  await page.setExtraHTTPHeaders(ownAddress());
   await createRoom(page);
   await join(page, "Ana");
   const ben = await newPerson(browser);
