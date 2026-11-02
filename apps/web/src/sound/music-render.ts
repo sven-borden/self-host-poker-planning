@@ -19,6 +19,10 @@ import type { Mood } from "./sound-prefs.ts";
 // start, or it clicks. So the render starts with a lead-in, as long as anything can ring:
 // the loop's own last bars, played before it begins. Everything that rings across the
 // seam is then already ringing when the kept part starts, in the same state as at its end.
+//
+// The rendering itself is off the main thread; setting it up is not, and the first gesture
+// after a reload may be the one that reveals. So the set-up hands the thread back as it goes
+// (ADR-019): no stretch of it may reach 50 ms on a mid-range phone.
 
 /**
  * The rate every loop is rendered at, whatever the device runs at: half the time to wait and
@@ -33,6 +37,10 @@ const ROOM_SECONDS = 3.2;
 /** How much of the room's noise each sample takes: lower is darker. */
 const ROOM_BRIGHTNESS = 0.16;
 const ROOM_DECAY = Math.log(1000);
+/** How many of the room's samples to work out between two looks at the clock. */
+const ROOM_BLOCK = 4096;
+/** How long the set-up holds the main thread before it lets the page go on, in ms. */
+const SLICE_MS = 8;
 
 const beatSeconds = (piece: Composition) => 60 / piece.bpm;
 
@@ -69,6 +77,29 @@ export function placeNotes(piece: Composition): Placed[] {
   );
 }
 
+/** Lets the page go on. A message rather than a timer: a hidden tab holds its timers back. */
+const nextTask = () =>
+  new Promise<void>((resolve) => {
+    const { port1, port2 } = new MessageChannel();
+    port1.onmessage = () => {
+      port1.close();
+      resolve();
+    };
+    port2.postMessage(null);
+  });
+
+/** Runs `work` on each item, letting the page go on each time a slice is spent. */
+async function inSlices<T>(items: readonly T[], work: (item: T) => void) {
+  await nextTask();
+  let began = performance.now();
+  for (const item of items) {
+    work(item);
+    if (performance.now() - began < SLICE_MS) continue;
+    await nextTask();
+    began = performance.now();
+  }
+}
+
 /** A small random generator with a seed, so that a mood renders the same for everyone. */
 function noise(seed: number) {
   let state = seed;
@@ -81,18 +112,24 @@ function noise(seed: number) {
 }
 
 /** A soft, dark room: darkened noise dying away, different in each ear. */
-function roomOf(offline: OfflineAudioContext, out: AudioNode) {
+async function roomOf(offline: OfflineAudioContext, out: AudioNode) {
   const { sampleRate } = offline;
   const impulse = offline.createBuffer(2, Math.ceil(ROOM_SECONDS * sampleRate), sampleRate);
+  const blocks = Array.from({ length: Math.ceil(impulse.length / ROOM_BLOCK) }, (_, i) => i);
   for (let channel = 0; channel < 2; channel += 1) {
     const samples = impulse.getChannelData(channel);
     const random = noise(45 + channel);
     let dark = 0;
-    for (let i = 0; i < samples.length; i += 1) {
-      dark += (random() - dark) * ROOM_BRIGHTNESS;
-      samples[i] = dark * Math.exp((-ROOM_DECAY * i) / samples.length);
-    }
+    await inSlices(blocks, (block) => {
+      const end = Math.min((block + 1) * ROOM_BLOCK, samples.length);
+      for (let i = block * ROOM_BLOCK; i < end; i += 1) {
+        dark += (random() - dark) * ROOM_BRIGHTNESS;
+        samples[i] = dark * Math.exp((-ROOM_DECAY * i) / samples.length);
+      }
+    });
   }
+  // The one step that cannot be cut: it prepares the convolution, so it has a task to itself.
+  await nextTask();
   const convolver = offline.createConvolver();
   convolver.buffer = impulse;
   convolver.connect(out);
@@ -155,28 +192,28 @@ export async function renderLoop(mood: Mood) {
   const out = offline.createGain();
   out.gain.value = piece.level;
   out.connect(offline.destination);
-  const room = roomOf(offline, out);
+  const room = await roomOf(offline, out);
 
-  const inputs = new Map(
-    piece.parts.map((part) => {
-      const lowpass = offline.createBiquadFilter();
-      lowpass.type = "lowpass";
-      lowpass.frequency.value = part.tone.cutoff;
-      lowpass.Q.value = 0.3;
-      const dry = offline.createGain();
-      dry.gain.value = 1 - part.tone.wet;
-      const wet = offline.createGain();
-      wet.gain.value = part.tone.wet;
-      lowpass.connect(dry).connect(out);
-      lowpass.connect(wet).connect(room);
-      return [part, { lowpass, wave: waveOf(offline, part.tone) }];
-    }),
-  );
-  for (const placed of placeNotes(piece)) {
+  const inputs = new Map<Part, { lowpass: BiquadFilterNode; wave: PeriodicWave }>();
+  await inSlices(piece.parts, (part) => {
+    const lowpass = offline.createBiquadFilter();
+    lowpass.type = "lowpass";
+    lowpass.frequency.value = part.tone.cutoff;
+    lowpass.Q.value = 0.3;
+    const dry = offline.createGain();
+    dry.gain.value = 1 - part.tone.wet;
+    const wet = offline.createGain();
+    wet.gain.value = part.tone.wet;
+    lowpass.connect(dry).connect(out);
+    lowpass.connect(wet).connect(room);
+    inputs.set(part, { lowpass, wave: waveOf(offline, part.tone) });
+  });
+  await inSlices(placeNotes(piece), (placed) => {
     const input = inputs.get(placed.part);
     if (input) sing(offline, placed, input.wave, beatSeconds(piece), input.lowpass);
-  }
+  });
 
+  await nextTask();
   const rendered = await offline.startRendering();
   const loop = offline.createBuffer(2, frames, LOOP_RATE);
   for (let channel = 0; channel < 2; channel += 1) {
