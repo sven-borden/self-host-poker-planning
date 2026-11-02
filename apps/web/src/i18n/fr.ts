@@ -438,11 +438,11 @@ export const fr: Catalog<"many"> = {
   },
   haptics: {
     enable: "Vibrer",
-    hint: "Une pression à votre vote et à la révélation. Enregistré sur cet appareil.",
+    hint: "Une brève vibration quand vous votez et à la révélation.",
   },
   offline: {
-    title: "Vous êtes hors ligne",
-    body: "Une salle a besoin d’une connexion. Vérifiez la vôtre, puis réessayez.",
+    title: "Poker Planning est inaccessible",
+    body: "Vérifiez votre connexion, puis réessayez.",
     retry: "Réessayer",
   },
   claim: {

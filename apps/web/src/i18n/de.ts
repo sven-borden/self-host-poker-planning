@@ -431,11 +431,11 @@ export const de: Catalog = {
   },
   haptics: {
     enable: "Vibrieren",
-    hint: "Ein Tippen bei Ihrer Stimme und beim Aufdecken. Auf diesem Gerät gespeichert.",
+    hint: "Eine kurze Vibration bei Ihrer Stimme und beim Aufdecken.",
   },
   offline: {
-    title: "Sie sind offline",
-    body: "Ein Raum braucht eine Verbindung. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+    title: "Poker Planning ist nicht erreichbar",
+    body: "Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
     retry: "Erneut versuchen",
   },
   claim: {

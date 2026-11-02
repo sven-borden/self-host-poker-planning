@@ -414,7 +414,10 @@ has one `theme-color` per scheme. A theme picked in the app must beat the system
 build. A worker cannot read `localStorage`, so a small script in `<head>` picks the saved
 language or the browser's by setting `<html lang>`, and CSS shows that section: without the
 script the page is English. It takes `tokens.css`, so both themes are the app's, and system
-fonts, as the app's are not worth storing for one page. Its only control reloads.
+fonts, as the app's are not worth storing for one page. Its only control reloads. It shows on any
+navigation the network fails to answer (no network, but also a restart that refuses connections,
+a DNS failure, an expired certificate), which the worker cannot tell apart, so its words say the
+app cannot be reached and to check the connection, and never that the person is offline.
 
 **Haptics.** The reveal's two beats (20, 70, 35 ms) go to everyone, from `LiveAnnouncer`, the one
 place already told of each reveal once, and never on a page that opens on a revealed round. A

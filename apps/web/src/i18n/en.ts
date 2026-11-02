@@ -474,11 +474,11 @@ export const en = {
   },
   haptics: {
     enable: "Vibrate",
-    hint: "A tap on your vote and on the reveal. Saved on this device.",
+    hint: "A short vibration when you vote and at the reveal.",
   },
   offline: {
-    title: "You are offline",
-    body: "A room needs a connection. Check yours, then try again.",
+    title: "Cannot reach Poker Planning",
+    body: "Check your connection, then try again.",
     retry: "Try again",
   },
   claim: {

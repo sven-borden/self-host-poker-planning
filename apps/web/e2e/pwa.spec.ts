@@ -128,7 +128,7 @@ test("a room leaves no trace in Cache Storage", async ({ browser, baseURL }) => 
   }
 });
 
-test("offline, a page says a room needs a connection, and comes back", async ({ browser }) => {
+test("offline, a page says the app cannot be reached, and comes back", async ({ browser }) => {
   const { page, context } = await newPerson(browser);
   try {
     const code = await createRoom(page);
@@ -137,8 +137,8 @@ test("offline, a page says a room needs a connection, and comes back", async ({ 
 
     await context.setOffline(true);
     await page.goto(`/r/${code}`);
-    await expect(page.getByRole("heading", { name: "You are offline" })).toBeVisible();
-    await expect(page.getByText("A room needs a connection")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Cannot reach Poker Planning" })).toBeVisible();
+    await expect(page.getByText("Check your connection, then try again.")).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/r/${code}$`));
     // Only one language shows, and no room is pretended.
     await expect(page.getByRole("heading")).toHaveCount(1);
@@ -146,7 +146,7 @@ test("offline, a page says a room needs a connection, and comes back", async ({ 
     expect(await page.content()).not.toContain(code);
 
     await page.getByRole("button", { name: "Try again" }).click();
-    await expect(page.getByRole("heading", { name: "You are offline" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Cannot reach Poker Planning" })).toBeVisible();
     for (const colorScheme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme });
       const { violations } = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
@@ -162,8 +162,8 @@ test("offline, a page says a room needs a connection, and comes back", async ({ 
 });
 
 for (const [language, tag, title, retry] of [
-  ["a saved language", "de-CH", "Vous êtes hors ligne", "Réessayer"],
-  ["the browser's language", "de-CH", "Sie sind offline", "Erneut versuchen"],
+  ["a saved language", "de-CH", "Poker Planning est inaccessible", "Réessayer"],
+  ["the browser's language", "de-CH", "Poker Planning ist nicht erreichbar", "Erneut versuchen"],
 ] as const) {
   test(`offline, the page speaks ${language}`, async ({ browser }) => {
     const context = await browser.newContext({ locale: tag, extraHTTPHeaders: ownAddress() });

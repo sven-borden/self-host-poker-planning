@@ -932,8 +932,11 @@ asks for it.
   for iOS, which rounds it itself. The mark stays inside the 40 % circle a launcher keeps.
 - **Bars.** `theme-color` is `--bg` of the theme the page is showing, a saved one first, so
   the phone's bar melts into the page. The splash is the light `--bg`.
-- **Offline.** A navigation with no network shows a plain page: the mark, "You are offline",
-  "A room needs a connection. Check yours, then try again.", and "Try again", which reloads.
+- **Offline.** A navigation the network does not answer shows a plain page: the mark, "Cannot
+  reach Poker Planning", "Check your connection, then try again.", and "Try again", which reloads.
+  The words do not say "offline": the worker cannot tell no network from a server that is
+  restarting, a DNS failure or a bad certificate, and a person with a connection must not be
+  told otherwise.
   In the saved language or the browser's, in the saved theme or the system's, on system fonts,
   and the same on every URL: never a room, never its code. A room already open stays on its own
   "reconnecting" state; this page is only for a load.
