@@ -1,5 +1,6 @@
 import { HistoryIcon } from "lucide-react";
 import { useRef, useState } from "react";
+import { reloadAction } from "../components/shell/reload-action.ts";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { useRoomStore } from "../stores/room-store.ts";
@@ -39,7 +40,7 @@ export function RoomHistoryButton({ roomName }: { roomName: string | null }) {
     } catch {
       const message = t("history.loadFailed");
       import("sonner")
-        .then(({ toast }) => toast(message, { id: "history-failed" }))
+        .then(({ toast }) => toast(message, { id: "history-failed", action: reloadAction(t) }))
         .catch(() => {});
     }
   }

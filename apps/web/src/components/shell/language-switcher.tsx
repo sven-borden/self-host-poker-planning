@@ -11,6 +11,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu.tsx";
+import { reloadAction } from "./reload-action.ts";
 
 /**
  * English, Français, Deutsch: each named in itself and marked with its `lang`, so a reader
@@ -57,7 +58,10 @@ export function LanguageSwitcher() {
               // The toaster is a lazy chunk, so the toast is too.
               setLanguage(value).catch(() => {
                 void import("sonner").then(({ toast }) => {
-                  toast.error(t("language.loadFailed"), { id: "language-load-failed" });
+                  toast.error(t("language.loadFailed"), {
+                    id: "language-load-failed",
+                    action: reloadAction(t),
+                  });
                 });
               });
             }

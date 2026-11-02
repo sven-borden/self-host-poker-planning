@@ -1,5 +1,6 @@
 import { ListChecksIcon, SlidersHorizontalIcon } from "lucide-react";
 import { useRef, useState } from "react";
+import { reloadAction } from "../components/shell/reload-action.ts";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { useRoomStore } from "../stores/room-store.ts";
@@ -41,7 +42,7 @@ export function RoomSettingsButton() {
       // The toaster is lazy too; when it cannot load either, the page is out of date and
       // a reload is the answer whatever this button says.
       import("sonner")
-        .then(({ toast }) => toast(message, { id: "settings-failed" }))
+        .then(({ toast }) => toast(message, { id: "settings-failed", action: reloadAction(t) }))
         .catch(() => {});
     }
   }

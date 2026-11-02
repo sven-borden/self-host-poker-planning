@@ -193,6 +193,11 @@ test.describe("with slow or missing catalogs", () => {
     ).toBeVisible();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(HOME.en);
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    // An installed app has no reload control of its own: the toast brings one.
+    const reload = page.getByRole("button", { name: "Reload", exact: true });
+    await expect(reload).toBeVisible();
+    await Promise.all([page.waitForEvent("load"), reload.click()]);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(HOME.en);
   });
 });
 
