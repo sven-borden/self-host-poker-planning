@@ -25,7 +25,7 @@ ADR-012). `i18n.test.ts` fails on informal forms.
 | consensus | le consensus | der Konsens | |
 | spread | l’écart | die Spanne | French "les écarts" also for the differences the team discusses; German "die Unterschiede". |
 | estimate | l’estimation (f.) | die Schätzung | |
-| final estimate | l’estimation finale | die endgültige Schätzung | German: not "Endschätzung", not "Endwert". |
+| final estimate | l’estimation finale | die endgültige Schätzung | The history's short label: "Finale", "Endgültig". German: not "Endschätzung", not "Final". |
 | to record (a final) | enregistrer | festhalten | German: not "erfassen", not "speichern": a person decides, a form does not save. |
 | subject | le sujet | das Thema | What a round is about: a title, a link or both. |
 | timer | le minuteur | der Timer | German: "Timer" is the word a team says and the word the sound settings used; not "Zeitlimit", not "Stoppuhr". "Countdown" for what people watch run. |
