@@ -1,5 +1,5 @@
 {
-  "id": "13ee39b0-ea05-4fd9-8e30-71f553063b39",
+  "id": "75f5721e-8171-4b52-9361-93a5be594bcf",
   "prevId": "8de19ca6-884c-49e4-90d1-44baed0f8dcb",
   "version": "7",
   "dialect": "postgresql",
@@ -25,6 +25,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
         },
         "created_at": {
           "name": "created_at",
