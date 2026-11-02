@@ -1,5 +1,7 @@
 import { type AvatarId, isAvatarId } from "@pp/domain";
+import { isSignInProvider, type SignInProvider } from "@pp/protocol";
 import { useIdentityStore } from "../stores/identity-store.ts";
+import { returnPath } from "./sign-in.ts";
 
 // The identity bootstrap (#10): a few typed fetch calls to the server's Better Auth
 // endpoints instead of `better-auth/client`, which would add about 12 kB gzipped to the
@@ -31,6 +33,10 @@ export interface Identity {
   readonly name: string | null;
   /** The saved avatar (#42), when there is one this version knows. */
   readonly avatar?: AvatarId | undefined;
+  /** An account's address (#47), shown to its owner off the room; a guest has none. */
+  readonly email?: string | undefined;
+  /** Which provider an account signs in with (#47), when this version knows it. */
+  readonly provider?: SignInProvider | undefined;
 }
 
 /** A failed identity call, with the server's code (`rate_limited`, `bad_name`, …). */
@@ -50,12 +56,23 @@ interface ServerUser {
   id?: unknown;
   name?: unknown;
   avatar?: unknown;
+  email?: unknown;
+  provider?: unknown;
+  isAnonymous?: unknown;
 }
 
 function toIdentity(user: ServerUser | undefined): Identity {
   if (typeof user?.id !== "string" || user.id === "") throw new IdentityError("internal");
   const name = typeof user.name === "string" && user.name !== "" ? user.name : null;
-  return { userId: user.id, name, ...(isAvatarId(user.avatar) ? { avatar: user.avatar } : {}) };
+  // A guest's `email` is a placeholder, never shown.
+  const email = user.isAnonymous === false && typeof user.email === "string" ? user.email : null;
+  return {
+    userId: user.id,
+    name,
+    ...(isAvatarId(user.avatar) ? { avatar: user.avatar } : {}),
+    ...(email === null ? {} : { email }),
+    ...(isSignInProvider(user.provider) ? { provider: user.provider } : {}),
+  };
 }
 
 /** The JSON body, or undefined when there is none or it is not JSON. */
@@ -213,6 +230,8 @@ export function ensureIdentity({
       userId: store.userId,
       name: store.name,
       ...(store.avatar === null ? {} : { avatar: store.avatar }),
+      ...(store.email === null ? {} : { email: store.email }),
+      ...(store.provider === null ? {} : { provider: store.provider }),
     });
   }
   if (pending) {
@@ -255,6 +274,31 @@ export async function setSavedAvatar(avatar: AvatarId | null): Promise<void> {
   });
   if (!response.ok) throw await failure(response);
   useIdentityStore.getState().setAvatar(avatar);
+}
+
+/**
+ * Starts a sign-in with `provider`, coming back to `returnTo` (`/` or a room's path), and
+ * resolves with the provider's address, for the page to navigate to: a form could not follow
+ * a redirect there under the policy's `form-action 'self'`. Rejects with `IdentityError`.
+ */
+export async function startSignIn(
+  provider: SignInProvider,
+  returnTo: string = returnPath(),
+): Promise<string> {
+  const response = await request("/api/auth/sign-in/social", {
+    ...JSON_POST,
+    body: JSON.stringify({ provider, returnTo }),
+  });
+  if (!response.ok) throw await failure(response);
+  const json = (await body(response)) as { url?: unknown } | undefined;
+  if (typeof json?.url !== "string") throw new IdentityError("internal");
+  return json.url;
+}
+
+/** Ends the session; the next page load makes a new guest. Rejects with `IdentityError`. */
+export async function signOut(): Promise<void> {
+  const response = await request("/api/auth/sign-out", { ...JSON_POST, body: "{}" });
+  if (!response.ok) throw await failure(response);
 }
 
 /** For tests: forgets a cookie refusal and a running bootstrap. */

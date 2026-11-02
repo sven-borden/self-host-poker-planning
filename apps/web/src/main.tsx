@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./app.tsx";
 import { startLanguage } from "./i18n/i18n.ts";
 import { ensureIdentity } from "./identity/identity.ts";
+import { readSignInError } from "./identity/sign-in.ts";
 import { startErrorReports } from "./observability/errors.ts";
 import { trackPageViews } from "./observability/page-views.ts";
 import { registerServiceWorker } from "./pwa/register.ts";
@@ -20,6 +21,9 @@ const container = document.getElementById("root");
 if (!container) {
   throw new Error("The page has no #root element.");
 }
+
+// Before anything reads the address: a failed sign-in's code is for the page alone (#47).
+readSignInError();
 
 // Sentry and Umami, each only when the server's page asks for it (#40): nothing by default.
 startErrorReports();

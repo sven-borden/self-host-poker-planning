@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "@playwright/test";
 import { OBSERVED_ENV, OBSERVED_PORT } from "./e2e/observed.ts";
+import { SIGN_IN_ENV, SIGN_IN_PORT } from "./e2e/signed-in.ts";
 
 // End-to-end checks against the built app, served by the real server with its production
 // headers (#36: the Content Security Policy and the rest), not by `vite preview`: a policy
@@ -11,7 +12,8 @@ import { OBSERVED_ENV, OBSERVED_PORT } from "./e2e/observed.ts";
 // The server needs a Postgres it may migrate: DATABASE_URL. E2E_WEB_PORT moves the app,
 // so two worktrees can run the suite side by side. The secret is a fake. A second server,
 // on the next port, has Sentry and Umami on (#40, e2e/observed.ts); it starts once the
-// first is up, so locally it serves the fresh build too.
+// first is up, so locally it serves the fresh build too. A third, on the next free port, has
+// provider keys and a stand-in for the providers in its own process (#47, e2e/signed-in.ts).
 
 const PORT = Number(process.env.E2E_WEB_PORT ?? 4173);
 const ci = Boolean(process.env.CI);
@@ -22,6 +24,8 @@ if (!databaseUrl) {
   );
 }
 const serve = "pnpm --filter @pp/server exec tsx src/main.ts";
+const serveWithFakeProviders =
+  "pnpm --filter @pp/server exec tsx --import ./src/fake-oidc-start.ts src/main.ts";
 const env = {
   DATABASE_URL: databaseUrl,
   PORT: String(PORT),
@@ -93,6 +97,18 @@ export default defineConfig({
         PORT: String(OBSERVED_PORT),
         BASE_URL: `http://localhost:${OBSERVED_PORT}`,
         ...OBSERVED_ENV,
+      },
+    },
+    {
+      command: serveWithFakeProviders,
+      url: `http://localhost:${SIGN_IN_PORT}/api/health`,
+      reuseExistingServer: false,
+      timeout: 120_000,
+      env: {
+        ...env,
+        PORT: String(SIGN_IN_PORT),
+        BASE_URL: `http://localhost:${SIGN_IN_PORT}`,
+        ...SIGN_IN_ENV,
       },
     },
   ],

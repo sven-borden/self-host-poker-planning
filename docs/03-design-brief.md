@@ -219,7 +219,7 @@ Positions are percentages of the stage, so one formula serves every width:
   free" is announced politely. When observers do not count and only the seats are
   taken, a voter is told so on the card and can join as an observer. Under the table a
   "You" panel renames, changes the avatar (#42), switches between voter and observer, and
-  leaves the room.
+  leaves the room. It also holds signing in (see "Signing in").
 - With more than 10 people on a phone, seats show the avatar alone; names on tap. Every
   seat opens the same way, on tap or by keyboard: a popover with the whole name and what
   its badges mean ("Product owner · Away · Voted"). Every seat is a button whatever its
@@ -292,6 +292,35 @@ As built (#42, ADR-018):
 - **Away.** The same grey disc with a dashed edge as initials, the drawing in `--ink-2`
   (about 6:1) with its eyes shut, at rest. The moon badge and the seat's label say it too.
 - **Forced colours** leave a drawing alone: their palette would paint it one flat colour.
+
+## Signing in
+
+Sign-in is a quiet offer, never a step (#47). An install without provider keys shows nothing at
+all, and no button appears before it is useful: not while the page does not yet know who this
+is, and not in the top bar, which is full at 320 px.
+
+- **Where.** Under the create card's button, under the join form's and at the foot of the "You"
+  panel, each behind a thin line: "Optional: your name follows you to your other devices.", then
+  "Sign in with Google" and "Sign in with Microsoft", stacked on a phone, side by side from 640 px.
+- **The buttons.** The outline button, with the provider's own mark at 18 px on its left, in the
+  provider's own colours in both themes, and each provider's own wording. The marks are files
+  next to the code, not an SDK, and they are not tokens: they are not ours to theme. Where a brand
+  guide asks for an exact fill or font (Google's `#131314`, Microsoft's Segoe UI), the button keeps
+  the app's: the theme and the type stay one, and neither guide's logo rules bend.
+- **Signed in.** "Signed in with Google", in the same three places, with "Sign out". Below it,
+  on the landing page, the address; in a room, on the join form and in the "You" panel alike,
+  the name. A room may be on a shared screen, so the address never shows there, not even to its
+  owner, and others only ever see the display name, as for a guest. It wraps anywhere, so a long
+  one never pushes the page wider.
+- **It leaves the page.** Sign-in is a full-page navigation in the same tab, never a popup, and it
+  comes back to the same address. While it starts, the buttons stay focusable with
+  `aria-disabled`. A refusal is said under them, and they work again.
+- **Coming back without an account.** A toast, once, in the reader's language. Going back at the
+  provider is no error: "Sign-in cancelled. You can carry on without an account." has no error
+  icon. An email that signs in another way, an account with no email, a Microsoft account this
+  install does not accept, too many tries, and anything else each have their words. The address
+  loses the code before the page reads it.
+- **Signing out** reloads the same page as a fresh guest: in a room, the join form, empty.
 
 ## Phones
 

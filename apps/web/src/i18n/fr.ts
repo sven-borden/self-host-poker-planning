@@ -596,6 +596,25 @@ export const fr: Catalog<"many"> = {
     cookiesBlocked:
       "Ce site a besoin des cookies pour vous reconnaître dans une salle. Autorisez-les pour ce site, puis rechargez la page.",
   },
+  signIn: {
+    google: "Se connecter avec Google",
+    microsoft: "Se connecter avec Microsoft",
+    hint: "Facultatif : votre nom vous suit sur vos autres appareils.",
+    signedInAs: "Compte connecté :",
+    signOut: "Se déconnecter",
+    signedInWith: "Compte connecté avec {{provider}}",
+    signingOut: "Déconnexion…",
+    errors: {
+      cancelled: "Connexion annulée. Vous pouvez continuer sans compte.",
+      accountExists:
+        "Cette adresse e-mail a déjà un compte, ouvert d’une autre façon. Connectez-vous de cette autre façon.",
+      noEmail: "Votre compte n’a pas transmis d’adresse e-mail : la connexion n’a pas pu aboutir.",
+      tenantNotAllowed:
+        "Ce site n’accepte pas ce compte Microsoft. Essayez-en un autre, ou continuez sans compte.",
+      rateLimited: "Trop de tentatives de connexion. Attendez une minute, puis réessayez.",
+      failed: "La connexion n’a pas abouti. Réessayez, ou continuez sans compte.",
+    },
+  },
   password: {
     label: "Mot de passe",
     show: "Afficher le mot de passe",

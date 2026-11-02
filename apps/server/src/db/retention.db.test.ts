@@ -401,6 +401,7 @@ describe("batches", () => {
       history: 0,
       guests: 0,
       passwordWindows: 0,
+      verifications: 0,
       batches: 0,
       interrupted: true,
     });
@@ -410,6 +411,19 @@ describe("batches", () => {
 });
 
 describe("the run's log line", () => {
+  it("clears the sign-ins nobody finished, past their time (#47)", async () => {
+    await sql.query(
+      `insert into verification (id, identifier, value, expires_at) values
+       ('gone', 'auth-state:a', '{}', $1::timestamptz - interval '1 minute'),
+       ('kept', 'auth-state:b', '{}', $1::timestamptz + interval '1 minute')`,
+      [NOW.toISOString()],
+    );
+    expect(await purge()).toMatchObject({ verifications: 1 });
+    const { rows } = await sql.query("select id from verification");
+    expect(rows).toEqual([{ id: "kept" }]);
+    await sql.query("delete from verification");
+  });
+
   it("carries the counts and the duration, never a code, a name or a user id", async () => {
     const revealed = revealedRoom();
     const idle = await room(ago(91 * DAY), { state: revealed });

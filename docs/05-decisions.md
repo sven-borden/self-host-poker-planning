@@ -530,6 +530,132 @@ requires one to install, but offline would be the browser's error page).
 the feel of the beats are for Sven. Plain http gets no worker and no install, as browsers
 require https (localhost aside); the app runs as before.
 
+## ADR-023: Sign-in with Google and Microsoft, narrow and without the providers' tokens (2026-11-02, #47)
+
+**Decision.** Better Auth's social providers for Google and Microsoft Entra ID, each there only
+when both its keys are set (`GOOGLE_CLIENT_ID` and `_SECRET`, `MICROSOFT_CLIENT_ID` and
+`_SECRET`, `MICROSOFT_TENANT_ID`, default `common`). One half set stops the start and names the
+missing variable, never a value. Without keys the routes do not exist, the page carries no tag
+and no button shows. Sign-in is never required, and everything a guest could do stays.
+
+**Only what sign-in needs reaches Better Auth.** Three more routes: `POST /sign-in/social`,
+`GET /callback/google` and `GET /callback/microsoft`, the last two per configured provider.
+Better Auth's sign-in body takes an `idToken`, scopes, `additionalData`, a login hint and three
+return URLs, so the page never writes it: it posts `{ provider, returnTo }`, strictly, and
+`signInRequest` builds the rest. Google's and Microsoft's id-token sign-in is off as well.
+
+**A full-page navigation, in two steps.** The page posts, gets the provider's URL back in JSON
+and navigates to it. A form post would follow the redirect under `form-action 'self'`, which
+refuses it; a popup would need `Cross-Origin-Opener-Policy` loosened. Navigating needs no
+directive at all, so neither the policy nor COOP changed, and `e2e/fixtures.ts` holds that over
+the whole flow.
+
+**A room's code never travels.** `returnTo` is `/` or `/r/<code>` and nothing else, checked by
+the domain's own pattern, so no spelling leaves the site. Better Auth keeps it in the
+`verification` row with the PKCE verifier (`storeStateStrategy: "database"`, set explicitly). The
+provider gets a random `state`, and `redirect_uri` is the fixed callback. This was read in
+Better Auth's code and is asserted on what the stand-in received, in Node and in a browser;
+`Referrer-Policy: same-origin` keeps the address out of `Referer` too. The purge clears sign-ins
+nobody finished, since Better Auth does so only when a callback arrives.
+
+**The provider's tokens are not kept.** Nothing here calls a provider after sign-in, and #53's
+connector tokens are a separate thing. A hook on `account` clears the access, refresh and id
+tokens and both expiries before the write, on create and on update, and
+`updateAccountOnSignIn: false` means a later sign-in writes nothing. So a stolen backup holds no
+way into anyone's Google or Microsoft account, and no encryption is needed for what is not there.
+Asked for is a name and an email: no `offline_access`, no Microsoft Graph, no profile photo
+(`user.image` stays null; the policy would refuse a provider's picture anyway). `prompt:
+select_account`, so that after signing out the next person at the browser gets a choice.
+
+**One thing is kept from the id token:** Microsoft's `tid`, in `account.tenant_id`, for #50's rooms
+limited to a tenant. The token is gone once written, so reading it later would mean asking
+everyone to sign in again. `(provider_id, account_id)` gets a unique index: every sign-in looks
+up by it, and one person at a provider is one account.
+
+**A Microsoft person is a tenant and an object id.** Microsoft scopes `oid` to a tenant, so two
+tenants can hold the same one, and the account id is `tid:oid`. Better Auth's `mapProfileToUser`
+cannot set an id by design; the provider's `accountSubject` reads `profile.oid`, and the
+`getUserInfo` option decides that profile. So `microsoftIdentity` replaces the provider's reading
+of the id token (it read and did not verify either), without patching the library. Nothing else
+in that reading was needed, as no photo is fetched.
+
+**`MICROSOFT_TENANT_ID` is a boundary.** It picks Microsoft's URL, which only asks: a token from
+another tenant got an account in review. So the token's `tid` is checked against the mode: a GUID
+must match, `organizations` refuses the consumer tenant, `consumers` takes only it, `common`
+takes any. It runs in Better Auth's `user.validateUserInfo`, before any write, on a first
+sign-in, a link and every later sign-in, so an install that narrows its tenant holds for people
+already in. A throw from `mapProfileToUser` would land on `/` with an alarm that anyone with a
+personal account can raise, and the `account` hook runs after the user row is written. A refusal
+here returns to the page the person came from, as `tenant_not_allowed`: `failed` says "try
+again", which would never work.
+
+**Errors.** A callback is a page a person sees, so it always ends in a redirect to the app,
+on the return path when it is known, with `?sign_in_error=<code>`: `cancelled`, `account_exists`,
+`no_email`, `tenant_not_allowed`, `rate_limited` or `failed`. The page takes the code out of the
+address before the router or the page views read it and says it once, in the reader's language.
+Better Auth's `error_description` is dropped: a provider or a crafted link can fill it with
+anything. One log line has the code and a reason from a fixed list (`invalid_code` is usually a
+wrong secret), never the query. Anyone can send a callback, and an `error` line reaches Sentry, so
+that line is `warn` for what a stranger or a person can cause, and `error` only when this server,
+its keys or a provider failed; Better Auth's own lines during a callback are `debug`. A forged
+`invalid_code` still reaches `error`, but it takes a started sign-in, which is limited, and it is
+the one signal of a wrong secret. A provider's name goes through `cleanName`; one it refuses is
+`""`, and the join form asks.
+
+**An address never joins two identities.** Better Auth's default links a new identity to the user
+with the same address when the provider calls it verified. The first version of this ADR trusted
+that default, and review broke it on the real code: a Microsoft sign-in from another tenant with
+`email_verified: true` signed in as a Google user, and a new Google `sub` on the same address
+joined the old user, which is a reassigned address or a domain bought again. So
+`account.accountLinking.disableImplicitLinking` is on, and any sign-in whose address belongs to
+another identity is refused (`account_exists`), while the owner still signs in with their own.
+Entra's claim says only what a tenant's admin set, so `email_verified` is false for every Microsoft
+account, whatever the token says: #48 and #50 read that column, and must not read this address as
+proved. #50 relies on `tenant_id`, not on the domain of an address.
+
+Explicit linking stays for #48 (`linkSocial`, from inside a session). It has its own check: an
+identity whose provider is not in `trustedProviders` needs a verified address, so linking Microsoft
+will need that list, which does not reopen implicit linking. The cost of this rule is squatting: a
+Microsoft sign-in that claims an address first makes its real owner see `account_exists`. That is
+#48's, with the merge rules and OQ-6.
+
+**The guest stays, and pays until #48.** Better Auth's anonymous plugin deletes the guest on a
+sign-in; `disableDeleteAnonymousUser` keeps the row, and `auth.ts` marks where `onLinkAccount` goes.
+Until #48 the user id changes: the person returns to the room as somebody new, on the join form
+with the provider's name, must type a room's password again, and is not its PO any more (the old
+seat goes away like any other, and the role can be claimed after 120 s). The old guest's rooms
+and history stay, under the old guest. Signing out starts a fresh guest by reloading the page,
+since the old session's socket cannot carry on; the page stays the same.
+
+**No production keys before #48 has merged.** Before #48, a guest who signs in loses the only link
+between that guest and the account: what the callback knows is in a `verification` row it deletes,
+and the guest's cookie is overwritten. Their rooms, PO role and history stay with a guest nobody
+can use, and #48 cannot reach them afterwards. Merging #47 is safe, as without keys the routes do
+not exist; setting keys is what opens the window.
+
+**A test seam that production cannot reach.** The provider's address is not configurable: no option
+of `authority`, `authorizationEndpoint`, `tokenEndpoint` or `redirectURI` is ever set, and no
+variable feeds one. `MICROSOFT_TENANT_ID` goes into Microsoft's path, so it must be a mode or a
+GUID. Tests run the real provider code against the real addresses: `fake-oidc.ts`, a real HTTP
+server with one-time codes and PKCE, is reached by replacing `fetch` in the test's own process,
+and in the browser by Playwright's routing. It is imported by no file that ships, and
+`social-sign-in.test.ts` holds that, with every plausible variable name set, against what the
+real provider objects ask for.
+
+**Alternatives.** Keeping implicit linking and marking Microsoft unverified alone: Google's new
+`sub` still joins the old user. Refusing by tenant in `mapProfileToUser` with a throw: see the
+tenant above. `linkSocial`, which keeps the guest's id but fails for an account another user
+owns and needs `allowDifferentEmails`: #48's call, with `onLinkAccount`. An encrypted cookie for the
+state, equally private, with a replay window where the row is single-use. A base-URL override
+for tests, or an env switch: exactly the hole this avoids. `better-auth/client`: 12 kB for two
+fetch calls. Encrypting the tokens: there is nothing to keep them for.
+
+**Not tested.** Real Google and Microsoft: the stand-in follows their documented shape, and the
+provider code is theirs through Better Auth, but no real consent screen, real id token, or
+personal Microsoft account has been through it. That check is Sven's, and #47 stays open for it.
+No token request has a timeout of ours: Better Auth offers no plain option for it, so a provider
+that hangs holds that one callback until its connection fails.
+
 ## ADR-024: The backlog queue lives in the room, apart from its snapshots (2026-11-02, #52)
 
 **Decision.** A room holds an ordered queue of up to 500 tickets. The server owns it: every

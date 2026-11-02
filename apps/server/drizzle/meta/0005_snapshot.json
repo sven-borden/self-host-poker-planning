@@ -1,5 +1,5 @@
 {
-  "id": "549f0039-ff9e-49c9-80f5-567adaf120d1",
+  "id": "f987e406-109b-4c92-9a0b-5148c062fdd7",
   "prevId": "d092f56e-3e69-4364-a028-f15dff35cb74",
   "version": "7",
   "dialect": "postgresql",
@@ -38,12 +38,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
-        },
-        "queue": {
-          "name": "queue",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         },
         "version": {
           "name": "version",
@@ -391,6 +385,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -405,6 +405,27 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "account_provider_account_idx": {
+          "name": "account_provider_account_idx",
+          "columns": [
+            {
+              "expression": "provider_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}

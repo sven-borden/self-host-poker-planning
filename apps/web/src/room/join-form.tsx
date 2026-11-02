@@ -23,6 +23,7 @@ import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { errorMessage } from "../i18n/errors.ts";
 import { useT } from "../i18n/hooks.ts";
+import { SignInRow } from "../identity/sign-in-row.tsx";
 import { cn } from "../lib/utils.ts";
 import { announceRoomAccess, commandSender, enterRoomAgain } from "../realtime/room-connection.ts";
 import { enterRoomPassword, RoomApiError } from "../rooms/api.ts";
@@ -358,6 +359,7 @@ export function JoinForm({
           {busy ? t("seat.joining") : t("seat.submit")}
         </Button>
       </form>
+      <SignInRow className="mt-6 border-t border-line pt-5" />
     </section>
   );
 }

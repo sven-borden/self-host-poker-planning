@@ -2,13 +2,28 @@
  * The server's configuration, read from the environment once by `run()` and passed down.
  * Nothing else reads `process.env`. A bad or missing variable throws `ConfigError`, whose
  * message names the variables and a fixed reason, never a value: `DATABASE_URL` and
- * `REDIS_URL` may hold a password and `BETTER_AUTH_SECRET` signs the sessions.
+ * `REDIS_URL` may hold a password, `BETTER_AUTH_SECRET` signs the sessions, and the provider
+ * secrets of `GOOGLE_CLIENT_SECRET` and `MICROSOFT_CLIENT_SECRET` open sign-in.
  */
+import { SIGN_IN_PROVIDERS, type SignInProvider } from "@pp/protocol";
 import { z } from "zod";
 import { type CspSources, parseCspSources } from "./security-headers.ts";
 
 export const LOG_LEVELS = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];
+
+/** An OAuth client registered at a provider. The secret is never logged. */
+export interface OAuthClient {
+  readonly clientId: string;
+  readonly clientSecret: string;
+}
+
+/** The sign-in providers of this install, each there only when both its keys are set. */
+export interface SocialProviders {
+  readonly google: OAuthClient | undefined;
+  /** `tenantId`: `common`, `organizations`, `consumers` or one tenant's id. */
+  readonly microsoft: (OAuthClient & { readonly tenantId: string }) | undefined;
+}
 
 export interface Config {
   readonly port: number;
@@ -55,6 +70,16 @@ export interface Config {
   readonly sentryDsn: string | undefined;
   /** Page views to Umami (#40, `observability.ts`): its tracker script and the website id. */
   readonly umami: { readonly scriptUrl: string; readonly websiteId: string } | undefined;
+  /**
+   * Sign-in with Google and Microsoft (#47, ADR-023). No variable moves a provider to another
+   * address: `social-sign-in.ts` uses the providers' own, and a test holds that.
+   */
+  readonly socialProviders: SocialProviders;
+}
+
+/** The providers `config` has keys for, in the order the page shows them. */
+export function socialProviderIds(config: Pick<Config, "socialProviders">): SignInProvider[] {
+  return SIGN_IN_PROVIDERS.filter((id) => config.socialProviders[id] !== undefined);
 }
 
 /** Every variable `loadConfig` reads, with the reason shown when its value is invalid. */
@@ -79,6 +104,11 @@ const REASONS = {
   UMAMI_URL:
     "must be the http(s) address of Umami, such as https://stats.example.com, or of its tracker script ending in .js",
   UMAMI_WEBSITE_ID: "must be the website's id in Umami, a UUID",
+  GOOGLE_CLIENT_ID: "must be the OAuth client id from the Google Cloud console",
+  GOOGLE_CLIENT_SECRET: "must be the OAuth client secret from the Google Cloud console",
+  MICROSOFT_CLIENT_ID: "must be the application (client) id from the Microsoft Entra admin center",
+  MICROSOFT_CLIENT_SECRET: "must be a client secret value from the Microsoft Entra admin center",
+  MICROSOFT_TENANT_ID: "must be common, organizations, consumers or a tenant id (a GUID)",
   BETTER_AUTH_SECRET:
     "must be at least 32 random characters, such as the output of openssl rand -base64 32",
 } as const;
@@ -89,6 +119,10 @@ const VARIABLES = Object.keys(REASONS) as Variable[];
 const PAIRED: Partial<Record<Variable, Variable>> = {
   UMAMI_URL: "UMAMI_WEBSITE_ID",
   UMAMI_WEBSITE_ID: "UMAMI_URL",
+  GOOGLE_CLIENT_ID: "GOOGLE_CLIENT_SECRET",
+  GOOGLE_CLIENT_SECRET: "GOOGLE_CLIENT_ID",
+  MICROSOFT_CLIENT_ID: "MICROSOFT_CLIENT_SECRET",
+  MICROSOFT_CLIENT_SECRET: "MICROSOFT_CLIENT_ID",
 };
 
 function parsesAsUrl(value: string, protocols: readonly string[]): URL | undefined {
@@ -110,6 +144,11 @@ const integer = (min: number, max: number) =>
     .regex(/^\d{1,9}$/)
     .transform(Number)
     .pipe(z.number().int().min(min).max(max));
+
+/** A client id or secret: a paste with a line break or a space in it is a mistake. */
+const oauthKey = z.string().regex(/^\S{1,1024}$/);
+
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const schema = z.object({
   PORT: integer(0, 65535).default(3000),
@@ -204,6 +243,15 @@ const schema = z.object({
     .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
     .transform((v) => v.toLowerCase())
     .optional(),
+  GOOGLE_CLIENT_ID: oauthKey.optional(),
+  GOOGLE_CLIENT_SECRET: oauthKey.optional(),
+  MICROSOFT_CLIENT_ID: oauthKey.optional(),
+  MICROSOFT_CLIENT_SECRET: oauthKey.optional(),
+  // It goes into the path of Microsoft's address, so nothing else passes.
+  MICROSOFT_TENANT_ID: z
+    .string()
+    .refine((v) => ["common", "organizations", "consumers"].includes(v) || GUID.test(v))
+    .default("common"),
   BETTER_AUTH_SECRET: z.string().min(32).refine(isRealSecret),
 });
 
@@ -264,6 +312,20 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
       v.UMAMI_URL && v.UMAMI_WEBSITE_ID
         ? Object.freeze({ scriptUrl: v.UMAMI_URL, websiteId: v.UMAMI_WEBSITE_ID })
         : undefined,
+    socialProviders: Object.freeze({
+      google:
+        v.GOOGLE_CLIENT_ID && v.GOOGLE_CLIENT_SECRET
+          ? Object.freeze({ clientId: v.GOOGLE_CLIENT_ID, clientSecret: v.GOOGLE_CLIENT_SECRET })
+          : undefined,
+      microsoft:
+        v.MICROSOFT_CLIENT_ID && v.MICROSOFT_CLIENT_SECRET
+          ? Object.freeze({
+              clientId: v.MICROSOFT_CLIENT_ID,
+              clientSecret: v.MICROSOFT_CLIENT_SECRET,
+              tenantId: v.MICROSOFT_TENANT_ID,
+            })
+          : undefined,
+    }),
     betterAuthSecret: v.BETTER_AUTH_SECRET,
   });
 }
