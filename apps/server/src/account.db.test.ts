@@ -729,10 +729,11 @@ describe("after a deletion", () => {
       theirs.id,
       me.id,
     ]);
+    // Its settings too: the sweep reads whole rows, so a column added later is looked at as well.
     await admin.query(
-      `insert into connector_token (user_id, connector, sealed_token)
-       values ($1, 'jira', 'v1.key.iv.sealed')`,
-      [me.id],
+      `insert into connector_token (user_id, connector, sealed_token, settings)
+       values ($1, 'jira', 'v1.key.iv.sealed', $2)`,
+      [me.id, JSON.stringify({ site: { id: "x", name: hosted, url: "https://x.example" } })],
     );
     await admin.query(
       `insert into verification (id, identifier, value, expires_at)

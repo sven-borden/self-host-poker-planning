@@ -199,6 +199,137 @@ test("a write that fails keeps the round, shows beside it and can be tried again
   await context.close();
 });
 
+/** Connected, the field saved, the items imported, the sheet closed. */
+async function readyToEstimate(page: Page) {
+  await connected(page);
+  await section(page).getByRole("button", { name: "Save the field" }).click();
+  await expect(section(page).locator("[data-connector-field-name]")).toBeVisible();
+  await importJql(page, "project = ABC");
+  await expect(section(page).locator("[data-connector-report]")).toContainText("3 items added.");
+  await closeSheet(page);
+}
+
+test("a final found on coming back waits for a press, and the press writes it", async ({
+  browser,
+}) => {
+  const { context, page } = await newPerson(browser);
+  await atStandIns(context);
+  await poInRoom(page);
+  await readyToEstimate(page);
+  await estimateNext(page, "Start voting", "5");
+  await expect(page.locator("[data-write-line=written]")).toHaveText("ABC-1: 5 is in Jira.");
+  const before = (await fakeState()).writes.length;
+
+  await page.reload();
+  const waiting = page.locator("[data-write-line=waiting]");
+  await expect(waiting).toContainText("was not recorded on this page");
+  expect((await fakeState()).writes).toHaveLength(before);
+  await waiting.getByRole("button", { name: "Write to Jira" }).click();
+  await expect(page.locator("[data-write-line=written]")).toBeVisible();
+  expect((await fakeState()).writes).toHaveLength(before + 1);
+  await context.close();
+});
+
+test("of a PO's two tabs, the one that recorded writes, and the other waits", async ({
+  browser,
+}) => {
+  const { context, page } = await newPerson(browser);
+  await atStandIns(context);
+  await poInRoom(page);
+  await readyToEstimate(page);
+  const other = await context.newPage();
+  await other.setExtraHTTPHeaders(ownAddress());
+  await other.goto(page.url());
+  await expect(other.getByRole("heading", { name: "You", exact: true })).toBeVisible();
+  const before = (await fakeState()).writes.length;
+
+  await estimateNext(page, "Start voting", "5");
+  await expect(page.locator("[data-write-line=written]")).toBeVisible();
+  await expect(other.locator("[data-write-line=waiting]")).toBeVisible();
+  expect((await fakeState()).writes).toHaveLength(before + 1);
+  await context.close();
+});
+
+test("a chunk that cannot load leaves the room working, and says so", async ({ browser }) => {
+  const { context, page } = await newPerson(browser);
+  await atStandIns(context);
+  await context.route(/\/assets\/write-back-[^/]*\.js/, (route) => route.abort());
+  await poInRoom(page);
+  await readyToEstimate(page);
+
+  await page.getByRole("button", { name: "Start voting" }).click();
+  await expect(page.getByText("The Jira part of this page could not be loaded.")).toBeVisible();
+  await handCard(page, "5").click();
+  await expect(page.locator("[data-record-final]")).toBeVisible();
+  await page.locator('[data-final-card="5"]').click();
+  await page.locator("[data-record-final]").click();
+  await expect(page.locator("[data-centre-final]").first()).toBeVisible();
+  await expect(page.getByText("Something went wrong")).toHaveCount(0);
+  await context.close();
+});
+
+test("the sheet opens without its Jira part when that chunk cannot load", async ({ browser }) => {
+  const { context, page } = await newPerson(browser);
+  await atStandIns(context);
+  await context.route(/\/assets\/connector-section-[^/]*\.js/, (route) => route.abort());
+  await poInRoom(page);
+  await page.locator("[data-queue-open]").click();
+  await expect(page.locator("[data-queue-form]")).toBeVisible();
+  await expect(page.getByText("The Jira part of this page could not be loaded.")).toBeVisible();
+  await expect(section(page)).toHaveCount(0);
+  await context.close();
+});
+
+test("a Kanban board has no sprint to pick, and the next board works", async ({ browser }) => {
+  const { context, page } = await newPerson(browser);
+  await atStandIns(context);
+  await poInRoom(page);
+  await connected(page);
+  await section(page).getByRole("button", { name: "Save the field" }).click();
+  const board = section(page).getByRole("combobox", { name: "Board" });
+  await expect(section(page).getByRole("combobox", { name: "Sprint" })).toBeVisible();
+  await board.selectOption({ label: "Support kanban" });
+  await expect(section(page).getByText("This board has no active or future sprint.")).toBeVisible();
+  await expect(section(page).locator("[data-connector-problem]")).toHaveCount(0);
+  await board.selectOption({ label: "Platform board" });
+  await expect(section(page).getByRole("combobox", { name: "Sprint" })).toBeVisible();
+  await context.close();
+});
+
+test("a dead grant found on opening the sheet goes back to Connect", async ({ browser }) => {
+  const { context, page } = await newPerson(browser);
+  await atStandIns(context);
+  await poInRoom(page);
+  await connected(page);
+  await section(page).getByRole("button", { name: "Save the field" }).click();
+  await expect(section(page).locator("[data-connector-field-name]")).toBeVisible();
+  await closeSheet(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await control({
+    fail: [
+      { match: "/rest/agile/1.0/board", status: 401 },
+      { match: "/oauth/token", status: 403, body: { error: "invalid_grant" } },
+    ],
+  });
+  await page.locator("[data-queue-open]").click();
+  await expect(section(page).getByRole("button", { name: "Connect Jira" })).toBeVisible();
+  await expect(section(page).locator("[data-connector-problem=connector_reconnect]")).toBeVisible();
+  await expect(section(page).getByRole("button", { name: "Disconnect" })).toHaveCount(0);
+  await context.close();
+});
+
+test("a link that was spent lands on the first page, says so, and shows the way back", async ({
+  browser,
+}) => {
+  const { context, page } = await newPerson(browser);
+  await page.goto(`${SIGN_IN_BASE}/api/connectors/jira/callback?state=spent&code=x`);
+  const notice = page.locator("[data-connector-notice=failed]");
+  await expect(notice).toContainText("Jira was not connected");
+  await expect(notice.getByRole("link", { name: "My rooms" })).toHaveAttribute("href", "/rooms");
+  expect(new URL(page.url()).search).toBe("");
+  await context.close();
+});
+
 test("says what a refused query is, keeps the box, and a disconnect goes back to Connect", async ({
   browser,
 }) => {

@@ -241,10 +241,9 @@ write-back: never for anyone else in the room. It writes one thing, the final es
 to a field the PO picked from the site's number fields. A final with no number is not written, and
 an anonymous round sends nothing but its number.
 
-The scopes ask for more than this code uses: Jira has no classic scope narrower than
-`write:jira-work`, and that one also allows deleting issues, which is what the consent screen says
-and what a person agrees to. The server never does. If your team would rather not grant it, see
-"Scopes" in ADR-030 before you set the app up.
+The scopes ask for more than this code uses: `write:jira-work` also allows deleting issues, and a
+person agrees to the scope, not to this code. The server never deletes anything. If your team would
+rather not grant it, see "Scopes" in ADR-030 before you set the app up.
 
 Should the page say that Jira refused although the connection was just renewed, connecting again
 will not help: compare the app's scopes with step 2. The server's log says at the start when keys are

@@ -43,7 +43,7 @@ function hear(snapshot: Snapshot) {
     return;
   }
   const { round, code } = snapshot.room;
-  if (round?.phase !== "revealed" || round.final !== card) return;
+  if (round === null) return;
   if (!snapshot.causes.some((cause) => cause.type === "finalSet" && cause.card === card)) return;
   if (finalId(code, round, card) !== id) return;
   confirmed = id;

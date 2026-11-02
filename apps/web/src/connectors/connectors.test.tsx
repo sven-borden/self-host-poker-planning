@@ -462,7 +462,7 @@ describe("the lines under the table", () => {
       ...(system ? { system } : {}),
     }) as unknown as RoundView;
 
-  const FINAL_SET = (card: string): Snapshot["causes"] => [{ type: "finalSet", card }];
+  const finalSet = (card: string): Snapshot["causes"] => [{ type: "finalSet", card }];
 
   /** A frame of the room, through the store, as the socket delivers it. */
   function frame(view: RoundView | null, causes: Snapshot["causes"] = [], version = held() + 1) {
@@ -477,7 +477,7 @@ describe("the lines under the table", () => {
   /** The PO's own press of a final here, its frame and its answer, in the server's order. */
   function recordHere(number: number, card: string) {
     const settle = markFinalPress(CODE, round(number), card);
-    frame(round(number, card), FINAL_SET(card));
+    frame(round(number, card), finalSet(card));
     settle({ ok: true, version: held() });
   }
 
@@ -518,7 +518,7 @@ describe("the lines under the table", () => {
     const settle = markFinalPress(CODE, round(1), "5");
     const next = held() + 1;
     settle({ ok: true, version: next });
-    frame(round(1, "5"), FINAL_SET("5"), next);
+    frame(round(1, "5"), finalSet("5"), next);
     await written("5");
   });
 
@@ -544,7 +544,7 @@ describe("the lines under the table", () => {
   it("waits on a final recorded in another tab or on another device", async () => {
     frame(round(1));
     render(<Lines />);
-    frame(round(1, "5"), FINAL_SET("5"));
+    frame(round(1, "5"), finalSet("5"));
     await waiting("5");
     expect(api.writeBack).not.toHaveBeenCalled();
   });
@@ -554,7 +554,7 @@ describe("the lines under the table", () => {
     frame(round(1));
     render(<Lines />);
     frame(round(1), [{ type: "ownerChanged", by: "claim", to: "stranger" }]);
-    frame(round(1, "13"), FINAL_SET("13"));
+    frame(round(1, "13"), finalSet("13"));
     frame(round(1, "13"), [{ type: "ownerChanged", by: "transfer", to: PO }]);
     await waiting("13");
     expect(api.writeBack).not.toHaveBeenCalled();
@@ -577,7 +577,7 @@ describe("the lines under the table", () => {
     render(<Lines />);
     const settle = markFinalPress(CODE, round(1), "13");
     settle({ ok: false });
-    frame(round(1, "13"), FINAL_SET("13"));
+    frame(round(1, "13"), finalSet("13"));
     await waiting("13");
     expect(api.writeBack).not.toHaveBeenCalled();
   });
@@ -586,24 +586,35 @@ describe("the lines under the table", () => {
     frame(round(1));
     render(<Lines />);
     markFinalPress(CODE, round(1), "5");
-    frame(round(1, "8"), FINAL_SET("8"));
+    frame(round(1, "8"), finalSet("8"));
     await waiting("8");
     markFinalPress(CODE, round(1), "5");
-    frame(round(2, "5"), FINAL_SET("5"));
+    frame(round(2, "5"), finalSet("5"));
     await waiting("5");
     const restarted = { ...round(2, "3"), startedAt: 9 } as RoundView;
     markFinalPress(CODE, round(2), "3");
-    frame(restarted, FINAL_SET("3"));
+    frame(restarted, finalSet("3"));
     await waiting("3");
     const other = {
       ...round(3, "2"),
       subject: { kind: "link", url: "https://a/browse/ABC-2", key: "ABC-2" },
     } as RoundView;
     markFinalPress(CODE, round(3), "2");
-    frame(other, FINAL_SET("2"));
+    frame(other, finalSet("2"));
     await screen.findByText(
       t("connector.write.waiting", { item: "ABC-2", card: "2", system: "Jira" }),
     );
+    expect(api.writeBack).not.toHaveBeenCalled();
+  });
+
+  it("does not count another card's frame as the press, for a final set later", async () => {
+    frame(round(1));
+    render(<Lines />);
+    const settle = markFinalPress(CODE, round(1), "5");
+    frame(round(1, "8"), finalSet("8"));
+    settle({ ok: true, version: held() });
+    frame(round(1, "5"), finalSet("5"));
+    await waiting("5");
     expect(api.writeBack).not.toHaveBeenCalled();
   });
 
@@ -613,12 +624,12 @@ describe("the lines under the table", () => {
     const settle = markFinalPress(CODE, round(1), "5");
     const answered = held() + 1;
     settle({ ok: true, version: answered });
-    frame(round(1, "5"), FINAL_SET("5"), answered + 1);
+    frame(round(1, "5"), finalSet("5"), answered + 1);
     await waiting("5");
     frame(round(2));
     const nothing = markFinalPress(CODE, round(2), "8");
     nothing({ ok: true, version: held() });
-    frame(round(2, "8"), FINAL_SET("8"));
+    frame(round(2, "8"), finalSet("8"));
     await waiting("8");
     expect(api.writeBack).not.toHaveBeenCalled();
   });
@@ -635,7 +646,7 @@ describe("the lines under the table", () => {
     frame(round(1));
     render(<Lines />);
     const settle = markFinalPress(CODE, round(1, undefined, null), "5");
-    frame(round(1, "5", null), FINAL_SET("5"));
+    frame(round(1, "5", null), finalSet("5"));
     settle({ ok: true, version: held() });
     expect(api.writeBack).not.toHaveBeenCalled();
     expect(screen.queryByRole("button")).toBeNull();

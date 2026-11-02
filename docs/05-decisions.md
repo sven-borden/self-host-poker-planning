@@ -2104,11 +2104,11 @@ reason a granular scope stands beside the classic pair. Nothing administrative, 
 
 These are not the least the code needs. `write:jira-work` covers creating and editing issues,
 comments and worklogs, and deleting issues; the app only ever sends one number to one field. The
-classic pair was chosen because it is two scopes that each search, field list and issue update in
-Atlassian's API reference names, against a granular set of about ten that would have to be proven
-on a real site, and nothing here runs on one yet. Narrowing them is one list in `jira.ts` and one
-step of the README, and it is Sven's call once he has read the consent screen: a person agrees to
-what that screen says, not to what this code does.
+classic pair was chosen because it is short and is what Atlassian's API reference lists for search,
+the field list and an issue's update, while a granular set would be longer and has to be proven on a
+real site, and nothing here runs on one yet. Narrowing them is one list in `jira.ts` and one step of
+the README, and it is Sven's call once he has read the consent screen: a person agrees to what that
+screen says, not to what this code does.
 
 **Import.** `POST /api/rooms/:code/connectors/jira/import`, the PO alone, signed in. `queueImport` is
 a server command in `OWNER_ONLY`: the wire has no schema for it, so `source` still comes off no
