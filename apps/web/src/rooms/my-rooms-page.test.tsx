@@ -20,6 +20,8 @@ const ROOM_A = {
   code: "aaaaaaaaaa",
   name: "Sprint planning",
   owned: true,
+  keeper: true,
+  seated: false,
   rounds: 12,
   lastActiveAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
 };
@@ -29,6 +31,8 @@ const ROOM_B = {
   code: "bbbbbbbbbb",
   name: null,
   owned: false,
+  keeper: false,
+  seated: true,
   rounds: 1,
 };
 const page = (rooms: unknown[], extra: object = {}) => ({ rooms, retentionDays: 90, ...extra });
@@ -124,11 +128,34 @@ describe("who sees what", () => {
     expect(screen.getByRole("status").textContent).toBe("Loading your rooms…");
   });
 
-  it("shows a person whose session ended the sign-in, not an error", async () => {
+  it("takes a person whose session ended for what they are now, with a way back in", async () => {
     asAccount();
-    serve({ "GET /api/my-rooms": () => json({ code: "unauthenticated" }, 401) });
+    let sessions = 0;
+    serve({
+      "GET /api/my-rooms": () => json({ code: "unauthenticated" }, 401),
+      // No session, then the guest this page's bootstrap creates, as on any page.
+      "GET /api/auth/get-session": () =>
+        json(sessions++ === 0 ? null : { user: { id: "guest", isAnonymous: true } }),
+      "POST /api/auth/sign-in/anonymous": () => json({ user: { id: "guest" } }),
+    });
     await renderRooms();
     await screen.findByText(/Sign in to see the rooms you own/);
+    expect(named("Sign in with Google")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+    expect(document.querySelector("[data-my-rooms-link]")).toBeNull();
+    expect(useIdentityStore.getState().email).toBeNull();
+  });
+
+  it("says what it heard when the session cannot be read either, and asks once a load", async () => {
+    asAccount();
+    const calls = serve({
+      "GET /api/my-rooms": () => json({ code: "unauthenticated" }, 401),
+      "GET /api/auth/get-session": () => json({ code: "internal" }, 500),
+    });
+    await renderRooms();
+    await screen.findByRole("alert");
+    expect(named("Try again")).toBeTruthy();
+    expect(calls.filter((call) => call === "GET /api/my-rooms")).toHaveLength(1);
   });
 });
 
@@ -159,7 +186,59 @@ describe("the list", () => {
     await renderRooms();
     await screen.findByText(/where you hold a seat now/);
     expect(screen.getByText(/goes from this list/)).toBeTruthy();
-    expect(screen.getByText(/goes after 90 days without activity/)).toBeTruthy();
+    expect(screen.getByText(/can go after 90 days without activity/)).toBeTruthy();
+  });
+
+  it("offers rename and leave for a role taken by claim, not delete, and says why", async () => {
+    asAccount();
+    serve({
+      "GET /api/my-rooms": () => json(page([{ ...ROOM_A, keeper: false, seated: true }])),
+    });
+    await renderRooms();
+    await screen.findByText("You are the product owner");
+    expect(screen.getByText(/does not carry that right/)).toBeTruthy();
+    expect(named("Rename Sprint planning")).toBeTruthy();
+    expect(named("Leave Sprint planning")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete Sprint planning" })).toBeNull();
+  });
+
+  it("tells a keeper who lost the role how to get it back, and offers no delete", async () => {
+    asAccount();
+    serve({
+      "GET /api/my-rooms": () => json(page([{ ...ROOM_A, owned: false, seated: true }])),
+    });
+    await renderRooms();
+    await screen.findByText("Your room, with another product owner");
+    expect(screen.getByText(/Get the role back in the room/)).toBeTruthy();
+    expect(named("Leave Sprint planning")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete Sprint planning" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rename Sprint planning" })).toBeNull();
+  });
+
+  it("keeps a keeper's room with no seat as a link alone", async () => {
+    asAccount();
+    serve({ "GET /api/my-rooms": () => json(page([{ ...ROOM_A, owned: false }])) });
+    await renderRooms();
+    await screen.findByRole("link", { name: "Sprint planning" });
+    expect(document.querySelectorAll("[data-my-room] button")).toHaveLength(0);
+  });
+
+  it("announces a result in a region that was there before it, and that stays through a reload", async () => {
+    asAccount();
+    let reads = 0;
+    serve({
+      "GET /api/my-rooms": () => json(page(reads++ === 0 ? [ROOM_A] : [])),
+      [`DELETE /api/my-rooms/${ROOM_A.id}`]: () => json({ code: "room_not_found" }, 404),
+    });
+    await renderRooms();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Sprint planning" }));
+    const region = document.querySelector("[data-my-rooms-notice]");
+    expect(region?.getAttribute("role")).toBe("status");
+    expect(region?.textContent).toBe("");
+    fireEvent.click(await screen.findByRole("button", { name: "Delete this room" }));
+    await screen.findByText("No rooms yet");
+    expect(document.querySelector("[data-my-rooms-notice]")).toBe(region);
+    expect(region?.textContent).toBe("That room is no longer there.");
   });
 
   it("has words for no rooms at all", async () => {
@@ -265,7 +344,9 @@ describe("renaming", () => {
     serve({
       "GET /api/my-rooms": () => {
         reads += 1;
-        return json(page([reads === 1 ? ROOM_A : { ...ROOM_A, owned: false }]));
+        return json(
+          page([reads === 1 ? ROOM_A : { ...ROOM_A, owned: false, keeper: false, seated: true }]),
+        );
       },
       [`PATCH /api/my-rooms/${ROOM_A.id}`]: () => json({ code: "not_owner" }, 403),
     });
@@ -316,6 +397,21 @@ describe("deleting", () => {
     await screen.findByText("No rooms yet");
   });
 
+  it("reads the list again when the server says the right to delete is someone else's", async () => {
+    asAccount();
+    let reads = 0;
+    serve({
+      "GET /api/my-rooms": () =>
+        json(page([reads++ === 0 ? ROOM_A : { ...ROOM_A, keeper: false, seated: true }])),
+      [`DELETE /api/my-rooms/${ROOM_A.id}`]: () => json({ code: "not_keeper" }, 403),
+    });
+    await renderRooms();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Sprint planning" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete this room" }));
+    await screen.findByText("You are the product owner");
+    expect(screen.getByText("Only the person this room belongs to can delete it.")).toBeTruthy();
+  });
+
   it("keeps the dialog on a failure that can be tried again", async () => {
     asAccount();
     serve({
@@ -344,5 +440,20 @@ describe("leaving", () => {
     await screen.findByText("You left the room.");
     expect(rowCount()).toBe(0);
     expect(calls).toContain(`POST /api/my-rooms/${ROOM_B.id}/leave`);
+  });
+
+  it("keeps a room that is still the person's, without the seat", async () => {
+    asAccount();
+    serve({
+      "GET /api/my-rooms": () => json(page([{ ...ROOM_A, owned: false, seated: true }])),
+      [`POST /api/my-rooms/${ROOM_A.id}/leave`]: noContent,
+    });
+    await renderRooms();
+    fireEvent.click(await screen.findByRole("button", { name: "Leave Sprint planning" }));
+    await screen.findByText(/stays on this list/);
+    fireEvent.click(await screen.findByRole("button", { name: "Leave this room" }));
+    await screen.findByText("You left the room.");
+    expect(rowCount()).toBe(1);
+    expect(screen.queryByRole("button", { name: "Leave Sprint planning" })).toBeNull();
   });
 });

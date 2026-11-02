@@ -568,6 +568,7 @@ export const de: Catalog = {
       "Der Raum wurde gelöscht: Auf diesem Server wird ein Raum nach {{count, number}} Tagen ohne Aktivität entfernt.",
     expiredUnknown:
       "Der Raum wurde gelöscht: Auf diesem Server wird ein Raum nach längerer Zeit ohne Aktivität entfernt.",
+    deleted: "Der Product Owner des Raums hat ihn gelöscht.",
     tryAnother: "Anderen Code versuchen",
     createRoom: "Neuen Raum erstellen",
   },
@@ -610,9 +611,9 @@ export const de: Catalog = {
     intro:
       "Die Räume, die Ihnen gehören, und die Räume, in denen Sie gerade einen Platz haben. Wenn Sie einen Raum verlassen oder daraus entfernt werden, verschwindet er aus dieser Liste.",
     retention_one:
-      "Ihre eigenen Räume bleiben, bis Sie sie löschen. Ein Raum, dem Sie nur beigetreten sind, verschwindet nach {{count, number}} Tag ohne Aktivität.",
+      "Ihre eigenen Räume bleiben, bis Sie sie löschen. Jeder andere Raum in dieser Liste kann nach {{count, number}} Tag ohne Aktivität verschwinden.",
     retention_other:
-      "Ihre eigenen Räume bleiben, bis Sie sie löschen. Ein Raum, dem Sie nur beigetreten sind, verschwindet nach {{count, number}} Tagen ohne Aktivität.",
+      "Ihre eigenen Räume bleiben, bis Sie sie löschen. Jeder andere Raum in dieser Liste kann nach {{count, number}} Tagen ohne Aktivität verschwinden.",
     signedOut:
       "Melden Sie sich an, um die Räume zu sehen, die Ihnen gehören und in denen Sie einen Platz haben. Was Sie als Gast getan haben, kommt mit.",
     loading: "Ihre Räume werden geladen…",
@@ -622,6 +623,12 @@ export const de: Catalog = {
     emptyBody: "Räume, die Sie angemeldet erstellen oder betreten, erscheinen hier.",
     owned: "Ihr Raum",
     joined: "Sie haben einen Platz",
+    claimed: "Sie sind Product Owner",
+    claimedWhy:
+      "Mit dieser Rolle leiten Sie den Raum und können ihn umbenennen. Löschen kann ihn nur die Person, der er gehört: Die Rolle zu übernehmen oder übergeben zu bekommen, gibt dieses Recht nicht.",
+    kept: "Ihr Raum, mit einem anderen Product Owner",
+    keptWhy:
+      "Jemand anderes hat die Rolle des Product Owners übernommen. Holen Sie sich die Rolle im Raum zurück, dann können Sie ihn löschen.",
     lastActive: "Aktiv {{when}}",
     rounds_one: "{{count, number}} Runde",
     rounds_other: "{{count, number}} Runden",
@@ -646,6 +653,8 @@ export const de: Catalog = {
     leaveTitle: "{{name}} verlassen?",
     leaveBody:
       "Ihr Platz wird frei, und der Raum verschwindet aus dieser Liste. Über den Link des Raums können Sie wieder beitreten.",
+    leaveKept:
+      "Ihr Platz wird frei. Der Raum bleibt in dieser Liste, weil er weiterhin Ihnen gehört.",
     left: "Sie haben den Raum verlassen.",
     gone: "Diesen Raum gibt es nicht mehr.",
   },
@@ -820,6 +829,7 @@ export const de: Catalog = {
     not_participant:
       "Sie sind nicht mehr in diesem Raum. Laden Sie die Seite neu, um wieder beizutreten.",
     not_owner: "Nur der Product Owner kann das tun.",
+    not_keeper: "Nur die Person, der dieser Raum gehört, kann ihn löschen.",
     already_joined: "Sie sind bereits in diesem Raum.",
     bad_avatar: "Dieser Avatar ist nicht verfügbar. Wählen Sie einen anderen.",
     bad_name: "Ein Name hat {{min, number}} bis {{max, number}} Zeichen. Wählen Sie einen anderen.",

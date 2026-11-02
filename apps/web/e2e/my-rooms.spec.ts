@@ -133,9 +133,76 @@ test.describe("with provider keys", () => {
     await expect(page.locator("[data-my-room]")).toHaveCount(0);
     await expect(guest.locator("[data-room-not-found]")).toBeVisible();
     await expect(guest.getByRole("heading", { name: "Room not found" })).toBeVisible();
+    await expect(guest.getByText("The room’s product owner deleted it.")).toBeVisible();
     await guest.reload();
     await expect(guest.locator("[data-room-not-found]")).toBeVisible();
     await others.close();
+    await context.close();
+  });
+
+  test("the focus goes back to the opener, or to the title when that went", async ({ browser }) => {
+    const { context, page } = await signedIn(browser);
+    await createRoom(page, "Focus");
+    await page.goto(ROOMS);
+    const focused = () =>
+      page.evaluate(
+        () => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName,
+      );
+
+    await page.getByRole("button", { name: "Rename Focus" }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect.poll(focused).toBe("Rename Focus");
+
+    await page.getByRole("button", { name: "Rename Focus" }).click();
+    await page.getByLabel("Room name").fill("Renamed");
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText("Room renamed.")).toBeVisible();
+    await expect.poll(focused).toBe("Rename Renamed");
+
+    await page.getByRole("button", { name: "Delete Renamed" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect.poll(focused).toBe("Delete Renamed");
+
+    await page.getByRole("button", { name: "Delete Renamed" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Delete this room" }).click();
+    await expect(page.getByText("Room deleted.")).toBeVisible();
+    await expect.poll(focused).toBe("H1");
+    await context.close();
+  });
+
+  test("a role taken by claim offers rename and leave, and says why not delete", async ({
+    browser,
+  }) => {
+    const { context, page } = await signedIn(browser);
+    // A room whose creator never sat down: the role is free at once.
+    const { context: others, page: creator } = await newPerson(browser);
+    const path = await createRoom(creator, "Abandoned");
+    await others.close();
+    await page.goto(`${SIGN_IN_BASE}${path}`);
+    await join(page, "Ada");
+    await page.getByRole("button", { name: "Claim the product owner role" }).click();
+    await expect(page.getByRole("button", { name: "Claim the product owner role" })).toHaveCount(0);
+
+    await page.goto(ROOMS);
+    const row = page.locator('[data-my-room="claimed"]');
+    await expect(row).toContainText("You are the product owner");
+    await expect(row).toContainText("does not carry that right");
+    await expect(row.getByRole("button", { name: "Rename Abandoned" })).toBeVisible();
+    await expect(row.getByRole("button", { name: "Leave Abandoned" })).toBeVisible();
+    await expect(row.getByRole("button", { name: "Delete Abandoned" })).toHaveCount(0);
+
+    const id = await page.evaluate(async () => {
+      const { rooms } = await (await fetch("/api/my-rooms")).json();
+      return rooms[0].id as string;
+    });
+    const refused = await page.request.delete(`${SIGN_IN_BASE}/api/my-rooms/${id}`, {
+      headers: { origin: SIGN_IN_BASE },
+    });
+    expect(refused.status()).toBe(403);
+    expect(await refused.json()).toEqual({ code: "not_keeper" });
     await context.close();
   });
 

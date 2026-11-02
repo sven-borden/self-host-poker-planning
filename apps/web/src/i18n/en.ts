@@ -12,6 +12,7 @@ const errors = {
     "The app sent something the server did not understand. Reload the page and try again.",
   not_participant: "You are no longer in this room. Reload the page to join again.",
   not_owner: "Only the product owner can do that.",
+  not_keeper: "Only the person this room belongs to can delete it.",
   already_joined: "You are already in this room.",
   bad_avatar: "That avatar is not available. Choose another one.",
   bad_name: "A name needs {{min, number}} to {{max, number}} characters. Choose another one.",
@@ -612,6 +613,7 @@ export const en = {
       "The room was deleted: rooms on this server are removed after {{count, number}} days without activity.",
     expiredUnknown:
       "The room was deleted: rooms on this server are removed after a long time without activity.",
+    deleted: "The room’s product owner deleted it.",
     tryAnother: "Try another code",
     createRoom: "Create a new room",
   },
@@ -651,9 +653,9 @@ export const en = {
     intro:
       "The rooms you own, and the rooms where you hold a seat now. Leave a room or get removed from it, and it goes from this list.",
     retention_one:
-      "Rooms you own stay until you delete them. A room you only joined goes after {{count, number}} day without activity.",
+      "Rooms you own stay until you delete them. Any other room on this list can go after {{count, number}} day without activity.",
     retention_other:
-      "Rooms you own stay until you delete them. A room you only joined goes after {{count, number}} days without activity.",
+      "Rooms you own stay until you delete them. Any other room on this list can go after {{count, number}} days without activity.",
     signedOut:
       "Sign in to see the rooms you own and the rooms where you hold a seat. What you did as a guest comes with you.",
     loading: "Loading your rooms…",
@@ -662,6 +664,12 @@ export const en = {
     emptyBody: "Rooms you create or join while signed in show up here.",
     owned: "You own this room",
     joined: "You hold a seat",
+    claimed: "You are the product owner",
+    claimedWhy:
+      "The role lets you run this room and rename it. Deleting it stays with the person it belongs to: taking over the role, or being passed it, does not carry that right.",
+    kept: "Your room, with another product owner",
+    keptWhy:
+      "Someone else took over as product owner. Get the role back in the room, and you can delete it.",
     lastActive: "Active {{when}}",
     rounds_one: "{{count, number}} round",
     rounds_other: "{{count, number}} rounds",
@@ -686,6 +694,7 @@ export const en = {
     leaveTitle: "Leave {{name}}?",
     leaveBody:
       "Your seat goes, and the room goes from this list. The room’s link lets you join again.",
+    leaveKept: "Your seat goes. The room stays on this list, as it is still yours.",
     left: "You left the room.",
     gone: "That room is no longer there.",
   },

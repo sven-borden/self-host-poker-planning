@@ -6,7 +6,7 @@
  * holds, as the filter runs alone in a materialized CTE: left to itself, the planner takes the
  * `limit` as a reason to walk `room_last_active_at_idx` backward through everybody's rooms, which
  * cost 150 ms on 118,000 rooms. The sort is then of that person's rooms, each page: a list costs
- * in proportion to the rooms a person has (9 ms at 5,000), never to the instance's.
+ * in proportion to the rooms a person has (13 ms at 5,000), never to the instance's.
  *
  * `ROOM_PEOPLE` also names a departed voter's kept card, so a row the index finds must still hold
  * a seat. A PO by claim who gave up the seat is off the list too: nothing there to leave.

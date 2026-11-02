@@ -8,8 +8,12 @@ export interface MyRoom {
   readonly code: string;
   /** null for a room created without a name. */
   readonly name: string | null;
-  /** The caller owns it; otherwise the caller holds a seat. */
+  /** The caller holds the PO role. */
   readonly owned: boolean;
+  /** The caller holds the right to delete it, which takes the PO role too (ADR-027). */
+  readonly keeper: boolean;
+  /** The caller holds a seat. */
+  readonly seated: boolean;
   /** Rounds started in the room. */
   readonly rounds: number;
   /** ISO 8601. */
@@ -18,7 +22,7 @@ export interface MyRoom {
 
 export interface MyRoomsPage {
   readonly rooms: readonly MyRoom[];
-  /** How many idle days this server keeps a room nobody signed in owns. */
+  /** How many idle days this server keeps a room no signed-in person keeps. */
   readonly retentionDays: number;
   /** Where the next page starts, when there is one. */
   readonly next?: string;
@@ -45,6 +49,8 @@ function toRoom(raw: unknown): MyRoom {
     code,
     name: typeof name === "string" ? name : null,
     owned: field(raw, "owned") === true,
+    keeper: field(raw, "keeper") === true,
+    seated: field(raw, "seated") === true,
     rounds,
     lastActiveAt,
   };
@@ -70,14 +76,14 @@ export async function fetchMyRooms(after?: string): Promise<MyRoomsPage> {
 
 const path = (id: string) => `/api/my-rooms/${encodeURIComponent(id)}`;
 
-/** Renames a room, its owner only, and resolves with the name the server stored. */
+/** Renames a room, its PO only, and resolves with the name the server stored. */
 export async function renameMyRoom(id: string, name: string): Promise<string> {
   const stored = field(await call(path(id), jsonInit("PATCH", { name })), "name");
   if (typeof stored !== "string") throw new RoomApiError("internal");
   return stored;
 }
 
-/** Deletes a room and all it holds, its owner only. */
+/** Deletes a room and all it holds, for someone who is its PO and its keeper. */
 export async function deleteMyRoom(id: string): Promise<void> {
   await call(path(id), jsonInit("DELETE"));
 }
