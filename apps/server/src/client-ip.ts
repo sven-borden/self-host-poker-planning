@@ -7,7 +7,9 @@
  * client is the one before it. Entries further left come from the client and can be
  * forged. Without a trusted proxy (`TRUST_PROXY=false` or 0) it is the socket's peer
  * address. The result is a rate-limit key, not the address itself: an IPv4-mapped IPv6
- * address counts as the IPv4 one, and an IPv6 address as its /64 network.
+ * address counts as the IPv4 one, and an IPv6 address as its /64 network. Azure App Service's
+ * front end writes `ip:port` into the header (ADR-032), so an entry loses its port first: a
+ * client's next connection has another port and must stay the same client.
  */
 import { isIP } from "node:net";
 
@@ -36,7 +38,18 @@ export function clientIp(request: PeerRequest, proxies: number): string | undefi
   // Fewer entries than proxies, or an entry that is not an address, means a proxy chain
   // other than the configured one: fall back to the socket rather than guess.
   const entry = entries && entries.length >= proxies ? entries.at(-proxies) : undefined;
-  return address(entry) ?? peer;
+  return address(entry && withoutPort(entry)) ?? peer;
+}
+
+/**
+ * An `X-Forwarded-For` entry without its port: `192.0.2.1:4711`, `[2001:db8::1]:4711` and
+ * `[2001:db8::1]` are the addresses inside. An entry that already is an address stays whole: a
+ * short port on an IPv6 address without brackets reads as its last group, which the key drops.
+ */
+function withoutPort(entry: string): string {
+  if (isIP(entry) !== 0) return entry;
+  const match = /^\[([^\]]*)\](?::\d+)?$/.exec(entry) ?? /^(.*):\d+$/.exec(entry);
+  return match?.[1] ?? entry;
 }
 
 /**
