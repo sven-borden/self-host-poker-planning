@@ -5,7 +5,8 @@ these things uses the word below, in `apps/web/src/i18n/` and in the account pag
 (`apps/web/src/account/account-copy.ts`). A new string starts here; a new word gets a row.
 
 The reader is **vous** in French and **Sie** in German, everywhere, to everyone (OQ-2,
-ADR-012). `i18n.test.ts` fails on informal forms.
+ADR-012). `i18n.test.ts` fails on the informal pronouns and on a list of imperatives, not on
+every informal form; a review still reads the screens.
 
 ## The round
 
@@ -42,7 +43,7 @@ ADR-012). `i18n.test.ts` fails on informal forms.
 | seat, place | la place | der Platz | "Prenez place", "Nehmen Sie Platz". A room has 16. |
 | at the table | à la table | am Tisch | |
 | away | hors ligne | abwesend | |
-| to join | rejoindre | beitreten | German: "dem Raum beitreten" in sentences; the one button says "Raum betreten", because "Raum beitreten" is not a sentence. |
+| to join | rejoindre | beitreten | French "entrer" stays where it is natural: "vous pourrez entrer", "la salle est libre", a person coming in. German: "dem Raum beitreten" in sentences; the one button says "Raum betreten", because "Raum beitreten" is not a sentence. |
 | to remove (someone) | retirer | entfernen | Not "expulser", not "rauswerfen". |
 | to run a room | animer | leiten | French: not "diriger". |
 | to hand over, to claim (the role) | confier, prendre | übergeben, übernehmen | |
@@ -52,7 +53,7 @@ ADR-012). `i18n.test.ts` fails on informal forms.
 
 | English | French | German | Notes, and what to avoid |
 |---|---|---|---|
-| queue | la file d’attente, la file | die Warteschlange | The UI has no "backlog": that is the tool the tickets come from. Not "le backlog", not "Liste". |
+| queue | la file d’attente, la file | die Warteschlange | The UI has no "backlog": that is the tool the tickets come from. Not "le backlog", not "Liste" as the feature's name. |
 | item | le ticket | der Eintrag | One line of the queue. German keeps "Ticket" for what people paste from a tracker ("Tickets einfügen", "Link zum Ticket"). |
 | key | la clé | der Schlüssel | ABC-123. |
 | next | ensuite | als Nächstes | |
@@ -78,6 +79,7 @@ ADR-012). `i18n.test.ts` fails on informal forms.
 | work item | l’élément de travail | das Arbeitselement | Microsoft's words. |
 | tenant | le locataire; "ID de locataire" | der Mandant; "Mandanten-ID" | Microsoft's words in its French and German portals. |
 | domain | le domaine | die Domain | |
+| scope (a token's permission) | l’autorisation | der Bereich | Not "portée", not "Scope". Microsoft's own field names stay (below). |
 
 Product names stay as they are: Poker Planning, Jira, Azure DevOps, Google, Microsoft,
 Atlassian. So do the names a tool gives its own fields and permissions, where a person must
@@ -89,5 +91,9 @@ find them on its screens: Story Points, Effort, Size, Work Items, Read & write.
   typographic apostrophe (’), and a million as "1 000 000 de personnes" in every `_many`.
 - German: „so“, and a capital after a colon that starts a sentence.
 - Both: `…` as one character, with no space before it in a status such as "Wird gespeichert…".
+- German: a soft hyphen (U+00AD) in a short label a phone's narrow box may have to break, as in
+  "Endgültig" in the results' centre.
 
-`i18n.test.ts` holds what a machine can check.
+`i18n.test.ts` holds what a machine can check: the informal pronouns and a list of imperatives,
+the capital Sie, the apostrophes and quotes, no space before `…`, "de" or "d’" after the
+number in every French `_many`, and `app.description` equal to the sentence in `index.html`.

@@ -157,8 +157,10 @@ follow the reader's region: the first `navigator.languages` tag in the UI langua
 **Amended 2026-11-02 (#41, OQ-2, Sven).** French says vous and German says Sie, everywhere,
 to everyone: a tool that strangers open from a link addresses them formally, and one register
 is one less thing to keep straight. The words each language uses are in
-`docs/08-glossary.md`. `i18n.test.ts` fails on informal forms in a catalog and on a German
-Sie written small.
+`docs/08-glossary.md`. `i18n.test.ts` fails on the informal pronouns and on a list of
+imperatives (at a sentence start, or after "et", "und", "bitte") in a catalog, and on a German
+Sie written small in an order or before the reader's own things. The lists are words, not
+grammar: a verb that is not on them gets through, so a review reads the screens too.
 
 ## ADR-013: pnpm monorepo and the serial issue loop
 

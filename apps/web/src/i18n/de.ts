@@ -116,7 +116,8 @@ export const de: Catalog = {
     toVoter: "Zum Abstimmen wechseln",
     leave: "Raum verlassen",
     leaving: "Raum wird verlassen…",
-    seatsFull: "Alle {{max, number}} Plätze sind besetzt. Versuchen Sie es erneut, sobald jemand geht.",
+    seatsFull:
+      "Alle {{max, number}} Plätze sind besetzt. Versuchen Sie es erneut, sobald jemand geht.",
   },
   avatar: {
     label: "Ihr Avatar",
@@ -153,7 +154,8 @@ export const de: Catalog = {
     openOwner: "Raumeinstellungen",
     openOthers: "Raumregeln",
     ledeOwner: "Jede Änderung gilt sofort für alle im Raum.",
-    ledeOthers: "Der Product Owner legt die Regeln für diesen Raum fest. So ist er gerade eingestellt.",
+    ledeOthers:
+      "Der Product Owner legt die Regeln für diesen Raum fest. So ist er gerade eingestellt.",
     loadFailed:
       "Die Einstellungen ließen sich nicht öffnen. Laden Sie die Seite neu und versuchen Sie es noch einmal.",
     groupCards: "Karten",

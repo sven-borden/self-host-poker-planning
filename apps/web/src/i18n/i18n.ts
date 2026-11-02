@@ -233,8 +233,9 @@ export function loadLanguage(language: Language): Promise<void> {
 
 /**
  * Speaks `language` from now on, once its catalog is in: every mounted `useT` re-renders
- * and `<html lang>` and the page's description follow. Only the latest request wins: if another language was asked
- * for while this catalog loaded, nothing changes and the result is false.
+ * and `<html lang>` and the page's description follow. Only the latest request wins: if
+ * another language was asked for while this catalog loaded, nothing changes and the result is
+ * false.
  */
 export async function changeLanguage(language: Language): Promise<boolean> {
   const pick = ++latestPick;

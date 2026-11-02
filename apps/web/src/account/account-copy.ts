@@ -156,7 +156,8 @@ const fr: Copy & Partial<Record<`${FrenchMany}_many`, string>> = {
   deleteIntro:
     "Cette action est irréversible. Toutes vos sessions se ferment d’abord, et plus personne ne peut utiliser le compte ensuite.",
   goesTitle: "Ce qui disparaît",
-  goesAccount: "Votre nom, votre adresse, votre mode de connexion, votre avatar et vos connexions à Jira ou Azure DevOps.",
+  goesAccount:
+    "Votre nom, votre adresse, votre mode de connexion, votre avatar et vos connexions à Jira ou Azure DevOps.",
   goesAlone_one: "{{count, number}} salle sans personne d’autre, avec son historique.",
   goesAlone_many: "{{count, number}} de salles sans personne d’autre, avec leur historique.",
   goesAlone_other: "{{count, number}} salles sans personne d’autre, avec leur historique.",
