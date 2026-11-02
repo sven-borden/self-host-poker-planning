@@ -14,11 +14,13 @@ import type { AccountDeletionStore } from "./db/account-deletions.ts";
 import { DatabaseError } from "./db/errors.ts";
 import { collectLogs } from "./test-support.ts";
 
-const ROOM_A = { id: "id-a", code: "room-a" };
-const ROOM_B = { id: "id-b", code: "room-b" };
 const ME = "person-id-never-logged";
+const ROOM_A = { id: "id-a", code: "room-a", ownerId: ME, rule: null };
+const ROOM_B = { id: "id-b", code: "room-b", ownerId: ME, rule: null };
+const RULE = { domains: ["example.com"], tenants: [] };
+const PROVIDERS = { google: true, microsoft: false };
 
-function harness(overrides: Partial<AccountDeletionStore> = {}) {
+function harness(overrides: Partial<AccountDeletionStore> = {}, domain: string | null = null) {
   const calls: string[] = [];
   let left = [ROOM_A, ROOM_B];
   const store: AccountDeletionStore = {
@@ -50,8 +52,18 @@ function harness(overrides: Partial<AccountDeletionStore> = {}) {
     dropAccount: vi.fn(() => void calls.push("drop")),
   };
   const logs = collectLogs("debug");
-  const deletions = createAccountDeletions({ store, rooms, logger: logs.logger, waitMs: 50 });
-  return { calls, store, rooms, deletions, logs };
+  const identitiesOf = vi.fn(
+    async () => new Map(domain === null ? [] : [[ME, { domain, tenant: null }]]),
+  );
+  const rules = { providers: PROVIDERS, identitiesOf };
+  const deletions = createAccountDeletions({
+    store,
+    rooms,
+    rules,
+    logger: logs.logger,
+    waitMs: 50,
+  });
+  return { calls, store, rooms, deletions, logs, identitiesOf };
 }
 
 describe("a deletion", () => {
@@ -86,7 +98,7 @@ describe("a deletion", () => {
       }),
     });
     await deletions.start(ME, store.markerOf as never);
-    expect(deleteKept).toHaveBeenCalledWith(ROOM_A.id, ME);
+    expect(deleteKept).toHaveBeenCalledWith(ROOM_A, ME);
     expect(calls).toContain("deleted id-a");
     expect(rooms.removeAccount).toHaveBeenCalledWith(
       ROOM_B,
@@ -136,7 +148,7 @@ describe("a deletion", () => {
   });
 
   it("goes on to everyone else's rooms and rounds when one person's room fails", async () => {
-    const guestRoom = { id: "id-guest", code: "room-guest" };
+    const guestRoom = { ...ROOM_A, id: "id-guest", code: "room-guest" };
     const cleared: string[] = [];
     const { calls, deletions, rooms } = harness({
       guestsOf: async () => ["guest"],
@@ -167,6 +179,51 @@ describe("a deletion", () => {
     const text = logs.raw.join("\n");
     expect(text).toContain(ROOM_A.id);
     expect(text).not.toContain("a value out of the room");
+  });
+
+  describe("with a room's rule", () => {
+    const refusedKeeper = { ...ROOM_A, ownerId: "someone-else", rule: RULE };
+
+    it("deletes nothing for a keeper the rule refuses, whatever was chosen", async () => {
+      const deleteKept = vi.fn(async () => true);
+      const deleteAlone = vi.fn(async () => true);
+      const { deletions, rooms, identitiesOf } = harness({
+        deleteKept,
+        deleteAlone,
+        markerOf: async () => ({ choices: { [ROOM_A.id]: { delete: true } }, since: new Date() }),
+        roomsOf: vi.fn(async () => [refusedKeeper]),
+      });
+      await deletions.start(ME, {});
+      expect(deleteKept).not.toHaveBeenCalled();
+      expect(deleteAlone).not.toHaveBeenCalled();
+      expect(rooms.removeAccount).toHaveBeenCalled();
+      expect(identitiesOf).toHaveBeenCalled();
+    });
+
+    it("lets a keeper the rule passes delete, with no session left to go by", async () => {
+      const deleteAlone = vi.fn(async () => true);
+      const roomsOf = vi.fn(async (): Promise<(typeof ROOM_A)[]> => []);
+      roomsOf.mockResolvedValueOnce([refusedKeeper as never]);
+      const { deletions, rooms } = harness({ deleteAlone, roomsOf }, "example.com");
+      await deletions.start(ME, {});
+      expect(deleteAlone).toHaveBeenCalled();
+      expect(rooms.removeAccount).not.toHaveBeenCalled();
+    });
+
+    it("lets the PO who keeps a room delete it, as every rule passes the PO", async () => {
+      const deleteAlone = vi.fn(async () => true);
+      const roomsOf = vi.fn(async (): Promise<(typeof ROOM_A)[]> => []);
+      roomsOf.mockResolvedValueOnce([{ ...ROOM_A, rule: RULE } as never]);
+      const { deletions } = harness({ deleteAlone, roomsOf });
+      await deletions.start(ME, {});
+      expect(deleteAlone).toHaveBeenCalled();
+    });
+
+    it("reads nothing more for rooms with no rule", async () => {
+      const { deletions, identitiesOf } = harness();
+      await deletions.start(ME, {});
+      expect(identitiesOf).not.toHaveBeenCalled();
+    });
   });
 
   it("gives up for now when the rooms keep changing, and says so", async () => {

@@ -82,7 +82,12 @@ function redealt(state: RoomState, order: readonly number[]): RoomState {
 }
 
 /** What the viewer's socket gets before the deletion and after it, as the bytes it gets. */
-function frames(state: RoomState, heir?: string, mayTake?: readonly string[]): string {
+function frames(
+  state: RoomState,
+  heir?: string,
+  mayTake?: readonly string[],
+  vacate?: true,
+): string {
   const command: Command = {
     type: "removeAccount",
     who: WHO,
@@ -90,6 +95,7 @@ function frames(state: RoomState, heir?: string, mayTake?: readonly string[]): s
     vacant: VACANT,
     ...(heir !== undefined && { heir }),
     ...(mayTake !== undefined && { mayTake }),
+    ...(vacate && { vacate }),
   };
   const gone = apply(state, command, { actor: ":server", now: T0 + 5 });
   const meta = { code: "ROOM", version: 1, now: T0 };
@@ -105,6 +111,7 @@ const deal = fc.record({
   poVotes: fc.boolean(),
   heir: fc.option(fc.constantFrom(VIEWER, "cleo", "dan"), { nil: undefined }),
   mayTake: fc.option(fc.subarray([VIEWER, "cleo", "dan"]), { nil: undefined }),
+  vacate: fc.constantFrom(undefined, true as const),
   dealt: fc.record(
     Object.fromEntries([VIEWER, ...FILLERS, WHO].map((who) => [who, fc.constantFrom(...CARDS)])),
   ),
@@ -118,13 +125,13 @@ describe("an anonymous reveal, through an account's deletion", () => {
     it(`shows a third person nothing of who held what: ${name}`, () => {
       let dealtDifferently = 0;
       fc.assert(
-        fc.property(deal, ({ owner, keeper, poVotes, heir, mayTake, dealt, order }) => {
+        fc.property(deal, ({ owner, keeper, poVotes, heir, mayTake, vacate, dealt, order }) => {
           const state = revealedRoom(person, owner, poVotes, dealt, keeper);
           const other = redealt(state, order);
           if (JSON.stringify(other.round?.votes) !== JSON.stringify(state.round?.votes)) {
             dealtDifferently += 1;
           }
-          expect(frames(other, heir, mayTake)).toBe(frames(state, heir, mayTake));
+          expect(frames(other, heir, mayTake, vacate)).toBe(frames(state, heir, mayTake, vacate));
         }),
         { numRuns: 120 },
       );

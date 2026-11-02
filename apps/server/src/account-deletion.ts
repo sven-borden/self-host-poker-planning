@@ -11,7 +11,9 @@
  *    on every instance.
  * 3. Every room that names the person is dealt with, one at a time. Deleted when the person chose
  *    that or nobody can take it, by a statement; otherwise through its runner (`removeAccount`), so
- *    its people see a `leave` or a hand-over. A room that fails stops nothing but step 5. The rooms
+ *    its people see a `leave` or a hand-over. A room's rule (ADR-028) decides who may take it, in
+ *    the runner, on the room's fresh state, and a keeper it refuses deletes nothing: their room
+ *    goes through the runner too. A room that fails stops nothing but step 5. The rooms
  *    are looked up again until none is left, for a command that was in flight.
  * 4. Every named round loses the person, keeping the card, whatever came of the rooms.
  * 5. `finish`, in one transaction, the `user` row last, and only if every room was dealt with. Its
@@ -32,10 +34,17 @@
 import { randomBytes } from "node:crypto";
 import type { AccountRemoval } from "@pp/domain";
 import { MOVE_WAIT_MS } from "@pp/protocol";
-import type { AccountDeletionStore, RoomChoices } from "./db/account-deletions.ts";
+import type { AccountDeletionStore, AccountRoom, RoomChoices } from "./db/account-deletions.ts";
 import { errorCode } from "./db/errors.ts";
 import type { GuestRoom } from "./db/guest-links.ts";
 import type { Logger } from "./logger.ts";
+import {
+  goingCandidate,
+  mayHoldRole,
+  type RoleCandidate,
+  type RoomRules,
+  ruledRoom,
+} from "./room-rule.ts";
 import type { ServerRun } from "./sync/room-sync.ts";
 
 /** Passes in one run; the next run goes on. */
@@ -70,6 +79,8 @@ export interface AccountDeletions {
 export interface AccountDeletionOptions {
   store: AccountDeletionStore;
   rooms: AccountRooms;
+  /** What a room's rule asks of the person going. */
+  rules: Pick<RoomRules, "providers" | "identitiesOf">;
   logger: Logger;
   /** For tests: `MOVE_WAIT_MS` otherwise. */
   waitMs?: number;
@@ -82,7 +93,7 @@ function reasonOf(error: unknown): { err: string; class: string } {
 }
 
 export function createAccountDeletions(options: AccountDeletionOptions): AccountDeletions {
-  const { store, rooms, waitMs = MOVE_WAIT_MS } = options;
+  const { store, rooms, rules, waitMs = MOVE_WAIT_MS } = options;
   const log = options.logger.child({ part: "account-deletion" });
   /** The run of each account on this instance: a second request joins the first. */
   const running = new Map<string, Promise<boolean>>();
@@ -94,15 +105,24 @@ export function createAccountDeletions(options: AccountDeletionOptions): Account
     level: "warn" | "error",
   ): Promise<number | "failed"> {
     const found = await store.roomsOf(who);
+    let candidate: RoleCandidate | undefined;
+    /** One read of the person, and none while no room has a rule. */
+    const mayDelete = async (room: AccountRoom) => {
+      if (room.rule === null) return true;
+      candidate ??= await goingCandidate(rules, who);
+      return mayHoldRole(ruledRoom(room), who, candidate, rules.providers, Date.now());
+    };
     let failed = 0;
     for (const room of found) {
       try {
         const wish = Object.hasOwn(choices, room.id) ? choices[room.id] : undefined;
         const chosen = wish !== undefined && "delete" in wish;
         // A room with nobody in it goes whatever was chosen: a chosen heir who left takes nothing.
+        // A keeper the rule refuses deletes nothing, whatever a request says (ADR-028), and each
+        // statement holds only while the rule and the PO are what was judged here.
         if (
-          (chosen && (await store.deleteKept(room.id, who))) ||
-          (await store.deleteAlone(room.id, who))
+          (await mayDelete(room)) &&
+          ((chosen && (await store.deleteKept(room, who))) || (await store.deleteAlone(room, who)))
         ) {
           rooms.roomDeleted(room.id);
           continue;

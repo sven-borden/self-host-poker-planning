@@ -45,6 +45,7 @@ export {
   type RestrictionRefusal,
   type RestrictionRequirement,
   RULE_SESSION_MAX_AGE_DAYS,
+  type RuledRoom,
   type RuleProviders,
   requirementOf,
   restrictionRefusal,

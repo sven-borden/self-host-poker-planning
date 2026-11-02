@@ -10,9 +10,9 @@ export interface RoomSeat {
 }
 
 /** Why the first seat is the default: the same order as the server's (`heirsOf`). */
-export type DefaultReason = "runsTheRoom" | "here" | "away";
+export type DefaultReason = "runsTheRoom" | "here" | "away" | "nobody";
 
-const DEFAULT_REASONS: readonly unknown[] = ["runsTheRoom", "here", "away"];
+const DEFAULT_REASONS: readonly unknown[] = ["runsTheRoom", "here", "away", "nobody"];
 
 /** A room this person keeps, with other people in it: the default first. */
 export interface SharedRoom {
@@ -30,6 +30,8 @@ export interface AccountOverview {
   readonly alone: number;
   /** Rooms someone else keeps where this person's seat or role goes. */
   readonly seats: number;
+  /** Rooms this person keeps whose rule now refuses them: only how many. */
+  readonly held: number;
   readonly shared: readonly SharedRoom[];
   /** How many idle days this server keeps a room no signed-in person keeps. */
   readonly retentionDays: number;
@@ -72,11 +74,13 @@ export async function fetchAccount(): Promise<AccountOverview> {
   const shared = field(body, "shared");
   const alone = field(body, "alone");
   const seats = field(body, "seats");
+  const held = field(body, "held");
   const retentionDays = field(body, "retentionDays");
   if (
     !Array.isArray(shared) ||
     typeof alone !== "number" ||
     typeof seats !== "number" ||
+    typeof held !== "number" ||
     typeof retentionDays !== "number"
   ) {
     throw new RoomApiError("internal");
@@ -85,6 +89,7 @@ export async function fetchAccount(): Promise<AccountOverview> {
     recent: field(body, "recent") === true,
     alone,
     seats,
+    held,
     shared: shared.map(toRoom),
     retentionDays,
     moving: field(body, "moving") === true,

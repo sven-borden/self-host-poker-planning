@@ -2,14 +2,20 @@
  * What the account page and the export read (#51, ADR-029): one person's rows, through the indexes
  * a guest's move reads (`guest-links.ts`). Nothing here writes. `room.code` is read by neither: a
  * code is a bearer capability, and neither answer holds one.
+ *
+ * A room with a rule (#50, ADR-028) tells someone it refuses no more here than at its door, as "My
+ * rooms" does: no seated name, no room's name, nothing but that a right or a card was there. Who
+ * may take a room goes by the one test, `mayHoldRole`, at one read per person. A room with no rule
+ * reads nothing more.
  */
-import { type HeirReason, heirsOf } from "@pp/domain";
+import { type HeirReason, heirsOf, type Restriction } from "@pp/domain";
 import { eq, sql } from "drizzle-orm";
+import { mayHoldRole, type RoleCandidate, type RoomRules, ruledRoom } from "../room-rule.ts";
 import { account, user } from "./auth-schema.ts";
 import { guard } from "./errors.ts";
 import { namedRoundsOf, namesPerson } from "./guest-links.ts";
 import type { Db } from "./rooms.ts";
-import { ROOM_KEEPER, room, roomAccess, roundHistory } from "./schema.ts";
+import { ROOM_KEEPER, ROOM_RULE, room, roomAccess, roundHistory } from "./schema.ts";
 
 /** Someone in a room the person keeps: a choice of who takes it. */
 export interface RoomSeat {
@@ -17,14 +23,18 @@ export interface RoomSeat {
   name: string;
 }
 
-/** A room the person keeps, with other people in it: `heirsOf`'s order, the default first. */
+/** Why a room's first seat is the default, or that a rule allows nobody seated. */
+export type DefaultReason = Exclude<HeirReason, "chosen"> | "nobody";
+
+/** A room the person keeps, with other people in it: who may take it, the default first. */
 export interface SharedRoom {
   id: string;
   name: string | null;
   lastActiveAt: Date;
+  /** Only people who may take it: empty when a room's rule allows none of those seated. */
   seats: RoomSeat[];
-  /** Why the first seat is the default: the page says it. */
-  why: HeirReason;
+  /** Why the first seat is the default, or `nobody`: the page says it. */
+  why: DefaultReason;
 }
 
 /** What a deletion would do, for the page to say. */
@@ -33,6 +43,8 @@ export interface AccountOverview {
   alone: number;
   /** Rooms someone else keeps where the person holds a seat or the PO role: those go. */
   seats: number;
+  /** Rooms the person keeps that their rule refuses them: a number, and nothing about them. */
+  held: number;
   shared: SharedRoom[];
 }
 
@@ -50,6 +62,12 @@ export interface ExportRoom {
    */
   cardOnTable: boolean;
   lastActiveAt: string;
+}
+
+/** A room whose rule refuses the person: that it names them, and nothing about it. */
+export interface WithheldRoom {
+  id: string;
+  withheld: true;
 }
 
 /** A room a correct password let the person into. */
@@ -83,12 +101,14 @@ export interface ExportSignIn {
   since: string;
   /** What a Microsoft token claimed: the person's to see, and proof of nothing. */
   claimedEmail?: string;
+  /** The Google Workspace domain the token named, if any. */
+  hostedDomain?: string;
 }
 
 export interface AccountDataStore {
   overview(who: string): Promise<AccountOverview>;
   profile(who: string): Promise<{ profile: ExportProfile; signIns: ExportSignIn[] } | null>;
-  rooms(who: string): Promise<ExportRoom[]>;
+  rooms(who: string): Promise<(ExportRoom | WithheldRoom)[]>;
   grants(who: string): Promise<ExportGrant[]>;
   votes(who: string): Promise<ExportVote[]>;
 }
@@ -100,7 +120,33 @@ interface Seat {
   connected: boolean;
 }
 
-export function createAccountDataStore(db: Db): AccountDataStore {
+/** What a row brings for a room's rule. */
+interface Ruled {
+  ownerId: string;
+  rule: Restriction | null;
+}
+
+export function createAccountDataStore(
+  db: Db,
+  rules: Pick<RoomRules, "providers" | "candidateOf">,
+): AccountDataStore {
+  /** One read per person, however many rooms ask, and none while no room has a rule. */
+  function readerFor() {
+    const read = new Map<string, Promise<RoleCandidate>>();
+    const candidate = (who: string) => {
+      const known = read.get(who);
+      if (known) return known;
+      const reading = rules.candidateOf(who);
+      read.set(who, reading);
+      return reading;
+    };
+    /** Whether this person may hold this room's role, by the one test. */
+    return async (room: Ruled, who: string) =>
+      room.rule === null ||
+      who === room.ownerId ||
+      mayHoldRole(ruledRoom(room), who, await candidate(who), rules.providers, Date.now());
+  }
+
   /** The person's rooms, with who sits in them. */
   const roomsNaming = (who: string) =>
     db
@@ -108,6 +154,7 @@ export function createAccountDataStore(db: Db): AccountDataStore {
         id: room.id,
         name: room.name,
         ownerId: room.ownerUserId,
+        rule: sql<Restriction | null>`${ROOM_RULE}`,
         productOwner: sql<boolean>`${room.ownerUserId} = ${who}`,
         keeper: sql<boolean>`${ROOM_KEEPER} = ${who}`,
         people: sql<Record<string, Seat>>`${room.live} -> 'participants'`,
@@ -120,24 +167,35 @@ export function createAccountDataStore(db: Db): AccountDataStore {
   return {
     overview: (who) =>
       guard("read account overview", async () => {
-        const overview: AccountOverview = { alone: 0, seats: 0, shared: [] };
+        const overview: AccountOverview = { alone: 0, seats: 0, held: 0, shared: [] };
+        const may = readerFor();
         for (const row of await roomsNaming(who)) {
           const seated = Object.hasOwn(row.people, who);
           if (!row.keeper) {
             if (seated || row.productOwner) overview.seats += 1;
             continue;
           }
-          const heirs = heirsOf({ ownerId: row.ownerId, participants: row.people }, who);
-          const [first] = heirs;
-          if (first === undefined) overview.alone += 1;
-          else {
-            const { id, name, lastActiveAt } = row;
-            const seats = heirs.map((heir) => ({
-              id: heir.id,
-              name: row.people[heir.id]?.name ?? "",
-            }));
-            overview.shared.push({ id, name, lastActiveAt, seats, why: first.why });
+          if (!(await may(row, who))) {
+            overview.held += 1;
+            continue;
           }
+          const others = Object.keys(row.people).filter((id) => id !== who);
+          if (others.length === 0) {
+            overview.alone += 1;
+            continue;
+          }
+          const allowed = await Promise.all(others.map((id) => may(row, id)));
+          const mayTake = row.rule === null ? undefined : others.filter((_, i) => allowed[i]);
+          const participants = row.people;
+          const heirs = heirsOf({ ownerId: row.ownerId, participants }, who, { mayTake });
+          const { id, name, lastActiveAt } = row;
+          overview.shared.push({
+            id,
+            name,
+            lastActiveAt,
+            seats: heirs.map((heir) => ({ id: heir.id, name: participants[heir.id]?.name ?? "" })),
+            why: (heirs[0]?.why ?? "nobody") as DefaultReason,
+          });
         }
         overview.shared.sort((a, b) => b.lastActiveAt.getTime() - a.lastActiveAt.getTime());
         return overview;
@@ -161,16 +219,23 @@ export function createAccountDataStore(db: Db): AccountDataStore {
             provider: row.providerId,
             since: row.createdAt.toISOString(),
             ...(row.claimedEmail !== null && { claimedEmail: row.claimedEmail }),
+            ...(row.hostedDomain !== null && { hostedDomain: row.hostedDomain }),
           })),
         };
       }),
 
     rooms: (who) =>
       guard("read account rooms", async () => {
-        const rows = await roomsNaming(who);
-        return rows.map(({ id, name, productOwner, keeper, people, cardOnTable, lastActiveAt }) => {
+        const may = readerFor();
+        const shown: (ExportRoom | WithheldRoom)[] = [];
+        for (const row of await roomsNaming(who)) {
+          if (!(await may(row, who))) {
+            shown.push({ id: row.id, withheld: true });
+            continue;
+          }
+          const { id, name, productOwner, keeper, people, cardOnTable, lastActiveAt } = row;
           const seat = Object.hasOwn(people, who) ? people[who] : undefined;
-          return {
+          shown.push({
             id,
             name,
             productOwner,
@@ -184,22 +249,32 @@ export function createAccountDataStore(db: Db): AccountDataStore {
               : null,
             cardOnTable,
             lastActiveAt: lastActiveAt.toISOString(),
-          };
-        });
+          });
+        }
+        return shown;
       }),
 
     grants: (who) =>
       guard("read account grants", async () => {
         const rows = await db
-          .select({ id: room.id, name: room.name, since: roomAccess.grantedAt })
+          .select({
+            id: room.id,
+            name: room.name,
+            since: roomAccess.grantedAt,
+            ownerId: room.ownerUserId,
+            rule: sql<Restriction | null>`${ROOM_RULE}`,
+          })
           .from(roomAccess)
           .innerJoin(room, eq(room.id, roomAccess.roomId))
           .where(eq(roomAccess.userId, who))
           .orderBy(roomAccess.grantedAt);
-        return rows.map(({ id, name, since }) => ({
-          room: { id, name },
-          since: since.toISOString(),
-        }));
+        const may = readerFor();
+        const grants: ExportGrant[] = [];
+        for (const row of rows) {
+          const name = (await may(row, who)) ? row.name : null;
+          grants.push({ room: { id: row.id, name }, since: row.since.toISOString() });
+        }
+        return grants;
       }),
 
     votes: (who) =>
@@ -208,6 +283,8 @@ export function createAccountDataStore(db: Db): AccountDataStore {
           .select({
             roomId: roundHistory.roomId,
             roomName: room.name,
+            ownerId: room.ownerUserId,
+            rule: sql<Restriction | null>`${ROOM_RULE}`,
             round: roundHistory.number,
             subject: roundHistory.subject,
             votes: roundHistory.votes,
@@ -217,21 +294,25 @@ export function createAccountDataStore(db: Db): AccountDataStore {
           .innerJoin(room, eq(room.id, roundHistory.roomId))
           .where(sql`${roundHistory.votes} @> ${namedRoundsOf(who)}::jsonb`)
           .orderBy(roundHistory.revealedAt);
-        return rows.flatMap(({ roomId, roomName, round, subject, votes, revealedAt }) =>
-          votes.kind !== "named"
-            ? []
-            : votes.votes
-                .filter((vote) => vote.who === who)
-                .map(({ card, name, changedAfterReveal }) => ({
-                  room: { id: roomId, name: roomName },
-                  round,
-                  subject,
-                  card,
-                  name,
-                  ...(changedAfterReveal && { changedAfterReveal }),
-                  revealedAt: revealedAt.toISOString(),
-                })),
-        );
+        const may = readerFor();
+        const cards: ExportVote[] = [];
+        for (const row of rows) {
+          if (row.votes.kind !== "named") continue;
+          const shown = await may(row, who);
+          for (const { who: voter, card, name, changedAfterReveal } of row.votes.votes) {
+            if (voter !== who) continue;
+            cards.push({
+              room: { id: row.roomId, name: shown ? row.roomName : null },
+              round: row.round,
+              subject: shown ? row.subject : null,
+              card,
+              name,
+              ...(changedAfterReveal && { changedAfterReveal }),
+              revealedAt: row.revealedAt.toISOString(),
+            });
+          }
+        }
+        return cards;
       }),
   };
 }

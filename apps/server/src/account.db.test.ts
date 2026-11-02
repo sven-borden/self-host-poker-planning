@@ -426,6 +426,9 @@ describe("the export", () => {
        values ($1, 'jira', 'v1.key.iv.sealed-value-never-exported')`,
       [me.id],
     );
+    await admin.query("update account set hosted_domain = 'team.example' where user_id = $1", [
+      me.id,
+    ]);
     const answer = await me.go("/api/account/export");
     expect(answer.status).toBe(200);
     expect(answer.headers.get("cache-control")).toBe("no-store");
@@ -436,7 +439,9 @@ describe("the export", () => {
       format: "poker-planning-account",
       version: 1,
       profile: { name: person.name, email: person.email, avatar: "koala" },
-      signIns: [{ provider: "microsoft", claimedEmail: person.email }],
+      signIns: [
+        { provider: "microsoft", claimedEmail: person.email, hostedDomain: "team.example" },
+      ],
       connections: ["jira"],
     });
     const rooms = file.rooms as { id: string; keeper: boolean; seat: { name: string } | null }[];
@@ -663,7 +668,17 @@ describe("after a deletion", () => {
     );
     const stored = ids[0] as { account_id: string; tenant_id: string; email: string };
     const oid = stored.account_id.split(":")[1] ?? stored.account_id;
-    const needles = [me.id, person.name, person.email, stored.email, stored.account_id, oid];
+    const hosted = `hosted-${Date.now()}.example`;
+    await admin.query("update account set hosted_domain = $2 where user_id = $1", [me.id, hosted]);
+    const needles = [
+      me.id,
+      person.name,
+      person.email,
+      stored.email,
+      stored.account_id,
+      oid,
+      hosted,
+    ];
 
     const other = await new Browser().asGuest();
 
@@ -1094,6 +1109,319 @@ describe("the people in a live room", () => {
   });
 });
 
+describe("a room's rule", () => {
+  const RULE = { domains: ["allowed.example"], tenants: [] };
+
+  /** Someone the rule passes. */
+  const admitted = () => {
+    const person = newPerson();
+    const email = `member-${people}-${Date.now()}@allowed.example`;
+    secrets.push(email);
+    return signedIn({ ...person, email });
+  };
+
+  const setRule = (id: string) =>
+    admin.query(
+      `update room set live = jsonb_set(live, '{settings,restriction}', $2::jsonb) where id = $1`,
+      [id, JSON.stringify(RULE)],
+    );
+
+  const setKeeper = (id: string, keeper: string) =>
+    admin.query(
+      `update room set live = jsonb_set(live, '{keeperId}', to_jsonb($2::text)) where id = $1`,
+      [id, keeper],
+    );
+
+  const overviewOf = async (me: Browser) =>
+    (await (await me.go("/api/account")).json()) as {
+      alone: number;
+      seats: number;
+      held: number;
+      shared: { id: string; why: string; seats: { id: string; name: string }[] }[];
+    };
+
+  const idle = (id: string) =>
+    admin.query("update room set last_active_at = now() - interval '200 days' where id = $1", [id]);
+
+  const userGone = async (id: string) => {
+    const { rows } = await admin.query('select 1 from "user" where id = $1', [id]);
+    expect(rows).toHaveLength(0);
+  };
+
+  /** Someone who keeps a room with a guest and an outsider seated before its rule, and a member. */
+  async function ruledRoom() {
+    const me = await admitted();
+    const guest = await new Browser().asGuest();
+    const outsider = await signedIn();
+    const member = await admitted();
+    const room = await roomOf(me.id, "With A Rule");
+    await me.sit(room.code);
+    await guest.sit(room.code, "Seated Guest");
+    await outsider.sit(room.code, "Seated Outsider");
+    await member.sit(room.code, "Seated Member");
+    await setRule(room.id);
+    return { me, guest, outsider, member, room };
+  }
+
+  it("offers only who may take it, and that default is what the server does", async () => {
+    const { me, member, room } = await ruledRoom();
+    const overview = await overviewOf(me);
+    expect(overview.shared).toMatchObject([
+      { id: room.id, why: "here", seats: [{ id: member.id, name: "Seated Member" }] },
+    ]);
+    expect(JSON.stringify(overview)).not.toContain("Outsider");
+    expect(JSON.stringify(overview)).not.toContain("Guest");
+    expect((await me.remove()).status).toBe(200);
+    const stored = await liveOf(room.id);
+    expect(stored?.owner_user_id).toBe(member.id);
+    expect(stored?.live.keeperId).toBe(member.id);
+  });
+
+  it("judges at the step: a choice the rule refuses since the page was read takes nothing", async () => {
+    const me = await admitted();
+    const outsider = await signedIn();
+    const member = await admitted();
+    const room = await roomOf(me.id);
+    await me.sit(room.code);
+    await outsider.sit(room.code);
+    await member.sit(room.code);
+    const before = await overviewOf(me);
+    expect(before.shared[0]?.seats.map(({ id }) => id)).toEqual([outsider.id, member.id]);
+    await setRule(room.id);
+    expect((await me.remove([{ id: room.id, to: outsider.id }])).status).toBe(200);
+    expect((await liveOf(room.id))?.live.keeperId).toBe(member.id);
+  });
+
+  it("leaves it with nobody when nobody seated passes, and the page says so", async () => {
+    const me = await admitted();
+    const outsider = await signedIn();
+    const room = await roomOf(me.id);
+    await me.sit(room.code);
+    const seat = await outsider.sit(room.code, "Seated Outsider");
+    await setRule(room.id);
+    const overview = await overviewOf(me);
+    expect(overview).toMatchObject({ alone: 0, shared: [{ why: "nobody", seats: [] }] });
+    const id = me.id;
+    expect(await (await me.remove()).json()).toEqual({ finished: true });
+    await userGone(id);
+    const stored = await liveOf(room.id);
+    expect(stored?.live.keeperId).toMatch(/^[0-9a-f]{32}$/);
+    expect(stored?.owner_user_id).toBe(stored?.live.keeperId);
+    expect(Object.keys(stored?.live.participants ?? {})).toEqual([outsider.id]);
+    expect(seat.socket.connected).toBe(true);
+    await idle(room.id);
+    await setup.database.retention.purge({ ttlDays: 90 });
+    expect(await liveOf(room.id)).toBeUndefined();
+  });
+
+  it("asks what the door asks: no live session, or a sign-in too old, takes nothing", async () => {
+    for (const age of ["gone", "old"]) {
+      const me = await admitted();
+      const member = await admitted();
+      const room = await roomOf(me.id);
+      await me.sit(room.code);
+      await member.sit(room.code);
+      await setRule(room.id);
+      await admin.query(
+        age === "gone"
+          ? "delete from session where user_id = $1"
+          : "update session set created_at = now() - interval '31 days' where user_id = $1",
+        [member.id],
+      );
+      expect((await overviewOf(me)).shared[0]?.why).toBe("nobody");
+      expect((await me.remove()).status).toBe(200);
+      expect((await liveOf(room.id))?.live.keeperId).not.toBe(member.id);
+    }
+  });
+
+  it("reads nobody for a room with no rule, and each person once for many with one", async () => {
+    const me = await admitted();
+    const member = await admitted();
+    const plain = await roomOf(me.id);
+    await me.sit(plain.code);
+    await member.sit(plain.code);
+    const candidates = vi.spyOn(setup.rules, "candidateOf");
+    const identities = vi.spyOn(setup.rules, "identitiesOf");
+    await overviewOf(me);
+    expect(candidates).not.toHaveBeenCalled();
+
+    const ruled = [await roomOf(me.id), await roomOf(me.id)];
+    for (const room of ruled) {
+      await me.sit(room.code);
+      await member.sit(room.code);
+      await setRule(room.id);
+    }
+    candidates.mockClear();
+    await overviewOf(me);
+    expect(candidates.mock.calls.filter(([id]) => id === member.id)).toHaveLength(1);
+
+    await admin.query("delete from room where id = any($1)", [ruled.map(({ id }) => id)]);
+    candidates.mockClear();
+    identities.mockClear();
+    expect((await me.remove()).status).toBe(200);
+    expect(candidates).not.toHaveBeenCalled();
+    expect(identities).not.toHaveBeenCalled();
+    expect((await liveOf(plain.id))?.live.keeperId).toBe(member.id);
+  });
+
+  /** `owner` runs a room `me` keeps, whose rule refuses `me`. */
+  async function shutOut(me: Browser, owner: Browser, settings = {}) {
+    const room = await roomOf(owner.id, "Not For You", settings);
+    const seat = await owner.sit(room.code, "Runs It");
+    await setKeeper(room.id, me.id);
+    await setRule(room.id);
+    return { room, seat };
+  }
+
+  it("a keeper the rule refuses reads nothing of the room, on the page or in the file", async () => {
+    const me = await signedIn();
+    const owner = await admitted();
+    const room = await roomOf(owner.id, "Not For You");
+    const po = await owner.sit(room.code, "Runs It");
+    const seat = await me.sit(room.code, "Going");
+    await playRound(po, [
+      [seat, "5"],
+      [po, "3"],
+    ]);
+    await seat.cmd("leave");
+    await setKeeper(room.id, me.id);
+    await setRule(room.id);
+    await admin.query("insert into room_access (room_id, user_id) values ($1, $2)", [
+      room.id,
+      me.id,
+    ]);
+
+    const overview = await overviewOf(me);
+    expect(overview).toMatchObject({ alone: 0, held: 1, shared: [] });
+    const page = JSON.stringify(overview);
+    for (const absent of ["Not For You", "Runs It", owner.id, room.id]) {
+      expect(page).not.toContain(absent);
+    }
+
+    const text = await (await me.go("/api/account/export")).text();
+    const file = JSON.parse(text) as Record<string, unknown>;
+    expect(file.rooms).toEqual([{ id: room.id, withheld: true }]);
+    expect(file.grants).toMatchObject([{ room: { id: room.id, name: null } }]);
+    expect(file.votes).toMatchObject([
+      { room: { id: room.id, name: null }, subject: null, card: "5" },
+    ]);
+    for (const absent of ["Not For You", "Runs It", "A story", owner.id, room.code]) {
+      expect(text).not.toContain(absent);
+    }
+  });
+
+  it("a keeper the rule refuses destroys nothing, whatever a request says", async () => {
+    const me = await signedIn();
+    const owner = await admitted();
+    const { room } = await shutOut(me, owner);
+    const id = me.id;
+    expect(await (await me.remove([{ id: room.id, delete: true }])).json()).toEqual({
+      finished: true,
+    });
+    await userGone(id);
+    const stored = await liveOf(room.id);
+    expect(stored?.live.keeperId).toBe(owner.id);
+    expect(stored?.owner_user_id).toBe(owner.id);
+    expect(JSON.stringify(stored)).not.toContain(id);
+  });
+
+  it("with nobody else seated it stays under no keeper, follows the period, and the id goes", async () => {
+    const me = await signedIn();
+    const owner = await admitted();
+    const { room, seat } = await shutOut(me, owner);
+    await seat.cmd("leave");
+    await vi.waitFor(async () =>
+      expect(Object.keys((await liveOf(room.id))?.live.participants ?? {})).toEqual([]),
+    );
+    const id = me.id;
+    expect(await (await me.remove([{ id: room.id, delete: true }])).json()).toEqual({
+      finished: true,
+    });
+    await userGone(id);
+    const stored = await liveOf(room.id);
+    expect(stored?.live.keeperId).toMatch(/^[0-9a-f]{32}$/);
+    expect(stored?.owner_user_id).toBe(owner.id);
+    expect(JSON.stringify(stored)).not.toContain(id);
+    await idle(room.id);
+    await setup.database.retention.purge({ ttlDays: 90 });
+    expect(await liveOf(room.id)).toBeUndefined();
+  });
+
+  it("a choice of heir from a keeper the rule refuses is no choice", async () => {
+    const me = await signedIn();
+    const owner = await admitted();
+    const member = await admitted();
+    const { room } = await shutOut(me, owner);
+    await member.sit(room.code);
+    expect((await me.remove([{ id: room.id, to: member.id }])).status).toBe(200);
+    expect((await liveOf(room.id))?.live.keeperId).toBe(owner.id);
+  });
+
+  it("a keeper the rule passes, and a PO it does not, may still delete", async () => {
+    const passes = await admitted();
+    const owner = await admitted();
+    const first = await shutOut(passes, owner);
+    await first.seat.cmd("leave");
+    await vi.waitFor(async () =>
+      expect(Object.keys((await liveOf(first.room.id))?.live.participants ?? {})).toEqual([]),
+    );
+    expect((await overviewOf(passes)).alone).toBe(1);
+    expect((await passes.remove()).status).toBe(200);
+    expect(await liveOf(first.room.id)).toBeUndefined();
+
+    const po = await signedIn();
+    const room = await roomOf(po.id);
+    await setRule(room.id);
+    expect((await overviewOf(po)).alone).toBe(1);
+    expect((await po.remove()).status).toBe(200);
+    expect(await liveOf(room.id)).toBeUndefined();
+  });
+
+  it("a rule set after the keeper was judged keeps the room from both statements", async () => {
+    const me = await admitted();
+    const room = await roomOf(me.id);
+    const seen = { ...room, ownerId: me.id, rule: null };
+    await setRule(room.id);
+    await expect(store().deleteAlone(seen, me.id)).resolves.toBe(false);
+    await expect(store().deleteKept(seen, me.id)).resolves.toBe(false);
+    const claimed = { ...seen, ownerId: "someone-before", rule: RULE };
+    await expect(store().deleteKept(claimed, me.id)).resolves.toBe(false);
+    await expect(store().deleteKept({ ...claimed, ownerId: me.id }, me.id)).resolves.toBe(true);
+  });
+});
+
+describe("a join against the end of a deletion", () => {
+  it("a join that passed its session check cannot commit once the row has gone", async () => {
+    const me = await signedIn();
+    const other = await new Browser().asGuest();
+    const room = await roomOf(other.id);
+    await other.sit(room.code);
+    const seat = me.socket();
+    await expect(seat.enter(room.code)).resolves.toMatchObject({ ok: true });
+    const client = await admin.connect();
+    await client.query("begin");
+    await client.query("select 1 from room where id = $1 for update", [room.id]);
+    const join = seat.cmd("join", { name: "Late", role: "voter" });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await expect(store().finish(me.id)).resolves.toBe(true);
+    await client.query("commit");
+    client.release();
+    await expect(join).resolves.toMatchObject({ ok: false });
+    expect(JSON.stringify(await liveOf(room.id))).not.toContain(me.id);
+  });
+
+  it("a guest's join needs no account, and an account's lands as before", async () => {
+    const me = await signedIn();
+    const guest = await new Browser().asGuest();
+    const room = await roomOf(guest.id);
+    await guest.sit(room.code);
+    await me.sit(room.code);
+    expect(Object.keys((await liveOf(room.id))?.live.participants ?? {}).sort()).toEqual(
+      [me.id, guest.id].sort(),
+    );
+  });
+});
+
 describe("named history", () => {
   it("keeps every card and the results, and a place in the list says nothing", async () => {
     const first = await signedIn();
@@ -1440,7 +1768,8 @@ describe("what fails, and how it comes out", () => {
          '{"name":"Late","role":"voter","joinedAt":1,"connected":true}') where id = $1`,
       [room.id],
     );
-    const attempt = store().deleteAlone(room.id, me.id);
+    const seen = { ...room, ownerId: me.id, rule: null };
+    const attempt = store().deleteAlone(seen, me.id);
     await new Promise((resolve) => setTimeout(resolve, 100));
     await client.query("commit");
     client.release();

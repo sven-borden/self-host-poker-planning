@@ -27,7 +27,7 @@ import { registerMyRoomsApi } from "./my-rooms.ts";
 import { memoryRateLimit, type RateLimitRule } from "./rate-limit.ts";
 import { type Retention, startRetention } from "./retention.ts";
 import { registerPasswordApi } from "./room-password.ts";
-import { createRoomRules } from "./room-rule.ts";
+import { createRoomRules, type RoomRules } from "./room-rule.ts";
 import { registerRestrictionApi } from "./room-rule-api.ts";
 import { registerRoomApi } from "./rooms.ts";
 import type { Setup } from "./run.ts";
@@ -64,6 +64,7 @@ export async function setupServer(
     retention: Retention;
     links: GuestLinks;
     deletions: AccountDeletions;
+    rules: RoomRules;
   }
 > {
   const opened = await setupDatabase(config, logger, signal);
@@ -81,8 +82,10 @@ export async function setupServer(
     },
     logger,
   });
+  const rules = createRoomRules(database.db, config);
   const deletions = createAccountDeletions({
     store: createAccountDeletionStore(database.db),
+    rules,
     rooms: {
       removeAccount: (room, removal) => sync.removeAccount(room, removal),
       roomDeleted: (id) => sync.roomDeleted(id),
@@ -107,7 +110,6 @@ export async function setupServer(
     }
   }
   const { runner, store, db, retention: retentionStore } = database;
-  const rules = createRoomRules(db, config);
   sync = createRoomSync({
     limiter,
     runner,
@@ -153,6 +155,7 @@ export async function setupServer(
     retention,
     links,
     deletions,
+    rules,
     deps: {
       ...opened.deps,
       registerApi: (app) => {
@@ -171,7 +174,7 @@ export async function setupServer(
         });
         registerAccountApi(app, {
           auth,
-          data: createAccountDataStore(db),
+          data: createAccountDataStore(db, rules),
           tokens: database.connectorTokens,
           deletions,
           links,

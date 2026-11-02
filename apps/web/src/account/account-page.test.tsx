@@ -27,7 +27,14 @@ const SHARED = {
   why: "here",
 };
 
-const OVERVIEW = { recent: true, retentionDays: 90, alone: 2, seats: 1, shared: [SHARED] };
+const OVERVIEW = {
+  recent: true,
+  retentionDays: 90,
+  alone: 2,
+  seats: 1,
+  held: 0,
+  shared: [SHARED],
+};
 
 const SESSION = {
   user: { id: "account", name: "Ada", email: "ada@example.com", provider: "google" },
@@ -193,6 +200,26 @@ describe("what the page says", () => {
     expect(await shown("Who takes Runs")).toBe("Ann (runs the room now)");
     expect(await shown("Who takes Away")).toBe("Ann (nobody is here, seated longest)");
     expect(screen.getByText(/whoever runs the room now/)).toBeTruthy();
+  });
+
+  it("says so when a room's rule lets nobody seated take it, and still offers the delete", async () => {
+    const nobody = { ...SHARED, seats: [], why: "nobody" };
+    serve({ "GET /api/account": () => json({ ...OVERVIEW, shared: [nobody] }) });
+    asAccount();
+    await renderAccount();
+    const select = (await screen.findByLabelText("Who takes Sprint planning")) as HTMLSelectElement;
+    expect(select.selectedOptions[0]?.textContent).toBe(
+      "Nobody here may take it: it stays with no keeper",
+    );
+    expect([...select.options].map(({ value }) => value)).toEqual(["", "delete"]);
+  });
+
+  it("says in one line what becomes of rooms whose rule refuses the person, and nothing else", async () => {
+    serve({ "GET /api/account": () => json({ ...OVERVIEW, held: 1, shared: [] }) });
+    asAccount();
+    await renderAccount();
+    expect(await screen.findByText(/Your right to 1 room whose rule/)).toBeTruthy();
+    expect(screen.queryByText(/Rooms with other people/)).toBeNull();
   });
 
   it("refuses an answer that gives no reason for the default", async () => {

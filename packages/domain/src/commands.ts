@@ -65,7 +65,10 @@ export type Command =
    * random id that takes over a revealed card. `vacant` is another, for a role nobody may take: a
    * seatless `ownerId`, free to claim; never `ghost`, as `ownerId` goes out on the wire and would
    * say whose that card was. `heir` is whom the person chose for a room they keep. `mayTake` is who
-   * may take the PO role here (a room's rule, ADR-028); left out, everyone may.
+   * may take the PO role here (a room's rule, ADR-028); left out, everyone may. `vacate` says the
+   * room's rule refuses the person who keeps it: such a keeper destroys nothing, so with nobody
+   * else seated the room stays, under `vacant`, where it would otherwise be left to the caller to
+   * delete.
    */
   | {
       type: "removeAccount";
@@ -74,6 +77,7 @@ export type Command =
       vacant: UserId;
       heir?: UserId;
       mayTake?: readonly UserId[];
+      vacate?: true;
     };
 
 /** The server's words when an account goes from a room. */

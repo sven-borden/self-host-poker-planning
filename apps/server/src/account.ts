@@ -106,12 +106,13 @@ export function registerAccountApi(
     const me = await asker(c, "read", ACCOUNT_READ_LIMIT);
     if (me instanceof Response) return me;
     const settled = await links.settle(me.user.id, ACCOUNT_SETTLE_MS);
-    const { alone, seats, shared } = await data.overview(me.user.id);
+    const { alone, seats, held, shared } = await data.overview(me.user.id);
     return c.json({
       recent: me.recent,
       retentionDays: config.roomTtlDays,
       alone,
       seats,
+      held,
       shared: shared.map((room) => ({
         ...room,
         lastActiveAt: room.lastActiveAt.toISOString(),

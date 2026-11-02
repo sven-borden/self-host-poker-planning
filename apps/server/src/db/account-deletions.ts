@@ -6,7 +6,8 @@
  * Rooms and named rounds are found as a guest's are (`guest-links.ts`), through their indexes, so
  * a deletion reads that person's rows however many the instance holds.
  */
-import { and, eq, inArray, sql } from "drizzle-orm";
+import type { Restriction } from "@pp/domain";
+import { and, eq, inArray, type SQL, sql } from "drizzle-orm";
 import { session, user } from "./auth-schema.ts";
 import { guard } from "./errors.ts";
 import { type GuestRoom, namedRoundsOf, namesPerson } from "./guest-links.ts";
@@ -16,6 +17,7 @@ import {
   connectorToken,
   guestLink,
   ROOM_KEEPER,
+  ROOM_RULE,
   type RoomChoice,
   room,
 } from "./schema.ts";
@@ -24,6 +26,12 @@ import {
 export const ROUNDS_BATCH = 200;
 
 export type RoomChoices = Readonly<Record<string, RoomChoice>>;
+
+/** A room that names someone, with what its rule (ADR-028) reads: no second read of the row. */
+export interface AccountRoom extends GuestRoom {
+  ownerId: string;
+  rule: Restriction | null;
+}
 
 export interface AccountDeletionStore {
   /**
@@ -42,14 +50,18 @@ export interface AccountDeletionStore {
   /** Guests still on their way to this account (#48): they are this person, and go with it. */
   guestsOf(account: string): Promise<string[]>;
   /** The rooms that name `who`. */
-  roomsOf(who: string): Promise<GuestRoom[]>;
-  /** Deletes the room if `who` keeps it, whoever else is in it. Resolves whether it did. */
-  deleteKept(id: string, who: string): Promise<boolean>;
+  roomsOf(who: string): Promise<AccountRoom[]>;
   /**
-   * Deletes the room if `who` keeps it and nobody else has a seat, judged on the row's latest
-   * version: a join that commits first keeps the room, and any commit after finds no room.
+   * Deletes the room if `who` keeps it, whoever else is in it, and its rule and PO are still as
+   * `seen`, by which `who` was judged. Resolves whether it did.
    */
-  deleteAlone(id: string, who: string): Promise<boolean>;
+  deleteKept(seen: AccountRoom, who: string): Promise<boolean>;
+  /**
+   * Deletes the room if `who` keeps it and nobody else has a seat, with its rule and PO as `seen`,
+   * judged on the row's latest version: a join or a rule that commits first keeps the room, and any
+   * commit after finds no room.
+   */
+  deleteAlone(seen: AccountRoom, who: string): Promise<boolean>;
   /** Takes `who` out of every named round, in batches. Running it again changes nothing. */
   anonymiseRounds(who: string): Promise<void>;
   /**
@@ -86,6 +98,14 @@ function anonymise(who: string, limit: number) {
       ) e))
     from doomed d where h.id = d.id`;
 }
+
+/** The room is still as it was judged: a rule set, or a role claimed, since then keeps it. */
+const asSeen = ({ id, ownerId, rule }: AccountRoom): SQL | undefined =>
+  and(
+    eq(room.id, id),
+    eq(room.ownerUserId, ownerId),
+    sql`${ROOM_RULE} is not distinct from ${rule === null ? null : JSON.stringify(rule)}::jsonb`,
+  );
 
 export function createAccountDeletionStore(db: Db): AccountDeletionStore {
   return {
@@ -139,25 +159,33 @@ export function createAccountDeletionStore(db: Db): AccountDeletionStore {
 
     roomsOf: (who) =>
       guard("find rooms", () =>
-        db.select({ id: room.id, code: room.code }).from(room).where(namesPerson(who)),
+        db
+          .select({
+            id: room.id,
+            code: room.code,
+            ownerId: room.ownerUserId,
+            rule: sql<Restriction | null>`${ROOM_RULE}`,
+          })
+          .from(room)
+          .where(namesPerson(who)),
       ),
 
-    deleteKept: (id, who) =>
+    deleteKept: (seen, who) =>
       guard("delete kept room", async () => {
         const rows = await db
           .delete(room)
-          .where(and(eq(room.id, id), sql`${ROOM_KEEPER} = ${who}`))
+          .where(and(asSeen(seen), sql`${ROOM_KEEPER} = ${who}`))
           .returning({ id: room.id });
         return rows.length === 1;
       }),
 
-    deleteAlone: (id, who) =>
+    deleteAlone: (seen, who) =>
       guard("delete room", async () => {
         const rows = await db
           .delete(room)
           .where(
             and(
-              eq(room.id, id),
+              asSeen(seen),
               sql`${ROOM_KEEPER} = ${who}`,
               sql`(${room.live} -> 'participants') - ${who}::text = '{}'::jsonb`,
             ),

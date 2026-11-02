@@ -21,7 +21,13 @@ function act(state: RoomState, actor: string, command: Command, now = T0): RoomS
   return result.state;
 }
 
-const remove = (state: RoomState, heir?: string, now = T0, mayTake?: readonly string[]) =>
+const remove = (
+  state: RoomState,
+  heir?: string,
+  now = T0,
+  mayTake?: readonly string[],
+  vacate?: true,
+) =>
   apply(
     state,
     {
@@ -31,6 +37,7 @@ const remove = (state: RoomState, heir?: string, now = T0, mayTake?: readonly st
       vacant: VACANT,
       ...(heir !== undefined && { heir }),
       ...(mayTake !== undefined && { mayTake }),
+      ...(vacate && { vacate }),
     },
     { actor: SERVER, now },
   );
@@ -268,6 +275,49 @@ describe("a room whose rule refuses someone", () => {
   });
 });
 
+describe("a keeper the room's rule refuses", () => {
+  /** The person keeps the room, `ann` took the role, and then left her seat. */
+  function shutOut(people: readonly string[]): RoomState {
+    let state = room([WHO, "ann", ...people]);
+    state = away(state, WHO);
+    state = act(state, "ann", { type: "claimOwner" }, T0 + 200_000);
+    state = act(state, "ann", { type: "leave" }, T0 + 200_000);
+    return act(state, WHO, { type: "leave" }, T0 + 200_000);
+  }
+
+  it("destroys nothing: alone, the room stays with no keeper, and the id still goes", () => {
+    const result = remove(shutOut([]), undefined, T0, [], true);
+    expect(result.state.keeperId).toBe(VACANT);
+    expect(result.state.ownerId).toBe("ann");
+    expect(JSON.stringify(result.state)).not.toContain(WHO);
+    expect(result.causes).toEqual([]);
+  });
+
+  it("takes no role from a PO who is someone else, with nobody seated to take it", () => {
+    const result = remove(shutOut(["ben"]), undefined, T0, [], true);
+    expect(result.state.keeperId).toBe(VACANT);
+    expect(result.state.ownerId).toBe("ann");
+  });
+
+  it("passes the right on to whoever is allowed, as for any keeper", () => {
+    const result = remove(shutOut(["ben"]), undefined, T0, ["ben"], true);
+    expect(result.state.keeperId).toBe("ben");
+    expect(result.state.ownerId).toBe("ben");
+  });
+
+  it("frees a role the person holds too", () => {
+    const result = remove(room([WHO]), undefined, T0, [], true);
+    expect(result.state.keeperId).toBe(VACANT);
+    expect(result.state.ownerId).toBe(VACANT);
+    expect(Object.keys(result.state.participants)).toEqual([]);
+  });
+
+  it("does nothing the second time", () => {
+    const first = remove(shutOut([]), undefined, T0, [], true);
+    expect(remove(first.state, undefined, T0, [], true).state).toBe(first.state);
+  });
+});
+
 describe("a room someone else keeps", () => {
   it("loses the seat, and nothing moves", () => {
     const result = remove(room(["ann", WHO, "ben"]));
@@ -411,11 +461,12 @@ describe("in any room", () => {
         fc.array(step, { maxLength: 24 }),
         fc.boolean(),
         mayTake,
-        (steps, hidden, may) => {
+        fc.constantFrom(undefined, true as const),
+        (steps, hidden, may, vacate) => {
           const state = played(steps, hidden);
-          const result = remove(state, undefined, T0 + 10_000_000, may);
+          const result = remove(state, undefined, T0 + 10_000_000, may, vacate);
           const others = Object.keys(state.participants).filter((id) => id !== WHO);
-          if (keeperOf(state) === WHO && others.length === 0) {
+          if (keeperOf(state) === WHO && others.length === 0 && !vacate) {
             expect(result.state).toBe(state);
             return;
           }
@@ -429,7 +480,7 @@ describe("in any room", () => {
                 .sort();
             expect(cards(result.state.round?.votes)).toEqual(cards(round.votes));
           }
-          const again = remove(result.state, undefined, T0 + 10_000_000, may);
+          const again = remove(result.state, undefined, T0 + 10_000_000, may, vacate);
           expect(again.state).toBe(result.state);
           if (result.state.ownerId === VACANT || may === undefined) return;
           const taken = result.state.ownerId !== state.ownerId;

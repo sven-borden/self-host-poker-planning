@@ -116,13 +116,18 @@ export function restrictionRefusal(
   return byDomain || byTenant ? null : "account_not_allowed";
 }
 
+/** What a room's rule reads of a room: its rule and who holds the role. */
+export type RuledRoom = Pick<RoomState, "ownerId"> & {
+  settings: Pick<RoomState["settings"], "restriction">;
+};
+
 /**
  * The room's rule applied to one person, when they enter or join: its PO always passes, so no rule
  * locks its PO out. A seat does not pass (ADR-028): a person seated before the rule stays while
  * their socket does, and meets it when they next enter, where the seat goes.
  */
 export function roomRefusal(
-  state: RoomState,
+  state: RuledRoom,
   who: UserId,
   identity: AccessIdentity | null,
   providers: RuleProviders,

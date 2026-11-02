@@ -116,6 +116,7 @@ import type { Logger } from "../logger.ts";
 import { memoryRateLimit, type RateLimiter, type RateLimitRule } from "../rate-limit.ts";
 import type { RealtimeHandlers, RealtimeServer, RealtimeSocket } from "../realtime.ts";
 import {
+  goingCandidate,
   mayHoldRole,
   NO_RULES,
   type RoleCandidate,
@@ -408,6 +409,12 @@ const REFUSED_JOIN: ReadonlySet<string> = new Set<ErrorCode | "password_required
 /** What must hold when a command's step runs, on the state it commits over (#50). */
 export type Guard = (state: RoomState) => ErrorCode | null;
 
+/** How many times `removeAccount` reads people a room's rule needs, before a later run takes over. */
+const MAX_CANDIDATE_READS = 3;
+
+/** Someone the rule was not read for: nobody passes on that. */
+const NO_CANDIDATE: RoleCandidate = { identity: null, startedAt: null };
+
 /**
  * The gate of a state: what a judgement of someone without a seat or the PO role goes by. `blind`
  * and a lockout cover a password changed for another; this covers one that arrives, and a rule.
@@ -445,17 +452,29 @@ function kickRevokes(result: ApplyResult): ApplyResult & { access?: AccessWrite 
 /**
  * A join by someone the password gate must let in (#31: neither in the room nor its PO,
  * while it has a password) commits only with their grant: the check runs in the commit's
- * transaction, after any kick or new password that dropped it, on every instance.
+ * transaction, after any kick or new password that dropped it, on every instance. An account's
+ * join commits only while the account exists (#51, ADR-029): one that passed its session check
+ * lands wholly before an account's deletion ends, which finds the seat, or wholly after, and writes
+ * nothing, so no seat names an id that is gone.
  */
 function joinNeedsGrant(
   state: RoomState,
   actor: string,
   command: Command,
   result: ApplyResult & { access?: AccessWrite },
+  isAccount: boolean,
 ): ApplyResult & { access?: AccessWrite } {
   if (command.type !== "join" || !result.ok || result.state === state) return result;
-  if (!state.hasPassword || isMember(state, actor)) return result;
-  return { ...result, access: { ...result.access, requireGrant: actor } };
+  const gated = state.hasPassword && !isMember(state, actor);
+  if (!gated && !isAccount) return result;
+  return {
+    ...result,
+    access: {
+      ...result.access,
+      ...(gated && { requireGrant: actor }),
+      ...(isAccount && { requireAccount: actor }),
+    },
+  };
 }
 
 /** The answer to a socket that disconnected mid-`enter`: it never reaches anyone. */
@@ -1386,6 +1405,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     actor: string,
     command: Command,
     guard?: Guard,
+    isAccount = false,
   ): Promise<CmdAck> {
     try {
       const outcome = await runner.run(
@@ -1396,7 +1416,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
           // an elapsed deadline waits for the next command, as with any step that changes nothing.
           const refused = result.ok ? guard?.(state) : null;
           if (refused) return { ok: false, error: refused, state, causes: [] };
-          return joinNeedsGrant(state, actor, command, kickRevokes(result));
+          return joinNeedsGrant(state, actor, command, kickRevokes(result), isAccount);
         },
       );
       if (!outcome.ok) {
@@ -1430,23 +1450,24 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     actor: string,
     commandId: string,
     command: Command,
-    guard?: Guard,
+    guard: Guard | undefined,
+    isAccount: boolean,
   ): Promise<CmdAck> {
     const sharedAcks = shared?.acks;
-    if (!sharedAcks) return execute(room, actor, command, guard);
+    if (!sharedAcks) return execute(room, actor, command, guard, isAccount);
     const key = sharedAckKey(actor, room.id, commandId);
     let claim: Claim;
     try {
       claim = await sharedAcks.claim(key);
     } catch {
       log.warn({ room: room.id }, "redis: command id not shared");
-      return execute(room, actor, command, guard);
+      return execute(room, actor, command, guard, isAccount);
     }
     if (claim.state === "done") return claim.ack;
     if (claim.state === "running") return refuse("busy");
     let ack: CmdAck | null = null;
     try {
-      ack = await execute(room, actor, command, guard);
+      ack = await execute(room, actor, command, guard, isAccount);
       return ack;
     } finally {
       // A `busy` stored nothing, and a throw neither: let the id go, so a resend runs.
@@ -1694,7 +1715,8 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     }
     // Locked out by a new password while the grant was read: the grant was the old one's.
     if (command.type === "join" && socket.data.room !== room) return refuse("password_required");
-    const run = () => runOnce(room, user.id, id, withAsciiDomains(command), guard);
+    const run = () =>
+      runOnce(room, user.id, id, withAsciiDomains(command), guard, !user.isAnonymous);
     const ack = await acks.remember(user.id, ackKey(room.id, id), () =>
       setsRule(command) ? countingRule(room, user.id, run) : run(),
     );
@@ -1997,27 +2019,80 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     if (watched.has(id) && !isHere(id, account)) graces.start(id, account);
   }
 
+  /** Whose accounts a room's rule needs read before `who` goes from this state: none with no rule. */
+  function candidatesFor(state: RoomState, who: string): string[] {
+    if (state.settings.restriction === undefined) return [];
+    const keeper = keeperOf(state);
+    if (keeper !== who && state.ownerId !== who) return [];
+    const people = keeper === who ? [who, ...Object.keys(state.participants)] : [keeper];
+    return [...new Set(people)].filter((id) => id !== state.ownerId);
+  }
+
+  /**
+   * The command for this state, judged by the room's rule on it: a page's list can be stale, and a
+   * crafted request no list at all. Someone may take the role only by `mayHoldRole`, and a keeper it
+   * refuses names no heir and destroys nothing.
+   */
+  function removalFrom(
+    state: RoomState,
+    { heir, ...removal }: AccountRemoval,
+    read: ReadonlyMap<string, RoleCandidate>,
+  ): Command {
+    const { who } = removal;
+    if (state.settings.restriction === undefined) {
+      return { type: "removeAccount", ...removal, ...(heir !== undefined && { heir }) };
+    }
+    const may = (id: string) =>
+      mayHoldRole(state, id, read.get(id) ?? NO_CANDIDATE, rules.providers, now());
+    const keeper = keeperOf(state);
+    const mayTake = [...Object.keys(state.participants), keeper].filter((id) => may(id));
+    const refused = keeper === who && !may(who);
+    return {
+      type: "removeAccount",
+      ...removal,
+      mayTake,
+      ...(refused && { vacate: true as const }),
+      ...(!refused && heir !== undefined && { heir }),
+    };
+  }
+
   async function removeAccount(room: RoomRef, removal: AccountRemoval): Promise<ServerRun> {
     const { who } = removal;
+    const read = new Map<string, RoleCandidate>();
     try {
-      const outcome = await runner.run(room.code, (state) => {
-        const command: Command = { type: "removeAccount", ...removal };
-        const result = apply(state, command, { actor: SERVER_ACTOR, now: now() });
-        return result.state === state
-          ? result
-          : { ...result, quiet: keeperOf(result.state) === keeperOf(state) };
-      });
-      if (!outcome.ok) {
-        if (outcome.error === "room_not_found") closeDeleted(room.id);
-        if (outcome.error !== "conflict") return "unchanged";
-        log.warn({ room: room.id }, "account deletion: every attempt lost the compare-and-set");
-        return "failed";
+      // A room with no rule reads nobody. With one, the people its fresh state names are read,
+      // outside the step, and the step judges them; someone who sat down meanwhile goes round again.
+      for (let reads = 0; ; reads += 1) {
+        let unread: string[] = [];
+        const outcome = await runner.run(room.code, (state) => {
+          unread = candidatesFor(state, who).filter((id) => !read.has(id));
+          if (unread.length > 0) return { ok: true as const, state, causes: [] };
+          const command = removalFrom(state, removal, read);
+          const result = apply(state, command, { actor: SERVER_ACTOR, now: now() });
+          return result.state === state
+            ? result
+            : { ...result, quiet: keeperOf(result.state) === keeperOf(state) };
+        });
+        if (!outcome.ok) {
+          if (outcome.error === "room_not_found") closeDeleted(room.id);
+          if (outcome.error !== "conflict") return "unchanged";
+          log.warn({ room: room.id }, "account deletion: every attempt lost the compare-and-set");
+          return "failed";
+        }
+        if (unread.length === 0) {
+          void publish(room, outcome, { serverRun: true });
+          if (!outcome.changed) return "unchanged";
+          graces.cancel(room.id, who);
+          awayFailures.get(room.id)?.delete(who);
+          return "changed";
+        }
+        if (reads === MAX_CANDIDATE_READS) return "failed";
+        await Promise.all(
+          unread.map(async (id) =>
+            read.set(id, await (id === who ? goingCandidate(rules, who) : rules.candidateOf(id))),
+          ),
+        );
       }
-      void publish(room, outcome, { serverRun: true });
-      if (!outcome.changed) return "unchanged";
-      graces.cancel(room.id, who);
-      awayFailures.get(room.id)?.delete(who);
-      return "changed";
     } catch (error) {
       if (!(error instanceof DatabaseError)) throw error;
       log.warn({ room: room.id, err: error.code }, "account deletion: a room did not change");

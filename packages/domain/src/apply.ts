@@ -495,9 +495,10 @@ function morePresent(kept: Participant, other: Participant): Participant {
  *
  * The right to delete, and the role with it, passes on, to the first of `heirsOf`. With nobody
  * else seated, nothing changes: the caller deletes that room, in a statement a late join can refuse.
- * With others seated and none of them allowed (`mayTake`), nobody holds the room: `ownerId` and
- * `keeperId` become `vacant`, a seatless PO anyone allowed can claim, and no account's exemption
- * covers it.
+ * A keeper the room's rule refuses destroys nothing (`vacate`), so their room goes on as below.
+ * With nobody allowed to take it (`mayTake`), nobody holds the room: `keeperId` becomes `vacant`, a
+ * seatless id no account's exemption covers, and so does `ownerId` if the person held it. A PO who
+ * is someone else keeps the role.
  *
  * The PO role of someone who does not keep the room goes back to its keeper. A keeper with no seat
  * here holds it as a PO who left does: anyone in the room can claim it at once (`claimOwner`). The
@@ -510,7 +511,7 @@ function morePresent(kept: Participant, other: Participant): Participant {
  * does, and `settle` then does what the room's rule says for anyone who leaves.
  */
 function removeAccount(state: RoomState, removal: AccountRemoval): Step {
-  const { who, ghost, vacant, heir, mayTake } = removal;
+  const { who, ghost, vacant, heir, mayTake, vacate } = removal;
   const seat = participant(state, who);
   const round = state.round;
   const card = round ? ownVote(round, who) : undefined;
@@ -518,18 +519,14 @@ function removeAccount(state: RoomState, removal: AccountRemoval): Step {
   const keeps = keeper === who;
   if (!seat && !card && !keeps && state.ownerId !== who) return done(state);
   const participants = omit(state.participants, who);
-  if (keeps && Object.keys(participants).length === 0) return done(state);
-  const owner = keeps
-    ? (heirsOf(state, who, { chosen: heir, mayTake })[0]?.id ?? vacant)
-    : state.ownerId !== who
-      ? state.ownerId
-      : mayTake === undefined || mayTake.includes(keeper)
-        ? keeper
-        : vacant;
+  if (keeps && !vacate && Object.keys(participants).length === 0) return done(state);
+  const taker = keeps ? heirsOf(state, who, { chosen: heir, mayTake })[0]?.id : undefined;
+  const roleBack = mayTake === undefined || mayTake.includes(keeper) ? keeper : vacant;
+  const owner = taker ?? (state.ownerId !== who ? state.ownerId : keeps ? vacant : roleBack);
   const next: RoomState = {
     ...state,
     ownerId: owner,
-    ...(keeps && { keeperId: owner }),
+    ...(keeps && { keeperId: taker ?? vacant }),
     participants,
   };
   const causes: Cause[] = [];

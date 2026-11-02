@@ -41,6 +41,7 @@ const DEFAULT_TAKER = {
   runsTheRoom: "takerRunning",
   here: "takerHere",
   away: "takerAway",
+  nobody: "takerNone",
 } as const satisfies Record<SharedRoom["why"], Parameters<AccountT>[0]>;
 
 type Load =
@@ -302,7 +303,7 @@ function DeleteSection({
   ask: () => void;
 }) {
   const t = useAccountT();
-  const { alone, seats, shared, retentionDays, recent } = overview;
+  const { alone, seats, held, shared, retentionDays, recent } = overview;
   return (
     <Section title={t("deleteTitle")}>
       <p className="m-0 max-w-prose">{t("deleteIntro")}</p>
@@ -311,6 +312,7 @@ function DeleteSection({
           <li>{t("goesAccount")}</li>
           {alone > 0 && <li>{t("goesAlone", { count: alone })}</li>}
           {seats > 0 && <li>{t("goesSeats", { count: seats })}</li>}
+          {held > 0 && <li>{t("goesHeld", { count: held, days: retentionDays })}</li>}
           <li>{t("goesNames")}</li>
         </Listing>
         <Listing title={t("staysTitle")}>
