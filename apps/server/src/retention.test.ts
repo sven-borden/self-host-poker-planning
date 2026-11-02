@@ -21,6 +21,7 @@ const COUNTS: PurgeCounts = {
   history: 7,
   guests: 2,
   passwordWindows: 1,
+  verifications: 4,
   batches: 2,
   interrupted: false,
 };
@@ -206,6 +207,7 @@ describe("a run", () => {
       history: 7,
       guests: 2,
       passwordWindows: 1,
+      verifications: 4,
       interrupted: false,
     });
     expect(typeof lines[0]?.durationMs).toBe("number");

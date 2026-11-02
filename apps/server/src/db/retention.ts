@@ -63,6 +63,8 @@ export interface PurgeCounts {
   guests: number;
   /** Rooms that stay whose ended window of wrong passwords was cleared. */
   passwordWindows: number;
+  /** Sign-ins nobody finished, past their ten minutes (#47). */
+  verifications: number;
   /** Delete statements run. */
   batches: number;
   /** The run stopped early for a shutdown. */
@@ -139,6 +141,13 @@ const CLEAR_PASSWORD_WINDOWS = `
   update room set password_failures = 0, password_failures_since = null
   where password_failures_since < $1::timestamptz - make_interval(secs => $2)`;
 
+/**
+ * Sign-ins nobody finished (#47). Better Auth clears these when a callback arrives, which an
+ * install with no one signing in may never see, and each holds a return path.
+ */
+const DELETE_EXPIRED_VERIFICATIONS = `
+  delete from verification where expires_at < $1::timestamptz`;
+
 const TOUCH_ROOM = `
   update room set last_active_at = now()
   where id = $1::uuid and last_active_at < now() - make_interval(secs => $2)`;
@@ -187,6 +196,7 @@ export function createRetentionStore(pool: pg.Pool): RetentionStore {
           history: 0,
           guests: 0,
           passwordWindows: 0,
+          verifications: 0,
           batches: 0,
           interrupted: false,
         };
@@ -224,6 +234,10 @@ export function createRetentionStore(pool: pg.Pool): RetentionStore {
           client.query(CLEAR_PASSWORD_WINDOWS, [now.toISOString(), PASSWORD_LIMITS.room.window]),
         );
         counts.passwordWindows = cleared.rowCount ?? 0;
+        const expired = await guard("clear expired verifications", () =>
+          client.query(DELETE_EXPIRED_VERIFICATIONS, [now.toISOString()]),
+        );
+        counts.verifications = expired.rowCount ?? 0;
         return counts;
       } catch (error) {
         failed = true;

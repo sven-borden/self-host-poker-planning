@@ -325,6 +325,27 @@ describe("the built web app", () => {
     );
   });
 
+  it("names the configured providers in index.html, and says nothing without keys (#47)", async () => {
+    const keys = {
+      GOOGLE_CLIENT_ID: "google-id",
+      GOOGLE_CLIENT_SECRET: "google-secret",
+      MICROSOFT_CLIENT_ID: "microsoft-id",
+      MICROSOFT_CLIENT_SECRET: "microsoft-secret",
+    };
+    const page = (env: Record<string, string>, path = "/") =>
+      app({ staticDir: root }, env).app.request(path);
+    for (const path of ["/", "/r/AbCdEf1234", "/index.html"]) {
+      const html = await (await page(keys, path)).text();
+      expect(html).toBe(
+        '<!doctype html><meta name="pp-sign-in" content="google microsoft"><title>Poker Planning</title>',
+      );
+      expect((await page({}, path)).status).toBe(200);
+      expect(await (await page({}, path)).text()).toBe(INDEX);
+    }
+    const one = await page({ MICROSOFT_CLIENT_ID: "m", MICROSOFT_CLIENT_SECRET: "n" });
+    expect(await one.text()).toContain('content="microsoft"');
+  });
+
   it("answers HEAD on a fallback route", async () => {
     const response = await get("/r/AbCdEf1234", "HEAD");
     expect(response.status).toBe(200);

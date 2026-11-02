@@ -110,9 +110,17 @@ export function startRetention(options: RetentionOptions): Retention {
         log.info("retention: another instance runs the purge");
         return "busy";
       }
-      const { rooms, history, guests, passwordWindows, interrupted } = counts;
+      const { rooms, history, guests, passwordWindows, verifications, interrupted } = counts;
       log.info(
-        { rooms, history, guests, passwordWindows, interrupted, durationMs: durationMs() },
+        {
+          rooms,
+          history,
+          guests,
+          passwordWindows,
+          verifications,
+          interrupted,
+          durationMs: durationMs(),
+        },
         "retention: purge done",
       );
       return counts;

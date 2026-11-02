@@ -460,10 +460,12 @@ export function registerAuthApi(
     if (!body) return c.json({ code: "bad_payload" }, 400);
     const headers = new Headers(c.req.raw.headers);
     headers.delete("content-length");
-    return forward(
+    const answer = await forward(
       c,
       new Request(c.req.raw.url, { method: "POST", headers, body: JSON.stringify(body) }),
     );
+    answer.headers.set("cache-control", "no-store");
+    return answer;
   }
 
   /**
