@@ -16,7 +16,7 @@
  * instance and, with `TEST_REDIS_URL`, with two.
  */
 import { createRoom, type Restriction, type RoomState } from "@pp/domain";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Config } from "./config.ts";
 import { DatabaseError } from "./db/errors.ts";
 import { createTestDatabase, type TestDatabase, testClient } from "./db/test-db.ts";
@@ -1213,6 +1213,67 @@ describe.skipIf(!process.env.TEST_REDIS_URL)("the one invariant across two insta
     expect((await there.enter(room.code)).ok).toBe(false);
     await locked;
     expect(Object.keys((await loaded(room.code)).state.participants)).toHaveLength(1);
+  });
+
+  it("a new password whose signal was lost reaches a visitor already being read", async () => {
+    const poBrowser = new Browser(() => a);
+    const po = await poBrowser.signIn("google", person());
+    const room = await roomOf(po, undefined, { password: true });
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const onInstanceB = onB(poBrowser).socket();
+    await must(onInstanceB.enter(room.code));
+    const browser = new Browser(() => b);
+    await browser.signIn("google", person());
+    expect((await browser.access(room.code)).status).toBe(204);
+    const visitor = browser.socket();
+    await must(visitor.enter(room.code));
+    const before = visitor.received.length;
+    let locked = false;
+    visitor.socket.once("locked", () => {
+      locked = true;
+    });
+
+    // B reads the visitor for the rule: the grant comes back at once, the account read waits.
+    const locker = await admin.connect();
+    await locker.query("begin");
+    await locker.query("lock table account in access exclusive mode");
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    await vi.waitFor(async () => {
+      const { rows } = await admin.query(
+        "select count(*)::int as n from pg_locks where relation = 'account'::regclass and not granted",
+      );
+      expect((rows[0] as { n: number }).n).toBeGreaterThan(0);
+    });
+
+    // The password changes on A, and B never hears: the visitor's grant goes.
+    const { setup: own, server: running } = started[0] as Instance;
+    const emit = running.io.serverSideEmit;
+    running.io.serverSideEmit = ((event: string, ...rest: never[]) =>
+      event === "roomChanged" || emit.call(running.io, event, ...rest)) as typeof emit;
+    const sync = own.deps?.handlers as unknown as RoomSync;
+    await must(sync.changePassword(room.code, po, await hashPassword("a-new-password")));
+    running.io.serverSideEmit = emit;
+    expect(await countOf("room_access", "room_id", room.id)).toBe(1);
+
+    // The next version reaches B with a gap, so it goes out blind, past the visitor being read.
+    const ack = await owner.cmd("rename", { name: "Next" });
+    const version = ack.ok ? ack.version : 0;
+    await onInstanceB.waitFor((snapshot) => snapshot.version >= version);
+    expect(visitor.received.length).toBe(before);
+
+    await locker.query("commit");
+    locker.release();
+    await vi.waitFor(() => expect(locked).toBe(true));
+
+    await must(owner.cmd("startRound", { subject: { kind: "title", text: "Behind it" } }));
+    await settled(onInstanceB);
+    await settled(visitor);
+    expect(visitor.received.length).toBe(before);
+    expect(visitor.frames.join("")).not.toContain("Behind it");
+    await expect(browser.socket().enter(room.code)).resolves.toMatchObject({
+      ok: false,
+      code: "password_required",
+    });
   });
 });
 

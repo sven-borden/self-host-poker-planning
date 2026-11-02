@@ -513,6 +513,11 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   const waiters = new Map<string, Set<{ version: number; finish: () => void }>>();
   /** Shared: the sockets whose grant is being read again; they get nothing meanwhile. */
   const rechecking = new WeakSet<RealtimeSocket>();
+  /**
+   * Those of them a `blind` frame passed over: their read began before a change nobody here heard
+   * of, and may have found a grant that change dropped, so it concludes nothing and runs again.
+   */
+  const overtaken = new WeakSet<RealtimeSocket>();
   /** Shared: the people (`room who`) whose stored away is being mended. */
   const mending = new Set<string>();
   let sweeper: ReturnType<typeof setInterval> | undefined;
@@ -583,8 +588,12 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     const views = new Map<string, Snapshot>();
     for (const socket of sockets) {
       const viewer = socket.data.user?.id;
-      if (viewer === undefined || (held.get(socket) ?? 0) >= version) continue;
-      if (rechecking.has(socket)) continue;
+      if (viewer === undefined) continue;
+      if (rechecking.has(socket)) {
+        if (blind) overtaken.add(socket);
+        continue;
+      }
+      if ((held.get(socket) ?? 0) >= version) continue;
       if (isGated(state, viewer)) {
         const pass = admitted.get(socket);
         if (pass?.room !== room.id) continue;
@@ -993,8 +1002,13 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       .catch((): [boolean, null] => [false, null])
       .then(([granted, identity]) => {
         rechecking.delete(socket);
+        const again = overtaken.delete(socket);
         const pass = admitted.get(socket);
         if (!socket.connected || pass?.room !== id) return;
+        if (again) {
+          recheck(id, socket, viewer);
+          return;
+        }
         const state = stateOf.get(id);
         const version = newest.get(id) ?? 0;
         if (!stays(state, viewer, granted, identity, socket.data.sessionStartedAt)) {
