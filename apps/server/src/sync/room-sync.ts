@@ -215,9 +215,10 @@ export interface RoomSync extends RealtimeHandlers {
   /**
    * What `guest` holds in the room becomes `account`'s (#48), through the room's queue and the
    * compare-and-set. `failed`: not stored as far as anyone knows, and safe to run again, which
-   * changes nothing when it was stored after all.
+   * changes nothing when it was stored after all. Rejects on anything but a database failure:
+   * a room whose state the domain cannot read, which the caller names by its id.
    */
-  moveGuest(code: string, guest: string, account: string): Promise<ServerRun>;
+  moveGuest(room: RoomRef, guest: string, account: string): Promise<ServerRun>;
   /** The guest's sockets, on every instance, hear `signedIn` and are closed (#48). */
   dropGuest(guest: string): void;
 }
@@ -1218,12 +1219,13 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
 
   /**
    * Whether the socket's session is still alive: asked again once the last check is
-   * `SESSION_RECHECK_MS` old. Concurrent commands of a socket share one check.
+   * `SESSION_RECHECK_MS` old, or always with `fresh`. Concurrent commands of a socket share one
+   * check.
    */
-  function sessionStillAlive(socket: RealtimeSocket): Promise<boolean> {
+  function sessionStillAlive(socket: RealtimeSocket, fresh = false): Promise<boolean> {
     if (!sessionAlive) return Promise.resolve(true);
     const checked = sessionChecked.get(socket);
-    if (checked !== undefined && now() - checked < SESSION_RECHECK_MS) {
+    if (!fresh && checked !== undefined && now() - checked < SESSION_RECHECK_MS) {
       return Promise.resolve(true);
     }
     let check = pendingChecks.get(socket);
@@ -1356,7 +1358,10 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     const user = socket.data.user;
     if (!user) return refuse("unauthenticated");
     if (socket.data.room === undefined) return refuse("room_not_found");
-    if (!(await sessionStillAlive(socket))) {
+    // A join makes a seat, and a seat outlives its socket, so no join goes on an old check. A
+    // guest's session ends when it signs in (#48), and `dropGuest` may miss a socket: its seat
+    // would name a user that is gone, and hold up the room's rule until the PO removes it.
+    if (!(await sessionStillAlive(socket, command.type === "join"))) {
       // Signed out, or the user was deleted, while the socket stayed open. The connection
       // closes once the answer is out: the client reconnects, and the handshake refuses
       // the old session, so it signs in again.
@@ -1471,9 +1476,9 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     }
   }
 
-  async function moveGuest(code: string, guest: string, account: string): Promise<ServerRun> {
+  async function moveGuest(room: RoomRef, guest: string, account: string): Promise<ServerRun> {
     try {
-      const outcome = await runner.run(code, (state) => {
+      const outcome = await runner.run(room.code, (state) => {
         const command: Command = { type: "moveGuest", guest, account };
         const result = apply(state, command, { actor: SERVER_ACTOR, now: now() });
         if (result.state === state) return result;
@@ -1481,18 +1486,17 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       });
       if (!outcome.ok) {
         if (outcome.error !== "conflict") return "unchanged";
-        log.warn({ room: idOf.get(code) }, "guest link: every attempt lost the compare-and-set");
+        log.warn({ room: room.id }, "guest link: every attempt lost the compare-and-set");
         return "failed";
       }
-      void publish({ id: outcome.id, code }, outcome, { serverRun: true });
+      void publish(room, outcome, { serverRun: true });
       if (!outcome.changed) return "unchanged";
       followSeat(outcome.id, guest, account, outcome.result.state);
       return "changed";
     } catch (error) {
       if (!(error instanceof DatabaseError)) throw error;
-      log.warn({ room: idOf.get(code), err: error.code }, "guest link: a room did not move");
-      const id = idOf.get(code);
-      if (id !== undefined) await resync({ id, code });
+      log.warn({ room: room.id, err: error.code }, "guest link: a room did not move");
+      await resync(room);
       return "failed";
     }
   }

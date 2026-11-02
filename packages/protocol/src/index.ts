@@ -74,6 +74,7 @@ export {
 export {
   isSignInErrorCode,
   isSignInProvider,
+  MOVE_WAIT_MS,
   SIGN_IN_ERROR_CODES,
   SIGN_IN_ERROR_PARAM,
   SIGN_IN_META,

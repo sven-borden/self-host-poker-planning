@@ -211,7 +211,7 @@ export function authOptions(
     basePath: AUTH_BASE_PATH,
     secret: config.betterAuthSecret,
     trustedOrigins: [config.baseUrl],
-    database: drizzleAdapter(db, { provider: "pg", schema: authSchema }),
+    database: drizzleAdapter(db, { provider: "pg", schema: authSchema, transaction: true }),
     emailAndPassword: { enabled: false },
     socialProviders: socialProviderOptions(config),
     account: {
@@ -328,15 +328,32 @@ export function authOptions(
       anonymous({
         disableDeleteAnonymousUser: true,
         ...(links && {
-          onLinkAccount: async ({ anonymousUser, newUser }) => {
-            const moved = await links.link(anonymousUser.user.id, newUser.user.id);
-            const callback = inCallback.getStore();
-            if (callback && !moved) callback.stillMoving = true;
-          },
+          onLinkAccount: (sessions) => linkGuest(links, sessions),
         }),
       }),
     ],
   } satisfies BetterAuthOptions;
+}
+
+/** What the anonymous plugin hands `onLinkAccount`, as far as `linkGuest` reads it. */
+interface LinkedSessions {
+  anonymousUser: { user: { id: string } };
+  newUser: { user: { id: string; isAnonymous?: boolean | null | undefined } };
+}
+
+/**
+ * The plugin calls `onLinkAccount` before its own guards: nothing moves onto the same person or
+ * onto another guest, or `complete` would delete the user the new session names.
+ */
+export async function linkGuest(
+  links: Pick<GuestLinks, "link">,
+  { anonymousUser, newUser }: LinkedSessions,
+): Promise<void> {
+  const [guest, account] = [anonymousUser.user, newUser.user];
+  if (guest.id === account.id || account.isAnonymous) return;
+  const moved = await links.link(guest.id, account.id);
+  const callback = inCallback.getStore();
+  if (callback && !moved) callback.stillMoving = true;
 }
 
 export function createAuth(

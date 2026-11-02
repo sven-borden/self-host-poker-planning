@@ -15,6 +15,12 @@ export function isSignInProvider(value: unknown): value is SignInProvider {
 /** The `<meta name>` listing the configured providers; left out when there are none. */
 export const SIGN_IN_META = "pp-sign-in";
 
+/**
+ * How long a sign-in's callback waits for the guest's rooms to move before it answers (#48). A
+ * person's other tabs wait longer than this for the new cookie (`SIGNED_IN_FALLBACK_MS`).
+ */
+export const MOVE_WAIT_MS = 5_000;
+
 /** The query parameter a failed sign-in comes back to the page with. */
 export const SIGN_IN_ERROR_PARAM = "sign_in_error";
 

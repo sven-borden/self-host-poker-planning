@@ -26,6 +26,7 @@ import {
 } from "./fake-oidc.ts";
 import { createServer, type PokerServer } from "./server.ts";
 import { setupServer } from "./setup.ts";
+import type { GraceTimers } from "./sync/presence.ts";
 import type { RoomSync } from "./sync/room-sync.ts";
 import {
   roomCode,
@@ -171,11 +172,16 @@ function person(overrides: Partial<FakePerson> = {}): FakePerson {
   };
 }
 
-/** A whole sign-in: where the callback sent the browser. */
-async function signIn(
+interface SignInWay {
+  provider?: string;
+  returnTo?: string;
+}
+
+/** A sign-in up to the provider's answer: the callback's path, for the browser to go to. */
+async function atProvider(
   browser: Browser,
   who: FakePerson,
-  { provider = "google", returnTo = "/" }: { provider?: string; returnTo?: string } = {},
+  { provider = "google", returnTo = "/" }: SignInWay = {},
 ): Promise<string> {
   const started = await browser.post("/api/auth/sign-in/social", { provider, returnTo });
   expect(started.status).toBe(200);
@@ -185,7 +191,12 @@ async function signIn(
     { redirect: "manual" },
   );
   const back = new URL(answer.headers.get("location") ?? "");
-  const response = await browser.go(`${back.pathname}${back.search}`);
+  return `${back.pathname}${back.search}`;
+}
+
+/** A whole sign-in: where the callback sent the browser. */
+async function signIn(browser: Browser, who: FakePerson, way: SignInWay = {}): Promise<string> {
+  const response = await browser.go(await atProvider(browser, who, way));
   expect(response.status).toBe(302);
   return response.headers.get("location") ?? "";
 }
@@ -327,7 +338,7 @@ describe("a guest who signs in", () => {
     await must(sync.changePassword(code, po, "hash-d"));
     expect(await setup.database.store.grantAccess(id, guest, "hash-d")).toBe(true);
     (await browser.sit(code, "Ana")).close();
-    await expect(sync.moveGuest(code, guest, account)).resolves.toBe("changed");
+    await expect(sync.moveGuest({ id, code }, guest, account)).resolves.toBe("changed");
     const { rows } = await admin.query("select user_id from room_access where room_id = $1", [id]);
     expect(rows).toContainEqual({ user_id: account });
     expect(rows).not.toContainEqual({ user_id: guest });
@@ -692,7 +703,136 @@ describe("what fails how", () => {
     const first = (await one.session())?.user.id ?? "";
     await store.begin(guest, first);
     await store.begin(guest, (await two.session())?.user.id ?? "");
-    await expect(store.accountOf(guest)).resolves.toBe(first);
+    await expect(store.linkOf(guest)).resolves.toMatchObject({ account: first });
+  });
+
+  it("gives the rooms to the first of two sign-ins of one guest, and leaves both usable", async () => {
+    const first = new Browser();
+    const guest = await first.guest();
+    const { code } = await roomOf(guest);
+    (await first.sit(code, "Ana")).close();
+    // One guest's cookie in two browsers, both at the provider.
+    const second = new Browser();
+    for (const [name, value] of first.jar) second.jar.set(name, value);
+    const [one, two] = [person(), person()];
+    const [callbackOne, callbackTwo] = [
+      await atProvider(first, one, IN_ROOM(code)),
+      await atProvider(second, two, IN_ROOM(code)),
+    ];
+
+    await first.go(callbackOne);
+    const winner = (await first.session())?.user.id ?? "";
+    expect((await liveOf(code)).state.ownerId).toBe(winner);
+    expect(await userExists(guest)).toBe(false);
+
+    // The second finds no session of the guest: nothing moves, and that browser ends signed out.
+    const response = await second.go(callbackTwo);
+    expect(response.headers.get("location")).toBe(`${ORIGIN}/r/${code}`);
+    expect(await second.session()).toBeNull();
+    expect((await liveOf(code)).state.ownerId).toBe(winner);
+    expect(await pendingLinks()).toEqual([]);
+
+    // Its account was made and works. As a new guest it signs in, and it has no way into a room
+    // that is the first account's.
+    await second.guest();
+    await signIn(second, two);
+    expect((await second.session())?.user).toMatchObject({ isAnonymous: false });
+    expect((await second.session())?.user.id).not.toBe(winner);
+    expect((await first.session())?.user.id).toBe(winner);
+    expect((await liveOf(code)).state.ownerId).toBe(winner);
+  });
+
+  it("moves to one account when two sign-ins of one guest land together", async () => {
+    const first = new Browser();
+    const guest = await first.guest();
+    const { code } = await roomOf(guest);
+    (await first.sit(code, "Ana")).close();
+    const second = new Browser();
+    for (const [name, value] of first.jar) second.jar.set(name, value);
+    const [callbackOne, callbackTwo] = [
+      await atProvider(first, person(), IN_ROOM(code)),
+      await atProvider(second, person(), IN_ROOM(code)),
+    ];
+
+    await Promise.all([first.go(callbackOne), second.go(callbackTwo)]);
+
+    await vi.waitFor(async () => expect(await userExists(guest)).toBe(false));
+    const { state } = await liveOf(code);
+    expect(Object.keys(state.participants)).toEqual([state.ownerId]);
+    expect(state.ownerId).not.toBe(guest);
+  });
+
+  it("does not copy a grant a new password in progress dropped", async () => {
+    const browser = new Browser();
+    const guest = await browser.guest();
+    const signed = new Browser();
+    await signIn(signed, person());
+    const account = (await signed.session())?.user.id ?? "";
+    const po = await new Browser().guest();
+    const [changing, steady] = [await roomOf(po), await roomOf(po)];
+    await must(sync.changePassword(changing.code, po, "hash-old"));
+    await must(sync.changePassword(steady.code, po, "hash-steady"));
+    const { store } = setup.database;
+    expect(await store.grantAccess(changing.id, guest, "hash-old")).toBe(true);
+    expect(await store.grantAccess(steady.id, guest, "hash-steady")).toBe(true);
+
+    // What a new password's commit does, held open with the guest's grant gone.
+    const change = await admin.connect();
+    await change.query("begin");
+    await change.query("update room set password_hash = 'hash-new' where id = $1", [changing.id]);
+    await change.query("delete from room_access where room_id = $1", [changing.id]);
+    const done = createGuestLinkStore(setup.database.db).complete(guest, account);
+    await vi.waitFor(async () => {
+      const { rows } = await admin.query(
+        `select 1 from pg_stat_activity
+         where datname = current_database() and wait_event_type = 'Lock'`,
+      );
+      expect(rows.length).toBeGreaterThan(0);
+    });
+    await change.query("commit");
+    change.release();
+    await done;
+
+    const { rows } = await admin.query("select room_id from room_access where user_id = $1", [
+      account,
+    ]);
+    expect(rows).toEqual([{ room_id: steady.id }]);
+  });
+
+  it("names a room it cannot move by its id, and stays until someone looks", async () => {
+    const browser = new Browser();
+    const guest = await browser.guest();
+    const { id, code } = await roomOf(guest);
+    await admin.query(`update room set live = '{"broken": "state"}' where id = $1`, [id]);
+    const from = logs.lines.length;
+
+    const location = await signIn(browser, person());
+
+    expect(new URL(location).searchParams.get("sign_in_error")).toBe("still_moving");
+    const lines = () => logs.lines.slice(from);
+    expect(lines()).toContainEqual(
+      expect.objectContaining({
+        level: 40,
+        room: id,
+        class: "TypeError",
+        msg: "guest link: a room did not move",
+      }),
+    );
+
+    await admin.query("update guest_link set created_at = now() - interval '2 days'");
+    const before = logs.lines.length;
+    await setup.links.sweep();
+    expect(logs.lines.slice(before)).toContainEqual(
+      expect.objectContaining({ level: 50, room: id, class: "TypeError" }),
+    );
+    expect(await userExists(guest)).toBe(true);
+    expect(JSON.stringify(lines())).not.toContain(code);
+    expect(JSON.stringify(lines())).not.toContain("broken");
+
+    // What an operator does: a room nobody could open goes, and the move finishes.
+    await admin.query("delete from room where id = $1", [id]);
+    await setup.links.sweep();
+    expect(await userExists(guest)).toBe(false);
   });
 
   it("moves nothing for a callback the browser did not start", async () => {
@@ -722,12 +862,12 @@ describe("what fails how", () => {
   it("is a no-op run again: same version, same rows", async () => {
     const browser = new Browser();
     const guest = await browser.guest();
-    const { code } = await roomOf(guest);
+    const { id, code } = await roomOf(guest);
     (await browser.sit(code, "Ana")).close();
     await signIn(browser, person());
     const account = (await browser.session())?.user.id ?? "";
     const { version } = await liveOf(code);
-    await expect(sync.moveGuest(code, guest, account)).resolves.toBe("unchanged");
+    await expect(sync.moveGuest({ id, code }, guest, account)).resolves.toBe("unchanged");
     await createGuestLinkStore(setup.database.db).complete(guest, account);
     expect((await liveOf(code)).version).toBe(version);
   });
@@ -742,6 +882,38 @@ describe("what fails how", () => {
     ];
     await createGuestLinkStore(setup.database.db).begin(first, second);
     expect(await pendingLinks()).toEqual([]);
+    expect((await one.session())?.user.id).toBe(first);
+    const { rows } = await admin.query("select 1 from session where user_id = $1", [first]);
+    expect(rows).toHaveLength(1);
+  });
+});
+
+describe("a sign-in that dies half way", () => {
+  it("leaves no user without an account: the next try signs in", async () => {
+    await admin.query(`
+      create function fail_account() returns trigger language plpgsql as $$
+      begin raise exception 'the process died here'; end $$`);
+    await admin.query(`
+      create trigger fail_account before insert on account
+      for each row execute function fail_account()`);
+    const who = person({ email: `half-way-${people}@example.com` });
+    const browser = new Browser();
+    const guest = await browser.guest();
+    const { rows: before } = await admin.query(`select count(*)::int as n from "user"`);
+    try {
+      const location = await signIn(browser, who, { provider: "microsoft" });
+      expect(new URL(location).searchParams.get("sign_in_error")).toBe("failed");
+    } finally {
+      await admin.query("drop trigger fail_account on account");
+      await admin.query("drop function fail_account");
+    }
+    const { rows: after } = await admin.query(`select count(*)::int as n from "user"`);
+    expect(after).toEqual(before);
+    expect((await browser.session())?.user.id).toBe(guest);
+
+    expect(await signIn(browser, who, { provider: "microsoft" })).toBe(`${ORIGIN}/`);
+    expect((await browser.session())?.user).toMatchObject({ isAnonymous: false });
+    expect(await userExists(guest)).toBe(false);
   });
 });
 
@@ -796,9 +968,10 @@ describe("the lookup", () => {
     expect(rounds).not.toContain("Seq Scan");
 
     const store = createGuestLinkStore(setup.database.db);
-    await expect(store.roomsOf("person77-3")).resolves.toEqual(["bulk77"]);
-    await expect(store.roomsOf("voter77-2")).resolves.toEqual(["bulk77"]);
-    await expect(store.roomsOf("owner78")).resolves.toEqual(["bulk78"]);
+    const codeIn = async (who: string) => (await store.roomsOf(who)).map((found) => found.code);
+    await expect(codeIn("person77-3")).resolves.toEqual(["bulk77"]);
+    await expect(codeIn("voter77-2")).resolves.toEqual(["bulk77"]);
+    await expect(codeIn("owner78")).resolves.toEqual(["bulk78"]);
     await expect(store.roomsOf("nobody")).resolves.toEqual([]);
     await admin.query("delete from room where code like 'bulk%'");
   }, 60_000);
@@ -842,6 +1015,10 @@ describe("live sockets", () => {
     const other = new Browser();
     await other.guest();
     const ben = await other.sit(code, "Ben");
+    // A grace that outlasts the test: a sign-in may take any time, and nothing here races it.
+    const graces = sync.presence as GraceTimers;
+    const start = graces.start.bind(graces);
+    vi.spyOn(graces, "start").mockImplementation((room, who) => start(room, who, 600_000));
     tab.close();
     await vi.waitFor(() => expect(sync.presence.pending(id, guest)).toBe(true));
 
@@ -850,15 +1027,53 @@ describe("live sockets", () => {
     const account = (await browser.session())?.user.id ?? "";
     expect(sync.presence.pending(id, guest)).toBe(false);
     expect(sync.presence.pending(id, account)).toBe(true);
-    // Back in time: the seat never goes away, and the old timer changed nothing.
+    // Back in time: the seat never goes away.
     const back = await browser.sit(code);
     expect(sync.presence.pending(id, account)).toBe(false);
-    await new Promise((resolve) => setTimeout(resolve, GRACE_MS * 2));
     const { state } = await liveOf(code);
     expect(state.participants[account]).toMatchObject({ connected: true, name: "Ana" });
     expect(state.participants[account]).not.toHaveProperty("awaySince");
     expect(back.socket.connected).toBe(true);
     expect(ben.socket.connected).toBe(true);
+  });
+
+  it("lets the guest's timer find nobody, if it fires before the seat moved", async () => {
+    const browser = new Browser();
+    const guest = await browser.guest();
+    const { id, code } = await roomOf(guest);
+    const tab = await browser.sit(code, "Ana");
+    const other = new Browser();
+    await other.guest();
+    const ben = await other.sit(code, "Ben");
+    const seen = ben.received.length;
+    tab.close();
+    // The away lands first: the seat moves as it is, away, and no grace of the account runs.
+    await ben.waitFor((s) => s.room.participants.some((p) => p.id === guest && p.away), 3000, seen);
+
+    await signIn(browser, person(), IN_ROOM(code));
+
+    const account = (await browser.session())?.user.id ?? "";
+    expect(sync.presence.pending(id, guest)).toBe(false);
+    expect(sync.presence.pending(id, account)).toBe(false);
+    expect((await liveOf(code)).state.participants[account]).toMatchObject({ connected: false });
+  });
+
+  it("refuses a join from a socket `dropGuest` missed, so no seat names a user that is gone", async () => {
+    const browser = new Browser();
+    const guest = await browser.guest();
+    const owner = await new Browser().guest();
+    const { code } = await roomOf(owner);
+    const stale = await browser.sit(code);
+    vi.spyOn(sync, "dropGuest").mockImplementation(() => {});
+
+    await signIn(browser, person());
+
+    expect(await userExists(guest)).toBe(false);
+    await expect(stale.cmd("join", { name: "Ghost", role: "voter" })).resolves.toEqual({
+      ok: false,
+      code: "unauthenticated",
+    });
+    expect((await liveOf(code)).state.participants).toEqual({});
   });
 
   it("marks a seat away when the person never comes back, and evicts nobody", async () => {

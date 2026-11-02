@@ -20,7 +20,7 @@ import type { Snapshot } from "@pp/protocol";
 import { cardLeaks } from "@pp/protocol/leak-scan";
 import { createClient } from "@redis/client";
 import type pg from "pg";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Config } from "../config.ts";
 import type { AccessWrite } from "../db/rooms.ts";
 import {
@@ -102,6 +102,7 @@ function syncOf(instance: Instance): RoomSync {
 }
 const two = () => instances[1] as Instance;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const BOTH = ["signedIn", "closed"];
 
 describe.skipIf(!REDIS_URL)("two instances on one room (Redis)", () => {
   beforeAll(async () => {
@@ -390,6 +391,39 @@ describe.skipIf(!REDIS_URL)("two instances on one room (Redis)", () => {
       });
       expect(visitor.received.length).toBe(before);
       expect((await visitor.enter(code)).ok).toBe(false);
+    });
+  });
+
+  describe("a guest who signs in (#48)", () => {
+    beforeAll(freshGuests);
+
+    it("closes the guest's sockets on the other instance, which hear why first", async () => {
+      const code = await insert(votingRoom());
+      const tabs = [client(bob, two()), client(bob, one())];
+      const bystander = client(cy, two());
+      await Promise.all([...tabs, bystander].map((tab) => tab.enter(code)));
+      const heard = tabs.map((tab) => {
+        const events: string[] = [];
+        tab.socket.on("signedIn", () => events.push("signedIn"));
+        tab.socket.on("disconnect", () => events.push("closed"));
+        return events;
+      });
+
+      syncOf(one()).dropGuest(bob.id);
+
+      await vi.waitFor(() => expect(heard).toEqual([BOTH, BOTH]));
+      expect(bystander.socket.connected).toBe(true);
+    });
+
+    it("ignores a guest that is no id on the bus", async () => {
+      const code = await insert(votingRoom());
+      const a = client(ada, two());
+      await a.enter(code);
+      publisher ??= await redisClient();
+      const request = { uid: "another-instance", type: 6, data: ["guestLinked", { not: "an id" }] };
+      await publisher.publish(REQUESTS, JSON.stringify(request));
+      await sleep(100);
+      expect(a.socket.connected).toBe(true);
     });
   });
 

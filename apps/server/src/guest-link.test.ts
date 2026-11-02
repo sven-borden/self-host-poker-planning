@@ -6,27 +6,31 @@
  */
 import { createRoom } from "@pp/domain";
 import { describe, expect, it, vi } from "vitest";
+import { linkGuest } from "./auth.ts";
 import { DatabaseError } from "./db/errors.ts";
 import type { GuestLinkStore } from "./db/guest-links.ts";
 import { createCommandRunner } from "./db/runner.ts";
-import { createGuestLinks, type GuestRooms, MAX_PASSES } from "./guest-link.ts";
+import { createGuestLinks, type GuestRooms, LINK_STUCK_MS, MAX_PASSES } from "./guest-link.ts";
 import { createRoomSync } from "./sync/room-sync.ts";
 import { memoryRoomStore } from "./sync/test-support.ts";
 import { collectLogs } from "./test-support.ts";
+
+const ROOM_A = { id: "id-a", code: "room-a" };
+const ROOM_B = { id: "id-b", code: "room-b" };
 
 function harness(overrides: Partial<GuestLinkStore> = {}) {
   const calls: string[] = [];
   const store: GuestLinkStore = {
     begin: async () => void calls.push("begin"),
-    accountOf: async () => "account",
+    linkOf: async () => ({ account: "account", since: new Date() }),
     guestsOf: async () => ["guest"],
     pending: async () => ["guest"],
-    roomsOf: async () => ["room-a", "room-b"],
+    roomsOf: async () => [ROOM_A, ROOM_B],
     complete: async () => void calls.push("complete"),
     ...overrides,
   };
   const rooms: GuestRooms = {
-    moveGuest: vi.fn(async (code: string) => {
+    moveGuest: vi.fn(async ({ code }: { code: string }) => {
       calls.push(`move ${code}`);
       return "unchanged" as const;
     }),
@@ -73,10 +77,26 @@ describe("a sign-in", () => {
     expect(logs.messages()).toContain("guest link: not every room moved");
   });
 
-  it("counts a room whose move throws as one that failed", async () => {
-    const { calls, links, rooms } = harness();
-    vi.mocked(rooms.moveGuest).mockRejectedValueOnce(new Error("a bad state"));
+  it("counts a room whose move throws as one that failed, and names it by its id", async () => {
+    const { calls, links, rooms, logs } = harness();
+    vi.mocked(rooms.moveGuest).mockRejectedValueOnce(new TypeError("a value out of the room"));
     await expect(links.link("guest", "account")).resolves.toBe(false);
+    expect(calls).not.toContain("complete");
+    const line = logs.lines.find((l) => l.msg === "guest link: a room did not move");
+    expect(line).toMatchObject({ level: 40, room: "id-a", class: "TypeError" });
+    expect(logs.raw.join("\n")).not.toContain("a value out of the room");
+    expect(logs.raw.join("\n")).not.toContain("room-a");
+  });
+
+  it("says so louder once a link is a day old, and still gives nothing up", async () => {
+    const since = new Date(Date.now() - LINK_STUCK_MS - 1000);
+    const { calls, links, rooms, logs } = harness({
+      linkOf: async () => ({ account: "account", since }),
+    });
+    vi.mocked(rooms.moveGuest).mockRejectedValue(new TypeError("stuck"));
+    await links.sweep();
+    const line = logs.lines.find((l) => l.msg === "guest link: a room did not move");
+    expect(line).toMatchObject({ level: 50, room: "id-a" });
     expect(calls).not.toContain("complete");
   });
 
@@ -112,7 +132,7 @@ describe("a sign-in", () => {
   });
 
   it("finds nothing to do when no link is pending, and never completes", async () => {
-    const { calls, links } = harness({ accountOf: async () => null });
+    const { calls, links } = harness({ linkOf: async () => null });
     await expect(links.link("guest", "account")).resolves.toBe(true);
     expect(calls).toEqual(["begin"]);
   });
@@ -124,7 +144,7 @@ describe("running it again", () => {
     const { calls, links } = harness({
       roomsOf: () =>
         new Promise((resolve) => {
-          free = () => resolve(["room-a"]);
+          free = () => resolve([ROOM_A]);
         }),
     });
     const first = links.link("guest", "account");
@@ -157,7 +177,35 @@ describe("running it again", () => {
   });
 });
 
+describe("the sign-in's hook", () => {
+  const link = () => ({ link: vi.fn(async () => true) });
+  const sessions = (guest: string, account: string, isAnonymous = false) => ({
+    anonymousUser: { user: { id: guest } },
+    newUser: { user: { id: account, isAnonymous } },
+  });
+
+  it("links a guest to an account", async () => {
+    const links = link();
+    await linkGuest(links, sessions("guest", "account"));
+    expect(links.link).toHaveBeenCalledWith("guest", "account");
+  });
+
+  it("moves nothing onto the same person", async () => {
+    const links = link();
+    await linkGuest(links, sessions("same", "same"));
+    expect(links.link).not.toHaveBeenCalled();
+  });
+
+  it("moves nothing onto another guest", async () => {
+    const links = link();
+    await linkGuest(links, sessions("guest", "other", true));
+    expect(links.link).not.toHaveBeenCalled();
+  });
+});
+
 describe("the room sync's part", () => {
+  const CODE = { id: "id-code", code: "CODE" };
+
   async function room() {
     const store = memoryRoomStore();
     const base = createRoom({ ownerId: "guest" });
@@ -170,30 +218,31 @@ describe("the room sync's part", () => {
 
   it("is changed, then unchanged", async () => {
     const { store, sync } = await room();
-    await expect(sync.moveGuest("CODE", "guest", "account")).resolves.toBe("changed");
+    await expect(sync.moveGuest(CODE, "guest", "account")).resolves.toBe("changed");
     expect(store.rooms.get("CODE")?.state.ownerId).toBe("account");
-    await expect(sync.moveGuest("CODE", "guest", "account")).resolves.toBe("unchanged");
+    await expect(sync.moveGuest(CODE, "guest", "account")).resolves.toBe("unchanged");
     expect(store.commits).toBe(1);
   });
 
   it("is unchanged for a room deleted meanwhile", async () => {
     const { sync } = await room();
-    await expect(sync.moveGuest("GONE", "guest", "account")).resolves.toBe("unchanged");
+    const gone = { id: "id-gone", code: "GONE" };
+    await expect(sync.moveGuest(gone, "guest", "account")).resolves.toBe("unchanged");
   });
 
   it("is failed when every attempt loses, and stores nothing", async () => {
     const { store, sync } = await room();
     store.fate = () => "lose";
-    await expect(sync.moveGuest("CODE", "guest", "account")).resolves.toBe("failed");
+    await expect(sync.moveGuest(CODE, "guest", "account")).resolves.toBe("failed");
     expect(store.rooms.get("CODE")?.state.ownerId).toBe("guest");
   });
 
   it("is failed on a database error, and running it again finds the room as it is", async () => {
     const { store, sync } = await room();
     store.fate = () => "store-then-fail";
-    await expect(sync.moveGuest("CODE", "guest", "account")).resolves.toBe("failed");
+    await expect(sync.moveGuest(CODE, "guest", "account")).resolves.toBe("failed");
     store.fate = () => "store";
-    await expect(sync.moveGuest("CODE", "guest", "account")).resolves.toBe("unchanged");
+    await expect(sync.moveGuest(CODE, "guest", "account")).resolves.toBe("unchanged");
     expect(store.commits).toBe(1);
   });
 });
