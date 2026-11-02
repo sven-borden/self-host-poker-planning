@@ -17,6 +17,7 @@ import {
 } from "./auth.ts";
 import { type Config, connectorGaps, connectorNames } from "./config.ts";
 import { createConnectorAccess } from "./connectors/access.ts";
+import { createAzureConnector } from "./connectors/azure-devops.ts";
 import { createJiraConnector } from "./connectors/jira.ts";
 import { createOAuthStateStore } from "./connectors/oauth-state.ts";
 import { registerConnectorApi } from "./connectors/routes.ts";
@@ -189,20 +190,33 @@ export async function setupServer(
           limiter,
         });
         // Dark without its keys, the vault and a way to sign in: nothing is registered.
-        if (config.jira && connectorNames(config).includes("jira")) {
+        const connectors = connectorNames(config);
+        const tokens = database.connectorTokens;
+        const states = createOAuthStateStore(db);
+        const shared = {
+          auth,
+          tokens,
+          states,
+          rooms: store,
+          history: store,
+          sync,
+          config,
+          limiter,
+        };
+        if (config.jira && connectors.includes("jira")) {
           const connector = createJiraConnector(config.jira);
-          const tokens = database.connectorTokens;
           registerConnectorApi(app, {
-            auth,
+            ...shared,
             connector,
             access: createConnectorAccess(tokens, connector),
-            tokens,
-            states: createOAuthStateStore(db),
-            rooms: store,
-            history: store,
-            sync,
-            config,
-            limiter,
+          });
+        }
+        if (connectors.includes("azure-devops")) {
+          const connector = createAzureConnector();
+          registerConnectorApi(app, {
+            ...shared,
+            connector,
+            access: createConnectorAccess(tokens, connector),
           });
         }
       },

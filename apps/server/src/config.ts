@@ -91,14 +91,15 @@ export interface Config {
 }
 
 /**
- * The connectors this install has: a tracker's keys, the vault to hold a person's token, and a
- * way to be an account at all. Without any of them no route and no button exists.
+ * The connectors this install has: a tracker's keys where it has any, the vault to hold a person's
+ * token, and a way to be an account at all. Without any of them no route and no button exists.
  */
 export function connectorNames(
   config: Pick<Config, "jira" | "vault" | "socialProviders">,
 ): ConnectorName[] {
   if (config.vault === undefined || socialProviderIds(config).length === 0) return [];
-  return config.jira === undefined ? [] : ["jira"];
+  // Azure DevOps has no keys of its own: each person brings a token (#55, ADR-031).
+  return config.jira === undefined ? ["azure-devops"] : ["jira", "azure-devops"];
 }
 
 /**

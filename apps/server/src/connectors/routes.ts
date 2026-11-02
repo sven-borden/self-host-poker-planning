@@ -11,9 +11,16 @@
  * - `GET …/fields`, `PUT …/field { id }`: the site's number fields, and which one is the estimate;
  * - `GET …/boards?name=`, `GET …/boards/:id/sprints`: what a sprint is picked from.
  *
+ * For a tracker where a person pastes a token (Azure DevOps, #55, ADR-031), instead of the callback,
+ * the boards and the room's `connect`:
+ * - `POST …/connect { organization, token }` tests the token with one read, and seals it;
+ * - `GET …/types`, `GET …/fields?type=`, `PUT …/field { id, type }`, `DELETE …/field`: a person's
+ *   choice over the field each item's type carries, read from the type;
+ * - `GET …/queries`: the saved queries an import can name.
+ *
  * For the PO of a room, at `/api/rooms/:code/connectors/:name`:
  * - `POST …/connect` answers `{ url }`, where the page sends the browser;
- * - `POST …/import { jql } | { sprint }` fills the queue through `apply`;
+ * - `POST …/import`, a query as the connector takes one, fills the queue through `apply`;
  * - `POST …/write-back { round }` writes that round's final to the item it estimated.
  *
  * Without the connector's keys or the vault nothing here is registered, and `/api/*` answers 404.
@@ -34,9 +41,10 @@ import {
   type ConnectorFieldsView,
   type ConnectorImportView,
   type ConnectorResult,
+  type ConnectorSavedQueriesView,
   type ConnectorWriteView,
   MAX_BOARDS,
-  MAX_JQL_LENGTH,
+  MAX_PAT_LENGTH,
   WIRE_LIMITS,
 } from "@pp/protocol";
 import type { Context, Hono } from "hono";
@@ -50,15 +58,23 @@ import { foreignOrigin, isJsonBody, rateLimited } from "../http.ts";
 import type { RateLimiter, RateLimitRule } from "../rate-limit.ts";
 import { isRoomCode } from "../room-code.ts";
 import type { RoomSync } from "../sync/room-sync.ts";
+import { Secret } from "../vault.ts";
 import type { ConnectorAccess } from "./access.ts";
 import { sealGrant } from "./access.ts";
-import type {
-  BacklogConnector,
-  BacklogQuery,
-  Failure,
-  FoundItem,
-  Outcome,
-  Site,
+import {
+  type BacklogConnector,
+  type BacklogQuery,
+  type Failure,
+  type FoundItem,
+  type FoundPage,
+  type ItemFields,
+  type OAuthSignIn,
+  type Outcome,
+  type PastedToken,
+  type SavedQueries,
+  type Site,
+  type SprintBoards,
+  success,
 } from "./connector.ts";
 import type { OAuthStateStore } from "./oauth-state.ts";
 
@@ -77,11 +93,20 @@ export const MAX_SEARCH_PAGES = 10;
 /** The most anything said it would wait, for a `Retry-After` that is not sensible. */
 const MAX_RETRY_AFTER_S = 3600;
 
+/** A pasted token has no end of its own that this server knows: only the tracker's word ends it. */
+const NEVER = Number.MAX_SAFE_INTEGER;
+/** A token goes into a header: printable, with no space. Anything else was no token. */
+const TOKEN_SHAPE = /^[\x21-\x7e]+$/;
+
 const idBody = z.strictObject({ id: z.string().min(1).max(128) });
-const importBody = z.union([
-  z.strictObject({ jql: z.string().trim().min(1).max(MAX_JQL_LENGTH) }),
-  z.strictObject({ sprint: z.number().int().positive().max(WIRE_LIMITS.roundNumber) }),
-]);
+const typedFieldBody = z.strictObject({
+  id: z.string().min(1).max(128),
+  type: z.string().min(1).max(128),
+});
+const connectBody = z.strictObject({
+  organization: z.string().min(1).max(128),
+  token: z.string().min(1).max(MAX_PAT_LENGTH),
+});
 const writeBody = z.strictObject({
   round: z.number().int().positive().max(WIRE_LIMITS.roundNumber),
 });
@@ -89,20 +114,35 @@ const emptyBody = z.strictObject({});
 
 /** What `connector_token.settings` holds: read through this, so an old shape counts as none. */
 const settingsSchema = z.object({
-  site: z.object({ id: z.string(), name: z.string(), url: z.string() }),
+  organization: z.string().optional(),
+  site: z.object({
+    id: z.string(),
+    name: z.string(),
+    url: z.string(),
+    home: z.string().optional(),
+  }),
   field: z.object({ id: z.string(), name: z.string() }).optional(),
 });
 type Settings = z.output<typeof settingsSchema>;
 
+/** A connection before a project is picked holds this alone. */
+const organizationSchema = z.object({ organization: z.string() });
+
 const STATUS_OF: Record<Failure["code"], 401 | 403 | 404 | 409 | 422 | 429 | 502 | 504> = {
   connector_not_connected: 409,
   connector_reconnect: 409,
+  connector_bad_token: 422,
+  connector_no_access: 403,
+  connector_scope: 403,
+  connector_no_organization: 404,
   connector_setup: 403,
   connector_rate_limited: 429,
   connector_forbidden: 403,
   connector_not_found: 404,
   connector_bad_query: 422,
   connector_field_refused: 422,
+  connector_no_estimate_field: 422,
+  connector_query_cap: 422,
   connector_unavailable: 502,
   connector_timeout: 504,
 };
@@ -113,9 +153,14 @@ interface Caller {
   sessionId: string;
 }
 
-export interface ConnectorApiDeps {
+/** A tracker, with what it takes to connect one. A third way to sign in is a third member. */
+export type AnyConnector<Q> =
+  | (BacklogConnector<Q> & OAuthSignIn & SprintBoards)
+  | (BacklogConnector<Q> & PastedToken & ItemFields & SavedQueries);
+
+export interface ConnectorApiDeps<Q = BacklogQuery> {
   auth: Auth;
-  connector: BacklogConnector;
+  connector: AnyConnector<Q>;
   access: ConnectorAccess;
   tokens: ConnectorTokenStore;
   states: OAuthStateStore;
@@ -125,6 +170,9 @@ export interface ConnectorApiDeps {
   config: Config;
   limiter: RateLimiter;
 }
+
+/** What an item's `source` names and a write-back compares: a site, or the organisation around it. */
+const homeOf = (site: Pick<Site, "id" | "home">) => site.home ?? site.id;
 
 /** The queue's entry of a found item, or `null` when its key is not a key. */
 function entryOf(item: FoundItem, site: Site, system: BacklogConnector["system"]) {
@@ -136,16 +184,19 @@ function entryOf(item: FoundItem, site: Site, system: BacklogConnector["system"]
   const titled = title === "" ? null : cleanQueueItem({ ...parts, title });
   const entry = titled ?? cleanQueueItem(parts);
   if (entry === null) return null;
-  const source = { system, site: site.id, id: item.id };
+  const source = { system, site: homeOf(site), id: item.id };
   return {
     entry: { ...entry, source } as QueueEntry,
     shortened: long || (title !== "" && titled === null),
   };
 }
 
-export function registerConnectorApi(app: Hono<AppEnv>, deps: ConnectorApiDeps): void {
+export function registerConnectorApi<Q>(app: Hono<AppEnv>, deps: ConnectorApiDeps<Q>): void {
   const { auth, connector, access, tokens, states, rooms, history, sync, config, limiter } = deps;
   const { name } = connector;
+  const oauth = "authorizeUrl" in connector ? connector : null;
+  const pasted = "checkToken" in connector ? connector : null;
+  const fieldBody: z.ZodType<{ id: string; type?: string }> = pasted ? typedFieldBody : idBody;
   const own = `/api/connectors/${name}`;
   const inRoom = `/api/rooms/:code/connectors/${name}`;
   const redirectUri = `${config.baseUrl}${own}/callback`;
@@ -203,6 +254,11 @@ export function registerConnectorApi(app: Hono<AppEnv>, deps: ConnectorApiDeps):
     return parsed.success ? parsed.data : null;
   }
 
+  async function organizationOf(account: AccountId): Promise<string | undefined> {
+    const parsed = organizationSchema.safeParse(await tokens.readSettings(account, name));
+    return parsed.success ? parsed.data.organization : undefined;
+  }
+
   /** The chosen site, or the refusal: nothing is asked of a tracker without one. */
   async function siteOf(c: Context<AppEnv>, me: Caller): Promise<Settings | Response> {
     const settings = await settingsOf(me.account);
@@ -225,8 +281,10 @@ export function registerConnectorApi(app: Hono<AppEnv>, deps: ConnectorApiDeps):
     if (me instanceof Response) return me;
     const stored = await tokens.readSettings(me.account, name);
     const settings = settingsSchema.safeParse(stored);
+    const organization = organizationSchema.safeParse(stored);
     const view: ConnectionView = {
       connected: stored !== undefined,
+      ...(organization.success ? { organization: organization.data.organization } : {}),
       ...(settings.success
         ? {
             site: { id: settings.data.site.id, name: settings.data.site.name },
@@ -245,66 +303,103 @@ export function registerConnectorApi(app: Hono<AppEnv>, deps: ConnectorApiDeps):
     return c.body(null, 204);
   });
 
-  app.post(`${inRoom}/connect`, async (c) => {
-    const me = await caller(c, "change", CONNECTOR_CHANGE_LIMIT);
-    if (me instanceof Response) return me;
-    const parsed = await body(c, emptyBody);
-    if (parsed instanceof Response) return parsed;
-    const room = await poRoom(c, me);
-    if (room instanceof Response) return room;
-    const state = await states.issue(me.sessionId, room.id);
-    return c.json({ url: connector.authorizeUrl(state, redirectUri) });
-  });
-
-  app.get(`${own}/callback`, async (c) => {
-    c.header("Cache-Control", "no-store");
-    const session = await sessionOf(auth, c.req.raw.headers);
-    const account = session ? accountOf(session.user) : undefined;
-    const state = c.req.query("state");
-    if (!session || account === undefined || state === undefined) {
-      return backTo(c, null, "failed");
-    }
-    const allowed = await limiter.consume(
-      `connector|${name}|change|${account}`,
-      CONNECTOR_CHANGE_LIMIT,
-    );
-    if (!allowed.allowed) return backTo(c, null, "failed");
-    const taken = await states.take(state, session.sessionId);
-    if (taken === null) return backTo(c, null, "failed");
-    if (taken.expired) return backTo(c, taken.room, "expired");
-    const code = c.req.query("code");
-    if (c.req.query("error") !== undefined || code === undefined) {
-      return backTo(c, taken.room, "cancelled");
-    }
-    const grant = await connector.exchangeCode(code, redirectUri);
-    if (!grant.ok) {
-      c.var.log.info({ connector: name, code: grant.code }, "connection refused");
-      return backTo(c, taken.room, "failed");
-    }
-    const saved = await tokens.saveToken(account, name, sealGrant(grant.value));
-    if (saved.status !== "saved") return backTo(c, taken.room, "failed");
-    const sites = await connector.sites(grant.value.accessToken);
-    if (sites.ok) {
-      // A site still on the list stays, with its field; one site needs no question.
-      const before = await settingsOf(account);
-      const kept = sites.value.find(({ id }) => id === before?.site.id);
-      const only = sites.value.length === 1 ? sites.value[0] : undefined;
-      const site = kept ?? only;
+  if (pasted) {
+    // A connection by a pasted token: the token is tested, sealed, and never seen again.
+    app.post(`${own}/connect`, async (c) => {
+      const me = await caller(c, "change", CONNECTOR_CHANGE_LIMIT);
+      if (me instanceof Response) return me;
+      const given = await body(c, connectBody);
+      if (given instanceof Response) return given;
+      const { organization } = given;
+      if (!pasted.organization.test(organization)) {
+        return c.json({ code: "connector_bad_organization" }, 422);
+      }
+      if (!TOKEN_SHAPE.test(given.token)) return c.json({ code: "connector_bad_token" }, 422);
+      const token = new Secret(given.token);
+      const checked = await pasted.checkToken(organization, token);
+      if (!checked.ok) return failed(c, checked);
+      const grant = { accessToken: token, refreshToken: new Secret(""), expiresAt: NEVER };
+      const saved = await tokens.saveToken(me.account, name, sealGrant(grant));
+      if (saved.status !== "saved") return c.json({ code: "connector_not_connected" }, 409);
+      // The same organisation keeps its project and field; one project needs no question.
+      const before = await settingsOf(me.account);
+      const kept = before?.site.home === organization ? before : null;
+      const sites = kept === null ? await pasted.sites(token, organization) : null;
+      const only = sites?.ok && sites.value.length === 1 ? sites.value[0] : undefined;
       await tokens.writeSettings(
-        account,
+        me.account,
         name,
-        site === undefined
-          ? null
-          : { site, ...(kept && before?.field ? { field: before.field } : {}) },
+        kept ?? { organization, ...(only ? { site: only } : {}) },
       );
-    }
-    c.var.log.info({ connector: name }, "connector connected");
-    return backTo(c, taken.room, "connected");
-  });
+      c.var.log.info({ connector: name }, "connector connected");
+      return c.body(null, 204);
+    });
+  }
+
+  if (oauth) {
+    app.post(`${inRoom}/connect`, async (c) => {
+      const me = await caller(c, "change", CONNECTOR_CHANGE_LIMIT);
+      if (me instanceof Response) return me;
+      const parsed = await body(c, emptyBody);
+      if (parsed instanceof Response) return parsed;
+      const room = await poRoom(c, me);
+      if (room instanceof Response) return room;
+      const state = await states.issue(me.sessionId, room.id);
+      return c.json({ url: oauth.authorizeUrl(state, redirectUri) });
+    });
+
+    app.get(`${own}/callback`, async (c) => {
+      c.header("Cache-Control", "no-store");
+      const session = await sessionOf(auth, c.req.raw.headers);
+      const account = session ? accountOf(session.user) : undefined;
+      const state = c.req.query("state");
+      if (!session || account === undefined || state === undefined) {
+        return backTo(c, null, "failed");
+      }
+      const allowed = await limiter.consume(
+        `connector|${name}|change|${account}`,
+        CONNECTOR_CHANGE_LIMIT,
+      );
+      if (!allowed.allowed) return backTo(c, null, "failed");
+      const taken = await states.take(state, session.sessionId);
+      if (taken === null) return backTo(c, null, "failed");
+      if (taken.expired) return backTo(c, taken.room, "expired");
+      const code = c.req.query("code");
+      if (c.req.query("error") !== undefined || code === undefined) {
+        return backTo(c, taken.room, "cancelled");
+      }
+      const grant = await oauth.exchangeCode(code, redirectUri);
+      if (!grant.ok) {
+        c.var.log.info({ connector: name, code: grant.code }, "connection refused");
+        return backTo(c, taken.room, "failed");
+      }
+      const saved = await tokens.saveToken(account, name, sealGrant(grant.value));
+      if (saved.status !== "saved") return backTo(c, taken.room, "failed");
+      const sites = await connector.sites(grant.value.accessToken);
+      if (sites.ok) {
+        // A site still on the list stays, with its field; one site needs no question.
+        const before = await settingsOf(account);
+        const kept = sites.value.find(({ id }) => id === before?.site.id);
+        const only = sites.value.length === 1 ? sites.value[0] : undefined;
+        const site = kept ?? only;
+        await tokens.writeSettings(
+          account,
+          name,
+          site === undefined
+            ? null
+            : { site, ...(kept && before?.field ? { field: before.field } : {}) },
+        );
+      }
+      c.var.log.info({ connector: name }, "connector connected");
+      return backTo(c, taken.room, "connected");
+    });
+  }
 
   /** The person's own sites, as the tracker says today, for the page and for the check. */
-  const ownSites = (account: AccountId) =>
-    access.withToken(account, (token) => connector.sites(token));
+  const ownSites = async (account: AccountId) => {
+    const organization = await organizationOf(account);
+    return access.withToken(account, (token) => connector.sites(token, organization));
+  };
 
   app.get(`${own}/sites`, async (c) => {
     const me = await caller(c, "read", CONNECTOR_READ_LIMIT);
@@ -326,7 +421,9 @@ export function registerConnectorApi(app: Hono<AppEnv>, deps: ConnectorApiDeps):
     if (site === undefined) return c.json({ code: "connector_bad_site" }, 403);
     const before = await settingsOf(me.account);
     const field = before?.site.id === site.id ? before.field : undefined;
+    const organization = await organizationOf(me.account);
     const stored = await tokens.writeSettings(me.account, name, {
+      ...(organization === undefined ? {} : { organization }),
       site,
       ...(field ? { field } : {}),
     });
@@ -337,10 +434,12 @@ export function registerConnectorApi(app: Hono<AppEnv>, deps: ConnectorApiDeps):
   app.get(`${own}/fields`, async (c) => {
     const me = await caller(c, "read", CONNECTOR_READ_LIMIT);
     if (me instanceof Response) return me;
+    const type = pasted ? c.req.query("type") : undefined;
+    if (pasted && !type) return c.json({ code: "bad_payload" }, 400);
     const settings = await siteOf(c, me);
     if (settings instanceof Response) return settings;
     const fields = await access.withToken(me.account, (token) =>
-      connector.numberFields(token, settings.site.id),
+      connector.numberFields(token, settings.site.id, type),
     );
     if (!fields.ok) return failed(c, fields);
     const guess = connector.guessField(fields.value);
@@ -354,12 +453,12 @@ export function registerConnectorApi(app: Hono<AppEnv>, deps: ConnectorApiDeps):
   app.put(`${own}/field`, async (c) => {
     const me = await caller(c, "change", CONNECTOR_CHANGE_LIMIT);
     if (me instanceof Response) return me;
-    const chosen = await body(c, idBody);
+    const chosen = await body(c, fieldBody);
     if (chosen instanceof Response) return chosen;
     const settings = await siteOf(c, me);
     if (settings instanceof Response) return settings;
     const fields = await access.withToken(me.account, (token) =>
-      connector.numberFields(token, settings.site.id),
+      connector.numberFields(token, settings.site.id, chosen.type),
     );
     if (!fields.ok) return failed(c, fields);
     const field = fields.value.find(({ id }) => id === chosen.id);
@@ -369,45 +468,85 @@ export function registerConnectorApi(app: Hono<AppEnv>, deps: ConnectorApiDeps):
     return c.body(null, 204);
   });
 
-  app.get(`${own}/boards`, async (c) => {
-    const me = await caller(c, "read", CONNECTOR_READ_LIMIT);
-    if (me instanceof Response) return me;
-    const settings = await siteOf(c, me);
-    if (settings instanceof Response) return settings;
-    const typed = c.req.query("name")?.trim().slice(0, 100);
-    const boards = await access.withToken(me.account, (token) =>
-      connector.boards(token, settings.site.id, typed === "" ? undefined : typed),
-    );
-    if (!boards.ok) return failed(c, boards);
-    return c.json({ ...boards.value, boards: boards.value.boards.slice(0, MAX_BOARDS) });
-  });
+  if (oauth) {
+    app.get(`${own}/boards`, async (c) => {
+      const me = await caller(c, "read", CONNECTOR_READ_LIMIT);
+      if (me instanceof Response) return me;
+      const settings = await siteOf(c, me);
+      if (settings instanceof Response) return settings;
+      const typed = c.req.query("name")?.trim().slice(0, 100);
+      const boards = await access.withToken(me.account, (token) =>
+        oauth.boards(token, settings.site.id, typed === "" ? undefined : typed),
+      );
+      if (!boards.ok) return failed(c, boards);
+      return c.json({ ...boards.value, boards: boards.value.boards.slice(0, MAX_BOARDS) });
+    });
 
-  app.get(`${own}/boards/:id/sprints`, async (c) => {
-    const me = await caller(c, "read", CONNECTOR_READ_LIMIT);
-    if (me instanceof Response) return me;
-    const id = c.req.param("id");
-    if (!/^[1-9][0-9]{0,11}$/.test(id)) return c.json({ code: "bad_payload" }, 400);
-    const settings = await siteOf(c, me);
-    if (settings instanceof Response) return settings;
-    const sprints = await access.withToken(me.account, (token) =>
-      connector.sprints(token, settings.site.id, Number(id)),
-    );
-    if (!sprints.ok) return failed(c, sprints);
-    return c.json({ sprints: sprints.value });
-  });
+    app.get(`${own}/boards/:id/sprints`, async (c) => {
+      const me = await caller(c, "read", CONNECTOR_READ_LIMIT);
+      if (me instanceof Response) return me;
+      const id = c.req.param("id");
+      if (!/^[1-9][0-9]{0,11}$/.test(id)) return c.json({ code: "bad_payload" }, 400);
+      const settings = await siteOf(c, me);
+      if (settings instanceof Response) return settings;
+      const sprints = await access.withToken(me.account, (token) =>
+        oauth.sprints(token, settings.site.id, Number(id)),
+      );
+      if (!sprints.ok) return failed(c, sprints);
+      return c.json({ sprints: sprints.value });
+    });
+  }
+
+  if (pasted) {
+    // Back to the field of each item's own type.
+    app.delete(`${own}/field`, async (c) => {
+      const me = await caller(c, "change", CONNECTOR_CHANGE_LIMIT);
+      if (me instanceof Response) return me;
+      const settings = await siteOf(c, me);
+      if (settings instanceof Response) return settings;
+      const { field: _, ...rest } = settings;
+      await tokens.writeSettings(me.account, name, rest);
+      return c.body(null, 204);
+    });
+
+    app.get(`${own}/types`, async (c) => {
+      const me = await caller(c, "read", CONNECTOR_READ_LIMIT);
+      if (me instanceof Response) return me;
+      const settings = await siteOf(c, me);
+      if (settings instanceof Response) return settings;
+      const types = await access.withToken(me.account, (token) =>
+        pasted.workItemTypes(token, settings.site.id),
+      );
+      if (!types.ok) return failed(c, types);
+      return c.json({ types: types.value });
+    });
+
+    app.get(`${own}/queries`, async (c) => {
+      const me = await caller(c, "read", CONNECTOR_READ_LIMIT);
+      if (me instanceof Response) return me;
+      const settings = await siteOf(c, me);
+      if (settings instanceof Response) return settings;
+      const queries = await access.withToken(me.account, (token) =>
+        pasted.savedQueries(token, settings.site.id),
+      );
+      if (!queries.ok) return failed(c, queries);
+      const view: ConnectorSavedQueriesView = queries.value;
+      return c.json(view);
+    });
+  }
 
   /** All a query finds, in order, up to what the queue can take. Nothing on a failed page. */
-  async function find(me: Caller, site: Site, query: BacklogQuery, room: StoredRoom) {
+  async function find(me: Caller, site: Site, query: Q, room: StoredRoom) {
     const entries: QueueEntry[] = [];
     let shortened = 0;
     let unreadable = 0;
     let next: string | undefined;
     for (let page = 0; page < MAX_SEARCH_PAGES; page++) {
-      const found: Outcome<{ items: readonly FoundItem[]; next?: string }> = await access.withToken(
-        me.account,
-        (token) => connector.search(token, site, query, next),
+      const found: Outcome<FoundPage> = await access.withToken(me.account, (token) =>
+        connector.search(token, site, query, next),
       );
       if (!found.ok) return found;
+      unreadable += found.value.unreadable ?? 0;
       for (const item of found.value.items) {
         const made = entryOf(item, site, connector.system);
         if (made === null) unreadable += 1;
@@ -425,7 +564,7 @@ export function registerConnectorApi(app: Hono<AppEnv>, deps: ConnectorApiDeps):
   app.post(`${inRoom}/import`, async (c) => {
     const me = await caller(c, "import", CONNECTOR_IMPORT_LIMIT);
     if (me instanceof Response) return me;
-    const query = await body(c, importBody);
+    const query = await body(c, connector.query);
     if (query instanceof Response) return query;
     const room = await poRoom(c, me);
     if (room instanceof Response) return room;
@@ -497,12 +636,17 @@ export function registerConnectorApi(app: Hono<AppEnv>, deps: ConnectorApiDeps):
     const settings = await siteOf(c, me);
     if (settings instanceof Response) return settings;
     // The item names its own site: a PO connected elsewhere writes nothing, to no other issue.
-    if (settings.site.id !== source.site) return c.json({ code: "connector_other_site" }, 409);
+    if (homeOf(settings.site) !== source.site) return c.json({ code: "connector_other_site" }, 409);
     const { field } = settings;
-    if (field === undefined) return c.json({ code: "connector_no_field" }, 409);
-    const written = await access.withToken(me.account, (token) =>
-      connector.writeEstimate(token, source.site, source.id, field.id, value),
-    );
+    if (pasted === null && field === undefined) return c.json({ code: "connector_no_field" }, 409);
+    const written = await access.withToken(me.account, async (token) => {
+      // A tracker whose field depends on the item says which, and a choice of the person's goes in.
+      const target = pasted
+        ? await pasted.fieldFor(token, source.site, source.id, field?.id)
+        : success(field?.id ?? "");
+      if (!target.ok) return target;
+      return connector.writeEstimate(token, source.site, source.id, target.value, value);
+    });
     if (!written.ok) return failed(c, written);
     c.var.log.info({ room: room.id, connector: name, round: asked.round }, "estimate written");
     const view: ConnectorWriteView = {
