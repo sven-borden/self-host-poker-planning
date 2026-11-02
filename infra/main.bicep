@@ -22,7 +22,7 @@ param registryName string
 @minLength(1)
 param imageTag string
 
-@description('App Service plan tier. Free and Shared are refused: they cannot keep Always On, and without it nothing reveals a timer or runs the retention purge while nobody is calling.')
+@description('App Service plan tier. Free and Shared are refused: they cannot keep Always On, and without it the retention purge stops when an idle app does.')
 @allowed([
   'B1'
   'B2'
@@ -191,7 +191,8 @@ resource dnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-
 }
 
 // Private access: no public endpoint. Only what is in this network can reach Postgres.
-resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
+// 2025-08-01: Microsoft's reference for 2024-08-01 stops at version 16, and a compile would not say.
+resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2025-08-01' = {
   name: postgresServerName
   location: location
   sku: {
@@ -222,7 +223,7 @@ resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   ]
 }
 
-resource database 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-01' = {
+resource database 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2025-08-01' = {
   parent: postgres
   name: databaseName
   properties: {
@@ -279,6 +280,9 @@ resource settings 'Microsoft.Web/sites/config@2024-11-01' = {
     WEBSITES_ENABLE_APP_SERVICE_STORAGE: 'false'
     // Past the image's pull, 30 s for Postgres, 60 s for a migration lock and the migrations.
     WEBSITES_CONTAINER_START_TIME_LIMIT: '600'
+    // App Service waits 5 s by default, and the server needs up to 10 s to drain. An ack lost to a
+    // kill can make a client send its command again. The same 15 s as compose.yaml.
+    WEBSITES_CONTAINER_STOP_TIME_LIMIT: '15'
     BASE_URL: 'https://${empty(customDomain) ? site.properties.defaultHostName : customDomain}'
     // App Service's front end is the one proxy, and no client gets past it (ADR-032).
     TRUST_PROXY: '1'
@@ -297,7 +301,8 @@ resource web 'Microsoft.Web/sites/config@2024-11-01' = {
     linuxFxVersion: 'DOCKER|${registry.properties.loginServer}/poker-planning:${imageTag}'
     acrUseManagedIdentityCreds: true
     acrUserManagedIdentityID: identity.properties.clientId
-    // The server's own timer reveal and the retention purge need a process that stays up.
+    // The retention purge needs a process that stays up with nobody connected. A timer does not:
+    // with no socket in the room the next arrival resolves its deadline.
     alwaysOn: true
     webSocketsEnabled: true
     // App Service ignores the image's HEALTHCHECK.
@@ -315,6 +320,3 @@ resource web 'Microsoft.Web/sites/config@2024-11-01' = {
 
 @description('What people open.')
 output baseUrl string = 'https://${empty(customDomain) ? site.properties.defaultHostName : customDomain}'
-
-@description('The default host name, for a CNAME record to a custom domain.')
-output defaultHostName string = site.properties.defaultHostName
