@@ -26,6 +26,8 @@ export interface Formatters {
   time: (date: Date | number, options?: Intl.DateTimeFormatOptions) => string;
   relativeTime: (date: Date | number, now?: Date | number) => string;
   list: (items: readonly string[]) => string;
+  /** The same joined by "or": any one of them will do. */
+  anyOf: (items: readonly string[]) => string;
 }
 
 /** `formatNumber` and friends, in the current language and the reader's region. */
@@ -39,6 +41,7 @@ export function useFormat(): Formatters {
       time: (date, options) => formatTime(date, locale, options),
       relativeTime: (date, now) => formatRelativeTime(date, locale, now),
       list: (items) => formatList(items, locale),
+      anyOf: (items) => formatList(items, locale, "disjunction"),
     };
   }, [language]);
 }

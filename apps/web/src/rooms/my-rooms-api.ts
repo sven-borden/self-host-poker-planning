@@ -18,6 +18,11 @@ export interface MyRoom {
   readonly rounds: number;
   /** ISO 8601. */
   readonly lastActiveAt: string;
+  /**
+   * The room's rule refuses the caller, whose room it is (ADR-028): the row says nothing about the
+   * room, and they may delete it without the role, which can no longer come back to them.
+   */
+  readonly refused: boolean;
 }
 
 export interface MyRoomsPage {
@@ -28,6 +33,8 @@ export interface MyRoomsPage {
   readonly next?: string;
   /** A guest's rooms are still moving to this account. */
   readonly moving: boolean;
+  /** Rooms were left out, as their rule asks for a more recent sign-in (ADR-028). */
+  readonly signInAgain: boolean;
 }
 
 function toRoom(raw: unknown): MyRoom {
@@ -53,6 +60,7 @@ function toRoom(raw: unknown): MyRoom {
     seated: field(raw, "seated") === true,
     rounds,
     lastActiveAt,
+    refused: field(raw, "refused") === true,
   };
 }
 
@@ -71,6 +79,7 @@ export async function fetchMyRooms(after?: string): Promise<MyRoomsPage> {
     retentionDays,
     ...(typeof next === "string" && { next }),
     moving: field(body, "moving") === true,
+    signInAgain: field(body, "signInAgain") === true,
   };
 }
 
@@ -83,7 +92,7 @@ export async function renameMyRoom(id: string, name: string): Promise<string> {
   return stored;
 }
 
-/** Deletes a room and all it holds, for someone who is its PO and its keeper. */
+/** Deletes a room and all it holds, for its PO and keeper, or a keeper its rule refuses. */
 export async function deleteMyRoom(id: string): Promise<void> {
   await call(path(id), jsonInit("DELETE"));
 }

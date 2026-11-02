@@ -66,6 +66,8 @@ interface StartOptions {
   deadlineTimeouts?: boolean;
 }
 
+const RULE = { domains: ["example.com"], tenants: [] };
+
 async function start(
   state: RoomState | null,
   { beforeLoad, ...options }: StartOptions = {},
@@ -872,5 +874,35 @@ describe("parseSignal (#39)", () => {
     ]) {
       expect(parseSignal(bad)).toBeUndefined();
     }
+  });
+});
+
+describe("a room's rule, on the state the step commits over (#50)", () => {
+  it("a join the first read lets through is stopped in the run's step", async () => {
+    const state = createRoom({ ownerId: "po" });
+    let loads = 0;
+    let started: Started | undefined;
+    const rig = await start(state, {
+      beforeLoad: () => {
+        const stored = started?.store.rooms.get(CODE);
+        if (!started || !stored) return;
+        loads += 1;
+        // The step's own load: the rule landed after the read the socket made first.
+        if (loads === 2) stored.state.settings.restriction = RULE;
+      },
+    });
+    const visitor = rig.client("visitor");
+    await expect(visitor.enter(CODE)).resolves.toMatchObject({ ok: true });
+    started = rig;
+    await expect(visitor.cmd("join", { name: "Late", role: "voter" })).resolves.toEqual({
+      ok: false,
+      code: "restriction_unavailable",
+    });
+    expect(Object.keys(rig.store.rooms.get(CODE)?.state.participants ?? {})).toEqual([]);
+    // Refused by the rule, the socket is out of the room.
+    await expect(visitor.cmd("rename", { name: "x" })).resolves.toEqual({
+      ok: false,
+      code: "room_not_found",
+    });
   });
 });

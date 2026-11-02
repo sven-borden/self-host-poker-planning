@@ -12,6 +12,9 @@
  */
 import { MAX_RESTRICTION_ENTRIES, type Restriction, type RoomState, type UserId } from "./room.ts";
 
+/** How long a sign-in counts in a room with a rule, by when its session began (ADR-028). */
+export const RULE_SESSION_MAX_AGE_DAYS = 30;
+
 /** Every personal Microsoft account carries this tenant: it names no organisation. */
 export const MICROSOFT_CONSUMER_TENANT = "9188040d-6c67-4c5b-b112-36a304b66dad";
 

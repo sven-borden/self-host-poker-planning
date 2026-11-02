@@ -21,6 +21,7 @@ import {
   type AccessIdentity,
   type Command,
   cleanDomain,
+  RULE_SESSION_MAX_AGE_DAYS,
   type Restriction,
   type RestrictionRefusal,
   type RuleProviders,
@@ -45,8 +46,8 @@ export const NO_RULES: RoomRules = {
   identitiesOf: async () => new Map(),
 };
 
-/** How long a sign-in counts in a room with a rule, by `session.created_at`: 30 days. */
-export const RULE_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+/** How long a sign-in counts in a room with a rule, by `session.created_at`. */
+export const RULE_SESSION_MAX_AGE_MS = RULE_SESSION_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
 
 /** Whether a session that started at `startedAt` (epoch ms) is too old for a room with a rule. */
 export const sessionTooOld = (startedAt: number | undefined, now: number): boolean =>

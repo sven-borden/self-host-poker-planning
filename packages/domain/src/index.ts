@@ -41,6 +41,7 @@ export {
   cleanRestriction,
   cleanTenant,
   MICROSOFT_CONSUMER_TENANT,
+  RULE_SESSION_MAX_AGE_DAYS,
   type RestrictionRefusal,
   type RestrictionRequirement,
   type RuleProviders,

@@ -630,13 +630,15 @@ export const de: Catalog = {
       "Dieser Raum nimmt Microsoft-Konten Ihrer Organisation an. Melden Sie sich ab, um eines zu verwenden.",
     otherAccount:
       "Mit diesem Konto können Sie diesem Raum nicht beitreten. Melden Sie sich ab, um ein anderes zu verwenden.",
+    sessionTooOld:
+      "Ihre Anmeldung ist älter als {{days, number}} Tage. Dieser Raum verlangt eine aktuelle Anmeldung, denn nur so kann Ihr Anbieter bestätigen, dass Sie noch dazugehören. Melden Sie sich ab und dann wieder an.",
     unavailable:
       "Dieser Server bietet die Anmeldung, die dieser Raum verlangt, nicht mehr an. Darum kann vorerst niemand beitreten. Bitten Sie den Product Owner, die Regel des Raums zu ändern.",
     yourOrganisation: "Ihre Organisation",
     signInFirst: "Melden Sie sich an, um diesen Raum auf bestimmte Konten zu beschränken.",
     domainsLabel: "E-Mail-Domains",
     domainsHint:
-      "Eine pro Zeile, exakt: example.com lässt mail.example.com nicht zu. Es zählt nur ein Google-Konto, dessen Adresse Google bestätigt hat.",
+      "Eine pro Zeile, exakt: example.com lässt mail.example.com nicht zu. Es zählt nur ein Google-Konto, dessen Adresse Google bestätigt hat, und das belegt nur, dass jemand dort einmal E-Mails empfangen konnte, auch über ein gemeinsames Postfach.",
     tenantsLabel: "Microsoft-Mandanten-IDs",
     tenantsHint:
       "Eine pro Zeile. Wer sich mit Microsoft anmeldet, kommt über die Mandanten-ID der Organisation herein, nie über die Adresse: Eine Domain oben lässt diese Personen nicht zu.",
@@ -648,11 +650,17 @@ export const de: Catalog = {
     badTenant: "Das ist keine Mandanten-ID einer Organisation: {{entry}}",
     tooMany: "Jede Liste fasst höchstens {{max, number}} Einträge.",
     outsiders_one:
-      "{{count, number}} Person hier würde nicht zugelassen. Sie bleibt, bis sie die Seite neu lädt oder geht.",
+      "{{count, number}} Person hier würde nicht zugelassen. Sie bleibt, bis sie die Seite neu lädt, die Verbindung verliert oder geht.",
     outsiders_other:
-      "{{count, number}} Personen hier würden nicht zugelassen. Sie bleiben, bis sie die Seite neu laden oder gehen.",
+      "{{count, number}} Personen hier würden nicht zugelassen. Sie bleiben, bis sie die Seite neu laden, die Verbindung verlieren oder gehen.",
     askFirst:
       "Sie erfüllen diese Regel selbst nicht. Sie bleiben, solange Sie Product Owner sind, könnten aber nach einer Übergabe der Rolle nicht zurückkommen.",
+    removeOutsiders: "Alle entfernen, die nicht zugelassen würden",
+    removeAsk_one:
+      "{{count, number}} Person verlässt den Raum sofort und kann nur mit einem zugelassenen Konto zurückkommen.",
+    removeAsk_other:
+      "{{count, number}} Personen verlassen den Raum sofort und können nur mit einem zugelassenen Konto zurückkommen.",
+    removeConfirm: "Entfernen",
     askConfirm: "Trotzdem speichern",
     save: "Regel speichern",
     remove: "Regel entfernen",
@@ -680,6 +688,11 @@ export const de: Catalog = {
     kept: "Ihr Raum, mit einem anderen Product Owner",
     keptWhy:
       "Jemand anderes hat die Rolle des Product Owners übernommen. Holen Sie sich die Rolle im Raum zurück, dann können Sie ihn löschen.",
+    refused: "Ihr Raum, für dieses Konto gesperrt",
+    refusedWhy:
+      "Die Regel des Raums lässt dieses Konto nicht zu: Sie können ihn nicht öffnen, und die Rolle kann nicht an Sie zurückgehen. Er gehört weiterhin Ihnen, Sie können ihn also löschen.",
+    signInAgain:
+      "Einige Ihrer Räume verlangen eine aktuelle Anmeldung. Melden Sie sich ab und wieder an, um sie zu sehen.",
     lastActive: "Aktiv {{when}}",
     rounds_one: "{{count, number}} Runde",
     rounds_other: "{{count, number}} Runden",

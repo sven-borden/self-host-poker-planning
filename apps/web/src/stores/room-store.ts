@@ -39,10 +39,11 @@ export type LockReason = "required" | "changed";
 /** Why the room's rule refused this viewer, and what would pass (#50). */
 export type RoomRefusal = RestrictionRequirement & { code: RestrictionRefusal };
 
-/** The three codes of a room's rule (#50), as an `enter` or a `join` answers them. */
+/** The codes of a room's rule (#50), as an `enter` or a `join` answers them. */
 export const isRestrictionRefusal = (code: string): code is RestrictionRefusal =>
   code === "sign_in_required" ||
   code === "account_not_allowed" ||
+  code === "session_too_old" ||
   code === "restriction_unavailable";
 
 /**

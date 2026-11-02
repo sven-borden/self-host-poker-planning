@@ -124,6 +124,16 @@ export async function fetchRoomRestriction(code: string): Promise<RoomRestrictio
   };
 }
 
+/** Takes the seats the room's rule refuses now (#50): how many went, never who. */
+export async function removeRoomOutsiders(code: string): Promise<number> {
+  const body = await call(
+    `/api/rooms/${encodeURIComponent(code)}/restriction/remove-outsiders`,
+    jsonInit("POST", {}),
+  );
+  const removed = field(body, "removed");
+  return Number.isSafeInteger(removed) ? (removed as number) : 0;
+}
+
 export const jsonInit = (method: string, body?: object): RequestInit => ({
   method,
   ...(body !== undefined && {

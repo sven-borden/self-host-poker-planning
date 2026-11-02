@@ -1,3 +1,4 @@
+import { RULE_SESSION_MAX_AGE_DAYS } from "@pp/domain";
 import type { SignInProvider } from "@pp/protocol";
 import { Link } from "@tanstack/react-router";
 import { ShieldCheckIcon } from "lucide-react";
@@ -17,6 +18,9 @@ function reasonFor(
 ): string {
   if (code === "sign_in_required") return t("restriction.guest");
   if (code === "restriction_unavailable") return t("restriction.unavailable");
+  if (code === "session_too_old") {
+    return t("restriction.sessionTooOld", { days: RULE_SESSION_MAX_AGE_DAYS });
+  }
   if (provider === "microsoft") {
     return t(organisation ? "restriction.otherOrganisation" : "restriction.microsoftDomain");
   }
@@ -41,7 +45,7 @@ export function RoomRestricted({ refusal }: { refusal: RoomRefusal }) {
   const ref = useRef<HTMLElement>(null);
   useEffect(() => ref.current?.focus(), []);
   const { domains, organisation } = refusal;
-  const allowed = format.list(domains);
+  const allowed = format.anyOf(domains);
   const needs =
     domains.length > 0 && organisation
       ? t("restriction.needsBoth", { domains: allowed })
@@ -66,7 +70,7 @@ export function RoomRestricted({ refusal }: { refusal: RoomRefusal }) {
         <ShieldCheckIcon aria-hidden className="mt-1 size-6 shrink-0 text-ink-2" />
         {t("restriction.title")}
       </h2>
-      {needs !== null ? <p className="mt-2 text-ink-2">{needs}</p> : null}
+      {needs !== null ? <p className="mt-2 text-ink-2 wrap-anywhere">{needs}</p> : null}
       <p role="status" data-room-refusal className="mt-2">
         {reasonFor(t, refusal, provider)}
       </p>

@@ -679,13 +679,15 @@ export const en = {
     needsMicrosoft:
       "This room takes Microsoft accounts from your organisation. Sign out to use one.",
     otherAccount: "This account cannot join this room. Sign out to use another one.",
+    sessionTooOld:
+      "Your sign-in is more than {{days, number}} days old. This room asks for a recent one, as signing in again is how your provider confirms you are still there. Sign out, then sign in.",
     unavailable:
       "This server no longer offers the sign-in this room asks for, so nobody can join for now. Ask the product owner to change the room’s rule.",
     yourOrganisation: "your organisation",
     signInFirst: "Sign in to limit this room to certain accounts.",
     domainsLabel: "Email domains",
     domainsHint:
-      "One a line, matched exactly: example.com does not admit mail.example.com. Only a Google account whose address Google verified counts.",
+      "One a line, matched exactly: example.com does not admit mail.example.com. Only a Google account whose address Google verified counts, and that proves only that someone could once receive mail there, a shared inbox included.",
     tenantsLabel: "Microsoft tenant ids",
     tenantsHint:
       "One a line. People signing in with Microsoft pass by their organisation’s tenant id, never by their address: a domain above does not admit them.",
@@ -695,11 +697,17 @@ export const en = {
     badTenant: "This is not an organisation’s tenant id: {{entry}}",
     tooMany: "Each list holds {{max, number}} entries at most.",
     outsiders_one:
-      "{{count, number}} person here would not pass. They stay until they reload the page or leave.",
+      "{{count, number}} person here would not pass. They stay until they reload the page, lose their connection or leave.",
     outsiders_other:
-      "{{count, number}} people here would not pass. They stay until they reload the page or leave.",
+      "{{count, number}} people here would not pass. They stay until they reload the page, lose their connection or leave.",
     askFirst:
       "You do not meet this rule yourself. You stay as long as you are the product owner, but you could not come back after handing the role over.",
+    removeOutsiders: "Remove everyone who would not pass",
+    removeAsk_one:
+      "{{count, number}} person leaves the room now, and can only come back with an account that passes.",
+    removeAsk_other:
+      "{{count, number}} people leave the room now, and can only come back with an account that passes.",
+    removeConfirm: "Remove them",
     askConfirm: "Save it anyway",
     save: "Save the rule",
     remove: "Remove the rule",
@@ -726,6 +734,11 @@ export const en = {
     kept: "Your room, with another product owner",
     keptWhy:
       "Someone else took over as product owner. Get the role back in the room, and you can delete it.",
+    refused: "Your room, closed to this account",
+    refusedWhy:
+      "The room’s rule does not admit this account, so you cannot open it and the role cannot come back to you. It is still yours: you can delete it.",
+    signInAgain:
+      "Some of your rooms ask for a recent sign-in. Sign out, then sign in again to see them.",
     lastActive: "Active {{when}}",
     rounds_one: "{{count, number}} round",
     rounds_other: "{{count, number}} rounds",

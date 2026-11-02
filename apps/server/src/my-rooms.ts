@@ -139,11 +139,7 @@ export function registerMyRoomsApi(
   /** Whether the room's rule refuses this keeper, who cannot then take the role back to delete. */
   async function shutOut(room: FoundRoom, me: Caller): Promise<boolean> {
     if (room.rule === null || !room.keeper || room.ownerId === me.id) return false;
-    const refused = restrictionRefusal(
-      room.rule,
-      await identityOf(rules, me.id),
-      rules.providers,
-    );
+    const refused = restrictionRefusal(room.rule, await identityOf(rules, me.id), rules.providers);
     return refused !== null;
   }
 

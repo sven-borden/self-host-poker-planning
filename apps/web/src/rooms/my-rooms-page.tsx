@@ -277,6 +277,11 @@ function MyRoomsList() {
           </Button>
         </div>
       )}
+      {page?.signInAgain && (
+        <p role="status" data-my-rooms-sign-in-again className="m-0 max-w-prose">
+          {t("myRooms.signInAgain")}
+        </p>
+      )}
       {page &&
         (page.rooms.length === 0 ? (
           <div data-my-rooms-empty className="flex flex-col items-start gap-4">
@@ -385,9 +390,18 @@ function RoomRow({
 }) {
   const t = useT();
   const format = useFormat();
-  // The role and the right to delete can part: someone took over as PO (ADR-027).
-  const mayDelete = room.owned && room.keeper;
-  const whose = mayDelete ? "owned" : room.owned ? "claimed" : room.keeper ? "kept" : "joined";
+  // The role and the right to delete can part: someone took over as PO (ADR-027). A keeper the
+  // room's rule refuses cannot take the role back, so the right stands alone (ADR-028).
+  const mayDelete = (room.owned && room.keeper) || room.refused;
+  const whose = room.refused
+    ? "refused"
+    : mayDelete
+      ? "owned"
+      : room.owned
+        ? "claimed"
+        : room.keeper
+          ? "kept"
+          : "joined";
   return (
     <li
       data-my-room={whose}
@@ -403,16 +417,25 @@ function RoomRow({
         </Link>
         <p className="m-0 mt-1 flex flex-wrap gap-x-3 text-sm text-ink-2">
           <span>{t(`myRooms.${whose}`)}</span>
-          <time dateTime={room.lastActiveAt} title={format.date(new Date(room.lastActiveAt))}>
-            {t("myRooms.lastActive", { when: format.relativeTime(new Date(room.lastActiveAt)) })}
-          </time>
-          <span>{t("myRooms.rounds", { count: room.rounds })}</span>
+          {room.refused ? null : (
+            <>
+              <time dateTime={room.lastActiveAt} title={format.date(new Date(room.lastActiveAt))}>
+                {t("myRooms.lastActive", {
+                  when: format.relativeTime(new Date(room.lastActiveAt)),
+                })}
+              </time>
+              <span>{t("myRooms.rounds", { count: room.rounds })}</span>
+            </>
+          )}
         </p>
         {whose === "claimed" && (
           <p className="m-0 mt-1 max-w-prose text-sm text-ink-2">{t("myRooms.claimedWhy")}</p>
         )}
         {whose === "kept" && (
           <p className="m-0 mt-1 max-w-prose text-sm text-ink-2">{t("myRooms.keptWhy")}</p>
+        )}
+        {whose === "refused" && (
+          <p className="m-0 mt-1 max-w-prose text-sm text-ink-2">{t("myRooms.refusedWhy")}</p>
         )}
       </div>
       <div className="flex shrink-0 flex-wrap gap-2">

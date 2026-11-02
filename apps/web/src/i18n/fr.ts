@@ -643,13 +643,15 @@ export const fr: Catalog<"many"> = {
       "Cette salle accepte les comptes Microsoft de votre organisation. Déconnectez-vous pour en utiliser un.",
     otherAccount:
       "Ce compte ne peut pas rejoindre cette salle. Déconnectez-vous pour en utiliser un autre.",
+    sessionTooOld:
+      "Votre connexion date de plus de {{days, number}} jours. Cette salle en demande une récente : se reconnecter permet à votre fournisseur de confirmer que vous êtes toujours là. Déconnectez-vous, puis reconnectez-vous.",
     unavailable:
       "Ce serveur ne propose plus la connexion demandée par cette salle : personne ne peut la rejoindre pour l’instant. Demandez au product owner de changer la règle.",
     yourOrganisation: "votre organisation",
     signInFirst: "Connectez-vous pour réserver cette salle à certains comptes.",
     domainsLabel: "Domaines de messagerie",
     domainsHint:
-      "Un par ligne, à l’identique : example.com n’admet pas mail.example.com. Seul compte un compte Google dont Google a vérifié l’adresse.",
+      "Un par ligne, à l’identique : example.com n’admet pas mail.example.com. Seul compte un compte Google dont Google a vérifié l’adresse, et cela prouve seulement que quelqu’un a pu y recevoir du courrier, boîtes partagées comprises.",
     tenantsLabel: "Identifiants de tenant Microsoft",
     tenantsHint:
       "Un par ligne. Les personnes connectées avec Microsoft passent par l’identifiant de tenant de leur organisation, jamais par leur adresse : un domaine ci-dessus ne les admet pas.",
@@ -661,13 +663,21 @@ export const fr: Catalog<"many"> = {
     badTenant: "Ce n’est pas l’identifiant de tenant d’une organisation : {{entry}}",
     tooMany: "Chaque liste contient {{max, number}} entrées au plus.",
     outsiders_one:
-      "{{count, number}} personne ici ne passerait pas. Elle reste jusqu’à ce qu’elle recharge la page ou s’en aille.",
+      "{{count, number}} personne ici ne passerait pas. Elle reste jusqu’à ce qu’elle recharge la page, perde sa connexion ou s’en aille.",
     outsiders_many:
-      "{{count, number}} de personnes ici ne passeraient pas. Elles restent jusqu’à ce qu’elles rechargent la page ou s’en aillent.",
+      "{{count, number}} de personnes ici ne passeraient pas. Elles restent jusqu’à ce qu’elles rechargent la page, perdent leur connexion ou s’en aillent.",
     outsiders_other:
-      "{{count, number}} personnes ici ne passeraient pas. Elles restent jusqu’à ce qu’elles rechargent la page ou s’en aillent.",
+      "{{count, number}} personnes ici ne passeraient pas. Elles restent jusqu’à ce qu’elles rechargent la page, perdent leur connexion ou s’en aillent.",
     askFirst:
       "Vous ne respectez pas vous-même cette règle. Vous restez tant que vous êtes le product owner, mais vous ne pourriez pas revenir après avoir passé le rôle.",
+    removeOutsiders: "Retirer toutes les personnes qui ne passeraient pas",
+    removeAsk_one:
+      "{{count, number}} personne quitte la salle maintenant, et ne pourra revenir qu’avec un compte qui passe la règle.",
+    removeAsk_many:
+      "{{count, number}} de personnes quittent la salle maintenant, et ne pourront revenir qu’avec un compte qui passe la règle.",
+    removeAsk_other:
+      "{{count, number}} personnes quittent la salle maintenant, et ne pourront revenir qu’avec un compte qui passe la règle.",
+    removeConfirm: "Les retirer",
     askConfirm: "Enregistrer quand même",
     save: "Enregistrer la règle",
     remove: "Retirer la règle",
@@ -697,6 +707,11 @@ export const fr: Catalog<"many"> = {
     kept: "Votre salle, avec un autre product owner",
     keptWhy:
       "Quelqu’un d’autre a repris le rôle de product owner. Récupérez ce rôle dans la salle, et vous pourrez la supprimer.",
+    refused: "Votre salle, fermée à ce compte",
+    refusedWhy:
+      "La règle de la salle n’admet pas ce compte : vous ne pouvez pas l’ouvrir, et le rôle ne peut pas vous revenir. Elle est toujours à vous : vous pouvez la supprimer.",
+    signInAgain:
+      "Certaines de vos salles demandent une connexion récente. Déconnectez-vous, puis reconnectez-vous pour les voir.",
     lastActive: "Activité {{when}}",
     rounds_one: "{{count, number}} tour",
     rounds_many: "{{count, number}} de tours",

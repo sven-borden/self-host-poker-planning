@@ -6,10 +6,14 @@
  * never meets one; a tenant is met only by `account.tenant_id`; a guest is asked to sign in; a
  * refused person gets no snapshot, no room name and nothing of the password; the rule goes
  * before the password, at `enter`, at `join` and at `/access`; the PO always stays; a seat stays
- * while its socket does and is refused at the next enter; a visitor leaves when a rule arrives;
+ * while its socket does and goes at the next enter; a visitor leaves when a rule arrives;
  * nobody the rule refuses becomes PO; a rule whose provider is gone fails closed; a guest's seat
  * and a refused guest both come through a sign-in as they should; and no address, tenant or
  * room code reaches a log line, or a frame for anyone who should not hold it.
+ *
+ * "The one invariant" attacks the place frames leave: no socket without a seat or the PO role gets
+ * a frame unless it was judged against that frame's gate, whichever way it got there, with one
+ * instance and, with `TEST_REDIS_URL`, with two.
  */
 import { createRoom, type Restriction, type RoomState } from "@pp/domain";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -24,10 +28,13 @@ import {
   routeProvidersTo,
   startFakeOidc,
 } from "./fake-oidc.ts";
+import { createMyRoomsStore } from "./db/my-rooms.ts";
+import { DatabaseError } from "./db/errors.ts";
 import { hashPassword } from "./password.ts";
-import { RESTRICTION_READ_LIMIT } from "./room-rule-api.ts";
+import { RESTRICTION_READ_LIMIT, RESTRICTION_REMOVE_LIMIT } from "./room-rule-api.ts";
 import { createServer, type PokerServer } from "./server.ts";
 import { setupServer } from "./setup.ts";
+import { RULE_CHANGE_LIMIT } from "./sync/room-sync.ts";
 import { roomCode, testClient as socketClient, type TestClient } from "./sync/test-support.ts";
 import { collectLogs, testConfig, VALID_ENV } from "./test-support.ts";
 
@@ -255,6 +262,70 @@ const refused = (code: string, domains: string[], organisation: boolean) => ({
   requirement: { domains, organisation },
 });
 
+/**
+ * Everything the server has sent this client so far has arrived: frames on one connection keep
+ * their order, and this answer left after them. What a negative assert reads must come after it.
+ */
+const settled = async (client: TestClient) => {
+  await client.history({});
+};
+
+/** Resolves when the client hears `event`. */
+const hears = (client: TestClient, event: "locked" | "kicked") =>
+  new Promise<void>((resolve) => client.socket.once(event, () => resolve()));
+
+/** A socket connected, and not yet in a room. */
+async function connected(client: TestClient) {
+  if (!client.socket.connected) {
+    await new Promise<void>((resolve) => client.socket.once("connect", () => resolve()));
+  }
+  return client;
+}
+
+/** The `nth` load of the room from now on reads, then waits to answer until `release`. */
+function holdLoad(code: string, nth = 1) {
+  const store = setup.database.store;
+  const real = store.loadRoom;
+  let read = () => {};
+  let release = () => {};
+  const reading = new Promise<void>((resolve) => {
+    read = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let seen = 0;
+  store.loadRoom = async (asked) => {
+    const answer = await real(asked);
+    if (asked === code && ++seen === nth) {
+      read();
+      await gate;
+    }
+    return answer;
+  };
+  return {
+    reading,
+    release,
+    restore: () => {
+      store.loadRoom = real;
+    },
+  };
+}
+
+/** Writes `live` as only hand-written SQL could: a rule `apply` would never store. */
+async function storeRaw(id: string, rule: string) {
+  await admin.query(
+    `update room set live = jsonb_set(live, '{settings,restriction}', $1::jsonb) where id = $2`,
+    [rule, id],
+  );
+}
+
+const ageSession = (user: string, days: number) =>
+  admin.query(
+    `update session set created_at = now() - make_interval(days => $1) where user_id = $2`,
+    [days, user],
+  );
+
 describe("who passes", () => {
   it("a Google account whose address Google verified, on an allowed domain", async () => {
     const { id: po } = await signedInPo();
@@ -370,6 +441,7 @@ describe("someone refused", () => {
     expect((await client.enter(room.code)).ok).toBe(false);
     await must(owner.cmd("rename", { name: "The renamed PO" }));
     await owner.waitFor((s) => s.room.participants[0]?.name === "The renamed PO");
+    await settled(client);
     expect(client.received).toEqual([]);
     const wire = client.frames.join("\n");
     expect(wire).not.toContain("Secret ticket");
@@ -399,6 +471,23 @@ describe("someone refused", () => {
     await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
     await expect(client.cmd("join", { name: "Late", role: "voter" })).resolves.toMatchObject({
       ok: false,
+    });
+    expect(Object.keys((await loaded(room.code)).state.participants)).toEqual([po]);
+  });
+
+  it("is stopped at the join by the join's own guard, with the socket still in the room", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po);
+    await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    await browser.guest();
+    const client = browser.socket();
+    await expect(client.enter(room.code)).resolves.toMatchObject({ ok: true });
+    // No commit, so no `locked` took the socket out first: only the join's guard is left.
+    await storeRaw(room.id, JSON.stringify(DOMAIN_RULE));
+    await expect(client.cmd("join", { name: "Late", role: "voter" })).resolves.toEqual({
+      ok: false,
+      code: "sign_in_required",
     });
     expect(Object.keys((await loaded(room.code)).state.participants)).toEqual([po]);
   });
@@ -527,6 +616,28 @@ describe("the PO", () => {
     }
   });
 
+  it("refuses a character no host holds, however the rest of the entry reads", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    for (const entry of [
+      "bücher.example/x",
+      "example.com/ü",
+      "example.com#ü",
+      "example.com?ü",
+      "example.com\\ü",
+      "a@bücher.example",
+      "bücher.example:80",
+      "exam\u00adple.com",
+      "bücher\u3002example",
+    ]) {
+      await expect(
+        owner.cmd("updateSettings", { patch: { restriction: { domains: [entry], tenants: [] } } }),
+      ).resolves.toEqual({ ok: false, code: "bad_restriction" });
+    }
+    expect((await loaded(room.code)).state.settings.restriction).toBeUndefined();
+  });
+
   it("removes a rule, and the room is open again", async () => {
     const { browser: poBrowser, id: po } = await signedInPo();
     const room = await roomOf(po, DOMAIN_RULE);
@@ -559,7 +670,7 @@ describe("someone already seated", () => {
     expect((await browser.panel(room.code)).status).toBe(403);
   });
 
-  it("is refused at the next enter, and the seat and its vote stay", async () => {
+  it("is refused at the next enter, and the seat goes there and then, as `leave` takes it", async () => {
     const { browser: poBrowser, id: po } = await signedInPo();
     const room = await roomOf(po);
     const owner = await poBrowser.sit(room.code, "The PO");
@@ -571,12 +682,28 @@ describe("someone already seated", () => {
     await must(seated.cmd("castVote", { card: "3", round: 1 }));
     await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
     seated.close();
+    const before = owner.received.length;
     expect(await browser.socket().enter(room.code)).toEqual(
       refused("sign_in_required", ["example.com"], false),
     );
     const { state } = await loaded(room.code);
-    expect(state.participants[guest]?.name).toBe("A guest");
-    expect(state.round?.votes[guest]?.card).toBe("3");
+    expect(Object.hasOwn(state.participants, guest)).toBe(false);
+    expect(state.round?.votes[guest]).toBeUndefined();
+    await owner.waitFor((s) => s.room.participants.length === 1, 3000, before);
+    expect((await poBrowser.panel(room.code)).body.outsiders).toBe(0);
+  });
+
+  it("a refused enter on one tab sends the person's other tabs out as well", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    await browser.guest();
+    const seated = await browser.sit(room.code, "A guest");
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    const locked = hears(seated, "locked");
+    expect((await browser.socket().enter(room.code)).ok).toBe(false);
+    await locked;
   });
 
   it("cannot sit down again after leaving, and hears `locked`", async () => {
@@ -593,6 +720,7 @@ describe("someone already seated", () => {
     const before = seated.received.length;
     await must(owner.cmd("rename", { name: "Not for you" }));
     await owner.waitFor((s) => s.room.participants[0]?.name === "Not for you");
+    await settled(seated);
     expect(seated.received.length).toBe(before);
     await expect(seated.cmd("join", { name: "Back", role: "voter" })).resolves.toMatchObject({
       ok: false,
@@ -660,7 +788,683 @@ describe("a visitor on the join form when a rule arrives", () => {
     await colleague.waitFor((s) => s.room.settings.restriction !== undefined);
     await must(owner.cmd("rename", { name: "After the rule" }));
     await colleague.waitFor((s) => s.room.participants[0]?.name === "After the rule");
+    await settled(client);
     expect(client.received.length).toBe(before);
+  });
+});
+
+describe("the one invariant: no frame without a judgement of its gate", () => {
+  /** A PO at the table, and a guest the domain rule refuses, seated before it. */
+  async function seatedOutsider() {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    const guest = await browser.guest();
+    const seated = await browser.sit(room.code, "An outsider");
+    return { room, owner, poBrowser, browser, guest, seated };
+  }
+
+  it("a second tab of someone who leaves hears `locked`, and gets nothing more", async () => {
+    const { room, owner, poBrowser, browser, guest, seated } = await seatedOutsider();
+    const tab = browser.socket();
+    await expect(tab.enter(room.code)).resolves.toMatchObject({ ok: true });
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    const lockedHere = hears(seated, "locked");
+    const lockedThere = hears(tab, "locked");
+    await must(seated.cmd("leave"));
+    await Promise.all([lockedHere, lockedThere]);
+    const before = tab.received.length;
+    await must(owner.cmd("startRound", { subject: { kind: "title", text: "Next round" } }));
+    await settled(tab);
+    expect(tab.received.length).toBe(before);
+    expect(tab.frames.join("\n")).not.toContain("Next round");
+    await expect(owner.cmd("kick", { who: guest })).resolves.toEqual({
+      ok: false,
+      code: "unknown_participant",
+    });
+    expect((await poBrowser.panel(room.code)).body.outsiders).toBe(0);
+  });
+
+  it("someone who leaves through My rooms over HTTP hears `locked` on the socket", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    await browser.signIn("google", person({ email: "someone@elsewhere.example" }));
+    const seated = await browser.sit(room.code, "An outsider");
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    const locked = hears(seated, "locked");
+    expect((await browser.post(`/api/my-rooms/${room.id}/leave`, {})).status).toBe(204);
+    await locked;
+    const before = seated.received.length;
+    await must(owner.cmd("startRound", { subject: { kind: "title", text: "Next round" } }));
+    await settled(seated);
+    expect(seated.received.length).toBe(before);
+  });
+
+  it("a PO with no seat who loses the role to a claim is read, and goes", async () => {
+    const browser = new Browser();
+    const po = await browser.signIn("microsoft", person({ tenant: OTHER_TENANT }));
+    const room = await roomOf(po);
+    const owner = await browser.sit(room.code, "The PO");
+    const colleagueBrowser = new Browser();
+    await colleagueBrowser.signIn("google", person());
+    const colleague = await colleagueBrowser.sit(room.code, "Colleague");
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    await must(owner.cmd("leave"));
+    const locked = hears(owner, "locked");
+    await must(colleague.cmd("claimOwner"));
+    await locked;
+    const before = owner.received.length;
+    await must(
+      colleague.cmd("startRound", { subject: { kind: "title", text: "After the claim" } }),
+    );
+    await settled(owner);
+    expect(owner.received.length).toBe(before);
+  });
+
+  it("an `enter` that loaded just before the rule committed is read as soon as it is in", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    await browser.guest();
+    const client = await connected(browser.socket());
+    const locked = hears(client, "locked");
+    const hold = holdLoad(room.code);
+    const entering = client.enter(room.code);
+    await hold.reading;
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    hold.release();
+    await expect(entering).resolves.toMatchObject({ ok: true });
+    hold.restore();
+    await locked;
+    const before = client.received.length;
+    await must(owner.cmd("startRound", { subject: { kind: "title", text: "After the rule" } }));
+    await settled(client);
+    expect(client.received.length).toBe(before);
+  });
+
+  it("a rule the last load shows is judged, though the first load had none to read for", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po, undefined, { password: true });
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    await browser.guest();
+    expect((await browser.access(room.code)).status).toBe(204);
+    const client = await connected(browser.socket());
+    const hold = holdLoad(room.code);
+    const entering = client.enter(room.code);
+    await hold.reading;
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    hold.release();
+    expect(await entering).toEqual(refused("sign_in_required", ["example.com"], false));
+    hold.restore();
+  });
+
+  it("the rule as the last load has it, not as the first: an enter that passed the old one", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po, DOMAIN_RULE);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    await browser.signIn("google", person());
+    const client = await connected(browser.socket());
+    const hold = holdLoad(room.code);
+    const entering = client.enter(room.code);
+    await hold.reading;
+    await must(
+      owner.cmd("updateSettings", {
+        patch: { restriction: { domains: ["other.example"], tenants: [] } },
+      }),
+    );
+    hold.release();
+    expect(await entering).toEqual(refused("account_not_allowed", ["other.example"], false));
+    hold.restore();
+    await settled(client).catch(() => {});
+    expect(client.received).toEqual([]);
+  });
+
+  it("a socket still at the door gets no frame of a room with a rule", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po, DOMAIN_RULE);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    await browser.guest();
+    const client = await connected(browser.socket());
+    const hold = holdLoad(room.code);
+    const entering = client.enter(room.code);
+    await hold.reading;
+    await must(owner.cmd("startRound", { subject: { kind: "title", text: "Past the door" } }));
+    await must(owner.cmd("rename", { name: "Renamed at the door" }));
+    hold.release();
+    expect((await entering).ok).toBe(false);
+    hold.restore();
+    await settled(client).catch(() => {});
+    expect(client.received).toEqual([]);
+    expect(client.frames.join("\n")).not.toContain("Past the door");
+  });
+
+  it("a refused socket keeps no pass: a later `enter` that is refused hears nothing meanwhile", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const outsider = new Browser();
+    await outsider.guest();
+    const seated = await outsider.sit(room.code, "An outsider");
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+
+    // Someone who passes, held after the pass, while another visitor is read and refused: the
+    // enter answers `busy`, with the socket's pass taken back.
+    const browser = new Browser();
+    await browser.signIn("google", person());
+    const client = await connected(browser.socket());
+    const first = holdLoad(room.code, 2);
+    const entering = client.enter(room.code);
+    await first.reading;
+    const locked = hears(seated, "locked");
+    await must(seated.cmd("leave"));
+    await locked;
+    first.release();
+    await expect(entering).resolves.toEqual({ ok: false, code: "busy" });
+    first.restore();
+
+    await must(
+      owner.cmd("updateSettings", {
+        patch: { restriction: { domains: ["other.example"], tenants: [] } },
+      }),
+    );
+    const second = holdLoad(room.code);
+    const again = client.enter(room.code);
+    await second.reading;
+    await must(
+      owner.cmd("startRound", { subject: { kind: "title", text: "Not for the refused" } }),
+    );
+    second.release();
+    expect((await again).ok).toBe(false);
+    second.restore();
+    await settled(client).catch(() => {});
+    expect(client.received).toEqual([]);
+    expect(client.frames.join("\n")).not.toContain("Not for the refused");
+  });
+
+  it("a commit that landed with its reply lost: the visitor is read, and hears `locked`", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    await browser.guest();
+    const visitor = browser.socket();
+    await expect(visitor.enter(room.code)).resolves.toMatchObject({ ok: true });
+    const locked = hears(visitor, "locked");
+    const store = setup.database.store;
+    const commit = store.commitRoom;
+    store.commitRoom = async (...args) => {
+      await commit(...args);
+      store.commitRoom = commit;
+      throw new DatabaseError("commit room", "57P01");
+    };
+    await expect(
+      owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }),
+    ).resolves.toEqual({ ok: false, code: "internal" });
+    await locked;
+    expect((await loaded(room.code)).state.settings.restriction).toEqual(DOMAIN_RULE);
+  });
+
+  it("a password the first load did not show is read for on the last", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po, DOMAIN_RULE);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    await browser.signIn("google", person());
+    const client = await connected(browser.socket());
+    const hold = holdLoad(room.code);
+    const entering = client.enter(room.code);
+    await hold.reading;
+    const put = await poBrowser.go(`/api/rooms/${room.code}/password`, {
+      method: "PUT",
+      headers: { origin: ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify({ password: PASSWORD }),
+    });
+    expect(put.status).toBe(204);
+    hold.release();
+    const ack = await entering;
+    hold.restore();
+    expect(ack.ok).toBe(false);
+    await must(owner.cmd("rename", { name: "Behind the password" }));
+    await settled(client).catch(() => {});
+    expect(client.received).toEqual([]);
+  });
+});
+
+describe.skipIf(!process.env.TEST_REDIS_URL)("the one invariant across two instances", () => {
+  type Instance = { setup: Awaited<ReturnType<typeof setupServer>>; server: PokerServer };
+  const started: Instance[] = [];
+  let a = "";
+  let b = "";
+
+  beforeAll(async () => {
+    const shared = testConfig({
+      DATABASE_URL: t.url,
+      TRUST_PROXY: "1",
+      REDIS_URL: process.env.TEST_REDIS_URL ?? "",
+      ...KEYS,
+    });
+    for (const _ of [1, 2]) {
+      const own = await setupServer(shared, logs.logger);
+      const running = createServer(shared, { ...own.deps, logger: logs.logger });
+      await running.listen();
+      started.push({ setup: own, server: running });
+    }
+    a = urlOf((started[0] as Instance).server);
+    b = urlOf((started[1] as Instance).server);
+  });
+
+  afterAll(async () => {
+    for (const client of open.splice(0)) client.close();
+    for (const { setup: own, server: running } of started) {
+      await running.close();
+      await own.dispose?.();
+    }
+  });
+
+  /** The same person's browser, reaching the other instance. */
+  function onB(browser: Browser) {
+    const there = new Browser(() => b);
+    for (const [name, value] of browser.jar) there.jar.set(name, value);
+    return there;
+  }
+
+  async function poOnA() {
+    const browser = new Browser(() => a);
+    const po = await browser.signIn("google", person());
+    const room = await roomOf(po);
+    return { browser, room, owner: await browser.sit(room.code, "The PO") };
+  }
+
+  it("a `leave` on one instance reaches the tab on the other, which gets nothing after", async () => {
+    const { room, owner } = await poOnA();
+    const browser = new Browser(() => a);
+    await browser.guest();
+    const seated = await browser.sit(room.code, "An outsider");
+    const tab = onB(browser).socket();
+    await expect(tab.enter(room.code)).resolves.toMatchObject({ ok: true });
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    await tab.waitFor((s) => s.room.settings.restriction !== undefined);
+    const locked = hears(tab, "locked");
+    await must(seated.cmd("leave"));
+    await locked;
+    const before = tab.received.length;
+    await must(owner.cmd("startRound", { subject: { kind: "title", text: "Next round" } }));
+    await settled(tab);
+    expect(tab.received.length).toBe(before);
+  });
+
+  it("an HTTP leave on one instance reaches a socket on the other", async () => {
+    const { room, owner } = await poOnA();
+    const browser = new Browser(() => a);
+    await browser.signIn("google", person({ email: "someone@elsewhere.example" }));
+    const seated = await onB(browser).sit(room.code, "An outsider");
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    const locked = hears(seated, "locked");
+    expect((await browser.post(`/api/my-rooms/${room.id}/leave`, {})).status).toBe(204);
+    await locked;
+  });
+
+  it("a rule set on one instance reads the visitors of the other", async () => {
+    const { room, owner } = await poOnA();
+    const browser = new Browser(() => b);
+    await browser.guest();
+    const visitor = browser.socket();
+    await expect(visitor.enter(room.code)).resolves.toMatchObject({ ok: true });
+    const locked = hears(visitor, "locked");
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    await locked;
+  });
+
+  it("a seat refused on one instance goes, and the person's tab on the other hears it", async () => {
+    const { room, owner } = await poOnA();
+    const browser = new Browser(() => a);
+    await browser.guest();
+    const seated = await browser.sit(room.code, "An outsider");
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    const locked = hears(seated, "locked");
+    const there = onB(browser).socket();
+    expect((await there.enter(room.code)).ok).toBe(false);
+    await locked;
+    expect(Object.keys((await loaded(room.code)).state.participants)).toHaveLength(1);
+  });
+});
+
+describe("what a stored rule that is not a rule does: it refuses", () => {
+  for (const [name, rule] of [
+    ["a JSON null", "null"],
+    ["domains as a string", '{"domains":"example.com","tenants":[]}'],
+    ["a list that holds a number", '{"domains":[1],"tenants":[]}'],
+    ["an empty object", "{}"],
+  ] as const) {
+    it(`${name}: everyone but the PO, at every door`, async () => {
+      const { browser: poBrowser, id: po } = await signedInPo();
+      const room = await roomOf(po);
+      await storeRaw(room.id, rule);
+      const browser = new Browser();
+      await browser.signIn("google", person());
+      await expect(browser.socket().enter(room.code)).resolves.toEqual(
+        refused("restriction_unavailable", [], false),
+      );
+      expect(await browser.header(room.code)).toEqual({
+        code: room.code,
+        name: null,
+        hasPassword: false,
+      });
+      expect((await poBrowser.socket().enter(room.code)).ok).toBe(true);
+      expect((await poBrowser.header(room.code)).name).toBe(SECRET_NAME);
+    });
+  }
+});
+
+describe("what an account proves", () => {
+  it("not an address whose domain is only what a URL parser reads into it", async () => {
+    const { id: po } = await signedInPo();
+    const room = await roomOf(po, DOMAIN_RULE);
+    for (const email of [
+      "a@example.com/ü",
+      "a@example.com#ü",
+      "a@example.com?ü",
+      "a@example.com\\ü",
+      "a@exam\u00adple.com",
+    ]) {
+      const browser = new Browser();
+      await browser.signIn("google", person({ email }));
+      expect(await browser.socket().enter(room.code)).toEqual(
+        refused("account_not_allowed", ["example.com"], false),
+      );
+    }
+  });
+
+  it("an international address, by its ASCII form", async () => {
+    const { id: po } = await signedInPo();
+    const room = await roomOf(po, { domains: ["xn--bcher-kva.example"], tenants: [] });
+    const browser = new Browser();
+    await browser.signIn("google", person({ email: "a@bücher.example" }));
+    await browser.sit(room.code, "Books");
+  });
+
+  it("stores Google's `hd` beside the account, and no rule reads it", async () => {
+    const { id: po } = await signedInPo();
+    const room = await roomOf(po, DOMAIN_RULE);
+    const browser = new Browser();
+    const id = await browser.signIn(
+      "google",
+      person({ email: "a@elsewhere.example", hostedDomain: "example.com" }),
+    );
+    const { rows } = await admin.query<{ hosted_domain: string | null }>(
+      "select hosted_domain from account where user_id = $1",
+      [id],
+    );
+    expect(rows).toEqual([{ hosted_domain: "example.com" }]);
+    expect((await browser.socket().enter(room.code)).ok).toBe(false);
+    expect((await new Browser().signIn("microsoft", person())) !== "").toBe(true);
+    const { rows: others } = await admin.query<{ n: string }>(
+      "select count(*) as n from account where provider_id = 'microsoft' and hosted_domain is not null",
+    );
+    expect(others).toEqual([{ n: "0" }]);
+  });
+});
+
+describe("a sign-in older than a rule asks for", () => {
+  it("must sign in again, says so, and keeps the seat for when they do", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po, DOMAIN_RULE, { password: true });
+    await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    const id = await browser.signIn("google", person());
+    expect((await browser.access(room.code)).status).toBe(204);
+    const seated = await browser.sit(room.code, "A colleague");
+    seated.close();
+    await ageSession(id, 31);
+
+    expect(await browser.socket().enter(room.code)).toEqual(
+      refused("session_too_old", ["example.com"], false),
+    );
+    expect(await browser.access(room.code)).toEqual({
+      status: 403,
+      body: '{"code":"session_too_old"}',
+    });
+    expect(await browser.header(room.code)).toEqual({
+      code: room.code,
+      name: null,
+      hasPassword: false,
+    });
+    expect((await loaded(room.code)).state.participants[id]?.name).toBe("A colleague");
+    await admin.query(`update session set created_at = now() where user_id = $1`, [id]);
+    await expect(browser.socket().enter(room.code)).resolves.toMatchObject({ ok: true });
+  });
+
+  it("not before 30 days, and not its PO, and not in a room with no rule", async () => {
+    const browser = new Browser();
+    const po = await browser.signIn("google", person());
+    const ruled = await roomOf(po, DOMAIN_RULE);
+    const open = await roomOf(po);
+    await ageSession(po, 400);
+    await expect(browser.socket().enter(ruled.code)).resolves.toMatchObject({ ok: true });
+
+    const other = new Browser();
+    const id = await other.signIn("google", person());
+    await ageSession(id, 29);
+    await expect(other.socket().enter(ruled.code)).resolves.toMatchObject({ ok: true });
+    await ageSession(id, 31);
+    await expect(other.socket().enter(open.code)).resolves.toMatchObject({ ok: true });
+  });
+
+  it("a visitor's socket is read when a rule arrives, and a claim is refused", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const visitorBrowser = new Browser();
+    const visitorId = await visitorBrowser.signIn("google", person());
+    await ageSession(visitorId, 31);
+    const visitor = visitorBrowser.socket();
+    await expect(visitor.enter(room.code)).resolves.toMatchObject({ ok: true });
+    const seatedBrowser = new Browser();
+    const seatedId = await seatedBrowser.signIn("google", person());
+    await ageSession(seatedId, 31);
+    const seated = await seatedBrowser.sit(room.code, "Old session");
+
+    const locked = hears(visitor, "locked");
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    await locked;
+    await must(owner.cmd("leave"));
+    await expect(seated.cmd("claimOwner")).resolves.toEqual({
+      ok: false,
+      code: "owner_not_allowed",
+    });
+  });
+});
+
+describe("how many times a rule can be set", () => {
+  it("is limited per person, a refused commit costs nothing, and taking it off is free", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    await expect(
+      owner.cmd("updateSettings", { patch: { restriction: { domains: ["*"], tenants: [] } } }),
+    ).resolves.toEqual({ ok: false, code: "bad_restriction" });
+    for (let commit = 0; commit < RULE_CHANGE_LIMIT.max; commit += 1) {
+      await must(
+        owner.cmd("updateSettings", {
+          patch: { restriction: { domains: [`d${commit}.example`], tenants: [] } },
+        }),
+      );
+    }
+    await expect(
+      owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }),
+    ).resolves.toEqual({ ok: false, code: "rate_limited" });
+    await must(owner.cmd("updateSettings", { patch: { restriction: null } }));
+    expect((await loaded(room.code)).state.settings.restriction).toBeUndefined();
+  });
+});
+
+describe("removing everyone who would not pass", () => {
+  it("takes those seats through `apply`, leaves the others, and says how many, never who", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const outsider = new Browser();
+    const guest = await outsider.guest();
+    const seated = await outsider.sit(room.code, "An outsider");
+    const colleagueBrowser = new Browser();
+    const colleague = await colleagueBrowser.signIn("google", person());
+    await colleagueBrowser.sit(room.code, "Colleague");
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    expect((await poBrowser.panel(room.code)).body.outsiders).toBe(1);
+
+    const kicked = hears(seated, "kicked");
+    const answer = await poBrowser.post(`/api/rooms/${room.code}/restriction/remove-outsiders`, {});
+    expect(answer.status).toBe(200);
+    expect(answer.headers.get("cache-control")).toBe("no-store");
+    expect(await answer.json()).toEqual({ removed: 1 });
+    await kicked;
+    const { state } = await loaded(room.code);
+    expect(Object.keys(state.participants).sort()).toEqual([po, colleague].sort());
+    expect(Object.hasOwn(state.participants, guest)).toBe(false);
+    expect((await poBrowser.panel(room.code)).body.outsiders).toBe(0);
+  });
+
+  it("is the PO's, from the page's origin, with nobody to remove in a room with no rule", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po);
+    const path = `/api/rooms/${room.code}/restriction/remove-outsiders`;
+    const other = new Browser();
+    await other.guest();
+    expect((await other.post(path, {})).status).toBe(403);
+    expect((await new Browser().post(path, {})).status).toBe(401);
+    const foreign = await poBrowser.go(path, {
+      method: "POST",
+      headers: { origin: "https://elsewhere.example", "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(foreign.status).toBe(403);
+    expect(await (await poBrowser.post(path, {})).json()).toEqual({ removed: 0 });
+    for (let press = 1; press < RESTRICTION_REMOVE_LIMIT.max; press += 1) {
+      await poBrowser.post(path, {});
+    }
+    expect((await poBrowser.post(path, {})).status).toBe(429);
+  });
+});
+
+describe('"My rooms" and a room with a rule', () => {
+  /** A room its keeper left, with a rule on it, whose role someone the rule passes claimed. */
+  async function handedOver() {
+    const keeperBrowser = new Browser();
+    const keeper = await keeperBrowser.signIn(
+      "google",
+      person({ email: "maker@elsewhere.example" }),
+    );
+    const room = await roomOf(keeper);
+    const owner = await keeperBrowser.sit(room.code, "The maker");
+    const colleagueBrowser = new Browser();
+    const colleague = await colleagueBrowser.signIn("google", person());
+    const newPo = await colleagueBrowser.sit(room.code, "Colleague");
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    await must(owner.cmd("leave"));
+    await must(newPo.cmd("claimOwner"));
+    await must(newPo.cmd("startRound", { subject: { kind: "none" } }));
+    owner.close();
+    return { room, keeperBrowser, colleagueBrowser, colleague };
+  }
+
+  const list = async (browser: Browser) => (await browser.go("/api/my-rooms")).json();
+
+  it("leaves off a room that would refuse the person, and its name with it", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    await browser.signIn("google", person({ email: "someone@elsewhere.example" }));
+    await browser.sit(room.code, "An outsider");
+    expect(JSON.stringify(await list(browser))).toContain(room.code);
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    const text = JSON.stringify(await list(browser));
+    expect(text).not.toContain(room.code);
+    expect(text).not.toContain(SECRET_NAME);
+    // The seat is still theirs to give up.
+    expect((await browser.post(`/api/my-rooms/${room.id}/leave`, {})).status).toBe(204);
+  });
+
+  it("shows a keeper the rule refuses a blank row, and lets them delete the room", async () => {
+    const { room, keeperBrowser } = await handedOver();
+    const body = (await list(keeperBrowser)) as { rooms: Record<string, unknown>[] };
+    expect(body.rooms).toEqual([
+      {
+        id: room.id,
+        code: room.code,
+        name: null,
+        owned: false,
+        keeper: true,
+        seated: false,
+        rounds: 0,
+        lastActiveAt: new Date(0).toISOString(),
+        refused: true,
+      },
+    ]);
+    const answer = await keeperBrowser.go(`/api/my-rooms/${room.id}`, {
+      method: "DELETE",
+      headers: { origin: ORIGIN },
+    });
+    expect(answer.status).toBe(204);
+    await expect(setup.database.store.loadRoom(room.code)).resolves.toBeNull();
+  });
+
+  it("gives a refused keeper's delete to nobody else, and only while the rule stands", async () => {
+    const { room, keeperBrowser, colleagueBrowser, colleague } = await handedOver();
+    const rooms = createMyRoomsStore(setup.database.db);
+    const keeper = await keeperBrowser.id();
+    await expect(
+      rooms.deleteKept(room.id, keeper, { domains: ["other.example"], tenants: [] }),
+    ).resolves.toBe(false);
+    await expect(rooms.deleteKept(room.id, colleague, DOMAIN_RULE)).resolves.toBe(false);
+    // The PO who passes holds the role, not the right.
+    const refused = await colleagueBrowser.go(`/api/my-rooms/${room.id}`, {
+      method: "DELETE",
+      headers: { origin: ORIGIN },
+    });
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({ code: "not_keeper" });
+    await expect(setup.database.store.loadRoom(room.code)).resolves.not.toBeNull();
+  });
+
+  it("a keeper the rule passes takes the role back to delete, as without a rule", async () => {
+    const browser = new Browser();
+    const keeper = await browser.signIn("google", person());
+    const room = await roomOf(keeper);
+    const owner = await browser.sit(room.code, "The maker");
+    const colleagueBrowser = new Browser();
+    await colleagueBrowser.signIn("google", person());
+    const colleague = await colleagueBrowser.sit(room.code, "Colleague");
+    await must(owner.cmd("updateSettings", { patch: { restriction: DOMAIN_RULE } }));
+    await must(owner.cmd("leave"));
+    await must(colleague.cmd("claimOwner"));
+    const refused = await browser.go(`/api/my-rooms/${room.id}`, {
+      method: "DELETE",
+      headers: { origin: ORIGIN },
+    });
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({ code: "not_owner" });
+    await expect(setup.database.store.loadRoom(room.code)).resolves.not.toBeNull();
+  });
+
+  it("hides the rule's rooms from a sign-in too old for them, and says so", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po, DOMAIN_RULE);
+    await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    const id = await browser.signIn("google", person());
+    await browser.sit(room.code, "Colleague");
+    await ageSession(id, 31);
+    expect(await list(browser)).toMatchObject({ rooms: [], signInAgain: true });
+    await ageSession(po, 31);
+    expect(await list(poBrowser)).toMatchObject({ rooms: [{ name: SECRET_NAME }] });
   });
 });
 
@@ -692,10 +1496,11 @@ describe("a sign-in with a rule on the room", () => {
     const { state } = await loaded(room.code);
     expect(Object.hasOwn(state.participants, guest)).toBe(false);
     expect(state.participants[account]?.name).toBe("A guest");
-    // The seat moved, and it lets nobody around the rule.
+    // The seat moved, and it lets nobody around the rule: refused, it goes.
     expect(await browser.socket().enter(room.code)).toEqual(
       refused("account_not_allowed", ["example.com"], false),
     );
+    expect(Object.keys((await loaded(room.code)).state.participants)).toEqual([po]);
   });
 
   it("a person who signs out mid-room is a guest, and the account's seat waits", async () => {

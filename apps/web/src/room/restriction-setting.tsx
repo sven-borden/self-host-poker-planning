@@ -6,11 +6,16 @@ import {
   restrictionRefusal,
 } from "@pp/domain";
 import { OctagonXIcon, TriangleAlertIcon, UsersRoundIcon } from "lucide-react";
-import { type FormEvent, useEffect, useId, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
+import { codeOf, failureMessage } from "./failure.ts";
 import { signInProviders } from "../identity/sign-in.ts";
-import { fetchRoomRestriction, type RoomRestrictionInfo } from "../rooms/api.ts";
+import {
+  fetchRoomRestriction,
+  removeRoomOutsiders,
+  type RoomRestrictionInfo,
+} from "../rooms/api.ts";
 import { useIdentityStore } from "../stores/identity-store.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import type { ControlProps } from "./settings-panel.tsx";
@@ -62,7 +67,8 @@ function parseRule(
  * its rollback, and the server judges it. A list per provider this install has, one entry a
  * line, and each list also while the rule still holds entries the install can no longer
  * check, so the PO can take them out. A rule the PO does not meet asks first: the PO stays,
- * and may not have meant it. The panel reads how many people here would not pass, never who.
+ * and may not have meant it. The panel reads how many people here would not pass, never who, and
+ * offers one thing to do about it, which asks first: the server decides who goes.
  */
 export function RestrictionSetting({
   room,
@@ -88,6 +94,11 @@ export function RestrictionSetting({
   const [problem, setProblem] = useState<string | null>(null);
   const [asking, setAsking] = useState<Restriction | null>(null);
   const [info, setInfo] = useState<RoomRestrictionInfo | null>(null);
+  /** Pressing "Remove everyone" asks; `reads` asks the server again once they went. */
+  const [removal, setRemoval] = useState<"idle" | "asking" | "busy">("idle");
+  const [removalFailure, setRemovalFailure] = useState<string | null>(null);
+  const [reads, setReads] = useState(0);
+  const saveButton = useRef<HTMLButtonElement>(null);
   const ids = {
     domains: useId(),
     tenants: useId(),
@@ -105,11 +116,13 @@ export function RestrictionSetting({
     setTenants(stored.tenants);
   }, [stored.domains, stored.tenants]);
 
-  // Asked again when the rule or the people change; a read that fails shows no count.
+  // Asked again when the rule or the people change; a read that fails shows no count. `settings`
+  // shows a change the moment it is pressed: read while it is `pending`, the server would answer
+  // for the rule before it, and nothing would ask again once it landed. So it waits for the ack.
   const people = room.participants.map((person) => person.id).join(" ");
   // biome-ignore lint/correctness/useExhaustiveDependencies: `people` and the rule ask again.
   useEffect(() => {
-    if (code === null || !signedIn) return;
+    if (code === null || !signedIn || pending) return;
     let current = true;
     fetchRoomRestriction(code).then(
       (read) => current && setInfo(read),
@@ -118,7 +131,23 @@ export function RestrictionSetting({
     return () => {
       current = false;
     };
-  }, [code, signedIn, people, stored.domains, stored.tenants]);
+  }, [code, signedIn, pending, people, stored.domains, stored.tenants, reads]);
+
+  async function removeOutsiders() {
+    if (code === null || removal === "busy") return;
+    setRemoval("busy");
+    setRemovalFailure(null);
+    try {
+      await removeRoomOutsiders(code);
+      setRemoval("idle");
+      setReads((count) => count + 1);
+      // The count, and the button with it, are about to go: the focus stays in the panel.
+      saveButton.current?.focus();
+    } catch (error) {
+      setRemoval("asking");
+      setRemovalFailure(failureMessage(t, codeOf(error)));
+    }
+  }
 
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -201,10 +230,50 @@ export function RestrictionSetting({
         </div>
       ) : null}
       {outsiders > 0 ? (
-        <p data-restriction-outsiders className="m-0 flex items-start gap-2 text-sm">
-          <UsersRoundIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-2" />
-          {t("restriction.outsiders", { count: outsiders })}
-        </p>
+        <div className="flex flex-col gap-2">
+          <p data-restriction-outsiders className="m-0 flex items-start gap-2 text-sm">
+            <UsersRoundIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-2" />
+            {t("restriction.outsiders", { count: outsiders })}
+          </p>
+          {removal === "idle" ? (
+            <Button
+              type="button"
+              variant="outline"
+              data-restriction-remove
+              className="self-start whitespace-normal"
+              onClick={() => setRemoval("asking")}
+            >
+              {t("restriction.removeOutsiders")}
+            </Button>
+          ) : (
+            <div data-restriction-remove-ask className="flex flex-col gap-2">
+              <p role="alert" className="m-0 flex items-start gap-2 text-sm">
+                <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-2" />
+                {removalFailure ?? t("restriction.removeAsk", { count: outsiders })}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  aria-disabled={removal === "busy" || undefined}
+                  className="aria-disabled:opacity-60"
+                  onClick={removeOutsiders}
+                >
+                  {t("restriction.removeConfirm")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setRemoval("idle");
+                    setRemovalFailure(null);
+                  }}
+                >
+                  {t("password.cancel")}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       ) : null}
       {problem !== null ? (
         <p
@@ -241,6 +310,7 @@ export function RestrictionSetting({
       ) : (
         <div className="flex flex-wrap gap-2">
           <Button
+            ref={saveButton}
             type="submit"
             aria-disabled={pending || undefined}
             className="aria-disabled:opacity-60"

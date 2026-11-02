@@ -1603,7 +1603,12 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       presenceOnEnter(room, user.id, loaded.state);
       // A change this enter's load did not see went past this socket: it had not passed yet.
       const seen = stateOf.get(room.id);
-      if (seen && isGated(seen, user.id) && !isMember(seen, user.id) && pass.gate !== gateOf(seen)) {
+      if (
+        seen &&
+        isGated(seen, user.id) &&
+        !isMember(seen, user.id) &&
+        pass.gate !== gateOf(seen)
+      ) {
         recheck(room.id, socket, user.id);
       }
       log.debug({ room: room.id, version: loaded.version }, "socket entered");

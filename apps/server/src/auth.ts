@@ -177,10 +177,7 @@ function microsoftTenant(providerId: string, idToken: string | null | undefined)
  * The Workspace domain in a Google id token (`hd`), kept and read by nothing yet (ADR-028): an
  * account that exists today has no way to hand it over later, and a rule may want it one day.
  */
-function googleHostedDomain(
-  providerId: string,
-  idToken: string | null | undefined,
-): string | null {
+function googleHostedDomain(providerId: string, idToken: string | null | undefined): string | null {
   if (providerId !== "google") return null;
   const domain = idTokenClaims(idToken ?? undefined)?.hd;
   return typeof domain === "string" ? domain : null;

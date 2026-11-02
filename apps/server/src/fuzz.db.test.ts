@@ -42,7 +42,7 @@ import fc from "fast-check";
 import { io as connect, type Socket } from "socket.io-client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Config } from "./config.ts";
-import { createTestDatabase, type TestDatabase } from "./db/test-db.ts";
+import { createTestDatabase, type TestDatabase, testClient as testClient_ } from "./db/test-db.ts";
 import { MAX_PAYLOAD_BYTES } from "./realtime.ts";
 import { createServer, type PokerServer } from "./server.ts";
 import { setupServer } from "./setup.ts";
@@ -355,6 +355,25 @@ const deck = fc.oneof(
   fc.record({ kind: fc.constant("preset"), id: fc.constantFrom(...PRESET_DECK_IDS) }),
   fc.record({ kind: fc.constant("custom"), cards: fc.array(card, { maxLength: 24 }) }),
 );
+const TENANT_ID = "11111111-2222-3333-4444-555555555555";
+/** Valid more often than not, so a rule gets stored, and the room then goes on under it. */
+const restriction = fc.oneof(
+  { weight: 1, arbitrary: fc.constant(null) },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      domains: fc.array(text(30), { maxLength: 3 }),
+      tenants: fc.array(text(30), { maxLength: 3 }),
+    }),
+  },
+  {
+    weight: 5,
+    arbitrary: fc.record({
+      domains: fc.subarray(["example.com", "xn--bcher-kva.example", "a.example"], { minLength: 1 }),
+      tenants: fc.subarray([TENANT_ID]),
+    }),
+  },
+);
 const patch = fc.record(
   {
     deck,
@@ -370,6 +389,7 @@ const patch = fc.record(
     poVotes: fc.boolean(),
     observersCount: fc.boolean(),
     autoAdvance: fc.boolean(),
+    restriction,
   },
   { requiredKeys: [] },
 );
@@ -440,6 +460,10 @@ function commandArb(ids: () => string[]) {
     fc.record({ type: fc.constant("extendTimer"), payload: fc.record({ seconds }) }),
     fc.record({ type: fc.constant("timeUp") }),
     fc.record({ type: fc.constant("updateSettings"), payload: fc.record({ patch }) }),
+    fc.record({
+      type: fc.constant("updateSettings"),
+      payload: fc.record({ patch: fc.record({ restriction }) }),
+    }),
     fc.record({ type: fc.constant("transferOwner"), payload: fc.record({ to: who }) }),
     fc.record({ type: fc.constant("claimOwner") }),
     // The server's own commands and names that are no command at all.
@@ -628,12 +652,28 @@ describe("fuzzed socket messages (AC 2)", () => {
   const attackers = new Map<string, Attacker>();
   const honest = new Map<string, TestClient>();
   let current = "";
+  let rulesStored = 0;
 
   beforeAll(async () => {
     t = await createTestDatabase();
-    instance = await startInstance(testConfig({ DATABASE_URL: t.url }), logs.logger, false);
+    // The providers, and a PO who is an account: only then can a fuzzed rule be stored.
+    const keys = {
+      GOOGLE_CLIENT_ID: "fuzz-google-client-id",
+      GOOGLE_CLIENT_SECRET: "fuzz-google-secret",
+      MICROSOFT_CLIENT_ID: "fuzz-microsoft-client-id",
+      MICROSOFT_CLIENT_SECRET: "fuzz-microsoft-secret",
+      MICROSOFT_TENANT_ID: "common",
+    };
+    instance = await startInstance(
+      testConfig({ DATABASE_URL: t.url, ...keys }),
+      logs.logger,
+      false,
+    );
     const guest = () => signInGuest(instance.base, ORIGIN);
     [mallory, eve, ada, bob] = await Promise.all([guest(), guest(), guest(), guest()]);
+    const admin = testClient_(t.url);
+    await admin.query(`update "user" set is_anonymous = false where id = $1`, [mallory.id]);
+    await admin.end();
   });
 
   afterAll(async () => {
@@ -754,10 +794,17 @@ describe("fuzzed socket messages (AC 2)", () => {
     const stored = await instance.database.store.loadRoom(code);
     expect(stored).not.toBeNull();
     expect(invariantProblems(stored?.state as RoomState)).toEqual([]);
-    // The honest people still enter (a fresh, valid snapshot) and get answers.
+    const rule = stored?.state.settings.restriction;
+    if (rule) rulesStored += 1;
+    // The honest people still enter (a fresh, valid snapshot) and get answers. Under a stored rule
+    // they are guests, and hear what would pass; its PO passes.
     for (const guest of [ada, bob]) {
       const client = await honestClient(guest);
       const entered = await client.enter(code);
+      if (rule && stored?.state.ownerId !== guest.id) {
+        expect(entered).toMatchObject({ ok: false, code: "sign_in_required" });
+        continue;
+      }
       expect(entered.ok).toBe(true);
       const inRoom = stored?.state.participants[guest.id] !== undefined;
       const ack = inRoom
@@ -800,6 +847,7 @@ describe("fuzzed socket messages (AC 2)", () => {
         ),
         { numRuns: RUNS, endOnFailure: true },
       );
+      console.info(`fuzz: ${rulesStored} of ${RUNS} rooms ended under a stored rule`);
       console.info(
         `fuzz answers: ${[...tally]
           .sort((x, y) => y[1] - x[1])
