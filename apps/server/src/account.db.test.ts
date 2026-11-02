@@ -19,6 +19,7 @@ import {
 } from "./account.ts";
 import type { Config } from "./config.ts";
 import { createAccountDeletionStore } from "./db/account-deletions.ts";
+import { createGuestLinkStore } from "./db/guest-links.ts";
 import { createTestDatabase, type TestDatabase, testClient } from "./db/test-db.ts";
 import {
   atFake,
@@ -1230,6 +1231,42 @@ describe("what fails, and how it comes out", () => {
     expect(rows).toHaveLength(0);
     move.mockRestore();
     await setup.links.sweep();
+  });
+
+  it("the first step ends the sessions with the marker, and leaves a guest alone", async () => {
+    const me = await signedIn();
+    const guest = await new Browser().asGuest();
+    await store().begin(me.id, {});
+    await store().begin(guest.id, {});
+    const { rows: sessions } = await admin.query(
+      "select user_id from session where user_id = any($1)",
+      [[me.id, guest.id]],
+    );
+    expect(sessions).toEqual([{ user_id: guest.id }]);
+    const { rows: markers } = await admin.query(
+      "select user_id from account_deletion where user_id = any($1)",
+      [[me.id, guest.id]],
+    );
+    expect(markers).toEqual([{ user_id: me.id }]);
+    await setup.deletions.sweep();
+  });
+
+  it("a guest moves no further once the account has its marker", async () => {
+    const me = await signedIn();
+    const guest = await new Browser().asGuest();
+    const room = await roomOf(guest.id);
+    await admin.query("insert into guest_link (guest_user_id, account_user_id) values ($1, $2)", [
+      guest.id,
+      me.id,
+    ]);
+    await store().begin(me.id, {});
+    await expect(createGuestLinkStore(setup.database.db).linkOf(guest.id)).resolves.toBeNull();
+    const move = vi.spyOn(sync, "moveGuest");
+    await expect(setup.links.settle(me.id)).resolves.toBe(true);
+    expect(move).not.toHaveBeenCalled();
+    move.mockRestore();
+    await setup.deletions.sweep();
+    expect(await liveOf(room.id)).toBeUndefined();
   });
 
   it("a move that lands on a deleted account writes nothing", async () => {

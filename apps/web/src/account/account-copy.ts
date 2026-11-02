@@ -117,12 +117,12 @@ const fr: Copy & Partial<Record<`${"goesAlone" | "goesSeats" | "sharedGuest"}_ma
 
   deleteTitle: "Supprimer mon compte",
   deleteIntro:
-    "Cette action est irréversible. Vous êtes d’abord déconnecté partout, et plus personne ne peut utiliser le compte ensuite.",
+    "Cette action est irréversible. Toutes vos sessions se ferment d’abord, et plus personne ne peut utiliser le compte ensuite.",
   goesTitle: "Ce qui disparaît",
   goesAccount: "Votre nom, votre adresse, votre mode de connexion, votre avatar et vos connexions.",
-  goesAlone_one: "{{count, number}} salle où vous êtes seul, avec son historique.",
-  goesAlone_many: "{{count, number}} salles où vous êtes seul, avec leur historique.",
-  goesAlone_other: "{{count, number}} salles où vous êtes seul, avec leur historique.",
+  goesAlone_one: "{{count, number}} salle sans personne d’autre, avec son historique.",
+  goesAlone_many: "{{count, number}} salles sans personne d’autre, avec leur historique.",
+  goesAlone_other: "{{count, number}} salles sans personne d’autre, avec leur historique.",
   goesSeats_one: "Votre place dans {{count, number}} salle qui appartient à quelqu’un d’autre.",
   goesSeats_many: "Votre place dans {{count, number}} salles qui appartiennent à d’autres.",
   goesSeats_other: "Votre place dans {{count, number}} salles qui appartiennent à d’autres.",
@@ -156,7 +156,7 @@ const fr: Copy & Partial<Record<`${"goesAlone" | "goesSeats" | "sharedGuest"}_ma
     "Cette salle disparaît pour tous ses participants, avec son historique, dès que votre compte disparaît.",
 
   againBody:
-    "Pour supprimer votre compte, vous devez vous être connecté il y a moins de 15 minutes : un navigateur resté ouvert ne doit pas pouvoir le faire. Vous revenez ensuite sur cette page.",
+    "Pour supprimer votre compte, votre connexion doit dater de moins de 15 minutes : un navigateur resté ouvert ne doit pas pouvoir le faire. Vous revenez ensuite sur cette page.",
   againAction: "Se reconnecter",
   againWith: "Se reconnecter avec {{provider}}",
   againNeeded: "Cette connexion est désormais trop ancienne. Reconnectez-vous pour continuer.",
@@ -170,7 +170,7 @@ const fr: Copy & Partial<Record<`${"goesAlone" | "goesSeats" | "sharedGuest"}_ma
   confirmAction: "Supprimer mon compte",
   deleting: "Suppression de votre compte…",
 
-  nothingDeleted: "Rien n’a été supprimé, et vous êtes toujours connecté. Réessayez.",
+  nothingDeleted: "Rien n’a été supprimé, et votre session reste ouverte. Réessayez.",
   noAnswer:
     "Le serveur ne répond pas, et votre demande a pu lui parvenir ou non. Rechargez cette page une fois de retour en ligne.",
 
@@ -181,10 +181,10 @@ const fr: Copy & Partial<Record<`${"goesAlone" | "goesSeats" | "sharedGuest"}_ma
     "Ce qui reste est ce que cette page annonçait : les sauvegardes jusqu’à leur expiration, les copies détenues par d’autres et les journaux qui contiennent des identifiants.",
   goingTitle: "Votre compte est en cours de suppression",
   goingBody:
-    "Vous êtes déconnecté partout, et plus personne ne peut utiliser le compte. Une partie n’a pas encore disparu : cela se termine tout seul, en un jour au plus, et vous n’avez plus rien à faire. Une connexion avec ce compte le signale jusqu’à la fin.",
-  lostTitle: "Vous êtes déconnecté",
+    "Toutes vos sessions sont fermées, et plus personne ne peut utiliser le compte. Une partie n’a pas encore disparu : cela se termine tout seul, en un jour au plus, et vous n’avez plus rien à faire. Une connexion avec ce compte le signale jusqu’à la fin.",
+  lostTitle: "Votre session est fermée",
   lostBody:
-    "Le serveur n’a pas répondu à temps, et vous êtes déconnecté. C’est ainsi que commence une suppression : elle a très probablement abouti, et elle se termine toute seule. Si vous vous connectez et que votre compte est toujours là, rien n’a été supprimé.",
+    "Le serveur n’a pas répondu à temps, et votre session est fermée. C’est ainsi que commence une suppression : elle a très probablement abouti, et elle se termine toute seule. Si vous vous connectez et que votre compte est toujours là, rien n’a été supprimé.",
   home: "Retour à l’accueil",
 };
 
