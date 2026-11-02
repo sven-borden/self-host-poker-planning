@@ -12,6 +12,7 @@
     "playwright.config.ts",
     "e2e/**/*.ts",
     "src/table/layout.ts",
+    "src/sound/sound-recipes.ts",
     "src/table/geometry.ts",
     "../../packages/protocol/src/version.ts",
     "../../packages/protocol/src/leak-scan.ts",

@@ -644,12 +644,16 @@ server sends and never decides the outcome of a round.
   Unit tests use `fake-audio.ts`; `e2e/sound.spec.ts` writes down the real context's voices.
 - Music (#45, ADR-021): a mood is notes in `music-moods.ts`, rendered once by `renderLoop`
   (`music-render.ts`, a lazy chunk behind the control's) into a buffer that `startLoop` plays
-  in a circle. `useBackgroundMusic` follows the round's phase. To change a mood, change its
-  notes and bring its `level` back so the peak stays near 0.095: `e2e/sound.spec.ts` reads the
-  real buffers and fails on a peak over 0.11 or a seam that steps. Anything that can ring
-  longer must count in `leadSeconds`, or the seam drops. Never stop a loop at once, and
-  leave with `release()`, not `shut()`: both are clicks. `useAudioWhile` comes after the
-  hooks that play, since effects clean up in order.
+  in a circle. `useBackgroundMusic` follows the round's phase; a change of mood leaves the
+  old loop playing until the new one is ready, and only the switch ends it. To change a mood,
+  change its notes and bring its `level` back to an RMS of about 0.05 (-26 dBFS) at full
+  volume: `e2e/sound.spec.ts` reads the real buffers and fails away from that, on a sample over
+  0.25, on moods more than 2 dB apart, or on a seam that steps against the steps around it.
+  Anything that can ring longer must count in `leadSeconds`, or the seam drops. `renderLoop`'s
+  set-up runs on the main thread, so it hands the thread back between steps: no step of it may
+  reach 50 ms at 4x CPU (ADR-019). Never stop a loop at once, and leave with `release()`, not
+  `shut()`: both are clicks. `useAudioWhile` comes after the hooks that play, since effects
+  clean up in order, and it calls `keep()` so that a release under way comes to nothing.
 - Budget: `pnpm build` ends with `scripts/check-budget.ts`, which reads the Vite manifest
   and fails when the initial JavaScript of the room route or of the landing page (entry,
   route chunk and their static imports) exceeds 200 kB gzipped. Lazy chunks (Motion features, the toaster, the

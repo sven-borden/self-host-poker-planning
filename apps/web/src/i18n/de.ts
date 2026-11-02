@@ -428,7 +428,7 @@ export const de: Catalog = {
     hint: "Eine gelegte Karte, das Aufdecken, ein Konsens und die letzten Sekunden des Timers. Auf diesem Gerät gespeichert.",
     musicEnable: "Hintergrundmusik abspielen",
     musicHint:
-      "Ruhige, eigene Loops, solange die Abstimmung läuft; beim Aufdecken blenden sie aus. Auf diesem Gerät gespeichert.",
+      "Ruhige, eigens komponierte Loops, solange die Abstimmung läuft; beim Aufdecken blenden sie aus. Auf diesem Gerät gespeichert.",
     mood: "Stimmung",
     moods: {
       dusk: "Abend",

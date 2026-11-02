@@ -937,15 +937,21 @@ the music is off, each loop 48 seconds and written in code:
 |---|---|
 | Dusk, Soir, Abend (first choice) | D major at 60 BPM: a warm chord every twelve seconds, a low note under it, a few soft felt notes far apart |
 | Tide, Marée, Gezeiten | F with a raised fourth at 40 BPM: open chords that swell and ebb, glass notes above them |
-| Embers, Braises, Glut | A with a raised sixth at 50 BPM: the same three-note felt figure turning over a low hum, the barest of the three |
+| Embers, Braises, Glut | A with a raised sixth at 50 BPM: the same three-note felt figure turning over a low hum, with the softest passages of the three |
 
 Rises over about 2 s when voting starts and falls away over about 1.2 s at the reveal, when
-turned off, and when the person leaves the room; a change of mood fades one under the next.
-Nothing ever stops at once, and each round goes on from where the last one stopped, so nobody
+turned off, and when the person leaves the room. A change of mood fades one under the next:
+the old mood plays on until the new one is ready, and arrow keys start only the mood they
+rest on. Nothing ever stops at once, and each round goes on from where the last one stopped, so nobody
 hears the same first bars every time. A timer changes nothing, and a hidden tab keeps playing.
 After a reload it starts at the first gesture, if voting is open then; a round that opens
-later brings it in by itself. It is mixed well under the effects: its loudest sample is under
-the quietest effect's peak at any volume. No sound or music depends on a card's value.
+later brings it in by itself. No sound or music depends on a card's value.
+
+Its level is the level of a sustained sound, its RMS: about -26 dBFS (0.05) at full volume for
+each mood, no sample over 0.25, the moods within about 2 dB of each other. The volume scales
+music and effects alike, so at the default 60 % that is about -35 dBFS. The effects stand clear
+of it, the reveal's peak about 13 dB over the music's RMS, and a full-volume mix does not clip.
+Sven's ear has the last word: each mood is one number (ADR-021).
 
 ## The installed app
 
