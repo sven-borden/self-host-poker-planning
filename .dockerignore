@@ -35,9 +35,8 @@
 **/blob-report
 **/playwright/.cache
 
-# Docs, the Azure template and the Docker files themselves: not part of the build
+# Docs and the Docker files themselves: not part of the build
 docs
-infra
 input.md
 compose.yaml
 Dockerfile
