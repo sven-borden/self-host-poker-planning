@@ -60,7 +60,7 @@ const en = {
   staysBackups:
     "Backups of this server keep your data until they expire. If one is ever restored, your account comes back with it, and you can delete it again.",
   staysLogs:
-    "Server logs hold ids, never your name or address, and are cleared on the server’s own schedule.",
+    "Server logs hold ids, never your name or address. How long they are kept is up to whoever runs this server.",
 
   sharedTitle: "Rooms with other people in them",
   sharedIntro:
@@ -137,7 +137,7 @@ const fr: Copy & Partial<Record<`${FrenchMany}_many`, string>> = {
 
   exportTitle: "Vos données",
   exportBody:
-    "Téléchargez un fichier JSON de ce que ce serveur détient à votre sujet : votre profil, votre mode de connexion, vos salles, les salles ouvertes par un mot de passe, vos propres cartes dans les tours nominatifs et vos connexions. Il ne contient ni le nom ni la carte de personne d’autre. Les tours anonymes n’y figurent pas : rien ne vous y relie à une carte.",
+    "Téléchargez un fichier JSON de ce que ce serveur détient à votre sujet : votre profil, votre mode de connexion, vos salles, les salles ouvertes par un mot de passe, vos propres cartes dans les tours nominatifs et vos connexions à Jira ou Azure DevOps. Il ne contient ni le nom ni la carte de personne d’autre. Les tours anonymes n’y figurent pas : rien ne vous y relie à une carte.",
   exportCodes:
     "Les salles y figurent par leur nom et leur identifiant, jamais par leur code : un code ouvre une salle, et ce fichier peut circuler.",
   exportAction: "Télécharger mes données",
@@ -156,7 +156,7 @@ const fr: Copy & Partial<Record<`${FrenchMany}_many`, string>> = {
   deleteIntro:
     "Cette action est irréversible. Toutes vos sessions se ferment d’abord, et plus personne ne peut utiliser le compte ensuite.",
   goesTitle: "Ce qui disparaît",
-  goesAccount: "Votre nom, votre adresse, votre mode de connexion, votre avatar et vos connexions.",
+  goesAccount: "Votre nom, votre adresse, votre mode de connexion, votre avatar et vos connexions à Jira ou Azure DevOps.",
   goesAlone_one: "{{count, number}} salle sans personne d’autre, avec son historique.",
   goesAlone_many: "{{count, number}} de salles sans personne d’autre, avec leur historique.",
   goesAlone_other: "{{count, number}} salles sans personne d’autre, avec leur historique.",
@@ -192,9 +192,9 @@ const fr: Copy & Partial<Record<`${FrenchMany}_many`, string>> = {
   staysBackups:
     "Les sauvegardes de ce serveur conservent vos données jusqu’à leur expiration. Si l’une d’elles est restaurée, votre compte revient avec elle, et vous pouvez le supprimer à nouveau.",
   staysLogs:
-    "Les journaux du serveur contiennent des identifiants, jamais votre nom ni votre adresse, et sont effacés selon le calendrier du serveur.",
+    "Les journaux du serveur contiennent des identifiants, jamais votre nom ni votre adresse. Leur durée de conservation dépend de la personne qui gère ce serveur.",
 
-  sharedTitle: "Salles où d’autres personnes sont présentes",
+  sharedTitle: "Salles où d’autres personnes ont une place",
   sharedIntro:
     "Ces salles sont les vôtres, et d’autres personnes y ont une place. Choisissez qui reprend chacune\u{202f}: la salle et le droit de la supprimer vont à cette personne. Sans choix de votre part, elle revient à la personne qui l’anime en ce moment si elle est là\u{202f}; sinon à la personne présente arrivée la première\u{202f}; sinon à la personne arrivée la première. Seule une personne admise par la règle d’une salle peut la reprendre. Une salle ne disparaît que si vous le demandez.",
   sharedGuest_one:
@@ -207,7 +207,7 @@ const fr: Copy & Partial<Record<`${FrenchMany}_many`, string>> = {
   takerLabel: "Qui reprend {{name}}",
   takerNobody: "Personne ici",
   takerRunning: "{{name}} anime la salle en ce moment.",
-  takerHere: "{{name}} est là, et a rejoint la salle avant les autres.",
+  takerHere: "{{name}} est là, et c’est la personne présente arrivée la première.",
   takerAway:
     "Aucune personne pouvant la reprendre n’est là. {{name}} l’a rejointe avant les autres.",
   takerChosen: "{{name}} reprend cette salle et le droit de la supprimer.",
@@ -306,7 +306,7 @@ const de: Copy = {
   staysBackups:
     "Sicherungen dieses Servers behalten Ihre Daten, bis sie ablaufen. Wird eine davon wiederhergestellt, kommt Ihr Konto mit ihr zurück, und Sie können es erneut löschen.",
   staysLogs:
-    "Server-Protokolle enthalten IDs, nie Ihren Namen oder Ihre Adresse, und werden nach dem eigenen Zeitplan des Servers gelöscht.",
+    "Server-Protokolle enthalten IDs, nie Ihren Namen oder Ihre Adresse. Wie lange sie aufbewahrt werden, entscheidet, wer diesen Server betreibt.",
 
   sharedTitle: "Räume mit anderen Personen",
   sharedIntro:

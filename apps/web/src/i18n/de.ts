@@ -116,7 +116,7 @@ export const de: Catalog = {
     toVoter: "Zum Abstimmen wechseln",
     leave: "Raum verlassen",
     leaving: "Raum wird verlassen…",
-    seatsFull: "Alle {{max, number}} Plätze sind besetzt. Versuchen Sie es, sobald jemand geht.",
+    seatsFull: "Alle {{max, number}} Plätze sind besetzt. Versuchen Sie es erneut, sobald jemand geht.",
   },
   avatar: {
     label: "Ihr Avatar",
@@ -153,7 +153,7 @@ export const de: Catalog = {
     openOwner: "Raumeinstellungen",
     openOthers: "Raumregeln",
     ledeOwner: "Jede Änderung gilt sofort für alle im Raum.",
-    ledeOthers: "Der Product Owner legt die Regeln für diesen Raum fest.",
+    ledeOthers: "Der Product Owner legt die Regeln für diesen Raum fest. So ist er gerade eingestellt.",
     loadFailed:
       "Die Einstellungen ließen sich nicht öffnen. Laden Sie die Seite neu und versuchen Sie es noch einmal.",
     groupCards: "Karten",
@@ -364,7 +364,7 @@ export const de: Catalog = {
   },
   final: {
     label: "Endgültige Schätzung",
-    short: "Endgültig",
+    short: "Endgül\u{ad}tig",
     record: "{{card}} festhalten",
     recordNothing: "Festhalten",
     recorded: "Festgehalten",
@@ -605,7 +605,7 @@ export const de: Catalog = {
       noEmail:
         "Ihr Konto hat keine E-Mail-Adresse übermittelt, deshalb konnte die Anmeldung nicht abgeschlossen werden.",
       tenantNotAllowed:
-        "Diese Seite akzeptiert dieses Microsoft-Konto nicht. Versuchen Sie es mit einem anderen oder machen Sie ohne Konto weiter.",
+        "Diese Website akzeptiert dieses Microsoft-Konto nicht. Versuchen Sie es mit einem anderen oder machen Sie ohne Konto weiter.",
       rateLimited:
         "Zu viele Anmeldeversuche. Warten Sie eine Minute und versuchen Sie es dann erneut.",
       failed:
@@ -903,9 +903,9 @@ export const de: Catalog = {
     fieldSave: "Feld speichern",
     fieldChange: "Feld wechseln",
     fieldNone: "Diese Website hat kein Zahlenfeld, Schätzungen können also nicht zurück.",
-    importFrom: "Importieren aus",
-    bySprint: "Einem Sprint",
-    byJql: "Einer JQL-Suche",
+    importFrom: "Quelle",
+    bySprint: "Sprint",
+    byJql: "JQL-Suche",
     board: "Board",
     boardFilter: "Name des Boards",
     boardFind: "Suchen",
@@ -933,7 +933,7 @@ export const de: Catalog = {
     disconnectNote: "Damit wird Ihr Token hier gelöscht. {{system}} behält seine eigene Freigabe:",
     grantsLink: "Entfernen Sie sie in Ihrem Atlassian-Konto",
     loadFailed:
-      "Der {{system}}-Teil dieser Seite konnte nicht geladen werden. Der Raum funktioniert weiter: Laden Sie die Seite neu, um ihn wieder zu sehen.",
+      "Der Teil dieser Seite für {{system}} konnte nicht geladen werden. Der Raum funktioniert weiter: Laden Sie die Seite neu, um diesen Teil wieder zu sehen.",
     result: {
       connected: "{{system}} ist verbunden.",
       cancelled: "Nichts wurde verbunden: Sie sind bei {{system}} zurückgegangen.",
@@ -944,7 +944,7 @@ export const de: Catalog = {
     },
     write: {
       waiting:
-        "{{item}}: {{card}} wurde nicht auf dieser Seite festgehalten, vielleicht von jemand anderem. Ein Klick schreibt es mit Ihrem Konto in {{system}}.",
+        "{{item}}: {{card}} wurde nicht auf dieser Seite festgehalten, und vielleicht hat es jemand anderes getan. Ein Klick schreibt es mit Ihrem Konto in {{system}}.",
       writing: "{{card}} wird in {{item}} bei {{system}} geschrieben…",
       written: "{{item}}: {{card}} steht in {{system}}.",
       failed: "{{item}}: {{card}} ist nicht bei {{system}} angekommen.",
@@ -978,8 +978,8 @@ export const de: Catalog = {
       fieldHint: "Einträge eines Typs ohne dieses Feld bleiben bei Story Points, Effort oder Size.",
       fieldNone: "Dieser Typ hat kein Zahlenfeld.",
       fieldCancel: "Abbrechen",
-      bySaved: "Einer gespeicherten Abfrage",
-      byWiql: "Einer WIQL-Abfrage",
+      bySaved: "Gespeicherte Abfrage",
+      byWiql: "WIQL-Abfrage",
       saved: "Gespeicherte Abfrage",
       noSaved: "Dieses Projekt hat keine gespeicherte Abfrage, die Sie sehen können.",
       savedMore: "Einige Ordner wurden nicht gelesen, die Liste ist also nicht vollständig.",
@@ -1034,7 +1034,7 @@ export const de: Catalog = {
         "{{system}} bittet um weniger Tempo. Versuchen Sie es gleich noch einmal.",
       connector_rate_limited_wait:
         "{{system}} bittet um weniger Tempo. Versuchen Sie es in {{seconds, number}} s erneut.",
-      connector_forbidden: "Ihr {{system}}-Konto darf das nicht.",
+      connector_forbidden: "Ihr Konto bei {{system}} darf das nicht.",
       connector_not_found: "{{system}} findet das nicht, oder Ihr Konto darf es nicht sehen.",
       connector_bad_query:
         "{{system}} konnte diese Abfrage nicht ausführen. Prüfen Sie sie und versuchen Sie es erneut.",

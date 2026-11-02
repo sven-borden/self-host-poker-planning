@@ -101,7 +101,7 @@ export const fr: Catalog<"many"> = {
       "Les {{max, number}} places à la table sont prises. Rejoignez la salle en tant qu’observateur, ou attendez qu’une place se libère.",
     fullTitle: "Cette salle est complète",
     fullBody:
-      "{{max, number}} personnes sont déjà là. Gardez cette page ouverte : vous pourrez entrer dès que quelqu’un part.",
+      "{{max, number}} personnes sont déjà là. Gardez cette page ouverte : vous pourrez entrer dès que quelqu’un partira.",
   },
   you: {
     title: "Vous",
@@ -116,7 +116,7 @@ export const fr: Catalog<"many"> = {
     toVoter: "Passer votant",
     leave: "Quitter la salle",
     leaving: "Sortie de la salle…",
-    seatsFull: "Les {{max, number}} places sont prises. Réessayez quand quelqu’un part.",
+    seatsFull: "Les {{max, number}} places sont prises. Réessayez quand quelqu’un sera parti.",
   },
   avatar: {
     label: "Votre avatar",
@@ -178,7 +178,7 @@ export const fr: Catalog<"many"> = {
     timerCustomLabel: "Durée personnalisée",
     timerCustomHint: "De 5 secondes à 60 minutes : 90 ou 1:30.",
     timerCustomBad:
-      "Saisissez de 5 secondes à 60 minutes, en secondes (90) ou en minutes et secondes (1:30).",
+      "Saisissez une durée de 5 secondes à 60 minutes, en secondes (90) ou en minutes et secondes (1:30).",
     timerSet: "Valider",
     timerRevealAtEnd: "Révéler à la fin du minuteur",
     timerRevealAtEndHint:
@@ -211,7 +211,7 @@ export const fr: Catalog<"many"> = {
     observersCountHint:
       "Désactivé, les observateurs peuvent rejoindre une salle complète, jusqu’à {{total, number}} personnes en tout.",
     observersCountRefused:
-      "Plus de {{max, number}} personnes sont là en comptant les observateurs. Ils pourront de nouveau compter quand il y en aura {{max, number}} ou moins.",
+      "Plus de {{max, number}} personnes sont là en comptant les observateurs. Ils compteront de nouveau dès que {{max, number}} personnes ou moins seront là.",
     restriction: "Qui peut rejoindre",
     restrictionHint:
       "Réservez cette salle à certains comptes. Toute personne qui a le lien voit les domaines autorisés, pour choisir le bon compte.",
@@ -626,7 +626,7 @@ export const fr: Catalog<"many"> = {
       stillMoving:
         "Votre compte est connecté. Certaines de vos salles sont encore en cours de transfert : rouvrez-les dans un instant.",
       accountGoing:
-        "Votre compte est en cours de suppression. Une fois terminé, une connexion en crée un nouveau.",
+        "Votre compte est en cours de suppression. Une fois la suppression terminée, une connexion en crée un nouveau.",
     },
   },
   account: {
@@ -665,7 +665,7 @@ export const fr: Catalog<"many"> = {
     googleGone:
       "Ce serveur ne propose plus la connexion Google\u{202f}: plus personne ne peut entrer par un domaine.",
     microsoftGone:
-      "Ce serveur ne propose plus la connexion Microsoft\u{202f}: plus personne ne peut entrer par un locataire.",
+      "Ce serveur ne propose plus la connexion Microsoft\u{202f}: plus personne ne peut entrer par un ID de locataire.",
     badDomain: "Ce n’est pas un domaine : {{entry}}",
     badTenant: "Ce n’est pas l’ID de locataire d’une organisation\u{202f}: {{entry}}",
     tooMany: "Chaque liste contient {{max, number}} entrées au plus.",
@@ -676,7 +676,7 @@ export const fr: Catalog<"many"> = {
     outsiders_other:
       "{{count, number}} personnes ici ne seraient pas admises. Elles restent jusqu’à ce qu’elles rechargent la page, perdent leur connexion ou s’en aillent.",
     askFirst:
-      "Vous ne respectez pas vous-même cette règle. Vous restez tant que vous êtes le product owner, mais vous ne pourriez pas revenir après avoir passé le rôle.",
+      "Vous ne respectez pas vous-même cette règle. Vous restez tant que vous êtes le product owner, mais vous ne pourriez pas revenir après avoir confié le rôle.",
     removeOutsiders: "Retirer toutes les personnes qui ne seraient pas admises",
     removeAsk_one:
       "{{count, number}} personne quitte la salle maintenant, et ne pourra revenir qu’avec un compte admis par la règle.",
@@ -924,7 +924,7 @@ export const fr: Catalog<"many"> = {
   connector: {
     connect: "Connecter {{system}}",
     lede: "Importez un sprint ou une recherche dans la file, et renvoyez les estimations. Vous connectez votre propre compte, et personne d’autre dans la salle ne s’en sert.",
-    signIn: "Connectez-vous avec un compte pour relier {{system}}.",
+    signIn: "Connectez-vous avec un compte pour pouvoir connecter {{system}}.",
     connectedTo: "Connecté à {{site}}",
     site: "Site",
     siteSave: "Utiliser ce site",
@@ -970,7 +970,7 @@ export const fr: Catalog<"many"> = {
       "Cela supprime votre jeton ici. {{system}} garde sa propre trace de l’autorisation :",
     grantsLink: "retirez-la dans votre compte Atlassian",
     loadFailed:
-      "La partie {{system}} de cette page n’a pas pu se charger. La salle fonctionne toujours : rechargez pour la retrouver.",
+      "La partie {{system}} de cette page n’a pas pu se charger. La salle fonctionne toujours\u{202f}: rechargez la page pour retrouver cette partie.",
     result: {
       connected: "{{system}} est connecté.",
       cancelled: "Rien n’a été connecté : vous êtes revenu en arrière sur {{system}}.",
@@ -981,7 +981,7 @@ export const fr: Catalog<"many"> = {
     },
     write: {
       waiting:
-        "{{item}}\u{202f}: {{card}} n’a pas été enregistré depuis cette page, peut-être par quelqu’un d’autre. Un clic l’écrit dans {{system}} avec votre compte.",
+        "{{item}}\u{202f}: {{card}} n’a pas été enregistré depuis cette page, et quelqu’un d’autre l’a peut-être fait. Un clic l’écrit dans {{system}} avec votre compte.",
       writing: "Écriture de {{card}} sur {{item}} dans {{system}}…",
       written: "{{item}} : {{card}} est dans {{system}}.",
       failed: "{{item}} : {{card}} n’est pas arrivé dans {{system}}.",
@@ -1000,7 +1000,7 @@ export const fr: Catalog<"many"> = {
         "Créez-en un pour cette seule organisation, avec une seule autorisation cochée\u{202f}: Work Items, Read & write.",
       tokenLink: "Créer un jeton",
       tokenUse:
-        "Il sert uniquement à lire ce que vous importez et à écrire vos estimations. Chez Microsoft, il cesse de fonctionner à sa date d’expiration\u{202f}: donnez-lui la durée la plus courte qui vous convient. Ici, il reste chiffré jusqu’à ce que vous vous déconnectiez, en colliez un autre ou supprimiez votre compte.",
+        "Il sert uniquement à lire ce que vous importez et à écrire vos estimations. Chez Microsoft, il cesse de fonctionner à sa date d’expiration\u{202f}: donnez-lui la durée la plus courte qui vous convient. Ici, il reste chiffré jusqu’à ce que vous déconnectiez Azure DevOps, en colliez un autre ou supprimiez votre compte.",
       tokenReplace: "Utiliser ce jeton",
       checking: "Vérification du jeton…",
       project: "Projet",
@@ -1079,9 +1079,9 @@ export const fr: Catalog<"many"> = {
       connector_field_refused:
         "{{system}} a refusé le champ sur ce ticket : il n’est peut-être pas sur son écran.",
       connector_no_estimate_field:
-        "Cet élément n’a pas de champ d’estimation\u{202f}: rien n’a été écrit.",
+        "Ce ticket n’a pas de champ d’estimation\u{202f}: rien n’a été écrit.",
       connector_query_cap:
-        "Cette requête trouve plus que ce que {{system}} renvoie. Resserrez-la et réessayez.",
+        "{{system}} ne renvoie pas tous les résultats de cette requête. Resserrez-la et réessayez.",
       connector_unavailable: "{{system}} ne répond pas correctement. Réessayez plus tard.",
       connector_timeout: "{{system}} a mis trop de temps à répondre. Réessayez.",
     },
