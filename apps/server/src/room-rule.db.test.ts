@@ -1562,6 +1562,13 @@ describe('"My rooms" and a room with a rule', () => {
 
   it("keeps a room for the keeper the rule refuses: retention follows the keeper, not the rule", async () => {
     const { room, newPo } = await handedOver();
+    // The role's holder is a guest here, so that only the keeper's account can keep the room.
+    const guest = await new Browser().guest();
+    await admin.query(
+      `update room set owner_user_id = $2, live = jsonb_set(live, '{ownerId}', to_jsonb($2::text))
+       where id = $1`,
+      [room.id, guest],
+    );
     newPo.close();
     // The room is the sync's to say empty: `setupServer` hands it over as the socket handlers.
     const sync = setup.deps?.handlers as unknown as RoomSync;
