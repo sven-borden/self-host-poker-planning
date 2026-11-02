@@ -24,6 +24,7 @@ English, French and German.
 - [Design brief](docs/03-design-brief.md)
 - [Open questions](docs/04-open-questions.md)
 - [Decisions (ADR)](docs/05-decisions.md)
+- [Glossary (English, French, German)](docs/08-glossary.md)
 - [Status](docs/STATUS.md)
 
 ## Self-hosting

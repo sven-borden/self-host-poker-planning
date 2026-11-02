@@ -211,7 +211,7 @@ describe("cards", () => {
       expect(cardLabel(fixedT(language), "0.5")).toBe("0.5");
       expect(cardLabel(fixedT(language), "½")).toBe("½");
     }
-    expect(cardLabel(fixedT("fr"), "?")).toBe("incertain");
+    expect(cardLabel(fixedT("fr"), "?")).toBe("pas sûr");
   });
 
   it("makes a hand card a 44 px-wide-or-more toggle button with corner indices", () => {

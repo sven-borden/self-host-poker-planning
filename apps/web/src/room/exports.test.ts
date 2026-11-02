@@ -372,7 +372,7 @@ describe("the Markdown", () => {
     expect(rows[1]?.[6]).toBe("4,33");
     const german = tableOf(toMarkdown(ROUNDS, context("de"))).html;
     expect(german).toContain("<h1>Poker Planning: Team Sky</h1>");
-    expect(german).toContain("<li>Summe der Endschätzungen: 28,5</li>");
+    expect(german).toContain("<li>Summe der endgültigen Schätzungen: 28,5</li>");
   });
 
   it("escapes a room name that looks like Markdown", () => {
