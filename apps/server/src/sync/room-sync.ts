@@ -30,6 +30,9 @@
  * someone in it (a voter, an observer or the PO), checked on a fresh load at every
  * request; the round on the table is left out.
  *
+ * The queue (#52): `queue` answers the entered room's whole list to its PO, on a fresh load
+ * at every request. A snapshot carries only its count and next item.
+ *
  * Several instances (#39, `shared`): every instance sends its own sockets their own
  * snapshots, as with one. A change tells the other instances `roomChanged` (the room's id,
  * the version, the causes, whether a new password locked visitors out); an instance with
@@ -50,6 +53,8 @@ import {
   HISTORY_PAGE,
   type HistoryAck,
   type HistoryRequest,
+  type QueueAck,
+  queueList,
   type Snapshot,
   toSnapshot,
 } from "@pp/protocol";
@@ -178,6 +183,7 @@ export interface RoomSyncOptions {
 
 export interface RoomSync extends RealtimeHandlers {
   history(socket: RealtimeSocket, request: HistoryRequest): Promise<HistoryAck>;
+  queue(socket: RealtimeSocket): Promise<QueueAck>;
   attach(io: RealtimeServer): void;
   disconnect(socket: RealtimeSocket): void;
   /** Clears every deadline timeout; the server is shutting down. */
@@ -442,9 +448,10 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     }
   }
 
+  /** The round's next deadline: its timer while Voting, the next queue item after (#52). */
   function armDeadline(id: string, state: RoomState) {
     const round = state.round;
-    deadlines.set(id, round?.phase === "voting" ? round.deadlineAt : undefined);
+    deadlines.set(id, round?.phase === "voting" ? round.deadlineAt : round?.advanceAt);
   }
 
   /**
@@ -1396,6 +1403,36 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     }
   }
 
+  /**
+   * The entered room's whole queue (#52), for its PO, read from a fresh load: a PO who
+   * handed the role over gets `not_owner` at once, and the new PO the same list.
+   */
+  async function queueNow(socket: RealtimeSocket): Promise<QueueAck> {
+    const user = socket.data.user;
+    if (!user) return refuse("unauthenticated");
+    if (socket.data.room === undefined) return refuse("room_not_found");
+    if (!(await sessionStillAlive(socket))) {
+      leaveRoom(socket);
+      setImmediate(() => socket.conn.close());
+      return refuse("unauthenticated");
+    }
+    const room = socket.data.room;
+    if (room === undefined) return refuse("room_not_found");
+    try {
+      const loaded = await store.loadRoom(room.code);
+      if (!loaded || loaded.id !== room.id) return refuse("room_not_found");
+      if (loaded.state.ownerId !== user.id) return refuse("not_owner");
+      const list = queueList(loaded.state.queue);
+      // The room's id and a count: never a title or a link.
+      log.debug({ room: room.id, items: list.items.length }, "queue read");
+      return { ok: true, ...list };
+    } catch (error) {
+      if (!(error instanceof DatabaseError)) throw error;
+      log.warn({ room: room.id, err: error.code }, "queue read failed in the database");
+      return refuse("internal");
+    }
+  }
+
   /** Whether `who` may join the room now: no password, a member, or a grant (#31). */
   async function mayJoin(room: RoomRef, who: string): Promise<boolean> {
     const loaded = await store.loadRoom(room.code);
@@ -1498,6 +1535,11 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       return pending
         ? pending.then(() => historyNow(socket, request))
         : historyNow(socket, request);
+    },
+
+    queue(socket) {
+      const pending = entering.get(socket);
+      return pending ? pending.then(() => queueNow(socket)) : queueNow(socket);
     },
 
     disconnect(socket) {

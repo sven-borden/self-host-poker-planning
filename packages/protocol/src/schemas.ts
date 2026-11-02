@@ -33,12 +33,20 @@ export const roomSettingsSchema = z.object({
    * it kept protocol version 4; the server always sends it.
    */
   hasPassword: z.boolean().optional(),
+  /** The next item starts by itself after a recorded final (#52). */
+  autoAdvance: z.boolean(),
 });
 
 export const subjectSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("none") }),
   z.object({ kind: z.literal("title"), text: z.string() }),
-  z.object({ kind: z.literal("link"), url: z.string(), key: z.string().optional() }),
+  z.object({
+    kind: z.literal("link"),
+    url: z.string(),
+    key: z.string().optional(),
+    /** The title of the queue item the round came from (#52). */
+    title: z.string().optional(),
+  }),
 ]);
 
 /** One person at the table. Nothing private: no session, no vote, no timestamps of presence. */
@@ -90,6 +98,8 @@ const revealedFields = {
   phase: z.literal("revealed"),
   revealedAt: z.number(),
   final: cardSchema.optional(),
+  /** When the next queue item starts by itself (#52); the page shows the seconds left. */
+  advanceAt: z.number().optional(),
   results: resultsSchema,
 };
 
@@ -171,7 +181,27 @@ export const causeSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("away"), who: userIdSchema }),
   z.object({ type: z.literal("back"), who: userIdSchema }),
+  z.object({ type: z.literal("queueChanged"), added: z.number().int().optional() }),
+  z.object({ type: z.literal("advanceArmed") }),
+  z.object({ type: z.literal("advanceHeld") }),
 ]);
+
+/**
+ * What the room's snapshot says of its queue (#52, ADR-024): how many items wait and the
+ * next one, by its id and the one thing that names it, never the list. A snapshot goes to
+ * every socket on every vote: the list comes by a `queue` request, for the PO alone.
+ * `rev` tells that page when to ask again. Left out while the queue is empty.
+ */
+export const queueSummarySchema = z.object({
+  count: z.number().int(),
+  rev: z.number().int(),
+  next: z.object({
+    id: z.number().int(),
+    key: z.string().optional(),
+    title: z.string().optional(),
+    url: z.string().optional(),
+  }),
+});
 
 export const roomViewSchema = z.object({
   code: z.string().min(1).max(WIRE_LIMITS.roomCode),
@@ -189,6 +219,7 @@ export const roomViewSchema = z.object({
   you: userIdSchema.nullable(),
   /** `null` in the lobby, before the first round. */
   round: roundViewSchema.nullable(),
+  queue: queueSummarySchema.optional(),
 });
 
 export const snapshotSchema = z.object({
@@ -212,6 +243,7 @@ export type AnonymousRoundView = z.output<typeof anonymousRoundViewSchema>;
 export type RoundView = z.output<typeof roundViewSchema>;
 export type CauseView = z.output<typeof causeSchema>;
 export type RoomView = z.output<typeof roomViewSchema>;
+export type QueueSummary = z.output<typeof queueSummarySchema>;
 export type Snapshot = z.output<typeof snapshotSchema>;
 
 /**

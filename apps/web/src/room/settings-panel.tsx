@@ -1,4 +1,10 @@
-import { baseCards, MAX_MEMBERS, MAX_PARTICIPANTS, type SettingsPatch } from "@pp/domain";
+import {
+  AUTO_ADVANCE_MS,
+  baseCards,
+  MAX_MEMBERS,
+  MAX_PARTICIPANTS,
+  type SettingsPatch,
+} from "@pp/domain";
 import type { RoomSettingsView, RoomView } from "@pp/protocol";
 import { LockIcon, OctagonXIcon, XIcon } from "lucide-react";
 import {
@@ -278,6 +284,13 @@ export const GROUPS: readonly SettingGroup[] = [
     id: "people",
     title: (t) => t("settings.groupPeople"),
     fields: [
+      {
+        key: "autoAdvance",
+        label: (t) => t("settings.autoAdvance"),
+        hint: (t) => t("settings.autoAdvanceHint", { seconds: AUTO_ADVANCE_MS / 1000 }),
+        value: (t, s) => onOff(t, s.autoAdvance),
+        toggle: { read: (s) => s.autoAdvance, write: (on) => ({ autoAdvance: on }) },
+      },
       {
         key: "poVotes",
         label: (t) => t("settings.poVotes"),

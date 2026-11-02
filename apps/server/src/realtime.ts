@@ -28,8 +28,11 @@ import {
   type HistoryRequest,
   parseEnter,
   parseHistoryRequest,
+  parseQueueRequest,
+  type QueueAck,
   type ServerToClientEvents,
   toDomainCommand,
+  WIRE_LIMITS,
 } from "@pp/protocol";
 import { type ExtendedError, Server, type ServerOptions, type Socket } from "socket.io";
 import type { SocketUser } from "./auth.ts";
@@ -106,6 +109,8 @@ export interface RealtimeHandlers {
   cmd(socket: RealtimeSocket, id: string, command: Command): CmdAck | Promise<CmdAck>;
   /** One page of the entered room's history (#33); left out, every request is refused. */
   history?(socket: RealtimeSocket, request: HistoryRequest): HistoryAck | Promise<HistoryAck>;
+  /** The entered room's queue (#52), for its PO; left out, every request is refused. */
+  queue?(socket: RealtimeSocket): QueueAck | Promise<QueueAck>;
   /** Called once with the Socket.IO server, before any connection (for broadcasts). */
   attach?(io: RealtimeServer): void;
   /** Called after a socket closed; it has already left its Socket.IO rooms. */
@@ -130,11 +135,11 @@ export interface RealtimeOptions {
   handlers?: RealtimeHandlers;
   /** Run in order on every handshake after the connection id is set (#10: session). */
   middleware?: readonly SocketMiddleware[];
-  /** Messages (`enter`, `cmd`, `history`) per person; `SOCKET_MESSAGE_LIMIT` by default. */
+  /** Messages (`enter`, `cmd`, `history`, `queue`) per person; `SOCKET_MESSAGE_LIMIT` by default. */
   messageLimit?: TokenBucketOptions;
   /** Roster commands per person; `ROSTER_LIMIT` by default. */
   rosterLimit?: TokenBucketOptions;
-  /** History requests per person; `HISTORY_LIMIT` by default. */
+  /** History and queue requests per person; `HISTORY_LIMIT` by default. */
   historyLimit?: TokenBucketOptions;
   /** Sockets one person may hold at once; `MAX_SOCKETS_PER_USER` by default. */
   maxSocketsPerUser?: number;
@@ -228,8 +233,12 @@ const ROSTER_COMMANDS: ReadonlySet<Command["type"]> = new Set([
   "setRole",
 ]);
 
-/** Payload cap per message, both transports (architecture section 8). */
-export const MAX_PAYLOAD_BYTES = 16 * 1024;
+/**
+ * Payload cap per message, both transports (architecture section 8). It was 16 KB until a
+ * paste had to fit (#52, ADR-024); no other message comes near it, since the wire schemas
+ * cap every string and list.
+ */
+export const MAX_PAYLOAD_BYTES = WIRE_LIMITS.messageBytes;
 
 export function createRealtime(httpServer: HttpServer, options: RealtimeOptions): RealtimeServer {
   const {
@@ -367,6 +376,13 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
         ? handlers.history(socket, parsed.request)
         : { ok: false, code: "room_not_found" };
     });
+    onRaw(socket, log, drain, "queue", async (payload) => {
+      if (!bucket.take()) return limited;
+      const parsed = parseQueueRequest(payload);
+      if (!parsed.ok) return { ok: false, code: parsed.code };
+      if (!history.take()) return limited;
+      return handlers.queue ? handlers.queue(socket) : { ok: false, code: "room_not_found" };
+    });
   });
 
   return io;
@@ -420,11 +436,11 @@ function closeOnRefusal(fn: SocketMiddleware): SocketMiddleware {
  * message is tracked until its answer is sent; while the server drains, a new one is
  * dropped unanswered.
  */
-function onRaw<A extends EnterAck | CmdAck | HistoryAck>(
+function onRaw<A extends EnterAck | CmdAck | HistoryAck | QueueAck>(
   socket: RealtimeSocket,
   log: Logger,
   drain: Drain,
-  event: "enter" | "cmd" | "history",
+  event: "enter" | "cmd" | "history" | "queue",
   handle: (payload: unknown) => Promise<A>,
 ): void {
   const untyped = socket as unknown as {

@@ -3,7 +3,7 @@
  * drives the real server (Postgres, the real handshake, real guests) over real sockets
  * with random and malformed messages: wrong types, huge strings, deep objects, prototype
  * keys, unknown commands and events, binary frames, extra arguments, frames over the
- * 16 KB cap and frames Socket.IO cannot decode. Two attackers sit in the room (the PO and
+ * 128 KB cap and frames Socket.IO cannot decode. Two attackers sit in the room (the PO and
  * a voter, so their commands reach `apply`), next to two honest people.
  *
  * Every message that asks for an answer gets an ack with `ok` or an error code (never
@@ -228,7 +228,7 @@ type Message =
   | { kind: "ack"; event: "cmd" | "enter" | "history"; args: unknown[] }
   /** Sent without a callback, or to an event the server does not know: dropped. */
   | { kind: "drop"; event: string; args: unknown[] }
-  /** Over the 16 KB cap: the server closes the connection. */
+  /** Over the 128 KB cap: the server closes the connection. */
   | { kind: "oversize" }
   /** A frame Socket.IO cannot decode. */
   | { kind: "frame"; data: string };
@@ -431,7 +431,7 @@ function messageArb(code: () => string, ids: () => string[]): fc.Arbitrary<Messa
           base.id = noise;
           break;
         case "huge field":
-          // One field, so the frame stays under the 16 KB cap.
+          // One field, so the frame stays under the 128 KB cap.
           base.payload = { ...payload, [Object.keys(payload)[0] ?? "name"]: long };
           break;
         case "deep payload":

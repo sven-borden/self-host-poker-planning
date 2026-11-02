@@ -12,6 +12,7 @@ import {
   type DeckSpec,
   OWNER_CLAIM_AFTER_MS,
   type Participant,
+  type Queue,
   type RoomSettings,
   type RoomState,
   type Round,
@@ -22,6 +23,7 @@ import {
 import type {
   CauseView,
   ParticipantView,
+  QueueSummary,
   RoomSettingsView,
   RoundView,
   Snapshot,
@@ -56,6 +58,7 @@ export function toSnapshot(state: RoomState, viewer: UserId, meta: SnapshotMeta)
       participants: people.map(([id, p]) => participantView(id, p, state.ownerId)),
       you: Object.hasOwn(state.participants, viewer) ? viewer : null,
       round: state.round ? roundView(state.round, order, viewer) : null,
+      ...queueSummary(state.queue),
     },
     causes: projectCauses(meta.causes ?? [], state.round),
   };
@@ -118,6 +121,13 @@ function causeView(cause: Cause, hideVoter: boolean): CauseView | null {
       return { type: cause.type, card: cause.card };
     case "ownerChanged":
       return { type: cause.type, by: cause.by, to: cause.to };
+    case "queueChanged":
+      return cause.added === undefined
+        ? { type: cause.type }
+        : { type: cause.type, added: cause.added };
+    case "advanceArmed":
+    case "advanceHeld":
+      return { type: cause.type };
     default:
       return null;
   }
@@ -186,7 +196,29 @@ function settingsView(s: RoomSettings, hasPassword: boolean): RoomSettingsView {
     poVotes: s.poVotes,
     observersCount: s.observersCount,
     hasPassword,
+    // A room stored before #52 has none.
+    autoAdvance: s.autoAdvance === true,
   };
+}
+
+/**
+ * How many items wait and the next one, named by one thing: its key, else its title, else
+ * its link. This is all of a queue that rides in a snapshot (ADR-024): nothing for an
+ * empty queue, so a room without one sends what it always sent.
+ */
+function queueSummary(queue: Queue | undefined): { queue?: QueueSummary } {
+  const item = queue?.items[0];
+  if (queue === undefined || item === undefined) return {};
+  const { id, key, title, url } = item;
+  const name =
+    key !== undefined
+      ? { key }
+      : title !== undefined
+        ? { title }
+        : url !== undefined
+          ? { url }
+          : {};
+  return { queue: { count: queue.items.length, rev: queue.rev, next: { id, ...name } } };
 }
 
 function subjectView(subject: Subject): SubjectView {
@@ -194,9 +226,12 @@ function subjectView(subject: Subject): SubjectView {
     case "title":
       return { kind: "title", text: subject.text };
     case "link":
-      return subject.key !== undefined
-        ? { kind: "link", url: subject.url, key: subject.key }
-        : { kind: "link", url: subject.url };
+      return {
+        kind: "link",
+        url: subject.url,
+        ...(subject.key !== undefined ? { key: subject.key } : {}),
+        ...(subject.title !== undefined ? { title: subject.title } : {}),
+      };
     default:
       return { kind: "none" };
   }
@@ -253,6 +288,7 @@ function roundView(round: Round, order: readonly UserId[], viewer: UserId): Roun
     // A revealed round always has `revealedAt`; the fallback only satisfies the type.
     revealedAt: round.revealedAt ?? round.startedAt,
     ...(round.final !== undefined ? { final: round.final } : {}),
+    ...(round.advanceAt !== undefined ? { advanceAt: round.advanceAt } : {}),
     results,
   };
   if (round.anonymous) {

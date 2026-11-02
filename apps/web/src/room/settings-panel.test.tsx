@@ -99,6 +99,7 @@ describe("the settings panel", () => {
       whoCanReveal: "The product owner",
       revealNames: "Off",
       allowChangeAfterReveal: "Not allowed",
+      autoAdvance: "Off",
       poVotes: "On",
       observersCount: "On",
     });
@@ -126,7 +127,7 @@ describe("the settings panel", () => {
     const dialog = await openPanel("Room settings");
     const checked = (name: string) =>
       within(dialog).getByRole("switch", { name }).getAttribute("aria-checked") === "true";
-    expect(within(dialog).getAllByRole("switch")).toHaveLength(9);
+    expect(within(dialog).getAllByRole("switch")).toHaveLength(10);
     expect(checked("Not sure")).toBe(true);
     expect(checked("Need a break")).toBe(true);
     expect(checked("Too big to estimate")).toBe(false);
@@ -604,7 +605,7 @@ describe("the settings panel", () => {
     render(<RoomSettingsButton />);
     show(newRoom(), PO);
     const dialog = await openPanel("Room settings");
-    expect(within(dialog).getAllByRole("switch")).toHaveLength(9);
+    expect(within(dialog).getAllByRole("switch")).toHaveLength(10);
     show({ ...state, ownerId: ANA }, PO);
     expect(within(dialog).queryAllByRole("switch")).toEqual([]);
     expect(within(dialog).queryAllByRole("radio")).toEqual([]);

@@ -1,6 +1,7 @@
 export { apply } from "./apply.ts";
 export { cleanName, cleanRoomName } from "./apply-input.ts";
-export { cleanSubject, linkKey } from "./apply-subject.ts";
+export { cleanQueueItem, itemSubject, queueIdentity } from "./apply-queue.ts";
+export { ADO_ID, cleanSubject, JIRA_KEY, keyLabel, linkKey } from "./apply-subject.ts";
 export { AVATAR_IDS, type AvatarId, isAvatarId } from "./avatars.ts";
 export type {
   ApplyContext,
@@ -36,6 +37,7 @@ export {
 export { generateRange, type RangeErrorCode } from "./range.ts";
 export { computeResults, type Results } from "./results.ts";
 export {
+  AUTO_ADVANCE_MS,
   createRoom,
   DEFAULT_SETTINGS,
   MAX_LINK_LENGTH,
@@ -43,6 +45,7 @@ export {
   MAX_NAME_LENGTH,
   MAX_PARTICIPANTS,
   MAX_PASSWORD_LENGTH,
+  MAX_QUEUE_ITEMS,
   MAX_ROOM_NAME_LENGTH,
   MAX_TIMER_SECONDS,
   MAX_TITLE_LENGTH,
@@ -51,6 +54,10 @@ export {
   MIN_TIMER_SECONDS,
   OWNER_CLAIM_AFTER_MS,
   type Participant,
+  type Queue,
+  type QueueEntry,
+  type QueueItem,
+  type QueueSource,
   ROLES,
   type Role,
   type RoomSettings,

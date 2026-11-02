@@ -167,7 +167,7 @@ export function toCsv(rounds: readonly ExportRound[], context: ExportContext): s
       subject.kind === "title"
         ? { text: subject.text }
         : subject.kind === "link"
-          ? { text: subject.url }
+          ? { text: subject.title ?? subject.url }
           : null,
       key === null ? null : { text: key },
       card(round.final),

@@ -148,6 +148,22 @@ export const PING_JITTER_MS = 1_000;
  */
 export function useTimeUpPing(countdown: Countdown) {
   const deadlineAt = countdown.state.kind === "running" ? countdown.state.deadlineAt : null;
+  useDeadlinePing(
+    deadlineAt,
+    (round) => round?.phase === "voting" && round.deadlineAt === deadlineAt,
+  );
+}
+
+/**
+ * The ping itself, for any deadline the server keeps: `due` tells, when its time comes,
+ * whether the room still shows that deadline.
+ */
+export function useDeadlinePing(
+  deadlineAt: number | null,
+  due: (round: RoundView | null | undefined) => boolean,
+) {
+  const check = useRef(due);
+  check.current = due;
   const offset = useClockOffset();
   const pinged = useRef<number | null>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new offset moves the estimate.
@@ -156,8 +172,7 @@ export function useTimeUpPing(countdown: Countdown) {
     const wait =
       Math.max(0, deadlineAt - serverTime()) + PING_AFTER_MS + Math.random() * PING_JITTER_MS;
     const timer = setTimeout(() => {
-      const round = useRoomStore.getState().snapshot?.room.round;
-      if (round?.phase !== "voting" || round.deadlineAt !== deadlineAt) return;
+      if (!check.current(useRoomStore.getState().snapshot?.room.round)) return;
       pinged.current = deadlineAt;
       void commandSender()({ type: "timeUp" });
     }, wait);

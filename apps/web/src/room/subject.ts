@@ -1,4 +1,4 @@
-import { cardLength, cleanSubject, MAX_LINK_LENGTH, MAX_TITLE_LENGTH } from "@pp/domain";
+import { cardLength, cleanSubject, keyLabel, MAX_LINK_LENGTH, MAX_TITLE_LENGTH } from "@pp/domain";
 import type { RoundView } from "@pp/protocol";
 import type { TFunction } from "../i18n/i18n.ts";
 
@@ -77,10 +77,7 @@ export function safeHref(url: string): string | null {
   return cleanSubject({ kind: "link", url }) === null ? null : url;
 }
 
-/** A link's key as its chip reads: a Jira key as is, an Azure DevOps id as "#12345". */
-export function keyLabel(key: string): string {
-  return /^[0-9]+$/.test(key) ? `#${key}` : key;
-}
+export { keyLabel };
 
 /** At most this many characters of a link show; the full link is in its title. */
 const SHORT_URL_LENGTH = 40;
@@ -96,6 +93,15 @@ export function shortUrl(url: string): string {
     .replace(/[?#].*$/s, "")
     .replace(/\/+$/, "");
   return bare.length > SHORT_URL_LENGTH ? `${bare.slice(0, SHORT_URL_LENGTH - 1)}\u{2026}` : bare;
+}
+
+/**
+ * What a queue item is called: its key's chip, else its title, else its short link. A
+ * snapshot's next item holds one of the three, the PO's list all that it has.
+ */
+export function itemName(item: { key?: string; title?: string; url?: string }): string {
+  if (item.key !== undefined) return keyLabel(item.key);
+  return item.title ?? shortUrl(item.url ?? "");
 }
 
 /**

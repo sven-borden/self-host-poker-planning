@@ -35,6 +35,11 @@ export function cleanSubject(raw: unknown): Subject | null {
   return null;
 }
 
+/** A key as a person reads it: a Jira key as is, an Azure DevOps id as "#12345". */
+export function keyLabel(key: string): string {
+  return /^[0-9]+$/.test(key) ? `#${key}` : key;
+}
+
 /** A link cut into its host, its path and its query (after the `?`, without it). */
 const URL_PARTS = /^https?:\/\/([^/?#]+)([^?#]*)(?:\?([^#]*))?/i;
 /**
@@ -42,7 +47,7 @@ const URL_PARTS = /^https?:\/\/([^/?#]+)([^?#]*)(?:\?([^#]*))?/i;
  * characters in all), a dash and the issue's number (no leading zero). Read in any case
  * and stored in capitals, as Jira writes it.
  */
-const JIRA_KEY = "[A-Z][A-Z0-9_]{1,31}-[1-9][0-9]{0,9}";
+export const JIRA_KEY = "[A-Z][A-Z0-9_]{1,31}-[1-9][0-9]{0,9}";
 /**
  * `…/browse/ABC-123`, or Jira Cloud's `…/projects/ABC/issues/ABC-123`, at the end of the
  * path; a context path such as `/jira` may precede it.
@@ -51,7 +56,7 @@ const JIRA_PATH = new RegExp(`/(?:browse|projects/[^/]+/issues)/(${JIRA_KEY})/?$
 /** `selectedIssue=ABC-123` in the query, as a Jira board or backlog links an issue. */
 const JIRA_SELECTED = new RegExp(`(?:^|&)selectedIssue=(${JIRA_KEY})(?:&|$)`, "i");
 /** An Azure DevOps work item id: a positive number of at most 10 digits. */
-const ADO_ID = "[1-9][0-9]{0,9}";
+export const ADO_ID = "[1-9][0-9]{0,9}";
 /**
  * `…/_workitems/edit/{id}` after one to three path segments: `dev.azure.com/{org}/{project}`,
  * `{org}.visualstudio.com/[{collection}/]{project}`, or an Azure DevOps Server's

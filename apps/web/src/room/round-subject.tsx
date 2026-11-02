@@ -8,7 +8,9 @@ import { keyLabel, safeHref, shortUrl } from "./subject.ts";
  * "Round 3" before the title (inside `<bdi>`, so a right-to-left title cannot reorder the
  * line; at most two lines, the whole title in its `title`) or before the link. A link
  * opens in a new tab with `rel="noopener noreferrer"` and shows as its key's chip
- * ("ABC-123", "#12345") or as a shortened URL, the full one in its title. Only an `http(s)` link without credentials becomes a link (`safeHref`).
+ * ("ABC-123", "#12345") or as a shortened URL, the full one in its title, followed by the
+ * title of the queue item it came from (#52). Only an `http(s)` link without credentials
+ * becomes a link (`safeHref`).
  * An anonymous round (#25) says so after its number, in every phase, so that everyone
  * knows before voting that the cards will show without names.
  */
@@ -46,7 +48,18 @@ export function RoundSubject({
           {subject.text}
         </bdi>
       ) : (
-        <SubjectLink url={subject.url} linkKey={subject.key} />
+        <>
+          <SubjectLink url={subject.url} linkKey={subject.key} />
+          {subject.title === undefined ? null : (
+            <bdi
+              data-subject-title
+              title={subject.title}
+              className="line-clamp-2 min-w-0 self-center font-semibold break-words"
+            >
+              {subject.title}
+            </bdi>
+          )}
+        </>
       )}
     </p>
   );

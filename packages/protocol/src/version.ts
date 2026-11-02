@@ -7,6 +7,9 @@
  * - 3: the `away` and `back` causes (#17, presence), which a version 2 client cannot parse.
  * - 4: `castVote` and `retractVote` carry their `round`, and the `round_changed` ack code
  *   (#18), which a version 3 client neither sends nor parses.
+ * - 5: the backlog queue (#52): its commands, causes and ack codes, the room view's `queue`
+ *   and the round's `advanceAt`. A tab from before it would show a countdown it cannot
+ *   read and drop the page's next item, so it is told to reload.
  *
  * Not breaking, so not bumped: an optional field on an outbound view (the web checks
  * shapes), or an optional field on an inbound command, such as the `restart` of
@@ -20,4 +23,4 @@
  * is the `avatar` of `join`, the `setAvatar` command or their `avatarChanged` cause (#42):
  * a page reads only the causes it knows, and an older one never sends them.
  */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;

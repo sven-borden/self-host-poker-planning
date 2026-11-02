@@ -26,6 +26,7 @@ import { inSight, useHandDock } from "./hand-dock.ts";
 import { confirmedOf, shownCard, withShownVote } from "./hand-state.ts";
 import { LiveAnnouncer } from "./live-announcer.tsx";
 import { NextSubject, useNextRound } from "./next-round.tsx";
+import { NextUp } from "./next-up.tsx";
 import { PersonActions } from "./person-actions.tsx";
 import { prefetchResults, ResultsPanel } from "./results-chunk.tsx";
 import { RevealedCards } from "./revealed-cards.tsx";
@@ -104,7 +105,8 @@ const boxOf = (rect: DOMRect): Box => ({
  *
  * The final estimate (#32): after a reveal the PO's decision sits right under the table
  * (`Decision`: the picker, "Record 8", "Next round", "Vote again"), and the centre shows
- * the recorded final to everyone.
+ * the recorded final to everyone. With a queue (#52) a line under it says what is next,
+ * and how soon when the room moves on by itself (`NextUp`).
  *
  * A change after the reveal (#29): while the room allows it in a named round, the hand
  * stays playable after the reveal ("You can still change your card."); a press changes
@@ -127,7 +129,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
   const hand = handView(shown, me);
   /** A refused start or reveal; a new round or phase clears it. */
   const [centreFailure, setCentreFailure] = useState<string | null>(null);
-  const next = useNextRound(setCentreFailure);
+  const next = useNextRound(setCentreFailure, room.queue?.next.id ?? null);
   const roundKey = keyOf(room.round);
   const [seen, setSeen] = useState({ key: roundKey, liveReveal: false });
   if (seen.key !== roundKey) {
@@ -270,6 +272,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
           next={next}
           nextNumber={(room.round?.number ?? 0) + 1}
           canStart={room.round?.phase !== "voting"}
+          queue={room.queue}
         />
       ) : null}
       <section ref={tableSection} aria-label={t("room.tableHeading")} data-room-table>
@@ -300,6 +303,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
                   onFailure={setCentreFailure}
                 />
               ) : null}
+              <NextUp room={under} onFailure={setCentreFailure} />
               {waits ? (
                 <p
                   id={ids.wait}

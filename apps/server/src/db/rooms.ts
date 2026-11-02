@@ -4,7 +4,7 @@
  * server instances stay correct without a lock; the command runner (runner.ts) retries a
  * lost one.
  */
-import type { RoomState, UserId } from "@pp/domain";
+import type { Queue, RoomState, UserId } from "@pp/domain";
 import { and, desc, eq, inArray, lt, ne, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { guard } from "./errors.ts";
@@ -13,7 +13,10 @@ import { room, roomAccess, roundHistory } from "./schema.ts";
 
 export type Db = NodePgDatabase;
 
-/** A room as loaded: `state` is `live`, `version` the value the next commit must expect. */
+/**
+ * A room as loaded: `state` is `live` with the `queue` column in it, `version` the value
+ * the next commit must expect.
+ */
 export interface StoredRoom {
   id: string;
   code: string;
@@ -90,7 +93,8 @@ export interface RoomStore {
    * its history row is written in the same transaction; writing the same round again
    * updates that row, so a retry never duplicates it. `access` (#31) is written in that
    * transaction too; when it requires a grant the user lacks, nothing is written and it
-   * resolves `password_required`.
+   * resolves `password_required`. `queueChanged` false leaves the `queue` column as it is
+   * (#52): the step did not touch it, and a full queue is not written again for a vote.
    */
   commitRoom(
     id: string,
@@ -98,6 +102,7 @@ export interface RoomStore {
     next: RoomState,
     ended?: EndedRound,
     access?: AccessWrite,
+    queueChanged?: boolean,
   ): Promise<boolean | "password_required">;
 }
 
@@ -149,6 +154,14 @@ export interface HistoryStore {
 
 const hasHash = sql<boolean>`${room.passwordHash} is not null`;
 
+/** A room's state, its queue apart: they live in two columns. */
+function withoutQueue({ queue, ...live }: RoomState): {
+  live: Omit<RoomState, "queue">;
+  queue: Queue | null;
+} {
+  return { live, queue: queue ?? null };
+}
+
 /** Thrown inside a commit's transaction to roll it back: the grant it needs is gone. */
 const NO_GRANT = Symbol("no grant");
 
@@ -196,7 +209,7 @@ export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore 
             code,
             name,
             ownerUserId: state.ownerId,
-            live: state,
+            ...withoutQueue(state),
             version: FIRST_VERSION,
             passwordHash,
           })
@@ -209,10 +222,19 @@ export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore 
     loadRoom: (code) =>
       guard("load room", async () => {
         const rows = await db
-          .select({ id: room.id, code: room.code, version: room.version, state: room.live })
+          .select({
+            id: room.id,
+            code: room.code,
+            version: room.version,
+            live: room.live,
+            queue: room.queue,
+          })
           .from(room)
           .where(eq(room.code, code));
-        return rows[0] ?? null;
+        const row = rows[0];
+        if (!row) return null;
+        const { live, queue, ...stored } = row;
+        return { ...stored, state: queue === null ? live : { ...live, queue } };
       }),
 
     loadRoomHeader: (code) =>
@@ -224,13 +246,15 @@ export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore 
         return rows[0] ?? null;
       }),
 
-    commitRoom: (id, expectedVersion, next, ended, access) =>
+    commitRoom: (id, expectedVersion, next, ended, access, queueChanged = true) =>
       guard("commit room", async () => {
+        const { live, queue } = withoutQueue(next);
         const write = async (tx: Db) => {
           const rows = await tx
             .update(room)
             .set({
-              live: next,
+              live,
+              ...(queueChanged ? { queue } : {}),
               ownerUserId: next.ownerId,
               version: sql`${room.version} + 1`,
               lastActiveAt: sql`now()`,

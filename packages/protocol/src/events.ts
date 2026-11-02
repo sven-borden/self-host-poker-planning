@@ -7,6 +7,7 @@
 import type { WireCommandInput } from "./commands.ts";
 import type { ProtocolErrorCode } from "./errors.ts";
 import type { HistoryAck, HistoryRequest } from "./history.ts";
+import type { QueueAck } from "./queue.ts";
 import {
   type CmdAck,
   type EnterAck,
@@ -27,6 +28,8 @@ export interface ClientToServerEvents {
    * out); the version stays 4.
    */
   history: (request: HistoryRequest, ack: (ack: HistoryAck) => void) => void;
+  /** The entered room's whole queue, in order (#52); only for its PO. */
+  queue: (request: Record<string, never>, ack: (ack: QueueAck) => void) => void;
 }
 
 export interface ServerToClientEvents {

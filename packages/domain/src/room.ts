@@ -33,6 +33,11 @@ export type RoomSettings = {
   allowChangeAfterReveal: boolean;
   poVotes: boolean;
   observersCount: boolean;
+  /**
+   * After the PO records a final, the next queue item starts by itself, once a short
+   * countdown has run (#52, ADR-024). Absent in a room stored before it: off.
+   */
+  autoAdvance: boolean;
 };
 
 /** What `updateSettings` accepts: any subset of the settings, `timer` merged one level deep. */
@@ -55,8 +60,39 @@ export type Participant = {
 export type Subject =
   | { kind: "none" }
   | { kind: "title"; text: string }
-  /** `key` ("ABC-123", an Azure DevOps id) is detected server-side later, never sent by a client. */
-  | { kind: "link"; url: string; key?: string };
+  /**
+   * `key` ("ABC-123", an Azure DevOps id) is read by the server, never sent with a typed
+   * subject. `title` comes from a queue item only (#52), which `cleanQueueItem` checked.
+   */
+  | { kind: "link"; url: string; key?: string; title?: string };
+
+/**
+ * Where a connector found an item (#54, #55): reserved, nothing writes it yet. It never
+ * comes off the wire (the strict `queueAdd` schema refuses it) and no view shows it.
+ */
+export type QueueSource = { system: "jira" | "ado"; id: string };
+
+/**
+ * One ticket waiting for its round (#52). At least one of `key`, `title` and `url` is set,
+ * each under the rules of a subject (`cleanQueueItem`). `id` is the room's own number,
+ * never used twice.
+ */
+export type QueueItem = {
+  id: number;
+  key?: string;
+  title?: string;
+  url?: string;
+  source?: QueueSource;
+};
+
+/** A queue item before the room numbered it. */
+export type QueueEntry = Omit<QueueItem, "id">;
+
+/**
+ * What waits for a round, in order. `lastId` is the highest item id so far, and `rev`
+ * counts the changes, so a page that holds the list knows when to ask for it again.
+ */
+export type Queue = { items: QueueItem[]; lastId: number; rev: number };
 
 export type Vote = {
   card: Card;
@@ -99,6 +135,12 @@ export type Round = {
    */
   timeUpAt?: number;
   final?: Card;
+  /**
+   * When the next queue item starts by itself (#52, ADR-024): set by a recorded final in a
+   * room with `autoAdvance` and a queue. Revealed only. A deadline like `deadlineAt`: the
+   * first command, ping or server timeout after it starts the round, exactly once.
+   */
+  advanceAt?: number;
 };
 
 export type RoomState = {
@@ -114,6 +156,11 @@ export type RoomState = {
    * as in every room stored before #31.
    */
   hasPassword?: true;
+  /**
+   * The backlog queue (#52). Part of the state `apply` works on, stored in its own column
+   * (`room.queue`), so a vote never rewrites it. Absent: no queue yet.
+   */
+  queue?: Queue;
 };
 
 /** A room holds at most this many people, observers included unless the room says otherwise. */
@@ -128,6 +175,10 @@ export const MAX_ROOM_NAME_LENGTH = 60;
 export const MAX_TITLE_LENGTH = 200;
 /** A subject link holds at most this many characters. */
 export const MAX_LINK_LENGTH = 2000;
+/** A queue holds at most this many items (#52). */
+export const MAX_QUEUE_ITEMS = 500;
+/** How long a recorded final stays on the table before the next item starts by itself. */
+export const AUTO_ADVANCE_MS = 10_000;
 /** A timer runs from this many seconds … */
 export const MIN_TIMER_SECONDS = 5;
 /** … to this many. */
@@ -155,6 +206,7 @@ export const DEFAULT_SETTINGS: Readonly<RoomSettings> = Object.freeze({
   allowChangeAfterReveal: false,
   poVotes: true,
   observersCount: true,
+  autoAdvance: false,
 });
 
 /** A new room: default settings, nobody inside (the PO enters through `join` too), no round. */

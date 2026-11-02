@@ -27,6 +27,15 @@ export const WIRE_LIMITS = {
   name: 1024,
   /** The domain caps a title at 3200 code units (200 characters) and a link at 2000. */
   subject: 4096,
+  /** A queue item's key: 32 characters, a dash and 10 digits in the domain. */
+  itemKey: 64,
+  /** The domain caps a queue at 500 items, so a batch holds no more. */
+  queueBatch: 500,
+  /**
+   * One socket message in bytes (architecture section 8): 500 ordinary queue items fit in
+   * one `queueAdd`, and the page splits a list that does not (#52, ADR-024).
+   */
+  messageBytes: 128 * 1024,
   /** An avatar id: the domain knows the 24 of them, each a short word. */
   avatar: 32,
   /** The domain caps a card label at 64 code units (4 characters). */
@@ -93,6 +102,7 @@ export const settingsPatchSchema = z.strictObject({
   allowChangeAfterReveal: z.boolean().optional(),
   poVotes: z.boolean().optional(),
   observersCount: z.boolean().optional(),
+  autoAdvance: z.boolean().optional(),
 });
 
 /** A round's number, as the snapshot gave it (rounds count from 1). */
@@ -100,6 +110,19 @@ const roundNumberSchema = z.number().int().min(1).max(WIRE_LIMITS.roundNumber);
 
 /** How many times the round had restarted when the press was made (#26), 0 for none. */
 const restartSchema = z.number().int().min(0).max(WIRE_LIMITS.roundNumber);
+
+/** A queue item's number, as the room gave it. */
+const itemIdSchema = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
+
+/**
+ * A queue item as a client sends it: no `id`, which the room gives, and no `source`, which
+ * only a connector on the server will set.
+ */
+const wireQueueItemSchema = z.strictObject({
+  key: z.string().max(WIRE_LIMITS.itemKey).optional(),
+  title: textSchema.optional(),
+  url: textSchema.optional(),
+});
 
 /** A timer's length or extension; the domain checks integer and range (`bad_seconds`). */
 const secondsSchema = z.number().min(0).max(WIRE_LIMITS.timerSeconds);
@@ -120,6 +143,17 @@ const payloads = {
   setRole: z.strictObject({ role: roleSchema }),
   kick: z.strictObject({ who: userIdSchema }),
   startRound: z.strictObject({ subject: wireSubjectSchema }),
+  queueAdd: z.strictObject({
+    items: z.array(wireQueueItemSchema).min(1).max(WIRE_LIMITS.queueBatch),
+  }),
+  queueMove: z.strictObject({
+    id: itemIdSchema,
+    to: z.number().int().min(0).max(WIRE_LIMITS.queueBatch),
+  }),
+  queueRemove: z.strictObject({ id: itemIdSchema }),
+  queueClear: empty,
+  startNext: z.strictObject({ id: itemIdSchema }),
+  holdAdvance: empty,
   // The round the press was made for, its number and restarts: one still in flight when
   // the next round starts, or when a deck change restarts this one, is refused
   // (`round_changed`) instead of landing in it. `restart` is optional, so a client from
@@ -165,6 +199,12 @@ export const wireCommandSchema = z.discriminatedUnion("type", [
   wire("setRole", payloads.setRole),
   wire("kick", payloads.kick),
   wire("startRound", payloads.startRound),
+  wire("queueAdd", payloads.queueAdd),
+  wire("queueMove", payloads.queueMove),
+  wire("queueRemove", payloads.queueRemove),
+  wire("queueClear", payloads.queueClear),
+  wire("startNext", payloads.startNext),
+  wire("holdAdvance", payloads.holdAdvance),
   wire("castVote", payloads.castVote),
   wire("retractVote", payloads.retractVote),
   wire("reveal", payloads.reveal),

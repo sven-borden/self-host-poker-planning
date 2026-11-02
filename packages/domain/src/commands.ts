@@ -3,7 +3,7 @@
  */
 import type { CustomDeckErrorCode } from "./custom-deck.ts";
 import type { Card } from "./decks.ts";
-import type { Role, RoomState, Round, SettingsPatch, Subject, UserId } from "./room.ts";
+import type { QueueEntry, Role, RoomState, Round, SettingsPatch, Subject, UserId } from "./room.ts";
 
 /**
  * Every change to a room. A flat union discriminated by `type`.
@@ -25,6 +25,16 @@ export type Command =
   | { type: "setRole"; role: Role }
   | { type: "kick"; who: UserId }
   | { type: "startRound"; subject: Subject }
+  /** A whole paste as one command (#52): all of it or, past the limit, none of it. */
+  | { type: "queueAdd"; items: QueueEntry[] }
+  /** `to`: the item's place in the queue afterwards, from 0; past the end, the end. */
+  | { type: "queueMove"; id: number; to: number }
+  | { type: "queueRemove"; id: number }
+  | { type: "queueClear" }
+  /** "Next item": a round on this item, which leaves the queue. */
+  | { type: "startNext"; id: number }
+  /** The PO stays on this round: the countdown to the next item stops. */
+  | { type: "holdAdvance" }
   | { type: "castVote"; card: Card; round?: number; restart?: number }
   | { type: "retractVote"; round?: number; restart?: number }
   | { type: "reveal" }
@@ -86,7 +96,13 @@ export type Cause =
   | { type: "settingsUpdated"; password?: PasswordChange }
   | { type: "ownerChanged"; by: "transfer" | "claim"; to: UserId }
   | { type: "away"; who: UserId }
-  | { type: "back"; who: UserId };
+  | { type: "back"; who: UserId }
+  /** `added`: how many items a paste put in; left out for any other change. */
+  | { type: "queueChanged"; added?: number }
+  /** The next item starts by itself at the round's `advanceAt` (#52). */
+  | { type: "advanceArmed" }
+  /** It will not: the PO stayed, or the queue or the setting no longer allows it. */
+  | { type: "advanceHeld" };
 
 /**
  * What a `password` command did (#31): a first password, a new one in place of the old,
@@ -122,6 +138,9 @@ export type ErrorCode =
   | "already_owner"
   | "owner_present"
   | "bad_settings"
+  | "bad_queue_item"
+  | "queue_full"
+  | "unknown_item"
   | CustomDeckErrorCode;
 
 /**
@@ -133,8 +152,9 @@ export type ErrorCode =
  * deck or specials change that restarts a voting round), in its final form: after an
  * elapsed deadline was resolved, so a round the timer revealed comes back revealed even
  * though the input still held it Voting. The server writes it to history only when
- * `ended.phase === "revealed"`.
+ * `ended.phase === "revealed"`. A refusal carries it too: the deadline resolved before the
+ * command may have started the next item (#52), and that stands.
  */
 export type ApplyResult =
   | { ok: true; state: RoomState; causes: Cause[]; ended?: Round }
-  | { ok: false; error: ErrorCode; state: RoomState; causes: Cause[] };
+  | { ok: false; error: ErrorCode; state: RoomState; causes: Cause[]; ended?: Round };

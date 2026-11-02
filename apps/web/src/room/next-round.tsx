@@ -1,16 +1,20 @@
+import type { QueueSummary } from "@pp/protocol";
 import { OctagonXIcon } from "lucide-react";
 import { type RefObject, useCallback, useId, useRef, useState } from "react";
 import { Input } from "../components/ui/input.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
 import { commandSender } from "../realtime/room-connection.ts";
+import { RoomQueueButton } from "./queue-button.tsx";
 import { focusSoon } from "./round-centre.tsx";
-import { draftSubject, problemMessage, type SubjectProblem } from "./subject.ts";
+import { draftSubject, itemName, problemMessage, type SubjectProblem } from "./subject.ts";
 
 // The PO's next round (#21): a subject field above the table and the centre's button
 // ("Start voting" in the lobby, "Next round" after a reveal). The field stays while a
 // round is voting, so the PO can prepare the next ticket and the table never jumps; only
 // the button starts a round, and a voting round has none (the domain would abandon it).
+// With a queue (#52) an empty field means its next item, and anything typed wins: the
+// queue never locks the PO out of the field, and a typed subject leaves it as it is.
 
 /** The draft, its problem, and the start that both the field and the centre's button use. */
 export interface NextRound {
@@ -19,6 +23,8 @@ export interface NextRound {
   /** Why the last start was refused, here or by the server; cleared by typing. */
   problem: SubjectProblem | null;
   busy: boolean;
+  /** The start takes the queue's next item: the field is empty and an item waits. */
+  fromQueue: boolean;
   start: () => Promise<void>;
   field: RefObject<HTMLInputElement | null>;
 }
@@ -29,14 +35,18 @@ export interface NextRound {
  * under the field and takes the focus there; any other refusal goes to `onFailure`, the
  * line under the table. A started round clears the draft; a start from the field keeps
  * the focus in it, a start from the centre's button moves it to the hand (or the centre's
- * status for a PO without a hand).
+ * status for a PO without a hand). `nextItem`: the id of the queue's next item, if any.
  */
-export function useNextRound(onFailure: (code: string | null) => void): NextRound {
+export function useNextRound(
+  onFailure: (code: string | null) => void,
+  nextItem: number | null = null,
+): NextRound {
   const [draft, setDraftState] = useState("");
   const [problem, setProblem] = useState<SubjectProblem | null>(null);
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const field = useRef<HTMLInputElement>(null);
+  const fromQueue = nextItem !== null && draft.trim() === "";
 
   const setDraft = useCallback((value: string) => {
     setDraftState(value);
@@ -58,7 +68,11 @@ export function useNextRound(onFailure: (code: string | null) => void): NextRoun
     onFailure(null);
     const send = commandSender();
     try {
-      const ack = await send({ type: "startRound", payload: { subject: parsed.subject } });
+      const ack = await send(
+        fromQueue && nextItem !== null
+          ? { type: "startNext", payload: { id: nextItem } }
+          : { type: "startRound", payload: { subject: parsed.subject } },
+      );
       if (ack.ok) {
         setDraftState("");
         // The button is gone with the old phase: its focus goes to the hand. A start from
@@ -76,9 +90,9 @@ export function useNextRound(onFailure: (code: string | null) => void): NextRoun
       pending.current = false;
       setBusy(false);
     }
-  }, [draft, onFailure]);
+  }, [draft, onFailure, fromQueue, nextItem]);
 
-  return { draft, setDraft, problem, busy, start, field };
+  return { draft, setDraft, problem, busy, fromQueue, start, field };
 }
 
 interface NextSubjectProps {
@@ -87,6 +101,8 @@ interface NextSubjectProps {
   nextNumber: number;
   /** Lobby or revealed: Enter starts the round. While Voting it does nothing. */
   canStart: boolean;
+  /** The room's queue (#52), when an item waits. */
+  queue: QueueSummary | undefined;
 }
 
 /**
@@ -95,7 +111,7 @@ interface NextSubjectProps {
  * offers to; while Voting it does nothing, and the hint says the subject waits for the
  * next round. Nothing is cut or stripped, a refusal says why.
  */
-export function NextSubject({ next, nextNumber, canStart }: NextSubjectProps) {
+export function NextSubject({ next, nextNumber, canStart, queue }: NextSubjectProps) {
   const t = useT();
   const ids = { field: useId(), hint: useId(), error: useId() };
   const refused = next.problem !== null;
@@ -121,18 +137,21 @@ export function NextSubject({ next, nextNumber, canStart }: NextSubjectProps) {
       >
         {t("round.subjectLabel")}
       </label>
-      <Input
-        ref={next.field}
-        id={ids.field}
-        name="subject"
-        value={next.draft}
-        onChange={(event) => next.setDraft(event.target.value)}
-        autoComplete="off"
-        enterKeyHint={canStart ? "go" : "done"}
-        aria-invalid={refused || undefined}
-        aria-describedby={refused ? `${ids.error} ${ids.hint}` : ids.hint}
-        className="phone:pt-4 phone:pb-0 squat:pt-4 squat:pb-0"
-      />
+      <div className="flex gap-2">
+        <Input
+          ref={next.field}
+          id={ids.field}
+          name="subject"
+          value={next.draft}
+          onChange={(event) => next.setDraft(event.target.value)}
+          autoComplete="off"
+          enterKeyHint={canStart ? "go" : "done"}
+          aria-invalid={refused || undefined}
+          aria-describedby={refused ? `${ids.error} ${ids.hint}` : ids.hint}
+          className="phone:pt-4 phone:pb-0 squat:pt-4 squat:pb-0"
+        />
+        <RoomQueueButton count={queue?.count ?? 0} />
+      </div>
       {refused ? (
         <p id={ids.error} role="alert" className="m-0 flex items-start gap-2 text-sm">
           <OctagonXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
@@ -154,9 +173,11 @@ export function NextSubject({ next, nextNumber, canStart }: NextSubjectProps) {
             "phone:absolute phone:inset-x-0 phone:top-full phone:z-30 phone:mt-1 phone:hidden phone:rounded-md phone:border phone:border-line phone:bg-surface phone:px-3 phone:py-2 phone:shadow-panel phone:group-focus-within:block squat:absolute squat:inset-x-0 squat:top-full squat:z-30 squat:mt-1 squat:hidden squat:rounded-md squat:border squat:border-line squat:bg-surface squat:px-3 squat:py-2 squat:shadow-panel squat:group-focus-within:block",
         )}
       >
-        {canStart
-          ? t("round.subjectHint", { round: nextNumber })
-          : t("round.subjectHintVoting", { round: nextNumber })}
+        {!canStart
+          ? t("round.subjectHintVoting", { round: nextNumber })
+          : queue === undefined
+            ? t("round.subjectHint", { round: nextNumber })
+            : t("queue.subjectHint", { item: itemName(queue.next) })}
       </p>
     </form>
   );

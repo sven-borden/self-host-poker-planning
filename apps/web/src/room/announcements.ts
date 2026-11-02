@@ -1,10 +1,10 @@
-import { MAX_PARTICIPANTS } from "@pp/domain";
+import { AUTO_ADVANCE_MS, MAX_PARTICIPANTS } from "@pp/domain";
 import type { CauseView, RoomSettingsView, RoomView, RoundView } from "@pp/protocol";
 import type { TFunction } from "../i18n/i18n.ts";
 import { cardLabel } from "../table/cards.tsx";
 import { type RevealSummary, revealSummary, summarySentence } from "./results-view.ts";
 import { deckInSentence, SETTING_KEYS, type SettingKey, sameSetting } from "./settings-words.ts";
-import { subjectName } from "./subject.ts";
+import { itemName, subjectName } from "./subject.ts";
 import { durationWords } from "./timer-view.ts";
 
 // What the table's live region says (#17): joins, leaves, away and back, votes, a new
@@ -34,7 +34,9 @@ export type LiveKind =
   | "timeUp"
   | "revealed"
   | "changed"
-  | "final";
+  | "final"
+  | "queue"
+  | "advance";
 
 /** What happened to the round's timer (#27), and by how many seconds when that is known. */
 export interface TimerNews {
@@ -89,6 +91,10 @@ export interface LiveEvent {
    * a change; a batch that set and removed it says nothing.
    */
   password?: { from: boolean; to: boolean };
+  /** A paste put this many items in the queue (#52), and what is next now. */
+  queue?: { added: number; next: string | null };
+  /** The next item starts by itself in a moment (`armed`), or it will not (#52). */
+  advance?: { armed: true; next: string | null } | { armed: false };
 }
 
 /**
@@ -110,6 +116,8 @@ const ORDER: readonly Exclude<LiveKind, "settings" | "password">[] = [
   "revealed",
   "changed",
   "final",
+  "advance",
+  "queue",
 ];
 
 /** Events that undo each other inside one batch: nothing is said for either. */
@@ -203,6 +211,24 @@ export function liveEvents(
           final: { card: cause.card, changed: hadFinal(previous, next) },
         });
         continue;
+      case "queueChanged": {
+        // The PO reads their own paste's result in the sheet; a move is nobody else's news.
+        if (cause.added === undefined || next.you === next.ownerId) continue;
+        const queue = { added: cause.added, next: nextName(next) };
+        events.push({ kind: "queue", who: "", name: "", queue });
+        continue;
+      }
+      case "advanceArmed":
+        events.push({
+          kind: "advance",
+          who: "",
+          name: "",
+          advance: { armed: true, next: nextName(next) },
+        });
+        continue;
+      case "advanceHeld":
+        events.push({ kind: "advance", who: "", name: "", advance: { armed: false } });
+        continue;
       case "revealed":
         if (cause.by === "timer") events.push({ kind: "timeUp", who: "", name: "" });
         events.push(revealedEvent(next, revealerName(cause.who, next, previous)));
@@ -294,6 +320,8 @@ function settingEvents(previous: RoomView | null, next: RoomView): LiveEvent[] {
           : { key, from, to, nextRound },
   }));
 }
+
+const nextName = (room: RoomView) => (room.queue ? itemName(room.queue.next) : null);
 
 const timerEvent = (timer: TimerNews): LiveEvent => ({ kind: "timer", who: "", name: "", timer });
 
@@ -491,6 +519,11 @@ export function mergeEvents(pending: readonly LiveEvent[], events: readonly Live
       merged = merged.filter((_, i) => i !== opposite);
       continue;
     }
+    // A countdown armed and held in one batch: what stands is the last word.
+    if (event.kind === "advance") {
+      const earlier = merged.findIndex((e) => e.kind === "advance");
+      if (earlier !== -1) merged.splice(earlier, 1);
+    }
     if (merged.some((e) => e.who === event.who && e.kind === event.kind)) continue;
     merged.push(event);
   }
@@ -515,6 +548,15 @@ function timerSentence(t: TFunction, timer: TimerNews | undefined): string {
   }
   const duration = durationWords(t, timer.seconds);
   return t(timer.what === "started" ? "live.timerStarted" : "live.timerExtended", { duration });
+}
+
+function advanceSentence(t: TFunction, advance: LiveEvent["advance"]): string {
+  if (advance === undefined) return "";
+  if (!advance.armed) return t("live.advanceHeld");
+  return t("live.advanceSoon", {
+    seconds: AUTO_ADVANCE_MS / 1000,
+    item: advance.next ?? t("queue.nextItem"),
+  });
 }
 
 function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): string {
@@ -556,6 +598,14 @@ function sentence(t: TFunction, kind: LiveKind, events: readonly LiveEvent[]): s
               : t("live.ownerClaimed", { name: e.name }),
         )
         .join(" ");
+    case "queue":
+      return first?.queue === undefined
+        ? ""
+        : first.queue.next === null
+          ? t("live.queueAddedPlain", { count: first.queue.added })
+          : t("live.queueAdded", { count: first.queue.added, item: first.queue.next });
+    case "advance":
+      return advanceSentence(t, first?.advance);
     case "away":
       return one ? t("live.away", { name }) : t("live.awayMany", { count });
     case "back":
@@ -619,6 +669,8 @@ function settingSentence(t: TFunction, setting: NonNullable<LiveEvent["setting"]
       );
     case "poVotes":
       return t(to.poVotes ? "live.poVotesOn" : "live.poVotesOff");
+    case "autoAdvance":
+      return t(to.autoAdvance ? "live.autoAdvanceOn" : "live.autoAdvanceOff");
     case "observersCount":
       return t(to.observersCount ? "live.observersCountOn" : "live.observersCountOff", {
         max: MAX_PARTICIPANTS,
