@@ -1333,7 +1333,7 @@ socket's message budget like any other, and its answer turns on the caller's own
 it tells nobody who has an account or which addresses exist. Exports and history do not read the
 rule; retention keeps or deletes it with the room's `live`.
 
-**Protocol 6.** The refused `enter`'s `requirement`, the patch, the view and four ack codes. Each
+**Protocol 6.** The refused `enter`'s `requirement`, the patch, the view and five ack codes. Each
 alone is the kind of change that kept the version before, but a tab from before this has no screen
 for these refusals and would strand on the generic error, so it is told to reload.
 
@@ -1354,8 +1354,8 @@ compare-and-set, for a list of 20 strings. Over HTTP like the password: there is
 off the command pipeline, and #25's contract gives the panel its rollback for free. A domain rule
 met by a Microsoft claim for verified tenants: Entra offers no proof of the kind Google's flag
 gives, and the tenant rule says the thing directly. Subdomain matching: see above. Auto-kicking
-those who do not pass: the brief says no, and a table that empties itself mid-round is worse than
-a screen. A per-seat mark for the PO: a count at most. Checking the identity in the commit's
+those who do not pass: a table that empties itself mid-round is worse than a screen, and the PO
+holds "Remove from the room" for anyone it should not wait for. A per-seat mark for the PO: a count at most. Checking the identity in the commit's
 transaction, as `requireGrant` does: an account does not change under a command, and the state
 does, which the step already sees.
 

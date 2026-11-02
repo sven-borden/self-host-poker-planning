@@ -11,7 +11,7 @@
  *   the round's `advanceAt`, and `startRound` carrying its `round`. A tab from before it would
  *   show a countdown it cannot read and drop the page's next item, so it is told to reload.
  * - 6: a room limited to accounts (#50): the refused `enter` carries its `requirement`, the
- *   `restriction` patch and view, and four ack codes. A tab from before it has no screen for
+ *   `restriction` patch and view, and five ack codes. A tab from before it has no screen for
  *   these refusals, so it is told to reload.
  *
  * Not breaking, so not bumped: an optional field on an outbound view (the web checks
