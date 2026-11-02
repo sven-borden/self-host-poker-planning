@@ -60,6 +60,11 @@ export interface AccessWrite {
   revokeAll?: boolean;
   revoke?: readonly UserId[];
   grant?: readonly UserId[];
+  /**
+   * A guest signed in (#48): the guest's grant, if any, becomes the account's in the commit
+   * that moves their seat, so a kick lands on one or the other, never on neither.
+   */
+  moveGrant?: { from: UserId; to: UserId };
 }
 
 /** A room's password, for the access check: its id and hash (null: none). */
@@ -95,6 +100,8 @@ export interface RoomStore {
    * transaction too; when it requires a grant the user lacks, nothing is written and it
    * resolves `password_required`. `queueChanged` false leaves the `queue` column as it is
    * (#52): the step did not touch it, and a full queue is not written again for a vote.
+   * `keepActivity`: nobody did anything in the room (a sign-in elsewhere, #48), so
+   * `last_active_at` stays, and the purge still sees how idle it is.
    */
   commitRoom(
     id: string,
@@ -103,6 +110,7 @@ export interface RoomStore {
     ended?: EndedRound,
     access?: AccessWrite,
     queueChanged?: boolean,
+    keepActivity?: boolean,
   ): Promise<boolean | "password_required">;
 }
 
@@ -188,6 +196,17 @@ export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore 
         .delete(roomAccess)
         .where(and(eq(roomAccess.roomId, id), inArray(roomAccess.userId, [...access.revoke])));
     }
+    if (access.moveGrant) {
+      const { from, to } = access.moveGrant;
+      await tx.execute(sql`
+        insert into ${roomAccess} (room_id, user_id, granted_at)
+        select a.room_id, ${to}, a.granted_at from ${roomAccess} a
+        where a.room_id = ${id}::uuid and a.user_id = ${from}
+        on conflict do nothing`);
+      await tx
+        .delete(roomAccess)
+        .where(and(eq(roomAccess.roomId, id), eq(roomAccess.userId, from)));
+    }
     if (access.grant && access.grant.length > 0) {
       // Only users that exist: a guest purged since (or a test's made-up id) gets no row.
       await tx.execute(sql`
@@ -246,7 +265,7 @@ export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore 
         return rows[0] ?? null;
       }),
 
-    commitRoom: (id, expectedVersion, next, ended, access, queueChanged = true) =>
+    commitRoom: (id, expectedVersion, next, ended, access, queueChanged = true, keepActivity) =>
       guard("commit room", async () => {
         const { live, queue } = withoutQueue(next);
         const write = async (tx: Db) => {
@@ -257,7 +276,7 @@ export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore 
               ...(queueChanged ? { queue } : {}),
               ownerUserId: next.ownerId,
               version: sql`${room.version} + 1`,
-              lastActiveAt: sql`now()`,
+              ...(!keepActivity && { lastActiveAt: sql`now()` }),
             })
             .where(and(eq(room.id, id), eq(room.version, expectedVersion)))
             .returning({ id: room.id });

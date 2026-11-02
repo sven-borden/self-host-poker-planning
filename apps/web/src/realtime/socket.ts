@@ -1,5 +1,5 @@
 import { io, type ManagerOptions, type Socket, type SocketOptions } from "socket.io-client";
-import { ensureIdentity, fetchSession, retryDelay, UNAUTHENTICATED } from "../identity/identity.ts";
+import { ensureIdentity, readSession, retryDelay, UNAUTHENTICATED } from "../identity/identity.ts";
 import { useIdentityStore } from "../stores/identity-store.ts";
 import type { ConnectionStatus } from "../stores/room-store.ts";
 
@@ -62,7 +62,7 @@ export interface ConnectOptions {
   ensure?: (options?: { force?: boolean; retry?: boolean }) => Promise<unknown>;
   /** Milliseconds before retry number `attempt`, and the server's Retry-After if any. */
   delay?: (attempt: number, retryAfterSeconds?: number) => number;
-  /** This browser's session over HTTP, null when it has none (`fetchSession`). */
+  /** This browser's session over HTTP, null when it has none (`readSession`). */
   session?: () => Promise<unknown>;
 }
 
@@ -125,7 +125,7 @@ export function connectWhenIdentified<
   ClientToServer extends EventsMap,
 >(
   socket: TypedSocket<ServerToClient, ClientToServer>,
-  { ensure = ensureIdentity, delay = retryDelay, session = fetchSession }: ConnectOptions = {},
+  { ensure = ensureIdentity, delay = retryDelay, session = readSession }: ConnectOptions = {},
 ): () => void {
   let retried = false;
   let stopped = false;

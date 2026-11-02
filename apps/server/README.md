@@ -288,10 +288,24 @@ keeps (#35).
   provider's `authority`, `authorizationEndpoint`, `tokenEndpoint` or `redirectURI`: tests reach
   the stand-in (`fake-oidc.ts`, not imported by `main.ts`) by replacing `fetch` in their own
   process, and `social-sign-in.test.ts` holds that nothing else can. The `account` hooks in
-  `auth.ts` clear the provider's tokens. #48's `onLinkAccount` goes on `anonymous()` there.
-  Implicit linking stays off, and a Microsoft account stays `tid:oid` and unverified
-  (`microsoftIdentity`): no check may ever read a Microsoft address as proved. A route's raw path
-  must equal its decoded one, or it is a 404 before Better Auth.
+  `auth.ts` clear the provider's tokens. Implicit linking stays off, and a Microsoft account stays
+  `tid:oid` and unverified (`microsoftIdentity`): no check may ever read a Microsoft address as
+  proved. Its `user.email` is `microsoftAddress`, never an address: show `account.claimed_email`,
+  and read `tenant_id` for a tenant. A route's raw path must equal its decoded one, or it is a 404
+  before Better Auth.
+- A guest who signs in (#48, ADR-025): `guest-link.ts` holds the order, `db/guest-links.ts` the
+  SQL, `moveGuest` in `packages/domain` the rules for one room, and `moveGuest` and `dropGuest` in
+  `room-sync.ts` the run. **A new place that stores a user id must move with them:** add it to
+  `complete` (or to `moveGuest`, when it lives in `live`) and to ADR-025's list. A failure before
+  the `guest_link` row must stay a plain error, not an `APIError`, which would send the cookie.
+  Anything keyed by a person in `live` must stay visible to `ROOM_PEOPLE`, the expression behind
+  `room_people_idx`; any query must spell that expression exactly, or it scans. `StepResult.quiet`
+  commits without touching `last_active_at` or history: only for what nobody in a room did, and
+  a step that ended a round is not quiet whatever it says. A log line of a move says a room's id
+  and an error's code and class, never more, and turns to `error` once the link is a day old:
+  ADR-025 says what an operator does then. Better Auth's adapter runs with `transaction: true`, so
+  a user and its account land together. A `join` always re-reads its session, whatever the 60 s
+  cache of other commands says: a seat outlives its socket.
 - The room password (#31) lives in `room-password.ts` (the three routes),
   `password.ts` (NFC and bounds, argon2id PHC hashing with `crypto.argon2`, the
   constant-time check against its own parameters only, the hash gate: 2 at once, 32 in

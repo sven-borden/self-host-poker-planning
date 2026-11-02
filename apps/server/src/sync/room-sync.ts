@@ -46,6 +46,14 @@
  * twice. Deadlines need nothing more: each instance arms its own, and the compare-and-set
  * reveals once; a server run that changed nothing broadcasts nothing, since the instance
  * that changed it tells everyone, with the causes.
+ *
+ * A guest who signs in (#48, ADR-025, `guest-link.ts`): `dropGuest` closes the guest's sockets,
+ * on every instance, after they hear `signedIn`, and `moveGuest` runs the domain's command in the
+ * room's queue, so the room's people get a normal snapshot and no vote is lost in a race. The
+ * guest's grace timers name the guest, and a room without the guest ignores them. The seat comes
+ * with whatever presence it had, so one the room shows connected starts the account's grace: the
+ * person is on their way back from the provider, and may not arrive. An account's `enter` first
+ * waits for a move in progress, or runs one again.
  */
 import { type ApplyResult, apply, type Cause, type Command, type RoomState } from "@pp/domain";
 import {
@@ -157,6 +165,12 @@ export interface RoomSyncOptions {
    * succeeded calls it without waiting, and a failure only logs. Left out, nothing is kept.
    */
   touchRoom?: (roomId: string) => Promise<void>;
+  /**
+   * Finishes what an account's guest still has to move (#48), before its `enter`, so the seat
+   * is there. It never rejects, and it stops waiting after a few seconds. Left out, no account
+   * has a guest.
+   */
+  settleLinks?: (account: string) => Promise<unknown>;
   /** Epoch milliseconds, for `apply` and the snapshots; `Date.now` by default. */
   now?: () => number;
   recentAcks?: Omit<RecentAcksOptions, "forget">;
@@ -206,6 +220,18 @@ export interface RoomSync extends RealtimeHandlers {
    * anyone else, on every instance, hear `locked` and leave. `not_owner` for anyone else.
    */
   changePassword(code: string, actor: string, hash: string | null): Promise<CmdAck>;
+  /**
+   * What `guest` holds in the room becomes `account`'s (#48), through the room's queue and the
+   * compare-and-set. `failed`: not stored as far as anyone knows, and safe to run again, which
+   * changes nothing when it was stored after all. Rejects on anything but a database failure:
+   * a room whose state the domain cannot read, which the caller names by its id.
+   */
+  moveGuest(room: RoomRef, guest: string, account: string): Promise<ServerRun>;
+  /**
+   * The guest's sockets, on every instance, hear `signedIn` and are closed (#48). `account` is
+   * who the guest's PO roles go to: a countdown stays if that person is in the room.
+   */
+  dropGuest(guest: string, account: string): void;
 }
 
 /** The Socket.IO room of a room, by its id (never its code). */
@@ -229,7 +255,7 @@ interface Candidate {
 type ApplyRun = RunOutcome<ReturnType<typeof apply>>;
 
 /** How a run of the server's own command ended: `failed` stored nothing it knows of. */
-type ServerRun = "changed" | "unchanged" | "failed";
+export type ServerRun = "changed" | "unchanged" | "failed";
 
 /** A `roomChanged` from another instance, checked: Redis is a network service. */
 export function parseSignal(raw: unknown): RoomSignal | undefined {
@@ -298,7 +324,8 @@ function joinNeedsGrant(
 const GONE = refuse("internal");
 
 export function createRoomSync(options: RoomSyncOptions): RoomSync {
-  const { runner, store, logger, sessionAlive, touchRoom, now = Date.now, shared } = options;
+  const { runner, store, logger, sessionAlive, touchRoom, settleLinks } = options;
+  const { now = Date.now, shared } = options;
   const requestTimeoutMs = shared?.requestTimeoutMs ?? CLUSTER_REQUEST_TIMEOUT_MS;
   const hasAccess = options.access?.hasAccess ?? (async () => false);
   const loadHistory =
@@ -373,6 +400,8 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   let sweeping = false;
   /** Per room (by id): how many away runs of each person failed in a row. */
   const awayFailures = new Map<string, Map<string, number>>();
+  /** Set while a guest's sockets close (`dropLocalGuest`), with the account the guest became. */
+  let guestLeaving: { guest: string; account: string } | undefined;
   /** Shutting down: no new grace starts. */
   let closed = false;
   /** The server is closing its sockets: they are not people leaving. */
@@ -1112,14 +1141,19 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
    * start in a room nobody can stop, and the stored deadline would start the item for the
    * first person to enter, days later. Decided in the room's queue: a PO back by then keeps
    * it. The grace is too long to wait for (15 s to a 10 s countdown), so a reload ends it
-   * too, which costs a press of "Next item" and no round.
+   * too, which costs a press of "Next item" and no round. A PO whose sockets close because they
+   * signed in (`dropLocalGuest`, #48) is one person with the account the role goes to: a socket
+   * of that account keeps it, in the moment before the role has moved.
    */
   async function endCountdown(room: RoomRef) {
     if (closed || stopping) return;
+    const signedIn = guestLeaving;
     try {
       const elsewhere = await presentElsewhere(room.id);
       const outcome = await runner.run(room.code, (state): ApplyResult => {
-        const stays = isHere(room.id, state.ownerId) || elsewhere.has(state.ownerId);
+        const po =
+          state.ownerId === signedIn?.guest ? [state.ownerId, signedIn.account] : [state.ownerId];
+        const stays = po.some((who) => isHere(room.id, who) || elsewhere.has(who));
         return state.round?.advanceAt === undefined || stays
           ? { ok: true, state, causes: [] }
           : apply(state, { type: "endCountdown" }, { actor: SERVER_ACTOR, now: now() });
@@ -1236,12 +1270,13 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
 
   /**
    * Whether the socket's session is still alive: asked again once the last check is
-   * `SESSION_RECHECK_MS` old. Concurrent commands of a socket share one check.
+   * `SESSION_RECHECK_MS` old, or always with `fresh`. Concurrent commands of a socket share one
+   * check.
    */
-  function sessionStillAlive(socket: RealtimeSocket): Promise<boolean> {
+  function sessionStillAlive(socket: RealtimeSocket, fresh = false): Promise<boolean> {
     if (!sessionAlive) return Promise.resolve(true);
     const checked = sessionChecked.get(socket);
-    if (checked !== undefined && now() - checked < SESSION_RECHECK_MS) {
+    if (!fresh && checked !== undefined && now() - checked < SESSION_RECHECK_MS) {
       return Promise.resolve(true);
     }
     let check = pendingChecks.get(socket);
@@ -1272,6 +1307,10 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
         return refuse("unauthenticated");
       }
       sessionChecked.set(socket, now());
+    }
+    if (settleLinks && !user.isAnonymous) {
+      await settleLinks(user.id);
+      if (!socket.connected) return GONE;
     }
     if (socket.data.room !== undefined && socket.data.room.code !== code) leaveRoom(socket);
     // The channel this call joined; left again when the enter fails.
@@ -1370,7 +1409,10 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     const user = socket.data.user;
     if (!user) return refuse("unauthenticated");
     if (socket.data.room === undefined) return refuse("room_not_found");
-    if (!(await sessionStillAlive(socket))) {
+    // A join makes a seat, and a seat outlives its socket, so no join goes on an old check. A
+    // guest's session ends when it signs in (#48), and `dropGuest` may miss a socket: its seat
+    // would name a user that is gone, and hold up the room's rule until the PO removes it.
+    if (!(await sessionStillAlive(socket, command.type === "join"))) {
       // Signed out, or the user was deleted, while the socket stayed open. The connection
       // closes once the answer is out: the client reconnects, and the handshake refuses
       // the old session, so it signs in again.
@@ -1515,11 +1557,78 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     }
   }
 
+  async function moveGuest(room: RoomRef, guest: string, account: string): Promise<ServerRun> {
+    try {
+      const outcome = await runner.run(room.code, (state) => {
+        const command: Command = { type: "moveGuest", guest, account };
+        const result = apply(state, command, { actor: SERVER_ACTOR, now: now() });
+        if (result.state === state) return result;
+        return { ...result, quiet: true, access: { moveGrant: { from: guest, to: account } } };
+      });
+      if (!outcome.ok) {
+        if (outcome.error !== "conflict") return "unchanged";
+        log.warn({ room: room.id }, "guest link: every attempt lost the compare-and-set");
+        return "failed";
+      }
+      void publish(room, outcome, { serverRun: true });
+      if (!outcome.changed) return "unchanged";
+      followSeat(room, guest, account, outcome.result.state);
+      return "changed";
+    } catch (error) {
+      if (!(error instanceof DatabaseError)) throw error;
+      log.warn({ room: room.id, err: error.code }, "guest link: a room did not move");
+      await resync(room);
+      return "failed";
+    }
+  }
+
+  /**
+   * The seat a move left behind: no grace of the guest's runs on, and a seat the room shows
+   * connected, with no socket of the account here, gets the grace any seat gets. A countdown
+   * that came with a PO role now answers to the account: with several instances a move can land
+   * before the guest's socket closes, and that close no longer finds a PO to end it for.
+   */
+  function followSeat(room: RoomRef, guest: string, account: string, state: RoomState) {
+    const { id } = room;
+    if (state.ownerId === account && state.round?.advanceAt !== undefined) {
+      void endCountdown(room);
+    }
+    graces.cancel(id, guest);
+    awayFailures.get(id)?.delete(guest);
+    const seat = participant(state, account);
+    if (!seat?.connected || seat.awaySince !== undefined) return;
+    if (watched.has(id) && !isHere(id, account)) graces.start(id, account);
+  }
+
+  function dropLocalGuest(guest: string, account: string) {
+    // A socket's close runs its handlers synchronously, so they see who is leaving and why.
+    guestLeaving = { guest, account };
+    try {
+      for (const socket of io?.sockets.sockets.values() ?? []) {
+        if (socket.data.user?.id !== guest) continue;
+        socket.emit("signedIn");
+        socket.disconnect(true);
+      }
+    } finally {
+      guestLeaving = undefined;
+    }
+  }
+
+  function dropGuest(guest: string, account: string) {
+    dropLocalGuest(guest, account);
+    if (shared && io && !closed) io.serverSideEmit("guestLinked", guest, account);
+  }
+
   return {
     attach(server) {
       io = server;
       if (!shared) return;
       server.on("roomChanged", onRoomChanged);
+      server.on("guestLinked", (guest, account) => {
+        if (typeof guest === "string" && typeof account === "string") {
+          dropLocalGuest(guest, account);
+        }
+      });
       // The adapter does not await these: a throw would be an unhandled rejection.
       server.on("present", (roomId, answer) => {
         if (typeof answer !== "function") return;
@@ -1606,6 +1715,8 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     deadlines,
     presence: graces,
     changePassword,
+    moveGuest,
+    dropGuest,
   };
 }
 

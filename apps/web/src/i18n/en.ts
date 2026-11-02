@@ -641,6 +641,8 @@ export const en = {
         "This site does not accept that Microsoft account. Try another one, or carry on without an account.",
       rateLimited: "Too many sign-in attempts. Wait a minute, then try again.",
       failed: "Sign-in did not finish. Try again, or carry on without an account.",
+      stillMoving:
+        "You are signed in. Some of your rooms are still moving to your account: open them again in a moment.",
     },
   },
   password: {

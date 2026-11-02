@@ -21,8 +21,10 @@ export const user = pgTable("user", {
   /** The display name; "" until the person picks one (#16). Cleaned by the domain's rules. */
   name: text("name").notNull(),
   /**
-   * A placeholder for a guest (`…@anonymous…`), never shown and never mailed. An account's
-   * real address: shown to its owner only, and in no room's snapshot.
+   * A placeholder for a guest (`…@anonymous…`) and for a Microsoft account
+   * (`sha256(tid:oid)@microsoft.invalid`, #48), never shown and never mailed. A Google account's
+   * address: shown to its owner only, and in no room's snapshot. Unique, so only an address a
+   * provider proves may stand here: see `account.claimed_email`.
    */
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").notNull().default(false),
@@ -77,6 +79,11 @@ export const account = pgTable(
     updatedAt: instant("updated_at").notNull().defaultNow(),
     /** A Microsoft account's tenant (`tid`), for rooms limited to one (#50). */
     tenantId: text("tenant_id"),
+    /**
+     * The address a Microsoft token claims (#48, ADR-025): shown to its owner, proof of nothing,
+     * and unique in nothing, so a claim cannot lock out the person who owns the address.
+     */
+    claimedEmail: text("claimed_email"),
   },
   (table) => [
     index("account_user_id_idx").on(table.userId),

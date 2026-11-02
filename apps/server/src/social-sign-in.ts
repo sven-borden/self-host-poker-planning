@@ -18,6 +18,7 @@
  *   app, with a code in `SIGN_IN_ERROR_PARAM` when it failed: never JSON, never Better Auth's
  *   `error_description`, which a provider or a crafted link can fill with anything.
  */
+import { createHash } from "node:crypto";
 import { isRoomCode } from "@pp/domain";
 import { SIGN_IN_ERROR_PARAM, type SignInErrorCode } from "@pp/protocol";
 import type { MicrosoftEntraIDProfile } from "better-auth/social-providers";
@@ -50,24 +51,42 @@ export function idTokenClaims(idToken: string | undefined): Record<string, unkno
 }
 
 /**
+ * What a Microsoft account stores in `user.email`, a unique column: an address of its own under a
+ * reserved domain, which no provider can claim, no mail can reach, and only this identity has.
+ * So a claim nobody proved never takes the value from the person who owns the address (ADR-025).
+ */
+export function microsoftAddress(tid: string, oid: string): string {
+  const id = createHash("sha256").update(`${tid}:${oid}`).digest("hex");
+  return `${id}@microsoft.invalid`;
+}
+
+/** The address a Microsoft token claims, for `account.claimed_email`. Proof of nothing. */
+export function claimedAddress(claims: Record<string, unknown> | null): string | null {
+  const email = claims?.email;
+  return typeof email === "string" && email !== "" && email.length <= 320 ? email : null;
+}
+
+/**
  * Who a Microsoft sign-in is. Replaces the provider's own reading, which is the only way to reach
- * what `accountSubject` reads (`profile.oid`) without touching the library, for two reasons:
+ * what `accountSubject` reads (`profile.oid`) without touching the library, for three reasons:
  * - `oid` is unique within a tenant only, so the account id is `tid:oid`. `data.oid` carries it
  *   for that reason alone; the claims are otherwise as they came.
  * - `emailVerified` is false whatever the token says. The claim is Entra's, a tenant's admin can
  *   set an address that is not theirs, and the signature is not checked in the code flow (the
  *   token comes straight from Microsoft over TLS, which is enough to know who sent it, not that
  *   the address is true). So `user.email_verified` never says this address is proved.
+ * - For that same reason the claim does not become `user.email` (`microsoftAddress`); the
+ *   `account` hook in `auth.ts` keeps it beside the tenant.
  * Null without either id: Better Auth ends that as `unable_to_get_user_info`.
  */
 export function microsoftIdentity(idToken: string | undefined) {
   const claims = idTokenClaims(idToken);
-  const { oid, tid, name, email } = claims ?? {};
+  const { oid, tid, name } = claims ?? {};
   if (typeof oid !== "string" || oid === "" || typeof tid !== "string" || tid === "") return null;
   return {
     user: {
       ...(typeof name === "string" && { name }),
-      ...(typeof email === "string" && { email }),
+      email: microsoftAddress(tid, oid),
       emailVerified: false,
     },
     data: { ...claims, oid: `${tid}:${oid}` } as unknown as MicrosoftEntraIDProfile,

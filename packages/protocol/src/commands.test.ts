@@ -190,6 +190,10 @@ describe("wire commands", () => {
       { id: "1", type: "presence", payload: { who: "a", connected: false } },
     ],
     ["a presence update without payload", { id: "1", type: "presence" }],
+    [
+      "the server's own move of a guest (#48)",
+      { id: "1", type: "moveGuest", payload: { guest: "a", account: "b" } },
+    ],
     ["a prototype key as type", { id: "1", type: "__proto__" }],
     ["an inherited key as type", { id: "1", type: "toString" }],
     ["a payload that is not an object", { id: "1", type: "reveal", payload: 5 }],

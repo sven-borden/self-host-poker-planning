@@ -1,6 +1,15 @@
 import { createRoom, type RoomState } from "@pp/domain";
-import { COMMAND_ID_PATTERN, PROTOCOL_VERSION, type Snapshot, toSnapshot } from "@pp/protocol";
+import {
+  COMMAND_ID_PATTERN,
+  MOVE_WAIT_MS,
+  PROTOCOL_VERSION,
+  type Snapshot,
+  toSnapshot,
+} from "@pp/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ensureIdentity, resetIdentityModule } from "../identity/identity.ts";
+import { SIGN_IN_CHANNEL } from "../identity/sign-in.ts";
+import { resetSignInWait, SIGNED_IN_FALLBACK_MS } from "../identity/sign-in-wait.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import {
   ACCESS_CHANNEL,
@@ -93,6 +102,9 @@ function open(fake: ReturnType<typeof fakeSocket>, delay = () => 0) {
 afterEach(() => {
   for (const close of closers.splice(0)) close();
   useRoomStore.getState().reset();
+  resetSignInWait();
+  resetIdentityModule();
+  vi.unstubAllGlobals();
 });
 
 describe("openRoom", () => {
@@ -210,6 +222,116 @@ describe("openRoom", () => {
     // A later close the server forces is final again.
     fake.fire("disconnect", "io server disconnect");
     expect(useRoomStore.getState()).toMatchObject({ status: "error", error: "offline" });
+  });
+
+  it("after signedIn, ignores the socket and waits for the page that signed in (#48)", async () => {
+    vi.useFakeTimers();
+    try {
+      const reload = vi.fn();
+      const fake = fakeSocket(() => ({ ok: true, snapshot: snapshot(1) }));
+      closers.push(
+        openRoom(CODE, { socket: fake.socket, connect: () => () => {}, delay: () => 0, reload }),
+      );
+      fake.up();
+      await vi.advanceTimersByTimeAsync(0);
+      fake.fire("signedIn");
+      expect(useRoomStore.getState().status).toBe("reconnecting");
+      // A snapshot still on its way must not show the join form for a moment.
+      fake.fire("snapshot", snapshot(2));
+      expect(useRoomStore.getState().snapshot?.version).toBe(1);
+      Object.defineProperty(fake.socket, "active", { configurable: true, get: () => false });
+      fake.fire("disconnect", "io server disconnect");
+      expect(useRoomStore.getState().status).toBe("reconnecting");
+      expect(fake.socket.connect).not.toHaveBeenCalled();
+      // A move of 3 s, or any up to the callback's limit: the cookie is still on its way.
+      await vi.advanceTimersByTimeAsync(MOVE_WAIT_MS);
+      expect(reload).not.toHaveBeenCalled();
+      expect(SIGNED_IN_FALLBACK_MS).toBeGreaterThan(MOVE_WAIT_MS);
+      await vi.advanceTimersByTimeAsync(SIGNED_IN_FALLBACK_MS - MOVE_WAIT_MS);
+      expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** A room open and live, whose reload the test can count. */
+  async function signedInTab() {
+    const reload = vi.fn();
+    const fake = fakeSocket(() => ({ ok: true, snapshot: snapshot(1) }));
+    const close = openRoom(CODE, { socket: fake.socket, connect: () => () => {}, reload });
+    closers.push(close);
+    fake.up();
+    await settle();
+    return { reload, fake, close };
+  }
+
+  /** What the page a sign-in came back to does, as another tab. */
+  async function pageLanded() {
+    const page = new BroadcastChannel(SIGN_IN_CHANNEL);
+    page.postMessage({ finished: true });
+    page.close();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  it("reloads as soon as the page that signed in says it landed (#48)", async () => {
+    const { reload, fake } = await signedInTab();
+    fake.fire("signedIn");
+    expect(reload).not.toHaveBeenCalled();
+    await pageLanded();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads no session while the cookie is on its way, and enters nothing (#48)", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (path: string) => {
+        calls.push(path);
+        return new Response("null", { status: 200 });
+      }),
+    );
+    const { reload, fake } = await signedInTab();
+    fake.fire("signedIn");
+    const read = ensureIdentity({ force: true }).catch(() => {});
+    await settle();
+    expect(calls).toEqual([]);
+    await pageLanded();
+    expect(reload).toHaveBeenCalledTimes(1);
+    await read;
+    expect(calls[0]).toBe("/api/auth/get-session");
+  });
+
+  it("reloads at once when the page's word got here first (#48)", async () => {
+    const { reload, fake } = await signedInTab();
+    await pageLanded();
+    expect(reload).not.toHaveBeenCalled();
+    fake.fire("signedIn");
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not reload for a page that came back from a sign-in nobody here heard of", async () => {
+    const { reload } = await signedInTab();
+    await pageLanded();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("still reloads a page that left the room meanwhile: it is the guest's (#48)", async () => {
+    const { reload, fake, close } = await signedInTab();
+    fake.fire("signedIn");
+    close();
+    await pageLanded();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for no new session on a refusal after signedIn (#48)", async () => {
+    const ensure = vi.fn(async () => {});
+    const reload = vi.fn();
+    const fake = fakeSocket(() => ({ ok: false, code: "unauthenticated" }));
+    closers.push(openRoom(CODE, { socket: fake.socket, connect: () => () => {}, ensure, reload }));
+    fake.fire("signedIn");
+    fake.up();
+    await settle();
+    expect(ensure).not.toHaveBeenCalled();
   });
 
   it("locks on password_required, keeps the socket, and enters again once asked (#31)", async () => {
