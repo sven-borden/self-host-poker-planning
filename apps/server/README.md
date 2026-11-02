@@ -289,6 +289,9 @@ keeps (#35).
   the stand-in (`fake-oidc.ts`, not imported by `main.ts`) by replacing `fetch` in their own
   process, and `social-sign-in.test.ts` holds that nothing else can. The `account` hooks in
   `auth.ts` clear the provider's tokens. #48's `onLinkAccount` goes on `anonymous()` there.
+  Implicit linking stays off, and a Microsoft account stays `tid:oid` and unverified
+  (`microsoftIdentity`): no check may ever read a Microsoft address as proved. A route's raw path
+  must equal its decoded one, or it is a 404 before Better Auth.
 - The room password (#31) lives in `room-password.ts` (the three routes),
   `password.ts` (NFC and bounds, argon2id PHC hashing with `crypto.argon2`, the
   constant-time check against its own parameters only, the hash gate: 2 at once, 32 in

@@ -126,6 +126,7 @@ const SIGN_IN_FAILURES = {
   cancelled: "signIn.errors.cancelled",
   account_exists: "signIn.errors.accountExists",
   no_email: "signIn.errors.noEmail",
+  tenant_not_allowed: "signIn.errors.tenantNotAllowed",
   rate_limited: "signIn.errors.rateLimited",
   failed: "signIn.errors.failed",
 } as const satisfies Record<SignInErrorCode, MessageKey>;

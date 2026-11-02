@@ -579,7 +579,8 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   `POST /api/auth/sign-out` reach Better Auth (`AUTH_ROUTES`), and with provider keys
   `POST /api/auth/sign-in/social` and `GET /api/auth/callback/<provider>` for each configured
   one (`socialRoutes`); every other path under
-  `/api/auth` is a JSON 404 before its rate limiter (`/list-sessions` would hand out raw
+  `/api/auth`, an encoded spelling of those included, is a JSON 404 before its rate limiter
+  (`/list-sessions` would hand out raw
   tokens, and the limiter keeps a counter per path). A POST from another `Origin` is
   refused with `not_allowed`. Bodies under `/api/auth/*` and `/api/me/*` are capped at
   4 KB, every other `/api/*` body at 16 KB (`bad_payload`, 413). No answer carries a
@@ -627,20 +628,32 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   - **State**: in the `verification` row with the PKCE verifier and the return path, and a
     signed `state` cookie (`__Host-pp.state` on https). The provider gets a random `state` and
     the fixed `redirect_uri`, never a room's code. The row is single-use; the purge clears
-    those nobody finished.
+    those nobody finished. Both last 10 minutes, so a sign-in through MFA or a password reset
+    finishes.
   - **Callback**: `GET /api/auth/callback/google` or `/microsoft`, under `BASE_URL`; the
     worker leaves `/api` alone. It always ends in a 302 to the app, with
-    `?sign_in_error=cancelled|account_exists|no_email|rate_limited|failed` when it failed. The
-    page takes that out of the address and says it once. A log line holds the code and a reason
-    from a fixed list, never the query.
-  - **Account**: `user` with the email (shown to its owner; in no snapshot), `emailVerified`,
-    the provider's name through `cleanName` (`""` when refused), no image; `account` with the
-    provider's id for the person and Microsoft's `tid` in `tenant_id` (#50). The access, refresh
-    and id tokens are cleared by a hook before the write; a later sign-in writes nothing. Asked
-    for: `openid profile email`, no `offline_access`, no Graph.
-  - **Linking**: Better Auth's default. Another provider joins an account only when both sides
-    have a verified address; otherwise `account_exists`. Entra's `email` is not verified by
-    default. OQ-6 and the merge rules are #48's.
+    `?sign_in_error=cancelled|account_exists|no_email|tenant_not_allowed|rate_limited|failed`
+    when it failed. The page takes that out of the address and says it once. One log line holds
+    the code and a reason from a fixed list, never the query: `warn` for what a stranger's link
+    or a person can cause, `error` when this server, its keys or a provider failed. Better Auth's
+    own lines during a callback are `debug`, since anyone can send one.
+  - **Account**: `user` with the email (shown to its owner on the landing page, never in a room;
+    in no snapshot), `emailVerified` (always false for Microsoft), the provider's name through
+    `cleanName` (`""` when refused), no image; `account` with the provider's id for the person,
+    which for Microsoft is `tid:oid` as Microsoft scopes `oid` to a tenant, and Microsoft's `tid`
+    in `tenant_id` (#50). The access, refresh and id tokens are cleared by a hook before the
+    write; a later sign-in writes nothing. Asked for: `openid profile email`, no
+    `offline_access`, no Graph. `/api/auth/get-session` adds `user.provider` for an account, so a
+    room can name it instead of the address.
+  - **Linking**: none by address (`disableImplicitLinking`). A sign-in whose address already
+    belongs to another identity is refused (`account_exists`), whichever provider it comes from
+    and whatever it says of the address: that is an account takeover otherwise, and Entra's
+    claim proves nothing. The owner still signs in with their own identity. Explicit linking
+    (`linkSocial`) stays for #48, with OQ-6 and the merge rules.
+  - **Tenant**: `MICROSOFT_TENANT_ID` picks Microsoft's URL, and `validateUserInfo` holds it: a
+    GUID must equal the token's `tid`, `organizations` refuses the consumer tenant, `consumers`
+    takes only it. It runs before any write, on a first sign-in, a link and each later sign-in,
+    and a refusal comes back as `tenant_not_allowed`.
   - **The guest**: `disableDeleteAnonymousUser` keeps the row; a sign-in makes a new user, and
     until #48 the person returns to the room as somebody new. #48 moves what the guest owns in
     `onLinkAccount` (room `owner_user_id`, `live.ownerId`, participants, history), or links with

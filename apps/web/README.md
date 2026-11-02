@@ -577,14 +577,17 @@ server sends and never decides the outcome of a round.
   `IdentityError` carrying the server's code. `useIdentityStore` holds `status`
   (`idle`, `loading`, `ready`, `error`), `userId`, `name` (null until picked), `avatar`
   (null for initials; an id this version does not know reads as null), `email` (an
-  account's, #47; null for a guest, whose placeholder never reaches the store) and `error`.
+  account's, #47; null for a guest, whose placeholder never reaches the store), `provider`
+  (which one an account signs in with, from `/api/auth/get-session`) and `error`.
   Typed `fetch` calls, not `better-auth/client` (12 kB gzipped). `main.tsx`
   starts the bootstrap next to the first render.
 - `src/identity/sign-in.ts` and `sign-in-row.tsx` (#47, ADR-023): `signInProviders()` reads
   the server's `<meta name="pp-sign-in">`, so an install without keys has none. `SignInRow`
   sits on the create card, the join form and in the "You" panel: a guest's buttons (each
   provider's mark is an `.svg` here, inlined by Vite as a `data:` URL, which `img-src` allows
-  and the colour check does not read), or the account and "Sign out". `startSignIn(provider)`
+  and the colour check does not read), or the provider, the name and "Sign out". Only the create
+  card passes `showAddress`: a room may be on a shared screen, so nothing in one shows the
+  address, and the default is the safe one. `startSignIn(provider)`
   posts to the server and resolves with the provider's URL, for `location.assign`: a form could
   not follow that redirect under `form-action 'self'`. `signOut()` then a reload makes the fresh
   guest. `readSignInError()` runs in `main.tsx`, first, to take `?sign_in_error=` out of the

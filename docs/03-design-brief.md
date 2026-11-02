@@ -307,16 +307,19 @@ is, and not in the top bar, which is full at 320 px.
   next to the code, not an SDK, and they are not tokens: they are not ours to theme. Where a brand
   guide asks for an exact fill or font (Google's `#131314`, Microsoft's Segoe UI), the button keeps
   the app's: the theme and the type stay one, and neither guide's logo rules bend.
-- **Signed in.** "Signed in as" and the address, in the same three places, with "Sign out". The
-  address wraps anywhere, so a long one never pushes the page wider. It is shown to its owner and
-  nobody else: a room shows the display name, as for a guest.
+- **Signed in.** "Signed in with Google", in the same three places, with "Sign out". Below it,
+  on the landing page, the address; in a room, on the join form and in the "You" panel alike,
+  the name. A room may be on a shared screen, so the address never shows there, not even to its
+  owner, and others only ever see the display name, as for a guest. It wraps anywhere, so a long
+  one never pushes the page wider.
 - **It leaves the page.** Sign-in is a full-page navigation in the same tab, never a popup, and it
   comes back to the same address. While it starts, the buttons stay focusable with
   `aria-disabled`. A refusal is said under them, and they work again.
 - **Coming back without an account.** A toast, once, in the reader's language. Going back at the
   provider is no error: "Sign-in cancelled. You can carry on without an account." has no error
-  icon. An email that signs in another way, an account with no email, too many tries, and anything
-  else each have their words. The address loses the code before the page reads it.
+  icon. An email that signs in another way, an account with no email, a Microsoft account this
+  install does not accept, too many tries, and anything else each have their words. The address
+  loses the code before the page reads it.
 - **Signing out** reloads the same page as a fresh guest: in a room, the join form, empty.
 
 ## Phones

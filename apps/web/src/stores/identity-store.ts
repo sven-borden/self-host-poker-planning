@@ -1,4 +1,5 @@
 import type { AvatarId } from "@pp/domain";
+import type { SignInProvider } from "@pp/protocol";
 import { create } from "zustand";
 
 // Who this browser is (#10): a guest the server created, or a signed-in user (#47).
@@ -16,8 +17,10 @@ export interface IdentityStoreState {
   name: string | null;
   /** The avatar saved on the user (#42); null shows initials. */
   avatar: AvatarId | null;
-  /** The address of an account (#47), shown to its owner; null for a guest. */
+  /** The address of an account (#47), shown to its owner off the room; null for a guest. */
   email: string | null;
+  /** Which provider an account signs in with; null for a guest. */
+  provider: SignInProvider | null;
   /** The server's error code when the last attempt failed (`unauthenticated`, …). */
   error: string | null;
   setLoading: () => void;
@@ -26,6 +29,7 @@ export interface IdentityStoreState {
     name: string | null;
     avatar?: AvatarId | undefined;
     email?: string | undefined;
+    provider?: SignInProvider | undefined;
   }) => void;
   setName: (name: string) => void;
   setAvatar: (avatar: AvatarId | null) => void;
@@ -40,14 +44,15 @@ const initialState = {
   name: null,
   avatar: null,
   email: null,
+  provider: null,
   error: null,
 };
 
 export const useIdentityStore = create<IdentityStoreState>()((set) => ({
   ...initialState,
   setLoading: () => set({ status: "loading", error: null }),
-  setIdentity: ({ userId, name, avatar = null, email = null }) =>
-    set({ status: "ready", userId, name, avatar, email, error: null }),
+  setIdentity: ({ userId, name, avatar = null, email = null, provider = null }) =>
+    set({ status: "ready", userId, name, avatar, email, provider, error: null }),
   setName: (name) => set({ name }),
   setAvatar: (avatar) => set({ avatar }),
   setError: (error) => set({ status: "error", error }),

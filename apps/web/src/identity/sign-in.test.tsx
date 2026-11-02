@@ -17,7 +17,12 @@ function meta(content?: string) {
 const answer = (body: unknown, status = 200) => Response.json(body, { status });
 const asGuest = () => useIdentityStore.getState().setIdentity({ userId: "u1", name: "Ada" });
 const asAccount = () =>
-  useIdentityStore.getState().setIdentity({ userId: "u1", name: "Ada", email: "ada@example.com" });
+  useIdentityStore.getState().setIdentity({
+    userId: "u1",
+    name: "Ada",
+    email: "ada@example.com",
+    provider: "google",
+  });
 
 const assign = vi.fn();
 const reload = vi.fn();
@@ -120,6 +125,15 @@ describe("the calls", () => {
     );
     expect((await fetchSession())?.email).toBeUndefined();
   });
+
+  it("gives an account's provider when this version knows it", async () => {
+    const session = (provider: string) => async () =>
+      answer({ user: { id: "u1", name: "Ada", email: "a@b.c", isAnonymous: false, provider } });
+    vi.stubGlobal("fetch", session("microsoft"));
+    expect((await fetchSession())?.provider).toBe("microsoft");
+    vi.stubGlobal("fetch", session("github"));
+    expect((await fetchSession())?.provider).toBeUndefined();
+  });
 });
 
 describe("SignInRow", () => {
@@ -168,9 +182,43 @@ describe("SignInRow", () => {
   it("shows the account instead of the buttons, even if the keys have gone", () => {
     asAccount();
     render(<SignInRow />);
-    expect(screen.getByText("ada@example.com")).toBeTruthy();
+    expect(screen.getByText("Signed in with Google")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Sign in/ })).toBeNull();
+  });
+
+  it("never shows the address unless the page asks: a room may be on a shared screen", () => {
+    asAccount();
+    const { container } = render(<SignInRow />);
+    expect(screen.getByText("Ada")).toBeTruthy();
+    expect(container.innerHTML).not.toContain("ada@example.com");
+  });
+
+  it("shows the address where the page asks for it", () => {
+    asAccount();
+    render(<SignInRow showAddress />);
+    expect(screen.getByText("ada@example.com")).toBeTruthy();
+    expect(screen.queryByText("Ada")).toBeNull();
+  });
+
+  it("names the provider alone for someone with no name yet", () => {
+    useIdentityStore.getState().setIdentity({
+      userId: "u1",
+      name: null,
+      email: "ada@example.com",
+      provider: "microsoft",
+    });
+    const { container } = render(<SignInRow />);
+    expect(screen.getByText("Signed in with Microsoft")).toBeTruthy();
+    expect(container.querySelector("[data-account]")).toBeNull();
+    expect(container.innerHTML).not.toContain("ada@example.com");
+  });
+
+  it("falls back to the name when this version does not know the provider", () => {
+    useIdentityStore.getState().setIdentity({ userId: "u1", name: "Ada", email: "a@b.c" });
+    render(<SignInRow />);
+    expect(screen.getByText("Signed in as")).toBeTruthy();
+    expect(screen.getByText("Ada")).toBeTruthy();
   });
 
   it("signs out, then reloads this page into a new guest", async () => {

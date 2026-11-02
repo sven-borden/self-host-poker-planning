@@ -176,7 +176,7 @@ export function CreateRoomCard({ className }: { className?: string }) {
           {busy ? t("createRoom.creating") : t("createRoom.submit")}
         </Button>
       </form>
-      <SignInRow className="mt-6 border-t border-line pt-5" />
+      <SignInRow showAddress className="mt-6 border-t border-line pt-5" />
     </section>
   );
 }

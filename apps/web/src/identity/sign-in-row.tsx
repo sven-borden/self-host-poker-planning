@@ -12,8 +12,8 @@ import microsoftLogo from "./microsoft.svg";
 import { signInProviders } from "./sign-in.ts";
 
 const PROVIDERS = {
-  google: { label: "signIn.google", logo: googleLogo },
-  microsoft: { label: "signIn.microsoft", logo: microsoftLogo },
+  google: { label: "signIn.google", logo: googleLogo, brand: "Google" },
+  microsoft: { label: "signIn.microsoft", logo: microsoftLogo, brand: "Microsoft" },
 } as const;
 
 const busyClass = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
@@ -22,14 +22,23 @@ const busyClass = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
  * Signing in, quietly, wherever a person has a moment for it (#47): the "You" panel, the join
  * form and the create card. A guest sees a button per provider this install has, and nothing
  * when it has none; sign-in is never required. It is a full-page navigation, so the provider's
- * page opens in this tab and comes back here. Someone signed in sees the address and "Sign
- * out", which starts a fresh guest on this same page: a reload, as the old session's socket
- * cannot carry on. The address is shown to its owner here and nowhere else.
+ * page opens in this tab and comes back here. Someone signed in sees which provider, their name
+ * and "Sign out", which starts a fresh guest on this same page: a reload, as the old session's
+ * socket cannot carry on. A room may be on a shared screen, so the address shows only where a
+ * page asks for it (`showAddress`): the landing page, and nowhere in a room.
  */
-export function SignInRow({ className }: { className?: string }) {
+export function SignInRow({
+  className,
+  showAddress = false,
+}: {
+  className?: string;
+  showAddress?: boolean;
+}) {
   const t = useT();
   const status = useIdentityStore((state) => state.status);
   const email = useIdentityStore((state) => state.email);
+  const name = useIdentityStore((state) => state.name);
+  const provider = useIdentityStore((state) => state.provider);
   const [providers] = useState(signInProviders);
   const [busy, setBusy] = useState<SignInProvider | "out" | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -58,15 +67,20 @@ export function SignInRow({ className }: { className?: string }) {
   }
 
   if (email === null && (status !== "ready" || providers.length === 0)) return null;
+  const shown = showAddress ? email : name;
   return (
     <div data-sign-in className={cn("flex flex-col gap-3", className)}>
       {email !== null ? (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="m-0 flex min-w-0 flex-col text-sm text-ink-2">
-            {t("signIn.signedInAs")}
-            <bdi data-account className="font-medium wrap-anywhere text-ink">
-              {email}
-            </bdi>
+            {provider === null
+              ? t("signIn.signedInAs")
+              : t("signIn.signedInWith", { provider: PROVIDERS[provider].brand })}
+            {shown !== null && (
+              <bdi data-account className="font-medium wrap-anywhere text-ink">
+                {shown}
+              </bdi>
+            )}
           </p>
           <Button
             variant="outline"
@@ -86,19 +100,17 @@ export function SignInRow({ className }: { className?: string }) {
         <>
           <p className="m-0 text-sm text-ink-2">{t("signIn.hint")}</p>
           <div className="grid gap-2 sm:flex sm:flex-wrap">
-            {providers.map((provider) => (
+            {providers.map((id) => (
               <Button
-                key={provider}
+                key={id}
                 variant="outline"
-                data-sign-in-provider={provider}
+                data-sign-in-provider={id}
                 className={busyClass}
                 aria-disabled={busy !== null || undefined}
-                onClick={() =>
-                  run(provider, async () => window.location.assign(await startSignIn(provider)))
-                }
+                onClick={() => run(id, async () => window.location.assign(await startSignIn(id)))}
               >
-                <img src={PROVIDERS[provider].logo} alt="" width={18} height={18} />
-                {t(PROVIDERS[provider].label)}
+                <img src={PROVIDERS[id].logo} alt="" width={18} height={18} />
+                {t(PROVIDERS[id].label)}
               </Button>
             ))}
           </div>

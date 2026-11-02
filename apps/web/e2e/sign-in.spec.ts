@@ -55,6 +55,12 @@ async function atProviders(context: BrowserContext, who: Person | "denied"): Pro
 }
 
 const buttonOf = (page: Page, name: string) => page.getByRole("button", { name });
+
+/** In a room, on a screen that may be shared: the name and the provider, never the address. */
+async function expectNoAddress(page: Page, who: Person, provider: string) {
+  await expect(page.locator("[data-sign-in]")).toContainText(`Signed in with ${provider}`);
+  await expect(page.locator("body")).not.toContainText(who.email ?? "");
+}
 const signOutButton = (page: Page) => page.getByRole("button", { name: "Sign out" });
 
 async function newRoom(page: Page): Promise<string> {
@@ -97,6 +103,7 @@ test.describe("with provider keys", () => {
     await page.goto(SIGN_IN_BASE);
     await buttonOf(page, "Sign in with Google").click();
     await expect(page.locator("[data-account]")).toHaveText(who.email ?? "");
+    await expect(page.locator("[data-sign-in]")).toContainText("Signed in with Google");
     expect(page.url()).toBe(`${SIGN_IN_BASE}/`);
     await expect(page.getByRole("button", { name: /Sign in/ })).toHaveCount(0);
     await context.close();
@@ -111,9 +118,10 @@ test.describe("with provider keys", () => {
     const frames = recordFrames(page);
     const code = await newRoom(page);
     await buttonOf(page, "Sign in with Microsoft").click();
-    await expect(page.locator("[data-account]")).toHaveText(who.email ?? "");
+    await expect(page.locator("[data-account]")).toHaveText("Grace Hopper");
     expect(page.url()).toBe(`${SIGN_IN_BASE}/r/${code}`);
     await expect(page.getByRole("textbox", { name: "Your name" })).toHaveValue("Grace Hopper");
+    await expectNoAddress(page, who, "Microsoft");
 
     expect(requests).toHaveLength(1);
     const [request] = requests;
@@ -122,8 +130,9 @@ test.describe("with provider keys", () => {
     expect(await request?.headerValue("referer")).toBeNull();
 
     await joinAs(page);
-    await expect(page.locator("[data-you] [data-account]")).toHaveText(who.email ?? "");
+    await expect(page.locator("section[data-you] [data-account]")).toHaveText("Grace Hopper");
     await expect(page.locator("[data-you-name] bdi")).toHaveText("Grace Hopper");
+    await expectNoAddress(page, who, "Microsoft");
     for (const frame of frames) {
       expect(frame).not.toContain(who.email);
       expect(frame).not.toContain(who.id);
@@ -140,7 +149,7 @@ test.describe("with provider keys", () => {
     await expect(page.locator("[data-account]")).toHaveText(who.email ?? "");
     const rows = await dbQuery<Record<string, unknown>>(
       `select access_token, refresh_token, id_token, tenant_id from account where account_id = $1`,
-      [who.id],
+      [`tenant-e2e:${who.id}`],
     );
     expect(rows).toEqual([
       { access_token: null, refresh_token: null, id_token: null, tenant_id: "tenant-e2e" },
@@ -154,7 +163,7 @@ test.describe("with provider keys", () => {
     await atProviders(context, who);
     const code = await newRoom(page);
     await buttonOf(page, "Sign in with Google").click();
-    await expect(page.locator("[data-account]")).toHaveText(who.email ?? "");
+    await expect(page.locator("[data-account]")).toHaveText(who.name);
     await joinAs(page);
     await signOutButton(page).click();
     await expect(page.getByRole("button", { name: "Join the room" })).toBeVisible();
@@ -207,7 +216,7 @@ test.describe("with provider keys", () => {
       .poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null))
       .toBe(true);
     await buttonOf(page, "Sign in with Google").click();
-    await expect(page.locator("[data-account]")).toHaveText(who.email ?? "");
+    await expect(page.locator("[data-account]")).toHaveText(who.name);
     expect(page.url()).toBe(`${SIGN_IN_BASE}/r/${code}`);
     await context.close();
   });

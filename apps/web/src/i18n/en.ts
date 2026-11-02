@@ -614,13 +614,16 @@ export const en = {
     microsoft: "Sign in with Microsoft",
     hint: "Optional: your name follows you to your other devices.",
     signedInAs: "Signed in as",
+    signedInWith: "Signed in with {{provider}}",
     signOut: "Sign out",
     signingOut: "Signing out…",
     errors: {
       cancelled: "Sign-in cancelled. You can carry on without an account.",
       accountExists:
-        "This email address already has an account that signs in another way. Sign in that way instead.",
+        "This email address already has an account that signs in another way. Sign in that other way instead.",
       noEmail: "Your account did not share an email address, so sign-in could not finish.",
+      tenantNotAllowed:
+        "This site does not accept that Microsoft account. Try another one, or carry on without an account.",
       rateLimited: "Too many sign-in attempts. Wait a minute, then try again.",
       failed: "Sign-in did not finish. Try again, or carry on without an account.",
     },

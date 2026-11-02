@@ -1,5 +1,5 @@
 import { type AvatarId, isAvatarId } from "@pp/domain";
-import type { SignInProvider } from "@pp/protocol";
+import { isSignInProvider, type SignInProvider } from "@pp/protocol";
 import { useIdentityStore } from "../stores/identity-store.ts";
 import { returnPath } from "./sign-in.ts";
 
@@ -33,8 +33,10 @@ export interface Identity {
   readonly name: string | null;
   /** The saved avatar (#42), when there is one this version knows. */
   readonly avatar?: AvatarId | undefined;
-  /** An account's address (#47), shown to its owner; a guest has none. */
+  /** An account's address (#47), shown to its owner off the room; a guest has none. */
   readonly email?: string | undefined;
+  /** Which provider an account signs in with (#47), when this version knows it. */
+  readonly provider?: SignInProvider | undefined;
 }
 
 /** A failed identity call, with the server's code (`rate_limited`, `bad_name`, …). */
@@ -55,6 +57,7 @@ interface ServerUser {
   name?: unknown;
   avatar?: unknown;
   email?: unknown;
+  provider?: unknown;
   isAnonymous?: unknown;
 }
 
@@ -68,6 +71,7 @@ function toIdentity(user: ServerUser | undefined): Identity {
     name,
     ...(isAvatarId(user.avatar) ? { avatar: user.avatar } : {}),
     ...(email === null ? {} : { email }),
+    ...(isSignInProvider(user.provider) ? { provider: user.provider } : {}),
   };
 }
 
@@ -227,6 +231,7 @@ export function ensureIdentity({
       name: store.name,
       ...(store.avatar === null ? {} : { avatar: store.avatar }),
       ...(store.email === null ? {} : { email: store.email }),
+      ...(store.provider === null ? {} : { provider: store.provider }),
     });
   }
   if (pending) {

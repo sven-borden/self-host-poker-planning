@@ -63,7 +63,7 @@ Variables compose reads from `.env` (the full list is in
 | `UMAMI_URL`, `UMAMI_WEBSITE_ID` | no | turn on page views in Umami: its address, such as `https://stats.example.com` (or its tracker's URL if you renamed `script.js`), and the website's id; both or neither (see "Privacy") |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | no | turn on "Sign in with Google"; both or neither, or the server does not start (see below) |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | no | turn on "Sign in with Microsoft"; both or neither, or the server does not start (see below) |
-| `MICROSOFT_TENANT_ID` | no (`common`) | who may sign in with Microsoft: `common` (any work, school or personal account), `organizations` (work and school), `consumers` (personal) or one tenant's id |
+| `MICROSOFT_TENANT_ID` | no (`common`) | who may sign in with Microsoft: `common` (any work, school or personal account), `organizations` (work and school), `consumers` (personal) or one tenant's id. The server checks the tenant in each sign-in, so for a company install this is the boundary |
 
 Compose refuses to start while a required variable is empty. `DATABASE_URL` is built
 from the bundled database; to use your own Postgres, run the image alone with
@@ -148,6 +148,12 @@ Restart the server after changing them. Sign-in asks for a name and an email and
 the provider's tokens are not stored. Failed sign-ins are logged with a reason and no secret: on
 `invalid_code`, check the secret and the redirect URI.
 
+An email address never joins two sign-ins into one account: someone with the same address from
+another provider or a new id is refused and told so. Starting a sign-in is limited per client
+address (30 a minute), so get the client address right first (see "Behind a reverse proxy").
+With two proxies that takes both steps: the second must trust the first, and then
+`TRUST_PROXY=2`. Until both are done, every visitor shares one limit of 30 a minute.
+
 ### Running several instances
 
 One instance is the default and serves many teams. To run more behind one address, give
@@ -209,7 +215,8 @@ nothing about Redis is loaded or opened.
 - **Accounts**, only for someone who signs in with Google or Microsoft: the email address,
   the name the provider gives and which provider it was (for Microsoft, the tenant). No picture,
   and none of the provider's tokens, so nothing here can reach a person's Google or Microsoft
-  account afterwards. The email is shown to its owner alone, never to others in a room.
+  account afterwards. The email is shown to its owner alone, on the landing page, and nowhere in
+  a room, where a screen may be shared.
 - **For how long**: a room idle for `ROOM_TTL_DAYS` days (default 90) is deleted with
   its history and its password grants. Activity is any change in the room, and opening
   it (counted at most once a day, or once a 24th of a shorter period). A guest's session
