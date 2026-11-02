@@ -18,6 +18,7 @@ import {
   type FoundItem,
   type Grant,
   type Outcome,
+  type Site,
   success,
   type UpstreamCode,
 } from "./connector.ts";
@@ -73,6 +74,7 @@ const resourcesSchema = z.array(
     id: z.string().regex(CLOUD_ID),
     name: z.string().min(1).max(200),
     url: z.url({ protocol: /^https$/ }).max(200),
+    scopes: z.array(z.string()).optional(),
   }),
 );
 
@@ -293,8 +295,19 @@ export function createJiraConnector(
         now(),
       ),
 
-    sites: async (token) =>
-      read(await send(RESOURCES_URL, { headers: bearer(token) }), resourcesSchema),
+    sites: async (token) => {
+      const all = await read(
+        await send(RESOURCES_URL, { headers: bearer(token) }),
+        resourcesSchema,
+      );
+      if (!all.ok) return all;
+      // An id is not unique across products: a site comes once, and only if Jira is in it.
+      const sites = new Map<string, Site>();
+      for (const { id, name, url, scopes } of all.value) {
+        if (scopes?.includes("read:jira-work") !== false) sites.set(id, { id, name, url });
+      }
+      return success([...sites.values()]);
+    },
 
     numberFields: async (token, site) => {
       const url = apiUrl(site, "/rest/api/3/field");

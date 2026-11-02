@@ -966,6 +966,18 @@ describe("the token's life", () => {
     expect((await browser.status()).connected).toBe(false);
   });
 
+  it("two people refreshing on one instance each get their own token", async () => {
+    const first = await nearItsEnd();
+    const second = await nearItsEnd();
+    const [one] = twoInstances();
+    const [mine, theirs] = await Promise.all([
+      one?.withToken(first.me, useToken),
+      one?.withToken(second.me, useToken),
+    ]);
+    if (!mine?.ok || !theirs?.ok) throw new Error("no token");
+    expect(mine.value).not.toBe(theirs.value);
+  });
+
   it("one instance makes one refresh for a page of calls", async () => {
     const { me } = await nearItsEnd();
     const [one] = twoInstances();

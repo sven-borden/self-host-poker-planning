@@ -2,7 +2,7 @@ import { ListOrderedIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { reloadAction } from "../components/shell/reload-action.ts";
 import { Button } from "../components/ui/button.tsx";
-import { connectorResultWaits } from "../connectors/connector.ts";
+import { clearConnectorResult, connectorResult } from "../connectors/connector.ts";
 import { useT } from "../i18n/hooks.ts";
 
 type PanelModule = typeof import("./queue-panel.tsx");
@@ -40,10 +40,8 @@ export function RoomQueueButton({ count }: { count: number }) {
   }
 
   // Back from a tracker (#54): the sheet the PO left from opens, and says how it went.
-  const opened = useRef(false);
   useEffect(() => {
-    if (opened.current || !connectorResultWaits()) return;
-    opened.current = true;
+    if (connectorResult() === null) return;
     loadPanel()
       .then((module) => {
         setPanel(module);
@@ -51,6 +49,11 @@ export function RoomQueueButton({ count }: { count: number }) {
       })
       .catch(() => {});
   }, []);
+
+  function changeOpen(next: boolean) {
+    if (!next) clearConnectorResult();
+    setOpen(next);
+  }
 
   const Panel = panel?.QueuePanel;
   return (
@@ -78,7 +81,7 @@ export function RoomQueueButton({ count }: { count: number }) {
           </>
         ) : null}
       </Button>
-      {Panel ? <Panel open={open} onOpenChange={setOpen} returnFocus={button} /> : null}
+      {Panel ? <Panel open={open} onOpenChange={changeOpen} returnFocus={button} /> : null}
     </>
   );
 }

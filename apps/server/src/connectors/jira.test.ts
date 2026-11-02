@@ -287,6 +287,28 @@ describe("the guess", () => {
   });
 });
 
+describe("sites", () => {
+  const site = (scopes?: string[]) => ({
+    id: CLOUD,
+    name: "Acme",
+    url: "https://acme.atlassian.net",
+    ...(scopes ? { scopes } : {}),
+  });
+  const ACME = { id: CLOUD, name: "Acme", url: "https://acme.atlassian.net" };
+
+  it("lists a site once, with nothing but its name and address", async () => {
+    answer = async () => json([site(["read:jira-work"]), site(["read:sprint:jira-software"])]);
+    await expect(jira.sites(TOKEN)).resolves.toEqual({ ok: true, value: [ACME] });
+    answer = async () => json([site()]);
+    await expect(jira.sites(TOKEN)).resolves.toEqual({ ok: true, value: [ACME] });
+  });
+
+  it("leaves out what this app has no Jira scope on", async () => {
+    answer = async () => json([site(["read:confluence-content.all"])]);
+    await expect(jira.sites(TOKEN)).resolves.toEqual({ ok: true, value: [] });
+  });
+});
+
 describe("sprints", () => {
   it("lists what can still be estimated, from the active and future ones", async () => {
     answer = async () =>

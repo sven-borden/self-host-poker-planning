@@ -938,6 +938,7 @@ export const fr: Catalog<"many"> = {
     boardFilter: "Nom du tableau",
     boardFind: "Chercher",
     noBoards: "Aucun tableau trouvé.",
+    noSites: "Ce compte n’accède à aucun site {{system}}.",
     sprint: "Sprint",
     sprintActive: "{{sprint}} (actif)",
     noSprints: "Ce tableau n’a aucun sprint actif ou à venir.",
@@ -969,6 +970,7 @@ export const fr: Catalog<"many"> = {
       failed: "{{system}} n’a pas pu être connecté. Réessayez.",
     },
     write: {
+      waiting: "{{item}}\u{202f}: {{card}} a été enregistré avant l’ouverture de cette page.",
       writing: "Écriture de {{card}} sur {{item}} dans {{system}}…",
       written: "{{item}}\u{202f}: {{card}} est dans {{system}}.",
       failed: "{{item}}\u{202f}: {{card}} n’est pas arrivé dans {{system}}.",

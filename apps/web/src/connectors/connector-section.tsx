@@ -5,7 +5,6 @@ import {
   type ConnectorFieldView,
   type ConnectorImportView,
   type ConnectorName,
-  type ConnectorResult,
   type ConnectorSiteView,
   type ConnectorSprintView,
   MAX_JQL_LENGTH,
@@ -17,7 +16,7 @@ import type { TFunction } from "../i18n/i18n.ts";
 import { RoomApiError } from "../rooms/api.ts";
 import { isSignedIn, useIdentityStore } from "../stores/identity-store.ts";
 import { useRoomStore } from "../stores/room-store.ts";
-import { connectorMessage, SYSTEM_NAMES, takeConnectorResult } from "./connector.ts";
+import { connectorMessage, connectorResult, SYSTEM_NAMES } from "./connector.ts";
 import {
   chooseField,
   chooseSite,
@@ -79,8 +78,8 @@ export function ConnectorSection({ name = "jira" }: { name?: ConnectorName }) {
   const system = SYSTEM_NAMES[name];
   const [connection, setConnection] = useState<ConnectionView | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
-  const [result] = useState<ConnectorResult | null>(takeConnectorResult);
   const [busy, setBusy] = useState(false);
+  const [result] = useState(connectorResult);
 
   const load = useCallback(async () => {
     try {
@@ -256,6 +255,7 @@ function SitePicker({
 }) {
   const t = useT();
   const id = useId();
+  const system = SYSTEM_NAMES[name];
   const [sites, setSites] = useState<readonly ConnectorSiteView[] | null>(null);
   const [picked, setPicked] = useState(current ?? "");
   const report = useRef(onProblem);
@@ -278,6 +278,7 @@ function SitePicker({
   }, [name]);
 
   if (sites === null) return null;
+  if (sites.length === 0) return <p className={HINT}>{t("connector.noSites", { system })}</p>;
   return (
     <form
       noValidate

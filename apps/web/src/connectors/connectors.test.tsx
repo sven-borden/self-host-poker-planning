@@ -7,11 +7,11 @@ import { RoomApiError } from "../rooms/api.ts";
 import { useIdentityStore } from "../stores/identity-store.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import {
+  clearConnectorResult,
   connectorMessage,
   connectorOn,
-  connectorResultWaits,
+  connectorResult,
   readConnectorResult,
-  takeConnectorResult,
 } from "./connector.ts";
 import { ConnectorSection, importReport } from "./connector-section.tsx";
 import { HistoryWrite } from "./history-write.tsx";
@@ -100,19 +100,20 @@ describe("how a connection came back", () => {
     window.history.replaceState(null, "", "/r/abc?connector=connected&x=1");
     readConnectorResult();
     expect(window.location.search).toBe("?x=1");
-    expect(connectorResultWaits()).toBe(true);
-    expect(takeConnectorResult()).toBe("connected");
-    expect(takeConnectorResult()).toBeNull();
-    expect(connectorResultWaits()).toBe(false);
+    expect(connectorResult()).toBe("connected");
+    expect(connectorResult()).toBe("connected");
+    clearConnectorResult();
+    expect(connectorResult()).toBeNull();
   });
 
   it("takes a word it does not know for a failure, and nothing for nothing", () => {
     window.history.replaceState(null, "", "/r/abc?connector=whatever");
     readConnectorResult();
-    expect(takeConnectorResult()).toBe("failed");
+    expect(connectorResult()).toBe("failed");
+    clearConnectorResult();
     window.history.replaceState(null, "", "/r/abc");
     readConnectorResult();
-    expect(takeConnectorResult()).toBeNull();
+    expect(connectorResult()).toBeNull();
   });
 });
 
@@ -269,7 +270,7 @@ describe("the section", () => {
 });
 
 describe("the lines under the table", () => {
-  const round = (number: number, final?: string, system: "jira" | undefined = "jira") =>
+  const round = (number: number, final?: string, system: "jira" | null = "jira") =>
     ({
       number,
       phase: final === undefined ? "voting" : "revealed",
@@ -278,9 +279,24 @@ describe("the lines under the table", () => {
       ...(system ? { system } : {}),
     }) as unknown as RoundView;
 
+  it("waits for a press on a final that was there when the page came up", async () => {
+    api.writeBack.mockResolvedValue({ key: "ABC-1", value: 5 });
+    render(<WriteBackLines code={CODE} round={round(1, "5")} />);
+    expect(api.writeBack).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(t("connector.write.waiting", { item: "ABC-1", card: "5" })),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Write to Jira" }));
+    await screen.findByText(
+      t("connector.write.written", { item: "ABC-1", card: "5", system: "Jira" }),
+    );
+    expect(api.writeBack).toHaveBeenCalledWith("jira", CODE, 1);
+  });
+
   it("writes a recorded final by itself, once for each final, by the round's number", async () => {
     api.writeBack.mockResolvedValue({ key: "ABC-1", value: 5 });
-    const view = render(<WriteBackLines code={CODE} round={round(1, "5")} />);
+    const view = render(<WriteBackLines code={CODE} round={round(1)} />);
+    view.rerender(<WriteBackLines code={CODE} round={round(1, "5")} />);
     await screen.findByText(
       t("connector.write.written", { item: "ABC-1", card: "5", system: "Jira" }),
     );
@@ -293,7 +309,9 @@ describe("the lines under the table", () => {
 
   it("writes nothing for a round with no final, or from no tracker", () => {
     render(<WriteBackLines code={CODE} round={round(1)} />);
-    render(<WriteBackLines code={CODE} round={null} />);
+    render(<WriteBackLines code={CODE} round={null} />).rerender(
+      <WriteBackLines code={CODE} round={round(2, "5", null)} />,
+    );
     expect(api.writeBack).not.toHaveBeenCalled();
     render(
       <WriteBackLines
@@ -306,7 +324,8 @@ describe("the lines under the table", () => {
 
   it("keeps a failure through the next round, and a retry clears it", async () => {
     api.writeBack.mockRejectedValueOnce(new RoomApiError("connector_timeout"));
-    const view = render(<WriteBackLines code={CODE} round={round(1, "5")} />);
+    const view = render(<WriteBackLines code={CODE} round={round(1)} />);
+    view.rerender(<WriteBackLines code={CODE} round={round(1, "5")} />);
     await screen.findByRole("button", { name: t("connector.write.retry") });
     view.rerender(<WriteBackLines code={CODE} round={round(2)} />);
     expect(screen.getByRole("alert").textContent).toContain("ABC-1");
@@ -318,14 +337,18 @@ describe("the lines under the table", () => {
 
   it("says a final with no number stays, and offers no retry", async () => {
     api.writeBack.mockRejectedValue(new RoomApiError("connector_not_numeric"));
-    render(<WriteBackLines code={CODE} round={round(1, "M")} />);
+    render(<WriteBackLines code={CODE} round={round(1)} />).rerender(
+      <WriteBackLines code={CODE} round={round(1, "M")} />,
+    );
     expect((await screen.findByRole("alert")).textContent).toContain("Only a number");
     expect(screen.queryByRole("button", { name: t("connector.write.retry") })).toBeNull();
   });
 
   it("can be dismissed", async () => {
     api.writeBack.mockRejectedValue(new RoomApiError("connector_unavailable"));
-    render(<WriteBackLines code={CODE} round={round(1, "5")} />);
+    render(<WriteBackLines code={CODE} round={round(1)} />).rerender(
+      <WriteBackLines code={CODE} round={round(1, "5")} />,
+    );
     fireEvent.click(await screen.findByRole("button", { name: t("connector.write.dismiss") }));
     expect(screen.queryByRole("alert")).toBeNull();
   });

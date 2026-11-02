@@ -35,14 +35,15 @@ export function readConnectorResult(): void {
   pending = isConnectorResult(result) ? result : "failed";
 }
 
-/** A connection came back: the queue's sheet opens to say how. */
-export const connectorResultWaits = (): boolean => pending !== null;
+/**
+ * How a connection ended, until `clearConnectorResult`. Not taken at the first read: the room's
+ * first renders mount and drop the queue's button, and the sheet must still open and say it.
+ */
+export const connectorResult = (): ConnectorResult | null => pending;
 
-/** How a connection ended, once. */
-export function takeConnectorResult(): ConnectorResult | null {
-  const result = pending;
+/** The sheet that said it closed. */
+export function clearConnectorResult(): void {
   pending = null;
-  return result;
 }
 
 /** What a refusal says, with the tracker's name in it, and a wait when the tracker gave one. */

@@ -900,6 +900,7 @@ export const de: Catalog = {
     boardFilter: "Name des Boards",
     boardFind: "Suchen",
     noBoards: "Kein Board gefunden.",
+    noSites: "Dieses Konto erreicht keine {{system}}-Website.",
     sprint: "Sprint",
     sprintActive: "{{sprint}} (aktiv)",
     noSprints: "Dieses Board hat keinen aktiven oder künftigen Sprint.",
@@ -927,6 +928,7 @@ export const de: Catalog = {
       failed: "{{system}} konnte nicht verbunden werden. Versuchen Sie es erneut.",
     },
     write: {
+      waiting: "{{item}}: {{card}} wurde festgehalten, bevor diese Seite geöffnet wurde.",
       writing: "{{card}} wird in {{item}} bei {{system}} geschrieben…",
       written: "{{item}}: {{card}} steht in {{system}}.",
       failed: "{{item}}: {{card}} ist nicht bei {{system}} angekommen.",

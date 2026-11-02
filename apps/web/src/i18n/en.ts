@@ -939,6 +939,7 @@ export const en = {
     boardFilter: "Board name",
     boardFind: "Find",
     noBoards: "No board found.",
+    noSites: "This account reaches no {{system}} site.",
     sprint: "Sprint",
     sprintActive: "{{sprint}} (active)",
     noSprints: "This board has no active or future sprint.",
@@ -962,6 +963,7 @@ export const en = {
       failed: "{{system}} could not be connected. Try again.",
     },
     write: {
+      waiting: "{{item}}: {{card}} was recorded before this page opened.",
       writing: "Writing {{card}} to {{item}} in {{system}}…",
       written: "{{item}}: {{card}} is in {{system}}.",
       failed: "{{item}}: {{card}} did not reach {{system}}.",

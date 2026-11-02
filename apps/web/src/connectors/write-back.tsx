@@ -11,7 +11,7 @@ interface Line {
   round: number;
   label: string;
   card: string;
-  state: "writing" | "written" | "failed" | "kept";
+  state: "waiting" | "writing" | "written" | "failed" | "kept";
   code?: string;
   retryAfter?: number;
 }
@@ -30,7 +30,10 @@ function subjectLabel(round: RoundView): string {
  * a recorded final goes to the tracker by itself, and this says how it went. Nothing here touches
  * the round: a failure stays as a line with "Try again" while the room moves on, and a countdown
  * to the next item changes nothing. The server reads the final and the item itself: all this
- * sends is the round's number. Writing twice is harmless, so two tabs or a reload may.
+ * sends is the round's number. Writing twice is harmless, so two tabs may.
+ *
+ * Only a final this page saw recorded goes by itself. One already on the table when the page
+ * came up waits for a press: it may be days old, and someone may have changed the item since.
  */
 export function WriteBackLines({
   code,
@@ -44,6 +47,7 @@ export function WriteBackLines({
   const t = useT();
   const [lines, setLines] = useState<readonly Line[]>([]);
   const sent = useRef("");
+  const mounted = useRef(false);
   const system = SYSTEM_NAMES[name];
 
   const send = useCallback(
@@ -72,11 +76,15 @@ export function WriteBackLines({
   const fromTracker = round?.system === "jira";
   const label = round === null ? "" : subjectLabel(round);
   useEffect(() => {
+    const first = !mounted.current;
+    mounted.current = true;
     if (!fromTracker || final === undefined || number === undefined) return;
     const id = `${number}:${final}`;
     if (sent.current === id) return;
     sent.current = id;
-    void send({ round: number, label, card: final });
+    const target = { round: number, label, card: final };
+    if (first) setLines((now) => [...now, { ...target, state: "waiting" }]);
+    else void send(target);
   }, [fromTracker, final, number, label, send]);
 
   // A word of success belongs to the round it speaks of; a failure stays until it is dealt with.
@@ -106,9 +114,16 @@ export function WriteBackLines({
             <p role="status" className="m-0 text-ink-2">
               {line.state === "writing"
                 ? t("connector.write.writing", { item: line.label, card: line.card, system })
-                : t("connector.write.written", { item: line.label, card: line.card, system })}
+                : line.state === "waiting"
+                  ? t("connector.write.waiting", { item: line.label, card: line.card })
+                  : t("connector.write.written", { item: line.label, card: line.card, system })}
             </p>
           )}
+          {line.state === "waiting" ? (
+            <Button variant="outline" data-write-now onClick={() => void send(line)}>
+              {t("connector.write.history", { system })}
+            </Button>
+          ) : null}
           {line.state === "failed" ? (
             <>
               <Button variant="outline" data-write-retry onClick={() => void send(line)}>
