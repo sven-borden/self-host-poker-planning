@@ -320,6 +320,13 @@ is, and not in the top bar, which is full at 320 px.
   icon. An email that signs in another way, an account with no email, a Microsoft account this
   install does not accept, too many tries, and anything else each have their words. The address
   loses the code before the page reads it.
+- **Coming back as the same person** (#48). A guest who signs in keeps everything, and nothing
+  needs saying: the same seat, name, card and PO role, no join form, no password. The row in the
+  "You" panel is the only change. The table hears nothing: a sign-in is nobody's business there,
+  though a seat's colour changes, since colours come from ids. Only when rooms are still on their
+  way is there a toast, without an error icon: the person is signed in.
+- **Another tab** of that guest reloads into the account after two seconds, showing "Reconnecting"
+  meanwhile, and never a join form.
 - **Signing out** reloads the same page as a fresh guest: in a room, the join form, empty.
 
 ## Phones

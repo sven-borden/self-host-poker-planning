@@ -316,6 +316,23 @@ describe("a guest who signs in", () => {
     );
   });
 
+  it("moves a grant in the commit that moves the seat, so a kick cannot miss it", async () => {
+    const browser = new Browser();
+    const guest = await browser.guest();
+    const signed = new Browser();
+    await signIn(signed, person());
+    const account = (await signed.session())?.user.id ?? "";
+    const po = await new Browser().guest();
+    const { id, code } = await roomOf(po);
+    await must(sync.changePassword(code, po, "hash-d"));
+    expect(await setup.database.store.grantAccess(id, guest, "hash-d")).toBe(true);
+    (await browser.sit(code, "Ana")).close();
+    await expect(sync.moveGuest(code, guest, account)).resolves.toBe("changed");
+    const { rows } = await admin.query("select user_id from room_access where room_id = $1", [id]);
+    expect(rows).toContainEqual({ user_id: account });
+    expect(rows).not.toContainEqual({ user_id: guest });
+  });
+
   it("does not need a password in a room the guest owns but left", async () => {
     const browser = new Browser();
     const guest = await browser.guest();

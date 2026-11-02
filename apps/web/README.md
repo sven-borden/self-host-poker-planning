@@ -592,7 +592,10 @@ server sends and never decides the outcome of a round.
   not follow that redirect under `form-action 'self'`. `signOut()` then a reload makes the fresh
   guest. `readSignInError()` runs in `main.tsx`, first, to take `?sign_in_error=` out of the
   address before the router or the page views read it; the root layout says it once
-  (`SignInToast`). Copy: `signIn.*`. `e2e/sign-in.spec.ts` runs against a third server
+  (`SignInToast`), which also carries `still_moving` (#48), the one code that is no failure. A
+  guest's other tab hears `signedIn` in `room-connection.ts` and reloads after
+  `SIGNED_IN_RELOAD_MS`, ignoring its socket until then. Copy: `signIn.*`. `e2e/sign-in.spec.ts`
+  runs against a third server
   (`e2e/signed-in.ts`) whose process holds a stand-in for the providers, and routes the
   browser's visits to them there; a person is passed in the address, not set on the server, so
   tests can run side by side. It proves the flow with the worker on too.

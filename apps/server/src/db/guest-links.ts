@@ -31,7 +31,8 @@ export interface GuestLinkStore {
   /**
    * Everything left outside the rooms, and the end of the guest, in one transaction, after every
    * room moved: the remaining grants, the named rounds, an avatar or a name the account lacks,
-   * then the guest's row, which takes the link with it. Running it again changes nothing.
+   * then the guest's row, which takes the link and the old grants with it. Running it again
+   * changes nothing.
    */
   complete(guest: string, account: string): Promise<void>;
 }
@@ -90,7 +91,6 @@ export function createGuestLinkStore(db: Db): GuestLinkStore {
             select a.room_id, ${account}, a.granted_at from ${roomAccess} a
             where a.user_id = ${guest}
             on conflict do nothing`);
-          await tx.delete(roomAccess).where(eq(roomAccess.userId, guest));
           // Only a named round says who; an anonymous round's cards have nobody to move, and the
           // containment below cannot match one. A round both of them played keeps both entries:
           // it is a record, and the stats beside it were counted from both.
