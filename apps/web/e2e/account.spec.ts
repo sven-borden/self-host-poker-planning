@@ -160,6 +160,59 @@ test.describe("with provider keys", () => {
     await context.close();
   });
 
+  test("Cancel does nothing while the request runs, and the answer still reaches the person", async ({
+    browser,
+  }) => {
+    const { context, page } = await signedIn(browser);
+    let answer = () => {};
+    const held = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    await page.route("**/api/account/delete", async (route) => {
+      await held;
+      await route.fulfill({ status: 500, json: { code: "internal" } });
+    });
+    await confirmDeletion(page);
+    const dialog = page.locator("[data-account-dialog]");
+    const cancel = dialog.getByRole("button", { name: "Cancel" });
+    await expect(cancel).toHaveAttribute("aria-disabled", "true");
+    await cancel.focus();
+    await page.keyboard.press("Enter");
+    await expect(dialog).toBeVisible();
+    answer();
+    await expect(dialog.getByRole("alert")).toContainText("Nothing was deleted");
+    await context.close();
+  });
+
+  test("a wrong word says why at the field", async ({ browser }) => {
+    const { context, page } = await signedIn(browser);
+    await page.locator("[data-account-delete]").click();
+    const dialog = page.locator("[data-account-dialog]");
+    const field = dialog.getByLabel("Type DELETE to confirm");
+    await field.fill("delete it");
+    await field.press("Enter");
+    await expect(dialog.getByRole("alert")).toContainText("That is not the word asked for");
+    await expect(field).toHaveAttribute("aria-invalid", "true");
+    await context.close();
+  });
+
+  test("someone signed out in another tab hears that this request deleted nothing", async ({
+    browser,
+  }) => {
+    const { context, page } = await signedIn(browser);
+    await page.locator("[data-account-delete]").waitFor();
+    const signedOut = await page.request.post(`${SIGN_IN_BASE}/api/auth/sign-out`, {
+      headers: { origin: SIGN_IN_BASE },
+      data: {},
+    });
+    expect(signedOut.ok()).toBe(true);
+    await confirmDeletion(page);
+    await expect(page.getByRole("heading", { name: "You are signed out" })).toBeFocused();
+    await expect(page.getByText(/this request deleted nothing/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in with Google" })).toBeVisible();
+    await context.close();
+  });
+
   test("an old session goes through the sign-in and comes back here", async ({ browser }) => {
     const { context, page } = await signedIn(browser);
     await page.route("**/api/account", async (route) => {

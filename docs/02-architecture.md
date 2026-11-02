@@ -818,10 +818,10 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   - `GET /api/account` answers `{ recent, retentionDays, alone, seats, shared, moving? }`, after a
     guest's pending move (up to 1 s): `recent` is whether the session is young enough for a
     deletion, `alone` and `seats` count rooms that go and seats that go, and `shared` lists the
-    rooms the person keeps with other people in them, each with its seats, the longest seated
-    first. No code.
+    rooms the person keeps with other people in them, each with its seats in `heirsOf`'s order, the
+    default first, and `why` that is the default (`runsTheRoom`, `here`, `away`). No code.
   - `GET /api/account/export` answers a JSON attachment, `poker-planning-account.json`, versioned by
-    `ACCOUNT_EXPORT_VERSION`: `profile`, `signIns`, `rooms`, `votes`, `connections`, and `incomplete`
+    `ACCOUNT_EXPORT_VERSION`: `profile`, `signIns`, `rooms`, `grants`, `votes`, `connections`, and `incomplete`
     when a guest's move outran its 5 s. Never a code, a token, a provider's id or anyone else.
   - `POST /api/account/delete { confirm, rooms }` takes a session started in the last 15 minutes
     (`sign_in_again` 403) and the word in any of the three languages (`bad_confirmation` 400). `rooms`

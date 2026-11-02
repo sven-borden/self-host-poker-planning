@@ -1195,20 +1195,24 @@ it happens, and afterwards only what the server said (#51, ADR-029). Only an acc
   backups until they expire, and logs that hold ids.
 - **Rooms with other people.** Under what stays, each room this person keeps with others in it, as a
   row parted by `--line`: its name, how long ago it was active, and a native `<select>` labelled "Who
-  takes <room>": the longest seated first, marked so, then the others, then "Nobody: delete this
-  room". Choosing that adds a plain line saying what it does. The intro says the default, and what a
-  guest taking a room means for how long it stays.
+  takes <room>": the default first, saying why it is them (runs the room now, here now and seated
+  longest, or nobody is here and seated longest), then the others in the server's order, then "Nobody:
+  delete this room". Choosing that adds a plain line saying what it does. The intro says the order, and
+  what a guest taking a room means for how long it stays.
 - **The button.** With a recent sign-in, one `--bad` "Delete my account". With an older one, no
   disabled button: the reason in a line, and "Sign in again", which comes back here.
 - **The dialog.** A title that asks, one line, the word to type in the page's language (`DELETE`,
-  `SUPPRIMER`, `LÖSCHEN`) as the field's label, "Cancel", and a `--bad` button that does nothing until
-  the word is there. It says "Deleting your account…" while it waits. What the server refuses is said
-  under the field, and the dialog stays. A session grown old closes it and shows the way to sign in.
-- **The end.** The whole page gives way to one of three, with the focus on its heading: "Your
+  `SUPPRIMER`, `LÖSCHEN`) as the field's label, "Cancel", and a `--bad` button. Pressed on a wrong
+  word, it says why under the field, which is marked invalid and points at the line. It says
+  "Deleting your account…" while it waits, and nothing closes the dialog until the answer is in. What
+  the server refuses is said under the field, and the dialog stays. A session grown old closes it and
+  shows the way to sign in.
+- **The end.** The whole page gives way to one of four, with the focus on its heading: "Your
   account is deleted", only when the server said so, with what remains; "Your account is being
-  deleted", signed out everywhere, finishing by itself within a day, nothing more to do; and "You are
-  signed out", when the answer was lost, saying what that most likely means and how to tell. Never
-  "deleted" when it is not. Behind it the browser turns into a new guest.
+  deleted", signed out everywhere, finishing by itself within two days, a rare fault taking longer,
+  nothing more to do; "You are signed out", when the answer was lost, saying what that most likely
+  means and how to tell; and "You are signed out" again, when the server said so, saying this request
+  deleted nothing, with the way to sign in. Never "deleted" when it is not. Behind it the browser turns into a new guest.
 - **Elsewhere.** Another tab in a room reloads as a new guest. The people in a room see someone
   leave, or a hand-over, or the page of a missing room: nothing says why. A sign-in to an account on
   its way out comes back to the landing page with a line that says so.

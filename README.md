@@ -292,12 +292,15 @@ nothing about Redis is loaded or opened.
   a code opens a room and the file may travel. Deleting takes a sign-in from the last 15 minutes and a
   typed word. It removes the name, the address, the provider's identifiers, sessions, grants and
   connectors' tokens, and every seat. A room with nobody else goes with its history; one with other
-  people goes to whoever the person chose, or to the person seated longest, or is deleted only if
-  they chose that; a room that goes to a guest then follows `ROOM_TTL_DAYS`. Cards in past rounds stay,
+  people goes to whoever the person chose, or by default to whoever runs it now, or to the person
+  present the longest, or is deleted only if they chose that; a room that goes to a guest then
+  follows `ROOM_TTL_DAYS`. Cards in past rounds stay,
   with no name and nothing to tie them to anyone, so the team's results stand. Words typed in a room
-  that lives on stay too: a room's name, a subject, a ticket. The server signs the person out first
-  and finishes by itself if something fails, at the latest at the next purge. Logs hold ids, never a
-  name or an address, and age as your logs do.
+  that lives on stay too: a room's name, a subject, a ticket. The server signs the person out first.
+  If something fails it goes on by itself at the next purge, usually within two days, and the page
+  says so. A room whose stored state cannot be read holds up the end of it until someone repairs that
+  room: every other room and round has gone by then, and the logs name the room from the first run.
+  Logs hold ids, never a name or an address, and age as your logs do.
 - **The purge** runs inside the server 3 to 5 minutes after each start and then daily;
   with several instances only one runs it. It logs counts only, never a room code, a
   name or a vote. Set `ROOM_TTL_DAYS` (1 to 3650) to keep rooms shorter or longer.
