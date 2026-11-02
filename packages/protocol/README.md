@@ -30,6 +30,8 @@ constants and `computeResults`.
 - `commands.ts`: wire command schemas, `WIRE_LIMITS`, `toDomainCommand`.
 - `schemas.ts`: snapshot, cause, ack and `enter` schemas; the view types are
   `z.output` of them, and a test asserts they equal the domain's types where they mirror one.
+- `queue.ts`: the queue's list (#52): the `queue` request, its strict answer and `queueList`.
+  A snapshot carries only `queueSummarySchema`, the count and the next item (ADR-024).
 - `project.ts`: `toSnapshot` and `projectCauses`, the per-viewer projection. Every
   view is built field by field: a field the domain adds stays on the server until it is
   added here on purpose.

@@ -106,12 +106,13 @@ export function itemName(item: { key?: string; title?: string; url?: string }): 
 
 /**
  * How the live region names a round: its key ("ABC-123", "#12345"), its title, or
- * "Round N" (no subject, or a link without a key, which would read badly aloud). A
+ * "Round N" (no subject, or a bare link without a key, which would read badly aloud). A
  * title's closing `.`, `?`, `!` or `…` is left out: the sentence ends with its own.
  */
 export function subjectName(t: TFunction, round: Pick<RoundView, "number" | "subject">): string {
   const { subject } = round;
-  if (subject.kind === "title") return subject.text.replace(END_PUNCTUATION, "") || subject.text;
   if (subject.kind === "link" && subject.key !== undefined) return keyLabel(subject.key);
+  const title = subject.kind === "title" ? subject.text : subject.kind === "link" && subject.title;
+  if (title) return title.replace(END_PUNCTUATION, "") || title;
   return t("round.number", { round: round.number });
 }

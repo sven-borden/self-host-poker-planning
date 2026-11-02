@@ -18,7 +18,7 @@ const PO = "po";
 
 const ITEMS: QueueItemView[] = [
   { id: 1, key: "PAY-1", title: "First", url: "https://j.co/browse/PAY-1" },
-  { id: 2, key: "1234", title: "Second" },
+  { id: 2, key: "12345", title: "Second" },
   { id: 3, title: "Third" },
 ];
 
@@ -107,7 +107,7 @@ describe("the sheet", () => {
     expect(within(dialog).getByRole("link", { name: "PAY-1" }).getAttribute("rel")).toBe(
       "noopener noreferrer",
     );
-    expect(within(dialog).getByText("#1234")).toBeTruthy();
+    expect(within(dialog).getByText("#12345")).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "Move Third up" })).toBeTruthy();
   });
 
@@ -195,7 +195,7 @@ describe("removing", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Remove PAY-1" }));
     expect(titles(dialog)).toEqual(["2", "3"]);
     expect(mocks.send).toHaveBeenCalledWith({ type: "queueRemove", payload: { id: 1 } });
-    expect(document.activeElement?.getAttribute("aria-label")).toBe("Remove #1234");
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Remove #12345");
     await waitFor(() =>
       expect(dialog.querySelector("[data-queue-live]")?.textContent).toBe("PAY-1 removed."),
     );
@@ -206,9 +206,11 @@ describe("removing", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Clear the queue" }));
     await within(dialog).findByText("Remove all 3 items?");
     expect(mocks.send).not.toHaveBeenCalled();
-    expect(document.activeElement?.textContent).toBe("Keep them");
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("Keep them"));
     fireEvent.click(within(dialog).getByRole("button", { name: "Keep them" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Clear the queue" }));
+    // The next read finds it empty, or it would bring the rows back under this test.
+    mocks.requestQueue.mockResolvedValue({ ok: true, rev: 2, items: [] });
     fireEvent.click(await within(dialog).findByRole("button", { name: "Remove all" }));
     expect(mocks.send).toHaveBeenCalledWith({ type: "queueClear" });
     await within(dialog).findByText("Nothing in the queue yet.");

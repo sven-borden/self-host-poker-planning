@@ -205,7 +205,10 @@ function markdownUrl(url: string): string {
   );
 }
 
-/** A subject in a Markdown cell: the title, or a link named by its key or its short form. */
+/**
+ * A subject in a Markdown cell: the title, or a link named by its key or its short form,
+ * with the title of the queue item it came from (#52).
+ */
 function markdownSubject(round: ExportRound): string {
   const { subject } = round;
   if (subject.kind === "none") return "";
@@ -214,7 +217,8 @@ function markdownSubject(round: ExportRound): string {
     subject.key === undefined ? shortUrl(subject.url) : keyLabel(subject.key),
   );
   const href = safeHref(subject.url);
-  return href === null ? name : `[${name}](${markdownUrl(href)})`;
+  const link = href === null ? name : `[${name}](${markdownUrl(href)})`;
+  return subject.title === undefined ? link : `${link} ${markdownText(subject.title)}`;
 }
 
 /** The summary's lines, in the interface language, for the Markdown heading. */

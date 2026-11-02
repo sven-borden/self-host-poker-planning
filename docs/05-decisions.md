@@ -529,3 +529,103 @@ requires one to install, but offline would be the browser's error page).
 **Not tested.** No real iPhone or Android phone: the home-screen icon, the standalone start and
 the feel of the beats are for Sven. Plain http gets no worker and no install, as browsers
 require https (localhost aside); the app runs as before.
+
+## ADR-024: The backlog queue lives in the room, apart from its snapshots (2026-11-02, #52)
+
+**Decision.** A room holds an ordered queue of up to 500 tickets. The server owns it: every
+change is a command through `apply`, under the compare-and-set, by the PO alone, and a change
+of PO hands it over. A snapshot says only how many items wait and the next one, by its id and
+the one thing that names it; the list comes by a `queue` request of its own, for the PO. The
+list is stored in a column of its own, `room.queue`, which a commit writes only when the
+queue changed.
+
+**Why a snapshot carries so little.** A snapshot goes to up to 16 sockets on every vote and
+every presence change, and 200 tickets with their titles and links are 33 kB of JSON, 500 are
+84 kB, and the worst the rules allow is 1.1 MB. With the summary a 16-person snapshot costs
+at most about 60 bytes more than without a queue, with 1 item or with 500, and a room with an
+empty queue sends exactly what it always sent. The summary carries `rev`, so the PO's open
+sheet knows when to ask for the list again.
+
+**Why a column.** The state `apply` sees still holds the queue: one model, one judge, and a
+round can start from it inside `apply`. The split lives in the store alone. In `live`, every
+vote rewrites the list: measured on Postgres 17, per vote, with 500 ordinary tickets, 9.4 kB of
+WAL and 3.8 ms to write; with the worst allowed list 25 kB and 56 ms. In a column a vote writes
+1.3 kB and 2.0 ms, and 474 B and 2.6 ms for the worst list, about what a room without a queue
+writes (461 B, 1.7 ms): Postgres keeps the stored value of a column an update does not set. A
+load does read it: 1.3 ms for 500 ordinary tickets against 0.5 ms for none, 6 ms for the worst
+list. Reading the summary apart would need a third place for the same facts, which that does
+not justify. The column is additive and nullable; the retention purge takes it with the row.
+
+**A paste is one command.** `queueAdd` carries a batch. Every item is checked or none is
+stored (`bad_queue_item`), and all of them fit or none does (`queue_full`). The page takes what
+fits before it sends, and says how many did not, so a person sees a count rather than a
+refusal; `queue_full` only meets a queue that grew under an open sheet. A duplicate is dropped
+by the page, which counts it, and by the domain too, which does not need the page's word for
+it. Dropped by identity: the key, else the link, else the title in any case, so a link and its
+bare key are the same ticket.
+
+**The socket's cap goes from 16 KB to 128 KB.** One command cannot carry 200 ordinary tickets
+in 16 KB. 128 KB holds 500 of them; a list of very long links, which does not fit, the page
+splits into several commands, the one case where a paste is not atomic. The wire schemas still
+cap every string and list, each person's messages are still limited, and a message over the
+cap still closes the connection. Worst case for one person, 1.3 MB a second of JSON to parse,
+up from 160 kB. HTTP bodies stay at 16 KB.
+
+**Text.** A queue item obeys the rules of the subject it becomes: `cleanQueueItem` runs each
+field through `cleanSubject`, so there is no second validator, and a key must be a Jira key or
+an Azure DevOps id. An over-long title in a paste is cut with an ellipsis and counted: a Jira
+summary may run to 255 characters and a ticket should not vanish for 40 of them. A line with
+hidden or control characters is counted as unreadable, not cleaned: stripping them would decide
+what the text says. Nothing but `http(s)` becomes a link.
+
+**A key and a title.** `Subject` had no way to hold both. A link subject gains an optional
+`title`, set only from a queue item, never from the typed field (the wire refuses it there),
+so a round on a pasted link shows the key's chip and the ticket's title, in the room, in the
+history and in the exports. Without a link the two become one title, "ABC-123 Fix the login",
+which is how a person types it and what the exports already read.
+
+**Next item.** With the subject field empty and an item waiting, "Next item" (and "Start
+voting" in the lobby) starts that item, which leaves the queue. Anything typed goes first and
+leaves the queue alone, so the queue never locks the PO out of the field. `startNext` names
+the item and is refused while a round is voting, so a double press or a second tab cannot take
+two. "Vote again" keeps the subject and takes nothing. There is no separate skip: a PO who
+wants to pass an item over moves or removes it, and an abandoned voting round's item is gone,
+as its subject would be. To round without a subject while a queue waits, the PO types one.
+
+**Auto-advance.** A room setting, off by default. A recorded final, with an item waiting, sets
+`advanceAt` on the round, 10 seconds on, and everyone sees "Next: ABC-124, in 8 s" under the
+table. It is a deadline as the timer's is (`resolveDeadline`): the server's timeout, any
+command or a page's ping starts the item, exactly once, and it survives a redeploy. The PO can
+stay on the round; another final starts the countdown again, since the PO is still deciding;
+a queue emptied or the setting turned off ends it; a hand start or "Vote again" replaces the
+round and it with it. An empty queue never arms it, so the end of the list changes nothing.
+
+Why a countdown: the final is the moment people read the result, and a round that starts under
+them takes their cards away. Ten seconds is long enough to finish reading and to press "Stay",
+short enough that the setting is worth having. A voting room is never touched: it arms only on
+a recorded final, which only exists after a reveal. With the room's timer on, the timer starts
+with the new round, as for any start, from when the round shows, so the countdown never eats
+into it.
+
+**Parsing.** In the page, pure, with no network: `apps/web/src/room/paste-queue.ts`. No request
+ever leaves for a pasted link, and the raw text is not stored or logged; only the items go. A
+header row is told by the trackers' column names in English, French and German, or, for names
+it does not know, by rows of keys under a row without one. On plain lines a key is read in
+capitals only, so "web-2 migration" stays a title; "UTF-8 support" reads as a key and a title,
+and without a link becomes the same text again.
+
+**Connectors.** #54 and #55 will add items through the same `apply`. `QueueItem.source` is
+reserved for their external id; nothing writes it, the strict wire schema refuses it from a
+client and no view shows it. A write-back will need the round to keep it too: not built.
+
+**Alternatives.** The list in `live` (simplest, and every vote rewrites it, see above); a table
+of items (a query per reorder, and `apply` could no longer see the queue); the list in the
+snapshot for the PO alone (the PO's phone pays on every vote); a client-side countdown from the
+PO's page (a sleeping phone would stop the room); no countdown (it starts a round on people
+reading); truncating in the domain (a silent half-success for a command, where the page can
+say what happened). A drag library: pointer events on a grip are about 40 lines, and the
+keyboard's buttons are what a screen reader uses.
+
+**Not tested.** The list samples are reconstructed from each product's documented columns, not
+copied from a live board: nobody here has a Jira. Sven should paste one real list from each
+tool after the merge.

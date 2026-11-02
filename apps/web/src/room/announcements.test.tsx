@@ -1,5 +1,5 @@
 import { apply, type Command, createRoom, type RoomState } from "@pp/domain";
-import { type Snapshot, toSnapshot } from "@pp/protocol";
+import { type RoomView, type Snapshot, toSnapshot } from "@pp/protocol";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeLanguage, fixedT, loadLanguage } from "../i18n/i18n.ts";
@@ -351,6 +351,18 @@ describe("settings (#25)", () => {
     return { run, seated };
   }
 
+  it("says auto-advance to everyone but the PO", () => {
+    const { run, seated } = anasRoom();
+    const on = run("me", { type: "updateSettings", patch: { autoAdvance: true } });
+    expect(said(liveEvents(on.room, on.causes, seated.room))).toBe(
+      "The next item now starts by itself after a final is recorded.",
+    );
+    const off = run("me", { type: "updateSettings", patch: { autoAdvance: false } });
+    expect(said(liveEvents(off.room, off.causes, on.room))).toBe(
+      "The next item no longer starts by itself.",
+    );
+  });
+
   it("says each change in plain words to everyone but the PO", () => {
     const { run, seated } = anasRoom();
     const anonymous = run("me", { type: "updateSettings", patch: { revealNames: false } });
@@ -554,6 +566,49 @@ describe("settings (#25)", () => {
     const events = liveEvents(changed.room, changed.causes, seated.room);
     expect(describeEvents(fixedT("fr"), events)).toBe("Le vote anonyme commence au tour 1.");
     expect(describeEvents(fixedT("de"), events)).toBe("Ab Runde 1 wird anonym abgestimmt.");
+  });
+});
+
+describe("the queue (#52)", () => {
+  const added = { type: "queueChanged", added: 12 } as const;
+  const roomOf = (you: string, queue?: RoomView["queue"]) =>
+    ({
+      you,
+      ownerId: "po",
+      participants: [],
+      round: null,
+      settings: { hasPassword: false },
+      ...(queue ? { queue } : {}),
+    }) as unknown as RoomView;
+  const queue = { count: 12, rev: 1, next: { id: 1, key: "12345" } };
+
+  it("tells the room what a paste added, once, and not the PO who pasted", () => {
+    const events = liveEvents(roomOf("ana", queue), [added], null);
+    expect(said(events)).toBe("12 items added to the queue. Next: #12345.");
+    expect(liveEvents(roomOf("po", queue), [added], null)).toEqual([]);
+  });
+
+  it("does not say a move or a removal", () => {
+    expect(liveEvents(roomOf("ana", queue), [{ type: "queueChanged" }], null)).toEqual([]);
+  });
+
+  it("says a paste without a next item plainly", () => {
+    expect(said(liveEvents(roomOf("ana"), [{ type: "queueChanged", added: 1 }], null))).toBe(
+      "1 item added to the queue.",
+    );
+  });
+
+  it("says the countdown once, to everyone, the PO too, and that it stopped", () => {
+    const armed = liveEvents(roomOf("po", queue), [{ type: "advanceArmed" }], null);
+    expect(said(armed)).toBe("Next in 10 seconds: #12345.");
+    const held = liveEvents(roomOf("ana", queue), [{ type: "advanceHeld" }], null);
+    expect(said(held)).toBe("The room stays on this round.");
+  });
+
+  it("keeps the last word of a countdown armed and held in one batch", () => {
+    const armed = liveEvents(roomOf("ana", queue), [{ type: "advanceArmed" }], null);
+    const held = liveEvents(roomOf("ana", queue), [{ type: "advanceHeld" }], null);
+    expect(said(mergeEvents(armed, held))).toBe("The room stays on this round.");
   });
 });
 

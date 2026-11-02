@@ -67,6 +67,12 @@ the shape of a room code (`ROOM_CODE_ALPHABET`, base58; `ROOM_CODE_LENGTH`, 10;
 app, which checks a typed one (#24). The rules
 are in `docs/02-architecture.md`, section 4.
 
+The backlog queue (#52, ADR-024) is in `apply-queue.ts`: `cleanQueueItem` (each field through
+`cleanSubject`, no second validator), `itemSubject` (what round an item starts),
+`queueIdentity` (what makes two items the same ticket, for the page's count too) and the
+list's changes. `MAX_QUEUE_ITEMS` is 500. `startNext` and the countdown (`advanceAt`,
+`AUTO_ADVANCE_MS`, resolved like a timer's deadline) are in `apply.ts`.
+
 - Never mutate the input; return the input object itself when nothing changed.
 - A success carries `ended` when the command replaced or abandoned a round
   (`startRound`, `revote`, a deck or specials restart): that round as step 1 left it,

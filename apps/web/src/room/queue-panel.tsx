@@ -6,6 +6,7 @@ import {
   memo,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
+  startTransition,
   useCallback,
   useEffect,
   useId,
@@ -158,8 +159,11 @@ function QueueBody({ side }: { side: boolean }) {
       setLoading((now) => (now === "ready" ? now : "failed"));
       return;
     }
-    setItems(answer.items);
-    setLoading("ready");
+    // A long list draws in slices: the page keeps answering meanwhile.
+    startTransition(() => {
+      setItems(answer.items);
+      setLoading("ready");
+    });
   }, []);
 
   const refresh = useCallback(() => {
@@ -624,7 +628,7 @@ function ClearQueue({ count, onClear }: { count: number; onClear: () => void }) 
   const clear = useRef<HTMLButtonElement>(null);
   const changed = useRef(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!changed.current) return;
     changed.current = false;
     (asking ? keep : clear).current?.focus();

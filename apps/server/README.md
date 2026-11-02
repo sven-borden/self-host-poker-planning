@@ -71,7 +71,7 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   for all their sockets (`sync/token-bucket.ts`, 10 a second, bursts of 20, else
   `rate_limited`), then parses every payload before a handler sees it; a parsed roster
   command (`join`, `leave`, `rename`, `setAvatar`, `setRole`) takes a token from the person's
-  `ROSTER_LIMIT` bucket too (10 a minute), a parsed `history` request from
+  `ROSTER_LIMIT` bucket too (10 a minute), a parsed `history` or `queue` request from
   `HISTORY_LIMIT` (2 a second, bursts of 10). A person holds at most
   `MAX_SOCKETS_PER_USER` (8) sockets; the next handshake gets `rate_limited`. Engine.IO's
   own HTTP answers get the security headers through its `headers` event.
