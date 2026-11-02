@@ -127,7 +127,7 @@ describe("a database dump", () => {
     expect(await readBack(tokens, "user-a")).toBe(token);
   });
 
-  it("holds about the row only its owner, connector, version, dates and sealed value", async () => {
+  it("holds about the row only its owner, connector, version, dates, sealed value and site", async () => {
     const { rows } = await sql.query<{ column_name: string }>(
       `select column_name from information_schema.columns
        where table_name = 'connector_token' order by ordinal_position`,
@@ -139,6 +139,7 @@ describe("a database dump", () => {
       "version",
       "created_at",
       "updated_at",
+      "settings",
     ]);
   });
 
@@ -572,6 +573,66 @@ describe("a row that does not open", () => {
       status: "saved",
     });
     expect(await readBack(without, "user-a")).toBe(again);
+  });
+});
+
+describe("a connection's settings and a refused refresh (#54)", () => {
+  const SETTINGS = { site: { id: "cloud", name: "Acme", url: "https://acme.atlassian.net" } };
+
+  it("keeps settings apart from the token: a change moves no version", async () => {
+    await user("user-a");
+    await tokens.saveToken(acct("user-a"), "jira", new Secret("token"));
+    await expect(tokens.readSettings(acct("user-a"), "jira")).resolves.toBeNull();
+    const before = await tokens.readToken(acct("user-a"), "jira");
+    await expect(tokens.writeSettings(acct("user-a"), "jira", SETTINGS)).resolves.toBe(true);
+    await expect(tokens.readSettings(acct("user-a"), "jira")).resolves.toEqual(SETTINGS);
+    const after = await tokens.readToken(acct("user-a"), "jira");
+    if (before.status !== "ok" || after.status !== "ok") throw new Error("not read");
+    expect(after.version).toBe(before.version);
+    await expect(
+      tokens.replaceToken(acct("user-a"), "jira", before.version, new Secret("next")),
+    ).resolves.toMatchObject({ status: "replaced" });
+  });
+
+  it("keeps settings through a new save and a refresh, and drops them with the row", async () => {
+    await user("user-a");
+    await tokens.saveToken(acct("user-a"), "jira", new Secret("token"));
+    await tokens.writeSettings(acct("user-a"), "jira", SETTINGS);
+    await tokens.saveToken(acct("user-a"), "jira", new Secret("again"));
+    await expect(tokens.readSettings(acct("user-a"), "jira")).resolves.toEqual(SETTINGS);
+    await tokens.writeSettings(acct("user-a"), "jira", null);
+    await expect(tokens.readSettings(acct("user-a"), "jira")).resolves.toBeNull();
+    await tokens.deleteToken(acct("user-a"), "jira");
+    await expect(tokens.readSettings(acct("user-a"), "jira")).resolves.toBeUndefined();
+  });
+
+  it("writes no settings without a row, and reads none", async () => {
+    await user("user-a");
+    await expect(tokens.writeSettings(acct("user-a"), "jira", SETTINGS)).resolves.toBe(false);
+    await expect(tokens.readSettings(acct("user-a"), "jira")).resolves.toBeUndefined();
+  });
+
+  it("drops a token only at the version a refused refresh read", async () => {
+    await user("user-a");
+    await tokens.saveToken(acct("user-a"), "jira", new Secret("token"));
+    const read = await tokens.readToken(acct("user-a"), "jira");
+    if (read.status !== "ok") throw new Error("not read");
+    await tokens.replaceToken(acct("user-a"), "jira", read.version, new Secret("winner"));
+    await expect(tokens.dropToken(acct("user-a"), "jira", read.version)).resolves.toBe(false);
+    const now = await tokens.readToken(acct("user-a"), "jira");
+    if (now.status !== "ok") throw new Error("not read");
+    expect(now.token.reveal()).toBe("winner");
+    await expect(tokens.dropToken(acct("user-a"), "jira", now.version)).resolves.toBe(true);
+    await expect(tokens.readToken(acct("user-a"), "jira")).resolves.toEqual({
+      status: "not_connected",
+    });
+  });
+
+  it("refuses a connector it does not know for each of them", async () => {
+    const unknown = "gitlab" as Connector;
+    await expect(tokens.readSettings(acct("user-a"), unknown)).rejects.toThrow();
+    await expect(tokens.writeSettings(acct("user-a"), unknown, null)).rejects.toThrow();
+    await expect(tokens.dropToken(acct("user-a"), unknown, "x" as TokenVersion)).rejects.toThrow();
   });
 });
 

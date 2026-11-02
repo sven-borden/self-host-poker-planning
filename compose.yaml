@@ -39,6 +39,9 @@ services:
       # The connectors' tokens, off while empty (README, "Connector tokens").
       POKER_VAULT_KEY: ${POKER_VAULT_KEY:-}
       POKER_VAULT_OLD_KEYS: ${POKER_VAULT_OLD_KEYS:-}
+      # The Jira Cloud app, off while empty (README, "Jira Cloud").
+      JIRA_CLIENT_ID: ${JIRA_CLIENT_ID:-}
+      JIRA_CLIENT_SECRET: ${JIRA_CLIENT_SECRET:-}
     # The server drains and exits within 10 s of SIGTERM.
     stop_grace_period: 15s
     # The server writes nothing to disk and needs no privilege.

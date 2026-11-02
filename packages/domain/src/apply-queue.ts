@@ -15,6 +15,7 @@ import {
   type Queue,
   type QueueEntry,
   type QueueItem,
+  type QueueSource,
   type Subject,
 } from "./room.ts";
 
@@ -97,6 +98,72 @@ export function queueIdentity({ key, url, title }: QueueEntry): string {
   return `title ${String(title).toLowerCase()}`;
 }
 
+/** The longest id a new item can get: `fitToQueue` counts this for the one it will get. */
+const LONGEST_ID = 9_999_999_999;
+
+/**
+ * A title cut to `room` characters, the last one an ellipsis. Cut by code points, which
+ * never count fewer than the characters a person sees.
+ */
+export function cutTitle(title: string, room: number): string {
+  return `${Array.from(title)
+    .slice(0, room - 1)
+    .join("")}\u{2026}`;
+}
+
+/** What of a list goes into a queue as it stands, and what does not. */
+export interface QueueFit {
+  fit: QueueEntry[];
+  duplicates: number;
+  overflow: number;
+}
+
+/**
+ * Takes what fits, by count and by bytes, so that a refusal meets only a queue that grew since:
+ * the server's side of what the page does for a paste, for a list no person ever held.
+ */
+export function fitToQueue(queue: Queue | undefined, entries: readonly QueueEntry[]): QueueFit {
+  const items = queue?.items ?? [];
+  const seen = new Set(items.map(queueIdentity));
+  const result: QueueFit = { fit: [], duplicates: 0, overflow: 0 };
+  let held = queueBytes(items);
+  for (const entry of entries) {
+    const identity = queueIdentity(entry);
+    if (seen.has(identity)) {
+      result.duplicates += 1;
+      continue;
+    }
+    seen.add(identity);
+    const size = queueBytes([{ ...entry, id: LONGEST_ID }]);
+    if (items.length + result.fit.length >= MAX_QUEUE_ITEMS || held + size > MAX_QUEUE_BYTES) {
+      result.overflow += 1;
+      continue;
+    }
+    held += size;
+    result.fit.push(entry);
+  }
+  return result;
+}
+
+/** A site or an issue id, as a tracker gives it: nothing a person typed, and short. */
+const SOURCE_PART = /^[\w:.-]{1,128}$/;
+
+function cleanSource(raw: unknown): QueueSource | null {
+  if (!isRecord(raw)) return null;
+  const { system, site, id } = raw;
+  if (system !== "jira" && system !== "ado") return null;
+  if (typeof site !== "string" || !SOURCE_PART.test(site)) return null;
+  if (typeof id !== "string" || !SOURCE_PART.test(id)) return null;
+  return { system, site, id };
+}
+
+/** `cleanQueueItem` with the `source` an import must have. Only `queueImport` reads one. */
+function cleanImported(raw: unknown): QueueEntry | null {
+  const entry = cleanQueueItem(raw);
+  const source = isRecord(raw) ? cleanSource(raw.source) : null;
+  return entry === null || source === null ? null : { ...entry, source };
+}
+
 /**
  * The queue with a paste added at its end: every item clean or none (`bad_queue_item`),
  * duplicates dropped, and all of them fit or none (`queue_full`), by count and by bytes:
@@ -105,13 +172,26 @@ export function queueIdentity({ key, url, title }: QueueEntry): string {
  * change of order or a removal never has to ask.
  */
 export function addToQueue(queue: Queue | undefined, raw: unknown): Queue | ErrorCode {
+  return addEntries(queue, raw, cleanQueueItem);
+}
+
+/** A connector's list, under the same rules, each item with its `source`. */
+export function importToQueue(queue: Queue | undefined, raw: unknown): Queue | ErrorCode {
+  return addEntries(queue, raw, cleanImported);
+}
+
+function addEntries(
+  queue: Queue | undefined,
+  raw: unknown,
+  read: (item: unknown) => QueueEntry | null,
+): Queue | ErrorCode {
   if (!Array.isArray(raw)) return "bad_queue_item";
   const current = queue ?? NO_ITEMS;
   const seen = new Set(current.items.map(queueIdentity));
   const fresh: QueueItem[] = [];
   let lastId = current.lastId;
   for (const item of raw) {
-    const entry = cleanQueueItem(item);
+    const entry = read(item);
     if (entry === null) return "bad_queue_item";
     const identity = queueIdentity(entry);
     if (seen.has(identity)) continue;

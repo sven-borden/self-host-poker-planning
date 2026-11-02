@@ -707,6 +707,7 @@ describe("history (#33)", () => {
   const row = (number: number): StoredHistoryRound => ({
     number,
     subject: { kind: "none" },
+    source: null,
     votes: { kind: "named", votes: [{ who: "ub", name: "Bob", card: "5" }] },
     stats: {
       distribution: [{ card: "5", count: 1 }],

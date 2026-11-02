@@ -1,6 +1,14 @@
 export { apply } from "./apply.ts";
 export { cleanName, cleanRoomName } from "./apply-input.ts";
-export { cleanQueueItem, itemSubject, queueBytes, queueIdentity } from "./apply-queue.ts";
+export {
+  cleanQueueItem,
+  cutTitle,
+  fitToQueue,
+  itemSubject,
+  type QueueFit,
+  queueBytes,
+  queueIdentity,
+} from "./apply-queue.ts";
 export { ADO_ID, cleanSubject, JIRA_KEY, keyLabel, linkKey } from "./apply-subject.ts";
 export { AVATAR_IDS, type AvatarId, isAvatarId } from "./avatars.ts";
 export type {

@@ -119,12 +119,45 @@ describe("a snapshot's queue (ADR-024)", () => {
   });
 });
 
+describe("a round from a tracker (#54)", () => {
+  const SOURCE = { system: "jira", site: "cloud-secret-site", id: "issue-secret-id" } as const;
+  const imported = () => {
+    const filled = step(fullTable(), {
+      type: "queueImport",
+      items: [{ key: "ABC-1", title: "Login", source: SOURCE }],
+    });
+    const voting = step(filled, { type: "reveal" });
+    return step(voting, { type: "startNext", id: 1 });
+  };
+
+  it("tells the PO which tracker, and nobody else, and never where in it", () => {
+    const state = imported();
+    expect(state.round?.source).toEqual(SOURCE);
+    const own = toSnapshot(state, PO, META).room;
+    expect(own.round?.system).toBe("jira");
+    expect(snapshotSchema.safeParse(toSnapshot(state, PO, META)).success).toBe(true);
+    const other = toSnapshot(state, "user-1", META).room;
+    expect(other.round).not.toHaveProperty("system");
+    for (const snapshot of [own, other]) {
+      expect(JSON.stringify(snapshot)).not.toMatch(/cloud-secret-site|issue-secret-id|source/);
+    }
+  });
+
+  it("says nothing for a round that came from no tracker", () => {
+    expect(toSnapshot(fullTable(), PO, META).room.round).not.toHaveProperty("system");
+  });
+});
+
 describe("the queue's list", () => {
   it("names each item field by field, never a connector's source", () => {
     const state = fill(fullTable(), 1);
     const queue = state.queue;
     if (queue === undefined) throw new Error("no queue");
-    const item = { ...queue.items[0], id: 1, source: { system: "jira" as const, id: "10042" } };
+    const item = {
+      ...queue.items[0],
+      id: 1,
+      source: { system: "jira" as const, site: "cloud-1", id: "10042" },
+    };
     const list = queueList({ ...queue, items: [item] });
     expect(list).toEqual({ rev: 1, items: [{ id: 1, ...ticket(1) }] });
     expect(queueAckSchema.safeParse({ ok: true, ...list }).success).toBe(true);

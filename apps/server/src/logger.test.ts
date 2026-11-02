@@ -57,6 +57,8 @@ describe("createLogger", () => {
     "Authorization",
     "authorization",
     "cookie",
+    "jql",
+    "summary",
   ];
 
   it.each(NAMES)("redacts %s at the top, one level down, two down and in a list", (name) => {

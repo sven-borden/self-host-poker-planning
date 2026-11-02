@@ -79,10 +79,13 @@ export type Subject =
   | { kind: "link"; url: string; key?: string; title?: string };
 
 /**
- * Where a connector found an item (#54, #55): reserved, nothing writes it yet. It never
- * comes off the wire (the strict `queueAdd` schema refuses it) and no view shows it.
+ * Where a connector found an item (#54, ADR-030): the tracker, the site inside it (a Jira cloud
+ * id) and the issue's own id there, which outlives a change of key. It comes from the server's
+ * `queueImport` alone (the strict `queueAdd` schema refuses it), and a round started from the
+ * item keeps it, so the estimate can go back. No view shows it: a PO's snapshot says only which
+ * tracker a round came from.
  */
-export type QueueSource = { system: "jira" | "ado"; id: string };
+export type QueueSource = { system: "jira" | "ado"; site: string; id: string };
 
 /**
  * One ticket waiting for its round (#52). At least one of `key`, `title` and `url` is set,
@@ -156,6 +159,8 @@ export type Round = {
   advanceAt?: number;
   /** The PO chose to stay on this round: a changed final starts no countdown (#52). */
   stayed?: true;
+  /** The tracker's item this round estimates (#54); "Vote again" keeps it. */
+  source?: QueueSource;
 };
 
 export type RoomState = {

@@ -22,6 +22,7 @@ function memoryStore(rooms: StoredRoom[] = []) {
   };
   const store: RoomStore = {
     insertRoom: async () => null,
+    roomCodeOf: async () => null,
     loadRoom: async (code) => {
       await hooks.beforeLoad(code);
       const r = byCode.get(code);

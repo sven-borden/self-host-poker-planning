@@ -919,6 +919,104 @@ export const fr: Catalog<"many"> = {
     subjectHint:
       "Vide, le ticket suivant démarre : {{item}}. Un sujet saisi passe d’abord et la file attend.",
   },
+  connector: {
+    connect: "Connecter {{system}}",
+    lede: "Importez un sprint ou une recherche dans la file, et renvoyez les estimations. Vous connectez votre propre compte, et personne d’autre dans la salle ne s’en sert.",
+    signIn: "Connectez-vous avec un compte pour relier {{system}}.",
+    connectedTo: "Connecté à {{site}}",
+    site: "Site",
+    siteSave: "Utiliser ce site",
+    siteChange: "Changer de site",
+    field: "Les estimations vont dans",
+    fieldIs: "Les estimations vont dans {{field}}",
+    fieldHint:
+      "Un champ numérique de ce site. La suggestion se fonde sur son nom : vérifiez-la avant d’enregistrer.",
+    fieldSave: "Enregistrer le champ",
+    fieldChange: "Changer de champ",
+    fieldNone: "Ce site n’a aucun champ numérique : les estimations ne peuvent pas y retourner.",
+    importFrom: "Importer depuis",
+    bySprint: "Un sprint",
+    byJql: "Une recherche JQL",
+    board: "Tableau",
+    boardFilter: "Nom du tableau",
+    boardFind: "Chercher",
+    noBoards: "Aucun tableau trouvé.",
+    noSites: "Ce compte n’accède à aucun site {{system}}.",
+    sprint: "Sprint",
+    sprintActive: "{{sprint}} (actif)",
+    noSprints: "Ce tableau n’a aucun sprint actif ou à venir.",
+    jql: "Requête JQL",
+    jqlHint:
+      "Telle que vous la saisiriez dans la recherche de tickets. Elle part vers Jira et n’est pas conservée ici.",
+    import: "Importer",
+    importing: "Importation…",
+    nothingAsked: "Choisissez d’abord un sprint ou saisissez une requête.",
+    leftOut_one:
+      "{{count, number}} ticket laissé de côté : la file est pleine ou il n’a pas pu être lu.",
+    leftOut_many:
+      "{{count, number}} de tickets laissés de côté : la file est pleine ou ils n’ont pas pu être lus.",
+    leftOut_other:
+      "{{count, number}} tickets laissés de côté : la file est pleine ou ils n’ont pas pu être lus.",
+    beyond_one: "Environ {{count, number}} autre au-delà de la limite de {{max, number}} tickets.",
+    beyond_many:
+      "Environ {{count, number}} d’autres au-delà de la limite de {{max, number}} tickets.",
+    beyond_other:
+      "Environ {{count, number}} autres au-delà de la limite de {{max, number}} tickets.",
+    beyondUnknown: "D’autres tickets restent au-delà de la limite de {{max, number}}.",
+    disconnect: "Déconnecter",
+    disconnectNote:
+      "Cela supprime votre jeton ici. {{system}} garde sa propre trace de l’autorisation :",
+    grantsLink: "retirez-la dans votre compte Atlassian",
+    loadFailed:
+      "La partie {{system}} de cette page n’a pas pu se charger. La salle fonctionne toujours : rechargez pour la retrouver.",
+    result: {
+      connected: "{{system}} est connecté.",
+      cancelled: "Rien n’a été connecté : vous êtes revenu en arrière sur {{system}}.",
+      expired:
+        "Cela a pris trop de temps, {{system}} n’a pas été connecté. Connectez-le de nouveau.",
+      failed: "{{system}} n’a pas pu être connecté. Réessayez.",
+      lost: "{{system}} n’a pas été connecté : ce lien a expiré ou a déjà servi. Retournez dans votre salle et connectez-le depuis sa file.",
+    },
+    write: {
+      waiting:
+        "{{item}} : {{card}} n’a pas été enregistré sur cette page, et quelqu’un d’autre l’a peut-être fait. Appuyer l’écrit dans {{system}} avec votre compte.",
+      writing: "Écriture de {{card}} sur {{item}} dans {{system}}…",
+      written: "{{item}} : {{card}} est dans {{system}}.",
+      failed: "{{item}} : {{card}} n’est pas arrivé dans {{system}}.",
+      retry: "Réessayer",
+      dismiss: "Masquer",
+      history: "Écrire dans {{system}}",
+      done: "Écrit dans {{system}}.",
+    },
+    errors: {
+      connector_sign_in: "Connectez-vous avec un compte pour utiliser {{system}}.",
+      connector_not_connected: "Connectez d’abord {{system}} dans la file.",
+      connector_reconnect: "{{system}} n’accepte plus cette connexion. Connectez-le de nouveau.",
+      connector_setup:
+        "{{system}} a refusé alors que la connexion venait d’être renouvelée : la refaire ne changera rien. La personne qui gère ce serveur doit vérifier les autorisations de son application {{system}}.",
+      connector_no_site: "Choisissez d’abord un site {{system}} dans la file.",
+      connector_no_field: "Choisissez d’abord le champ de l’estimation dans la file.",
+      connector_bad_site: "Ce site n’est plus dans votre liste {{system}}.",
+      connector_bad_field: "Ce champ n’est pas un champ numérique de ce site.",
+      connector_other_site:
+        "Ce ticket appartient à un autre site {{system}} que celui auquel vous êtes connecté.",
+      connector_no_source: "Ce ticket ne vient pas de {{system}}.",
+      connector_no_final: "Enregistrez d’abord une estimation finale.",
+      connector_not_numeric: "Seul un nombre part vers {{system}} : cette estimation reste ici.",
+      connector_rate_limited: "{{system}} demande de ralentir. Réessayez dans un instant.",
+      connector_rate_limited_wait:
+        "{{system}} demande de ralentir. Réessayez dans {{seconds, number}} s.",
+      connector_forbidden: "Votre compte {{system}} n’a pas le droit de faire cela.",
+      connector_not_found:
+        "{{system}} ne trouve pas cet élément, ou votre compte ne peut pas le voir.",
+      connector_bad_query:
+        "{{system}} n’a pas pu exécuter cette requête. Vérifiez-la et réessayez.",
+      connector_field_refused:
+        "{{system}} a refusé le champ sur ce ticket : il n’est peut-être pas sur son écran.",
+      connector_unavailable: "{{system}} ne répond pas correctement. Réessayez plus tard.",
+      connector_timeout: "{{system}} a mis trop de temps à répondre. Réessayez.",
+    },
+  },
   common: {
     network: "Impossible de joindre le serveur. Vérifiez votre connexion, puis réessayez.",
     close: "Fermer",

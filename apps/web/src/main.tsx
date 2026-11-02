@@ -9,6 +9,7 @@ import "./styles.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app.tsx";
+import { readConnectorResult } from "./connectors/connector.ts";
 import { startLanguage } from "./i18n/i18n.ts";
 import { ensureIdentity } from "./identity/identity.ts";
 import { announceSignIn, readSignInError } from "./identity/sign-in.ts";
@@ -24,6 +25,8 @@ if (!container) {
 
 // Before anything reads the address: a failed sign-in's code is for the page alone (#47).
 readSignInError();
+// The same for how a tracker's connection ended (#54).
+readConnectorResult();
 // Before the session is read: a guest's other tabs hold the identity lock until they hear (#48).
 announceSignIn();
 

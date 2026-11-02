@@ -668,6 +668,28 @@ waits, and says so as `fromQueue`, which names `Decision`'s button. `room/next-u
 under the table and the countdown; `useDeadlinePing` in `timer.tsx` is the vote timer's ping
 for any deadline. An item is named by `itemName` in `subject.ts`.
 
+## Connectors (#54)
+
+`connectors/connector.ts` is what the room's own chunk carries: `connectorOn` reads the server's
+`<meta name="pp-connectors">`, `readConnectorResult` takes `?connector=` out of the address in
+`main.tsx`, and `connectorMessage` words a refusal with the tracker's name. The result stays until the
+sheet closes (`clearConnectorResult`), and is not taken at the first read: the room's first renders
+mount and drop `RoomQueueButton`, which is what opens the sheet on the way back.
+
+`connector-section.tsx` is a chunk of its own in the queue's sheet. `tracker-lines.tsx` is in the
+room's chunk and loads `write-back.tsx` once a round with `system` has been on the table, and stays for
+the visit, so a failed write outlives its round. Both go through `useConnectorChunk`, not `lazy`: a
+chunk that cannot load says so in a toast and costs the room nothing. Only a final this very tab
+recorded goes by itself: `final-press.ts`, in the room's chunk, marks the press in `Decision` and
+listens for the live frame that confirms it, and `WriteBackLines` takes that. Everything else waits
+for a press, and the rule holds in the lines, not in a parent's gate (ADR-030). A refused call goes
+through `report` in the section, so a dead grant goes back to "Connect" from any of them, and
+`ConnectorAlert` draws it as the room draws its own. `connector-notice.tsx` is the first page's line
+for a connection with no room to come back to. `history-write.tsx` is the same press in
+the history. These forms sit inside the subject field's in React's tree: a submit stops its
+propagation, as the paste form does. Codes are `connector.errors.*`, apart from the ack codes, and
+`i18n.test.ts` holds each one to a message.
+
 ## Rules
 
 - `pnpm dev` runs Vite on 5173 and proxies `/api` and `/socket.io` (WebSocket too) to

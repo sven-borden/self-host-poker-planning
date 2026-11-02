@@ -110,16 +110,33 @@ export interface ConnectorTokenStore {
   readToken(account: AccountId, connector: Connector): Promise<ReadTokenResult>;
   /** True when there was a row. */
   deleteToken(account: AccountId, connector: Connector): Promise<boolean>;
+  /**
+   * Deletes the row only if it is still the state `readToken` gave `version` for: a refresh the
+   * provider refused may be the loser of a race, and the winner's token must stay. True when
+   * this deleted it.
+   */
+  dropToken(account: AccountId, connector: Connector, version: TokenVersion): Promise<boolean>;
+  /**
+   * What the connection points at (`connector_token.settings`), as stored: `undefined` without
+   * a row, `null` for a row with none. No key is needed: nothing here is secret.
+   */
+  readSettings(account: AccountId, connector: Connector): Promise<unknown>;
+  /** False without a row: the person disconnected meanwhile, and nothing is written. */
+  writeSettings(account: AccountId, connector: Connector, settings: unknown): Promise<boolean>;
   listConnections(account: AccountId): Promise<Connection[]>;
 }
 
 /**
  * `is_anonymous` as the purge reads it: anything but true is an account. One statement, so a
- * guest cannot slip in between a check and the write. A new `version` marks the new state.
+ * guest cannot slip in between a check and the write, and an account on its way out, whose
+ * connection finished after its deletion began (ADR-029), saves nothing. A new `version` marks the
+ * new state.
  */
 const SAVE_TOKEN = `
   insert into connector_token (user_id, connector, sealed_token)
-  select u.id, $2, $3 from "user" u where u.id = $1 and u.is_anonymous is not true
+  select u.id, $2, $3 from "user" u
+  where u.id = $1 and u.is_anonymous is not true
+    and not exists (select 1 from account_deletion d where d.user_id = u.id)
   on conflict (user_id, connector)
   do update set sealed_token = excluded.sealed_token, version = gen_random_uuid(),
                 updated_at = now()`;
@@ -224,6 +241,39 @@ export function createConnectorTokenStore(
           account,
           connector,
         ]),
+      );
+      return rowCount === 1;
+    },
+
+    dropToken: async (account, connector, version) => {
+      checkConnector(connector);
+      const { rowCount } = await guard("drop connector token", () =>
+        pool.query(
+          "delete from connector_token where user_id = $1 and connector = $2 and version::text = $3",
+          [account, connector, version],
+        ),
+      );
+      return rowCount === 1;
+    },
+
+    readSettings: async (account, connector) => {
+      checkConnector(connector);
+      const { rows } = await guard("read connector settings", () =>
+        pool.query<{ settings: unknown }>(
+          "select settings from connector_token where user_id = $1 and connector = $2",
+          [account, connector],
+        ),
+      );
+      return rows[0]?.settings;
+    },
+
+    writeSettings: async (account, connector, settings) => {
+      checkConnector(connector);
+      const { rowCount } = await guard("write connector settings", () =>
+        pool.query(
+          "update connector_token set settings = $3 where user_id = $1 and connector = $2",
+          [account, connector, settings === null ? null : JSON.stringify(settings)],
+        ),
       );
       return rowCount === 1;
     },

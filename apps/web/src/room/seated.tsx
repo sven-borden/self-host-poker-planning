@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { TrackerLines } from "../connectors/tracker-lines.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
 import { cardLabel } from "../table/cards.tsx";
@@ -303,6 +304,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
                   onFailure={setCentreFailure}
                 />
               ) : null}
+              {me.isOwner ? <TrackerLines room={under} /> : null}
               <NextUp room={under} onFailure={setCentreFailure} />
               {waits ? (
                 <p

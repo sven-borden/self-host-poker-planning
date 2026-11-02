@@ -24,6 +24,7 @@ import {
 import {
   addToQueue,
   clearQueue,
+  importToQueue,
   itemSubject,
   moveInQueue,
   removeFromQueue,
@@ -51,6 +52,7 @@ import {
   type Participant,
   type Queue,
   type QueueItem,
+  type QueueSource,
   ROLES,
   type Role,
   type RoomSettings,
@@ -81,6 +83,7 @@ const OWNER_ONLY: ReadonlySet<CommandType> = new Set<CommandType>([
   "transferOwner",
   "password",
   "queueAdd",
+  "queueImport",
   "queueMove",
   "queueRemove",
   "queueClear",
@@ -170,6 +173,8 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
     }
     case "queueAdd":
       return changeQueue(state, addToQueue(state.queue, command.items));
+    case "queueImport":
+      return changeQueue(state, importToQueue(state.queue, command.items));
     case "queueMove":
       return changeQueue(state, moveInQueue(state.queue, command.id, command.to));
     case "queueRemove":
@@ -220,7 +225,10 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       return setFinal(state, command.card, now);
     case "revote":
       if (state.round?.phase !== "revealed") return refuse("not_revealed");
-      return startRound(state, state.round.subject, now, true);
+      return startRound(state, state.round.subject, now, {
+        revote: true,
+        source: state.round.source,
+      });
     case "startTimer": {
       const round = state.round;
       if (round?.phase !== "voting") return refuse("not_voting");
@@ -544,9 +552,15 @@ function removeAccount(state: RoomState, removal: AccountRemoval): Step {
 /**
  * A new round: the next number, the current deck, specials and anonymity, no votes. The
  * round it replaces (as the deadline left it) is reported as `ended`. A re-vote (#32)
- * says so in its cause, so the room hears "a new vote on the same subject".
+ * says so in its cause, so the room hears "a new vote on the same subject". `source`: the
+ * tracker's item, for a round that came from one (#54).
  */
-function startRound(state: RoomState, subject: Subject, now: number, revote = false): Done {
+function startRound(
+  state: RoomState,
+  subject: Subject,
+  now: number,
+  { revote = false, source }: { revote?: boolean; source?: QueueSource | undefined } = {},
+): Done {
   const { settings } = state;
   const number = (state.round?.number ?? 0) + 1;
   const round: Round = {
@@ -558,6 +572,7 @@ function startRound(state: RoomState, subject: Subject, now: number, revote = fa
     anonymous: !settings.revealNames,
     votes: {},
     startedAt: now,
+    ...(source === undefined ? {} : { source }),
   };
   if (settings.timer.seconds !== null) {
     round.deadlineAt = now + settings.timer.seconds * 1000;
@@ -574,7 +589,7 @@ function startRound(state: RoomState, subject: Subject, now: number, revote = fa
 /** A round on a queue item, which leaves the queue. */
 function startItem(state: RoomState, item: QueueItem, now: number): Done {
   const queue = removeFromQueue(state.queue, item.id) as Queue;
-  return startRound({ ...state, queue }, itemSubject(item), now);
+  return startRound({ ...state, queue }, itemSubject(item), now, { source: item.source });
 }
 
 /** What a queue command came to: refused, nothing to do, or a new queue. */

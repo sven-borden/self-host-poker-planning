@@ -3,8 +3,8 @@
  * its pool, then Redis when `REDIS_URL` is set (#39, several instances), the room API
  * (#14) and the room sync (#15) on its runner, the retention job (#35), whose first run
  * comes a few minutes later, a guest's way to an account (#48) and an account's deletion (#51),
- * between identity and the room sync, "My rooms" (#49) and the account page (#51). Opens nothing
- * at import time.
+ * between identity and the room sync, "My rooms" (#49), the account page (#51) and the
+ * trackers' connectors (#54). Opens nothing at import time.
  */
 import { registerAccountApi } from "./account.ts";
 import { type AccountDeletions, createAccountDeletions } from "./account-deletion.ts";
@@ -15,7 +15,11 @@ import {
   sessionChecker,
   sessionMiddleware,
 } from "./auth.ts";
-import type { Config } from "./config.ts";
+import { type Config, connectorGaps, connectorNames } from "./config.ts";
+import { createConnectorAccess } from "./connectors/access.ts";
+import { createJiraConnector } from "./connectors/jira.ts";
+import { createOAuthStateStore } from "./connectors/oauth-state.ts";
+import { registerConnectorApi } from "./connectors/routes.ts";
 import { type Database, setupDatabase } from "./database.ts";
 import { createAccountDataStore } from "./db/account-data.ts";
 import { createAccountDeletionStore } from "./db/account-deletions.ts";
@@ -67,6 +71,9 @@ export async function setupServer(
     rules: RoomRules;
   }
 > {
+  // A keyed connector that stays dark looks like a bug from outside: the start says why.
+  const missing = connectorGaps(config);
+  if (missing.length > 0) logger.warn({ missing }, "jira connector off: variables missing");
   const opened = await setupDatabase(config, logger, signal);
   const { database } = opened;
   // Building the auth instance queries nothing; if it throws, release the pool first.
@@ -181,6 +188,23 @@ export async function setupServer(
           config,
           limiter,
         });
+        // Dark without its keys, the vault and a way to sign in: nothing is registered.
+        if (config.jira && connectorNames(config).includes("jira")) {
+          const connector = createJiraConnector(config.jira);
+          const tokens = database.connectorTokens;
+          registerConnectorApi(app, {
+            auth,
+            connector,
+            access: createConnectorAccess(tokens, connector),
+            tokens,
+            states: createOAuthStateStore(db),
+            rooms: store,
+            history: store,
+            sync,
+            config,
+            limiter,
+          });
+        }
       },
       socketMiddleware: [sessionMiddleware(auth)],
       sessionCookie: cookieNaming(config.baseUrl).sessionCookie,

@@ -161,7 +161,7 @@ With two proxies that takes both steps: the second must trust the first, and the
 
 ### Connector tokens
 
-The Jira and Azure DevOps connectors, still to come (#54, #55), keep each person's token encrypted
+The Jira connector (see "Jira Cloud"), and Azure DevOps still to come (#55), keep each person's token encrypted
 with AES-256-GCM, under a key that lives in the environment and never in the database. A guest
 holds no token. Without a key the server runs as usual and the connectors stay off. To turn it
 on, set a key and recreate the container (`docker compose up -d`: `restart` does not read
@@ -213,6 +213,45 @@ and you should keep those somewhere other than the backups: side by side they pr
 Losing the key means every person connects Jira or Azure DevOps again, and nothing else: rooms,
 accounts and history do not depend on it. If a key leaked along with a dump, change the key and
 also revoke the tokens at Jira or Azure DevOps, since rotating does not make a stolen copy useless.
+
+### Jira Cloud
+
+A PO who signs in can connect their own Jira, import a sprint or a JQL search into the queue, and
+have each recorded final written to the issue's story points. It stays off, with no button and no
+route, until you set up an app and all of this is there: `JIRA_CLIENT_ID`, `JIRA_CLIENT_SECRET`,
+`POKER_VAULT_KEY` (see "Connector tokens"), and at least one sign-in provider, since a guest holds
+no connection.
+
+1. At <https://developer.atlassian.com/console/myapps/> create an **OAuth 2.0 integration**.
+2. Under **Permissions**, add the **Jira API** and these scopes: classic `read:jira-work` and
+   `write:jira-work`, granular `read:board-scope:jira-software`, `read:sprint:jira-software` and
+   `read:project:jira`. `offline_access` is asked for by the server and needs no setting.
+3. Under **Authorization**, choose OAuth 2.0 (3LO) and set the callback URL to
+   `https://your-host/api/connectors/jira/callback`: your `BASE_URL`, exactly, with that path.
+4. Under **Distribution**, turn sharing on. An app is private by default: Atlassian lets only the
+   app's owner install and use it, so a colleague in the same organisation is refused too. Anyone
+   but the person who created the app needs this, and a check of the setup is only worth something
+   with a second person connecting.
+5. Under **Settings**, copy the client id and the secret to `JIRA_CLIENT_ID` and
+   `JIRA_CLIENT_SECRET`, runtime only, and recreate the container (`docker compose up -d`).
+
+Both keys or neither: one alone stops the server at the start, naming the other. Each person
+connects their own account, and the server uses that token only for that person's own import and
+write-back: never for anyone else in the room. It writes one thing, the final estimate as a number,
+to a field the PO picked from the site's number fields. A final with no number is not written, and
+an anonymous round sends nothing but its number.
+
+The scopes ask for more than this code uses: `write:jira-work` also allows deleting issues, and a
+person agrees to the scope, not to this code. The server never deletes anything. If your team would
+rather not grant it, see "Scopes" in ADR-030 before you set the app up.
+
+Should the page say that Jira refused although the connection was just renewed, connecting again
+will not help: compare the app's scopes with step 2. The server's log says at the start when keys are
+set and something else keeps the connector off, by the variable's name.
+
+Disconnecting deletes the token here. Atlassian keeps its own record of the grant, which a person
+removes at <https://id.atlassian.com/manage-profile/apps>. A person who removes it there, or whose
+Atlassian password changes, is asked to connect again.
 
 ### Running several instances
 
@@ -277,10 +316,13 @@ nothing about Redis is loaded or opened.
   and none of the provider's tokens, so nothing here can reach a person's Google or Microsoft
   account afterwards. The email is shown to its owner alone, on the landing page, and nowhere in
   a room, where a screen may be shared.
-- **Connectors**, once they exist (#54, #55), only for an account that connects Jira or Azure
+- **Connectors**, Jira from #54 and Azure DevOps to come (#55), only for an account that connects Jira or Azure
   DevOps: the token, encrypted
-  with a key kept outside the database, and when it was connected. It goes when the person
-  disconnects, and with the account. It is never logged.
+  with a key kept outside the database, the site and the field chosen, and when it was connected.
+  It goes when the person disconnects, and with the account. It is never logged. A round imported
+  from Jira keeps where it came from (the site's id and the issue's), never a person. What goes to
+  Jira is a query, and the final estimate as a number; an issue's key, title and link are stored in
+  the room as for any item in the queue.
 - **For how long**: a room idle for `ROOM_TTL_DAYS` days (default 90) is deleted with
   its history and its password grants. Activity is any change in the room, and opening
   it (counted at most once a day, or once a 24th of a shorter period). A guest's session

@@ -886,6 +886,101 @@ export const de: Catalog = {
     subjectHint:
       "Leer startet der nächste Eintrag: {{item}}. Ein eingegebenes Thema geht vor, und die Warteschlange wartet.",
   },
+  connector: {
+    connect: "{{system}} verbinden",
+    lede: "Importieren Sie einen Sprint oder eine Suche in die Warteschlange und schicken Sie Schätzungen zurück. Sie verbinden Ihr eigenes Konto, und niemand sonst im Raum nutzt es.",
+    signIn: "Melden Sie sich mit einem Konto an, um {{system}} zu verbinden.",
+    connectedTo: "Verbunden mit {{site}}",
+    site: "Website",
+    siteSave: "Diese Website verwenden",
+    siteChange: "Website wechseln",
+    field: "Schätzungen gehen in",
+    fieldIs: "Schätzungen gehen in {{field}}",
+    fieldHint:
+      "Ein Zahlenfeld dieser Website. Der Vorschlag richtet sich nach dem Namen: Prüfen Sie ihn vor dem Speichern.",
+    fieldSave: "Feld speichern",
+    fieldChange: "Feld wechseln",
+    fieldNone: "Diese Website hat kein Zahlenfeld, Schätzungen können also nicht zurück.",
+    importFrom: "Importieren aus",
+    bySprint: "Einem Sprint",
+    byJql: "Einer JQL-Suche",
+    board: "Board",
+    boardFilter: "Name des Boards",
+    boardFind: "Suchen",
+    noBoards: "Kein Board gefunden.",
+    noSites: "Dieses Konto erreicht keine {{system}}-Website.",
+    sprint: "Sprint",
+    sprintActive: "{{sprint}} (aktiv)",
+    noSprints: "Dieses Board hat keinen aktiven oder künftigen Sprint.",
+    jql: "JQL-Abfrage",
+    jqlHint:
+      "So, wie Sie sie in der Vorgangssuche eingeben würden. Sie geht an Jira und wird hier nicht gespeichert.",
+    import: "Importieren",
+    importing: "Wird importiert…",
+    nothingAsked: "Wählen Sie zuerst einen Sprint oder geben Sie eine Abfrage ein.",
+    leftOut_one:
+      "{{count, number}} Eintrag ausgelassen: Die Warteschlange ist voll, oder er konnte nicht gelesen werden.",
+    leftOut_other:
+      "{{count, number}} Einträge ausgelassen: Die Warteschlange ist voll, oder sie konnten nicht gelesen werden.",
+    beyond_one:
+      "Etwa {{count, number}} weiterer jenseits der Grenze von {{max, number}} Einträgen.",
+    beyond_other:
+      "Etwa {{count, number}} weitere jenseits der Grenze von {{max, number}} Einträgen.",
+    beyondUnknown: "Weitere Einträge liegen jenseits der Grenze von {{max, number}}.",
+    disconnect: "Trennen",
+    disconnectNote: "Damit wird Ihr Token hier gelöscht. {{system}} behält seine eigene Freigabe:",
+    grantsLink: "Entfernen Sie sie in Ihrem Atlassian-Konto",
+    loadFailed:
+      "Der {{system}}-Teil dieser Seite konnte nicht geladen werden. Der Raum funktioniert weiter: Laden Sie neu, um ihn zurückzuholen.",
+    result: {
+      connected: "{{system}} ist verbunden.",
+      cancelled: "Nichts wurde verbunden: Sie sind bei {{system}} zurückgegangen.",
+      expired:
+        "Das hat zu lange gedauert, {{system}} wurde nicht verbunden. Verbinden Sie es erneut.",
+      failed: "{{system}} konnte nicht verbunden werden. Versuchen Sie es erneut.",
+      lost: "{{system}} wurde nicht verbunden: Dieser Link ist abgelaufen oder wurde schon benutzt. Gehen Sie zurück in Ihren Raum und verbinden Sie es dort über die Warteschlange.",
+    },
+    write: {
+      waiting:
+        "{{item}}: {{card}} wurde nicht auf dieser Seite festgehalten, vielleicht von jemand anderem. Ein Klick schreibt es mit Ihrem Konto in {{system}}.",
+      writing: "{{card}} wird in {{item}} bei {{system}} geschrieben…",
+      written: "{{item}}: {{card}} steht in {{system}}.",
+      failed: "{{item}}: {{card}} ist nicht bei {{system}} angekommen.",
+      retry: "Erneut versuchen",
+      dismiss: "Ausblenden",
+      history: "In {{system}} schreiben",
+      done: "In {{system}} geschrieben.",
+    },
+    errors: {
+      connector_sign_in: "Melden Sie sich mit einem Konto an, um {{system}} zu nutzen.",
+      connector_not_connected: "Verbinden Sie zuerst {{system}} in der Warteschlange.",
+      connector_setup:
+        "{{system}} hat abgelehnt, obwohl die Verbindung gerade erneuert wurde: Neu verbinden hilft nicht. Wer diesen Server betreibt, sollte die Berechtigungen der {{system}}-App prüfen.",
+      connector_reconnect:
+        "{{system}} akzeptiert diese Verbindung nicht mehr. Verbinden Sie es erneut.",
+      connector_no_site: "Wählen Sie zuerst eine {{system}}-Website in der Warteschlange.",
+      connector_no_field: "Wählen Sie zuerst das Feld für die Schätzung in der Warteschlange.",
+      connector_bad_site: "Diese Website steht nicht mehr auf Ihrer {{system}}-Liste.",
+      connector_bad_field: "Dieses Feld ist kein Zahlenfeld dieser Website.",
+      connector_other_site:
+        "Dieser Eintrag gehört zu einer anderen {{system}}-Website als der, mit der Sie verbunden sind.",
+      connector_no_source: "Dieser Eintrag stammt nicht aus {{system}}.",
+      connector_no_final: "Halten Sie zuerst eine endgültige Schätzung fest.",
+      connector_not_numeric: "Nur eine Zahl geht an {{system}}, diese Schätzung bleibt also hier.",
+      connector_rate_limited:
+        "{{system}} bittet um weniger Tempo. Versuchen Sie es gleich noch einmal.",
+      connector_rate_limited_wait:
+        "{{system}} bittet um weniger Tempo. Versuchen Sie es in {{seconds, number}} s erneut.",
+      connector_forbidden: "Ihr {{system}}-Konto darf das nicht.",
+      connector_not_found: "{{system}} findet das nicht, oder Ihr Konto darf es nicht sehen.",
+      connector_bad_query:
+        "{{system}} konnte diese Abfrage nicht ausführen. Prüfen Sie sie und versuchen Sie es erneut.",
+      connector_field_refused:
+        "{{system}} hat das Feld bei diesem Eintrag abgelehnt: Vielleicht ist es nicht auf seiner Maske.",
+      connector_unavailable: "{{system}} antwortet nicht richtig. Versuchen Sie es später erneut.",
+      connector_timeout: "{{system}} hat zu lange gebraucht. Versuchen Sie es erneut.",
+    },
+  },
   common: {
     network:
       "Der Server ist nicht erreichbar. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",

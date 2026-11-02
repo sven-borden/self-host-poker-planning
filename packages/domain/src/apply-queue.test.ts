@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { apply } from "./apply.ts";
-import { cleanQueueItem, itemSubject, queueBytes, queueIdentity } from "./apply-queue.ts";
+import {
+  cleanQueueItem,
+  cutTitle,
+  fitToQueue,
+  itemSubject,
+  queueBytes,
+  queueIdentity,
+} from "./apply-queue.ts";
 import type { Command } from "./commands.ts";
 import {
   AUTO_ADVANCE_MS,
@@ -11,6 +18,8 @@ import {
   MAX_QUEUE_ITEMS,
   MAX_TITLE_LENGTH,
   type Participant,
+  type QueueEntry,
+  type QueueSource,
   type RoomState,
 } from "./room.ts";
 
@@ -548,5 +557,127 @@ describe("auto-advance", () => {
     const round = stored.round && { ...stored.round, advanceAt: T0 + 1 };
     const result = must({ ...stored, round }, { type: "queueRemove", id: 1 });
     expect(result.state.round?.advanceAt).toBeUndefined();
+  });
+});
+
+describe("a connector's import (#54)", () => {
+  const SOURCE: QueueSource = { system: "jira", site: "cloud-1", id: "10001" };
+  const imported = (key: string, source: unknown = SOURCE) =>
+    ({ key, title: `Fix ${key}`, source }) as QueueEntry;
+
+  it("adds items with their source, as a paste adds them", () => {
+    const { state, causes } = must(room(), { type: "queueImport", items: [imported("ABC-1")] });
+    expect(state.queue?.items).toEqual([
+      { id: 1, key: "ABC-1", title: "Fix ABC-1", source: SOURCE },
+    ]);
+    expect(causes).toEqual([{ type: "queueChanged", added: 1 }]);
+  });
+
+  it("is the PO's alone, like every change to the queue", () => {
+    expect(refusal(room(), { type: "queueImport", items: [imported("ABC-1")] }, ANA)).toBe(
+      "not_owner",
+    );
+  });
+
+  it("refuses an item without a whole source, and all of the batch with it", () => {
+    const bad: unknown[] = [
+      null,
+      "cloud-1",
+      {},
+      { system: "gitlab", site: "a", id: "1" },
+      { system: "jira", site: "", id: "1" },
+      { system: "jira", site: 7, id: "1" },
+      { system: "jira", site: "a", id: "" },
+      { system: "jira", site: "a", id: 1 },
+      { system: "jira", site: "a b", id: "1" },
+    ];
+    for (const source of bad) {
+      const items = [imported("ABC-1"), imported("ABC-2", source)];
+      expect(refusal(room(), { type: "queueImport", items })).toBe("bad_queue_item");
+    }
+    expect(refusal(room(), { type: "queueImport", items: ["ABC-1"] as never })).toBe(
+      "bad_queue_item",
+    );
+  });
+
+  it("never reads a source from a paste", () => {
+    const { state } = must(room(), {
+      type: "queueAdd",
+      items: [imported("ABC-1")],
+    });
+    expect(state.queue?.items[0]).toEqual({ id: 1, key: "ABC-1", title: "Fix ABC-1" });
+  });
+
+  it("gives the round the item's source, by hand, by countdown and through Vote again", () => {
+    const filled = must(room(), {
+      type: "queueImport",
+      items: [imported("ABC-1"), imported("ABC-2", { ...SOURCE, id: "10002" })],
+    }).state;
+    const first = must(filled, { type: "startNext", id: 1 }).state;
+    expect(first.round?.source).toEqual(SOURCE);
+    const shown = must(first, { type: "reveal" }).state;
+    const again = must(shown, { type: "revote" });
+    expect(again.state.round?.source).toEqual(SOURCE);
+    expect(again.ended?.source).toEqual(SOURCE);
+
+    const counting = must(auto(must(again.state, { type: "reveal" }).state), {
+      type: "setFinal",
+      card: "5",
+    }).state;
+    const next = must(counting, { type: "timeUp" }, PO, T0 + AUTO_ADVANCE_MS);
+    expect(next.state.round?.source).toEqual({ ...SOURCE, id: "10002" });
+  });
+
+  it("gives a round on a pasted item or a typed subject no source", () => {
+    const pasted = must(queued(room(), "Plain"), { type: "startNext", id: 1 }).state;
+    expect(pasted.round).not.toHaveProperty("source");
+    const typed = must(room(), { type: "startRound", subject: { kind: "none" } }).state;
+    expect(typed.round).not.toHaveProperty("source");
+  });
+
+  it("cuts a title with an ellipsis, by code points", () => {
+    expect(cutTitle("abcd😀f", 5)).toBe("abcd\u{2026}");
+    expect(cutTitle("😀😀😀", 3)).toBe("😀😀\u{2026}");
+  });
+
+  it("takes what fits, and counts duplicates and overflow", () => {
+    const queue = must(queued(room(), "One"), {
+      type: "queueImport",
+      items: [imported("ABC-1")],
+    }).state.queue;
+    expect(fitToQueue(queue, [imported("ABC-1"), imported("ABC-2"), imported("ABC-2")])).toEqual({
+      fit: [imported("ABC-2")],
+      duplicates: 2,
+      overflow: 0,
+    });
+    expect(fitToQueue(undefined, [{ title: "Alone" }])).toEqual({
+      fit: [{ title: "Alone" }],
+      duplicates: 0,
+      overflow: 0,
+    });
+  });
+
+  it("stops at the item limit and at the byte limit", () => {
+    const many = Array.from({ length: MAX_QUEUE_ITEMS + 3 }, (_, n) => ({ key: `ABC-${n + 1}` }));
+    const counted = fitToQueue(undefined, many);
+    expect(counted.fit).toHaveLength(MAX_QUEUE_ITEMS);
+    expect(counted.overflow).toBe(3);
+
+    const wide = Array.from({ length: MAX_QUEUE_ITEMS }, (_, n) => ({
+      title: `${n} ${"€".repeat(190)}`,
+      source: SOURCE,
+    }));
+    const bytes = fitToQueue(undefined, wide);
+    expect(bytes.overflow).toBeGreaterThan(0);
+    expect(queueBytes(bytes.fit.map((entry, n) => ({ ...entry, id: n + 1 })))).toBeLessThanOrEqual(
+      MAX_QUEUE_BYTES,
+    );
+    const stored = must(room(), { type: "queueAdd", items: [] }).state;
+    expect(
+      must(stored, {
+        type: "queueImport",
+        items: bytes.fit.map((entry) => ({ ...entry, source: SOURCE })),
+      }).state.queue?.items,
+    ).toHaveLength(bytes.fit.length);
   });
 });

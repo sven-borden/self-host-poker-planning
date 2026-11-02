@@ -60,7 +60,7 @@ export function toSnapshot(state: RoomState, viewer: UserId, meta: SnapshotMeta)
       settings: settingsView(state, viewer),
       participants: people.map(([id, p]) => participantView(id, p, state.ownerId)),
       you: Object.hasOwn(state.participants, viewer) ? viewer : null,
-      round: state.round ? roundView(state.round, order, viewer) : null,
+      round: state.round ? roundView(state.round, order, viewer, state.ownerId) : null,
       ...queueSummary(state.queue),
     },
     causes: projectCauses(meta.causes ?? [], state.round),
@@ -288,7 +288,12 @@ function voterOrder(round: Round, order: readonly UserId[]): Array<[UserId, Vote
   return voters;
 }
 
-function roundView(round: Round, order: readonly UserId[], viewer: UserId): RoundView {
+function roundView(
+  round: Round,
+  order: readonly UserId[],
+  viewer: UserId,
+  ownerId: UserId,
+): RoundView {
   const voters = voterOrder(round, order);
   const own = voteOf(round, viewer);
   const base = {
@@ -303,6 +308,8 @@ function roundView(round: Round, order: readonly UserId[], viewer: UserId): Roun
     specials: [...round.specials],
     voted: voters.map(([id]) => id),
     ...(own !== undefined ? { yourVote: own.card } : {}),
+    // The tracker's name and nothing else of the source, and for the PO alone (#54).
+    ...(round.source !== undefined && viewer === ownerId ? { system: round.source.system } : {}),
   };
   if (round.phase === "voting") return { ...base, phase: "voting", anonymous: round.anonymous };
 

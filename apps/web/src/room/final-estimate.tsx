@@ -8,9 +8,11 @@ import {
   useState,
 } from "react";
 import { Button } from "../components/ui/button.tsx";
+import { markFinalPress } from "../connectors/final-press.ts";
 import { useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
 import { commandSender } from "../realtime/room-connection.ts";
+import { useRoomStore } from "../stores/room-store.ts";
 import { CARD_FACE, CardValue, cardLabel } from "../table/cards.tsx";
 import { PLACED_FOCUS_GUARD_MS } from "../table/hand.tsx";
 import { useDecisionDock } from "./decision-dock.ts";
@@ -122,7 +124,10 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
     setRecording(true);
     onFailure(null);
     try {
+      // Marked before it leaves: a final that came from a tracker goes back by this press alone.
+      const settle = markFinalPress(useRoomStore.getState().code ?? "", round, selected);
       const ack = await commandSender()({ type: "setFinal", payload: { card: selected } });
+      settle(ack);
       if (ack.ok) setPicked(null);
       else report(ack.code);
     } finally {

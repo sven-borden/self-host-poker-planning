@@ -1,6 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { ConfigError, loadConfig, socialProviderIds } from "./config.ts";
+import {
+  ConfigError,
+  connectorGaps,
+  connectorNames,
+  loadConfig,
+  socialProviderIds,
+} from "./config.ts";
 import { SECRET, VALID_ENV } from "./test-support.ts";
 import { Secret, Vault } from "./vault.ts";
 
@@ -165,12 +171,45 @@ describe("loadConfig", () => {
     expect(socialProviderIds(config)).toEqual(["google", "microsoft"]);
   });
 
+  it("names what keeps a keyed Jira dark, and nothing when there is nothing to say (#54)", () => {
+    const jira = { JIRA_CLIENT_ID: "jira-id", JIRA_CLIENT_SECRET: "jira-secret" };
+    const google = { GOOGLE_CLIENT_ID: "g", GOOGLE_CLIENT_SECRET: "s" };
+    const vault = { POKER_VAULT_KEY: randomBytes(32).toString("base64") };
+    const gaps = (env: Record<string, string>) =>
+      connectorGaps(loadConfig({ ...VALID_ENV, ...env }));
+    expect(gaps({})).toEqual([]);
+    expect(gaps({ ...google, ...vault })).toEqual([]);
+    expect(gaps({ ...jira, ...google, ...vault })).toEqual([]);
+    expect(gaps({ ...jira, ...google })).toEqual(["POKER_VAULT_KEY"]);
+    expect(gaps({ ...jira, ...vault })).toEqual(["GOOGLE_CLIENT_ID", "MICROSOFT_CLIENT_ID"]);
+  });
+
+  it("has Jira only with both its keys, the vault and a way to sign in (#54)", () => {
+    const jira = { JIRA_CLIENT_ID: "jira-id", JIRA_CLIENT_SECRET: "jira-secret" };
+    const google = { GOOGLE_CLIENT_ID: "g", GOOGLE_CLIENT_SECRET: "s" };
+    const vault = { POKER_VAULT_KEY: randomBytes(32).toString("base64") };
+    const names = (env: Record<string, string>) =>
+      connectorNames(loadConfig({ ...VALID_ENV, ...env }));
+    expect(names({ ...jira, ...google, ...vault })).toEqual(["jira"]);
+    expect(names({})).toEqual([]);
+    expect(names({ ...google, ...vault })).toEqual([]);
+    expect(names({ ...jira, ...google })).toEqual([]);
+    expect(names({ ...jira, ...vault })).toEqual([]);
+    expect(loadConfig({ ...VALID_ENV, ...jira }).jira).toEqual({
+      clientId: "jira-id",
+      clientSecret: "jira-secret",
+    });
+    expect(loadConfig(VALID_ENV).jira).toBeUndefined();
+  });
+
   it("names the missing half of a provider's keys, never the value (#47)", () => {
     const halves = [
       ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
       ["GOOGLE_CLIENT_SECRET", "GOOGLE_CLIENT_ID"],
       ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"],
       ["MICROSOFT_CLIENT_SECRET", "MICROSOFT_CLIENT_ID"],
+      ["JIRA_CLIENT_ID", "JIRA_CLIENT_SECRET"],
+      ["JIRA_CLIENT_SECRET", "JIRA_CLIENT_ID"],
     ] as const;
     for (const [set, missing] of halves) {
       const error = configError({ ...VALID_ENV, [set]: SECRET });

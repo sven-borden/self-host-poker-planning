@@ -32,6 +32,8 @@ export type Command =
   | { type: "startRound"; subject: Subject; round?: number }
   /** A whole paste as one command (#52): all of it or, past the limit, none of it. */
   | { type: "queueAdd"; items: QueueEntry[] }
+  /** A connector's import (#54): as `queueAdd`, each item with its `source`. Server only. */
+  | { type: "queueImport"; items: QueueEntry[] }
   /** `to`: the item's place in the queue afterwards, from 0; past the end, the end. */
   | { type: "queueMove"; id: number; to: number }
   | { type: "queueRemove"; id: number }
@@ -91,8 +93,9 @@ export type CommandType = Command["type"];
  * sets, changes or removes the room's password over HTTP (the password itself never
  * enters a command); `moveGuest` (#48), when a guest signs in; `endCountdown` (#52), when the
  * PO or the whole room left during a countdown; `renameRoom` (#49), when the PO renames the room
- * over HTTP; `removeAccount` (#51), when someone deletes their account. The wire protocol has no
- * schema for them, so a client that sends one gets `bad_payload` before `apply` runs.
+ * over HTTP; `queueImport` (#54), when the PO imports from a tracker over HTTP; `removeAccount`
+ * (#51), when someone deletes their account. The wire protocol has no schema for them, so a
+ * client that sends one gets `bad_payload` before `apply` runs.
  */
 export type ServerCommandType =
   | "presence"
@@ -100,6 +103,7 @@ export type ServerCommandType =
   | "moveGuest"
   | "endCountdown"
   | "renameRoom"
+  | "queueImport"
   | "removeAccount";
 /** What a client may send: every command except the server's own. */
 export type ClientCommand = Exclude<Command, { type: ServerCommandType }>;

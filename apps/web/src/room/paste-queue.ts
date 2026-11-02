@@ -2,6 +2,7 @@ import {
   ADO_ID,
   cleanQueueItem,
   cleanSubject,
+  cutTitle,
   JIRA_KEY,
   keyLabel,
   MAX_MESSAGE_BYTES,
@@ -336,16 +337,6 @@ function readLines(text: string): Found[] {
 function readPaste(text: string): { found: Found[]; header: string | null } {
   const separator = text.includes("\t") ? "\t" : csvSeparator(text);
   return separator === null ? { found: readLines(text), header: null } : readTable(text, separator);
-}
-
-/**
- * A title cut to `room` characters, the last one an ellipsis. Cut by code points, which
- * never count fewer than the characters a person sees.
- */
-function cutTitle(title: string, room: number): string {
-  return `${Array.from(title)
-    .slice(0, room - 1)
-    .join("")}\u{2026}`;
 }
 
 /** Room for a title: a key without a link shares one title with it (`itemSubject`). */

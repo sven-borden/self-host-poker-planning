@@ -18,6 +18,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "../components/ui/sheet.tsx";
+import { HistoryWrite } from "../connectors/history-write.tsx";
 import { useFormat, useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
 import { type HistoryResult, requestHistory } from "../realtime/room-connection.ts";
@@ -325,6 +326,7 @@ function HistoryRow({
         <Distribution round={round} />
         <Duration round={round} />
       </div>
+      <HistoryWrite round={round} />
       {hasVotes(round) ? (
         <>
           <button
