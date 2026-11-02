@@ -2156,8 +2156,8 @@ and that someone else may have recorded it: a final found in a snapshot, from a 
 another tab or device, from anyone else, or after a hand-over. A snapshot from an `enter` has no
 causes, so a tab that slept through a hand-over wakes to a line and writes nothing, though no
 render of it ever saw the role leave. So the rule lives in `WriteBackLines`, not in the parent's
-`me.isOwner`, which can only know who is PO now. A press refused, or answered with no frame of its
-own, confirms nothing, and a frame past the version its answer gave is someone else's. This also
+`me.isOwner`, which can only know who is PO now. A press refused confirms nothing, and a frame past
+the version its answer gave is someone else's. This also
 ends two tabs writing at once. A write a press would have started and a lost frame kept back
 (several instances, a lost reply) waits too: that errs towards a person looking. The line goes
 with a reload, and the history's "Write to Jira" on a past round is the way back to it.

@@ -6,9 +6,10 @@ import { useRoomStore } from "../stores/room-store.ts";
 // re-entry, from another tab or device, from anyone else or after a hand-over, waits for a press.
 //
 // The tab marks the press before the command leaves, since the answer follows the frame, and only
-// the live frame that says this final was just set, for this room, round and item, confirms it.
-// A snapshot from an `enter` has no causes, so a tab waking up confirms nothing. The room's own
-// chunk holds this: the frame may arrive before the lines' chunk does.
+// the live frame that says this card was just set confirms it, for the room, round and item it
+// was pressed on: `takeFinalPress` compares those. A snapshot from an `enter` has no causes, so a
+// tab waking up confirms nothing. The room's own chunk holds this: the frame may arrive before the
+// lines' chunk does.
 
 type FinalRound = Pick<RoundView, "number" | "startedAt" | "subject">;
 
@@ -42,17 +43,14 @@ function hear(snapshot: Snapshot) {
     drop();
     return;
   }
-  const { round, code } = snapshot.room;
-  if (round === null) return;
   if (!snapshot.causes.some((cause) => cause.type === "finalSet" && cause.card === card)) return;
-  if (finalId(code, round, card) !== id) return;
   confirmed = id;
   drop();
 }
 
 /**
  * The PO pressed "Record". Call it before the command leaves, and call what it returns with the
- * answer: a press refused, or answered with no frame of its own, confirms nothing.
+ * answer: a press refused confirms nothing, and neither does a frame past the answer's version.
  */
 export function markFinalPress(
   code: string,
@@ -71,9 +69,8 @@ export function markFinalPress(
   press = mine;
   return (answer) => {
     if (press !== mine) return;
-    const held = useRoomStore.getState().snapshot?.version ?? 0;
-    if (!answer.ok || held >= answer.version) drop();
-    else mine.version = answer.version;
+    if (answer.ok) mine.version = answer.version;
+    else drop();
   };
 }
 
