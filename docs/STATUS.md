@@ -163,6 +163,15 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
   device. A speaker in the top bar opens the switch and the volume. No `AudioContext` before
   a gesture; a hidden tab hears everything. A lazy chunk; the room route loads 179.3 kB. Live
   at 4e1ae00.
+- Installable from #46 (ADR-022): a manifest, icons and a service worker that stores no page,
+  only `/assets/*` and an offline page, and never touches `/api` or `/socket.io`; a haptic
+  beat at the reveal with a "Vibrate" switch where the device can. The room route loads
+  179.6 kB. Live at 093050c.
+- Background music from #45 (ADR-021): three moods composed as data, rendered once in the
+  page and looped, opt-in per device, playing while a round votes and fading at the reveal.
+  Its own switch and a mood picker in the speaker's popover, one volume. A lazy chunk. Live
+  at 2ce3c96.
+- **W4 is complete** (2026-11-02).
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -173,15 +182,18 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- W4's #45 and #46, each with an implementer agent.
+- #52: an implementer in `../pp-wt-52`.
+- #47: an implementer in `../pp-wt-47`. The PR will say `Refs #47`: the issue stays open
+  until the sign-ins work on poker.borden.ch with Sven's keys.
 - **Agents again, issue after issue, until the end of 2026-11-02** (Sven, 2026-11-01): the
   main session orchestrates and does not stop between issues (see `CLAUDE.md`).
 
 ## Next
 
 - W3 (#33–#41): all merged but #38 and #41, which need Sven's OQ-1 and OQ-2.
-- After W4: W5 (#47–#51), then W6 (#52–#55). W7 waits for Sven's OQ-3 (#56). #47's live
-  check needs his Google and Microsoft keys in Coolify: the code merges without them.
+- W5 (#48–#51) follows #47. W6 (#53–#55) follows, #53 needing #47 too. W7 waits for Sven's
+  OQ-3 (#56). #47's live check needs his Google and Microsoft keys in Coolify: the code
+  merges without them.
 - The local reveal budget fails on clean `main` since 2026-11-02 (named reveal, 1 run of 4
   clean, worst 67 ms; #43 had 10 of 10). CI passes at the first try. Cause not looked for.
 - Image size: 239 MB of 250 MB after #40 (236 MB before; architecture section 12 still
@@ -245,9 +257,13 @@ issues are merged.
   Suggested 5." names the last voter beside the group's suggestion (no card is paired
   with a name). Also the German count "0/7 haben abgestimmt" (was "haben bisher
   abgestimmt", shortened to fit 360 px), if another wording is wanted.
-- **After #44**: turn the sound on at poker.borden.ch and listen. Nobody has heard these
-  yet; they were measured, not judged. The sounds are numbers in `sound-recipes.ts`. A real
-  iPhone is untested too.
+- **After #46**: install the app on a phone and check the icon, the name "Poker" and the bar
+  colour, and on Android feel the reveal's beats. No real phone has run it. #46 closed with
+  the icon judged by eye and Lighthouse's check replaced by Chromium's.
+- **After #44 and #45**: turn the sound and the music on at poker.borden.ch and listen.
+  Nobody has heard either; they were measured, not judged. The sounds are numbers in
+  `sound-recipes.ts`, each mood's level one number in `music-moods.ts`. A real iPhone and
+  Safari are untested too.
 - **#19**: close the issue. PR #82 shipped it on 2026-10-27; the session's permissions
   refused `gh issue close`.
 - **#38**: pick the Azure service (OQ-1).

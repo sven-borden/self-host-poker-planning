@@ -1,16 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { audioContext, FakeAudioContext, fakeAudio } from "./fake-audio.ts";
 import {
+  endLoop,
   hush,
+  keep,
+  LOOP_FALL,
   play,
   preview,
+  release,
   setVolume,
   shut,
   soundRunning,
+  startLoop,
   subscribeSound,
   unlock,
 } from "./sound-engine.ts";
 import { SOUNDS } from "./sound-recipes.ts";
+
+/** A loop of 48 seconds, as far as the engine can tell. */
+const buffer = () => ({ duration: 48 }) as AudioBuffer;
 
 /** Lets a `resume` promise settle. */
 const settled = () => new Promise((resolve) => setTimeout(resolve));
@@ -141,6 +149,161 @@ describe("the sound engine", () => {
     const second = await running();
     expect(second).not.toBe(first);
     expect(soundRunning()).toBe(true);
+  });
+
+  describe("the music's loop", () => {
+    /** The first gain is the master's; each loop adds its fade. */
+    const fadeOf = (audio: FakeAudioContext, nth = 0) => audio.gains[nth + 1]?.gain;
+
+    it("drops a loop unless the context runs", async () => {
+      startLoop(buffer());
+      expect(FakeAudioContext.made).toEqual([]);
+
+      FakeAudioContext.refuse = true;
+      unlock();
+      await settled();
+      startLoop(buffer());
+      expect(audioContext().sources).toEqual([]);
+    });
+
+    it("loops the buffer and rises from nothing", async () => {
+      const audio = await running();
+      audio.currentTime = 20;
+      const loop = buffer();
+      startLoop(loop);
+      const [source] = audio.sources;
+      expect(source?.buffer).toBe(loop);
+      expect(source?.loop).toBe(true);
+      expect(source?.start).toHaveBeenCalledWith(20, 0);
+      const fade = fadeOf(audio);
+      expect(fade?.setValueAtTime).toHaveBeenCalledWith(0, 20);
+      expect(fade?.setTargetAtTime).toHaveBeenCalledWith(1, 20, 0.5);
+    });
+
+    it("leaves a loop that is already playing alone", async () => {
+      const audio = await running();
+      const loop = buffer();
+      startLoop(loop);
+      startLoop(loop);
+      expect(audio.sources).toHaveLength(1);
+    });
+
+    it("falls away and only then stops, never at once", async () => {
+      const audio = await running();
+      startLoop(buffer());
+      audio.currentTime = 30;
+      endLoop();
+      const [source] = audio.sources;
+      expect(fadeOf(audio)?.setTargetAtTime).toHaveBeenLastCalledWith(0, 30, LOOP_FALL / 4);
+      expect(source?.stop).toHaveBeenCalledTimes(1);
+      expect(source?.stop.mock.calls[0]?.[0]).toBeCloseTo(30 + 2 * LOOP_FALL);
+      expect(source?.disconnect).not.toHaveBeenCalled();
+      source?.onended?.();
+      expect(audio.gains[1]?.disconnect).toHaveBeenCalledTimes(1);
+    });
+
+    it("goes on where it stopped, around the loop", async () => {
+      const audio = await running();
+      const loop = buffer();
+      startLoop(loop);
+      audio.currentTime += 50;
+      endLoop();
+      audio.currentTime += 5;
+      startLoop(loop);
+      const [, second] = audio.sources;
+      expect(second?.start.mock.calls[0]?.[1]).toBeCloseTo(2);
+    });
+
+    it("fades one loop under the next", async () => {
+      const audio = await running();
+      startLoop(buffer());
+      startLoop(buffer());
+      const [first, second] = audio.sources;
+      expect(first?.stop).toHaveBeenCalledTimes(1);
+      expect(second?.stop).not.toHaveBeenCalled();
+      expect(fadeOf(audio, 1)?.setValueAtTime).toHaveBeenCalledWith(0, audio.currentTime);
+    });
+
+    it("is out of a hush's reach", async () => {
+      const audio = await running();
+      startLoop(buffer());
+      hush();
+      expect(audio.sources[0]?.stop).not.toHaveBeenCalled();
+    });
+
+    it("keeps the context until the music has fallen away", async () => {
+      const audio = await running();
+      startLoop(buffer());
+      release();
+      expect(audio.closed).toBe(false);
+      audio.sources[0]?.onended?.();
+      expect(audio.closed).toBe(true);
+    });
+
+    it("waits for every loop still falling away", async () => {
+      const audio = await running();
+      startLoop(buffer());
+      startLoop(buffer());
+      release();
+      audio.sources[1]?.onended?.();
+      expect(audio.closed).toBe(false);
+      audio.sources[0]?.onended?.();
+      expect(audio.closed).toBe(true);
+    });
+
+    it("stays when the sound is wanted again before the music has fallen away", async () => {
+      const audio = await running();
+      startLoop(buffer());
+      release();
+      unlock();
+      audio.sources[0]?.onended?.();
+      expect(audio.closed).toBe(false);
+      expect(soundRunning()).toBe(true);
+    });
+
+    it("stays when something wants it back without a gesture", async () => {
+      const audio = await running();
+      startLoop(buffer());
+      release();
+      keep();
+      startLoop(buffer());
+      audio.sources[0]?.onended?.();
+      expect(audio.closed).toBe(false);
+      expect(soundRunning()).toBe(true);
+      expect(audio.sources[1]?.stop).not.toHaveBeenCalled();
+    });
+
+    it("shuts at once with no music to wait for", async () => {
+      const audio = await running();
+      release();
+      expect(audio.closed).toBe(true);
+    });
+
+    it("does not wait on a suspended context, which ends nothing", async () => {
+      const audio = await running();
+      startLoop(buffer());
+      audio.state = "suspended";
+      release();
+      expect(audio.closed).toBe(true);
+    });
+
+    it("gives the device back when the context stops during the fall", async () => {
+      const audio = await running();
+      startLoop(buffer());
+      release();
+      expect(audio.closed).toBe(false);
+      await audio.suspend();
+      expect(audio.closed).toBe(true);
+      expect(soundRunning()).toBe(false);
+    });
+
+    it("waits out a context that stops while nothing is being released", async () => {
+      const audio = await running();
+      startLoop(buffer());
+      endLoop();
+      await audio.suspend();
+      expect(audio.closed).toBe(false);
+    });
   });
 
   it("does nothing where there is no Web Audio", () => {
