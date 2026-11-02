@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Button, buttonVariants } from "../components/ui/button.tsx";
-import { errorMessage } from "../i18n/errors.ts";
+import { asksForReload, errorMessage } from "../i18n/errors.ts";
 import { useT } from "../i18n/hooks.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 
@@ -63,6 +63,11 @@ export function RoomStatus({ presence = true }: { presence?: boolean }) {
 
 function RoomError({ error }: { error: string }) {
   const t = useT();
+  const reload = (
+    <Button className="mt-6" onClick={() => window.location.reload()}>
+      {t("room.reload")}
+    </Button>
+  );
   if (error === "protocol_mismatch") {
     // An old tab after a redeploy: its code no longer speaks the server's protocol.
     return (
@@ -75,12 +80,17 @@ function RoomError({ error }: { error: string }) {
     );
   }
   const message = error === "offline" ? t("room.offline") : errorMessage(t, error);
+  // A message that says to reload comes with the button that does it: an installed app has
+  // no browser controls (#46), and the tab may have resumed on an old build.
   return (
     <div role="alert" className="mt-6">
       <p>{message}</p>
-      <Link to="/" className={buttonVariants({ variant: "outline", className: "mt-6" })}>
-        {t("room.backHome")}
-      </Link>
+      <div className="flex flex-wrap gap-3">
+        {asksForReload(error) ? reload : null}
+        <Link to="/" className={buttonVariants({ variant: "outline", className: "mt-6" })}>
+          {t("room.backHome")}
+        </Link>
+      </div>
     </div>
   );
 }

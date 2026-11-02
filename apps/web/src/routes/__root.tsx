@@ -4,6 +4,7 @@ import { BrandMark } from "../components/shell/brand-mark.tsx";
 import { EmptyTable } from "../components/shell/empty-table.tsx";
 import { ErrorPage } from "../components/shell/error-page.tsx";
 import { LanguageSwitcher } from "../components/shell/language-switcher.tsx";
+import { reloadAction } from "../components/shell/reload-action.ts";
 import { ThemeToggle } from "../components/shell/theme-toggle.tsx";
 import { usePageTitle } from "../components/shell/use-page-title.ts";
 import { buttonVariants } from "../components/ui/button.tsx";
@@ -103,9 +104,13 @@ function IdentityToasts() {
       toast.dismiss("identity-retrying");
       if (status !== "error") return;
       if (error === COOKIES_BLOCKED) {
-        toast.error(t("identity.cookiesBlocked"), { id: "cookies-blocked", duration: Infinity });
+        toast.error(t("identity.cookiesBlocked"), {
+          id: "cookies-blocked",
+          duration: Infinity,
+          action: reloadAction(t),
+        });
       } else if (error === UNAUTHENTICATED) {
-        toast.error(errorMessage(t, error), { id: "session-lost" });
+        toast.error(errorMessage(t, error), { id: "session-lost", action: reloadAction(t) });
       }
     });
   }, [status, error, t]);

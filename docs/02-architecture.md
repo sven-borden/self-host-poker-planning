@@ -808,6 +808,8 @@ password, no social provider before W5.
     `apps/web/src/csp/style-singleton.ts`, which adopts a constructed sheet) and sonner
     (whose `<style>` the build cuts; its `styles.css` is bundled instead). A download of a
     `blob:` URL through `<a download>` is a navigation, which the policy does not govern.
+    The service worker and the manifest (#46, ADR-022) need no directive: `worker-src` falls
+    back to `script-src 'self'` and `manifest-src` to `default-src 'self'`.
     `CSP_REPORT_ONLY=true` sends the same policy as `Content-Security-Policy-Report-Only`
     (without the upgrade, which browsers ignore there); `CSP_EXTRA_SOURCES` adds origins to
     `script-src`, `style-src`, `img-src`, `font-src`, `connect-src`, `frame-src` or

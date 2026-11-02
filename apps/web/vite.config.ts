@@ -3,6 +3,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { pwa } from "./scripts/pwa-plugin.ts";
 
 // Paths are absolute because the root Vitest config extends this file from the repo root:
 // relative paths would resolve against the current directory, not apps/web.
@@ -79,6 +80,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     sonnerStylesAsCss(),
+    pwa(),
   ],
   build: {
     // The real budget is 200 kB of gzipped JavaScript on the room route

@@ -49,3 +49,21 @@ export function errorMessage(t: TFunction, code: string): string {
   // The key is only known at run time; ERROR_VALUES above is what tsc checks.
   return (t as (key: string, values?: object) => string)(`errors.${code}`, values);
 }
+
+/**
+ * The codes whose message asks for a reload (`errors.test.ts` holds this list to the English
+ * copy), and so need a way to do it: an installed app (#46) has no browser controls.
+ */
+const RELOAD_CODES: ReadonlySet<string> = new Set([
+  "bad_command",
+  "not_participant",
+  "bad_payload",
+  "protocol_mismatch",
+  "unauthenticated",
+]);
+
+/** True when the text for this code, or for the browser-side `offline`, asks for a reload. */
+export function asksForReload(code: string): boolean {
+  // An unknown code gets the generic message, which asks for one too.
+  return code === "offline" || !isKnownErrorCode(code) || RELOAD_CODES.has(code);
+}

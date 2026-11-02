@@ -261,6 +261,8 @@ describe("the built web app", () => {
     writeFileSync(join(root, "index.html"), INDEX);
     writeFileSync(join(root, "theme-init.js"), "/* theme */");
     writeFileSync(join(root, "favicon.svg"), "<svg/>");
+    writeFileSync(join(root, "sw.js"), "/* worker */");
+    writeFileSync(join(root, "manifest.webmanifest"), "{}");
     writeFileSync(join(root, "assets", "index-C0ffee12.js"), "export {};");
     writeFileSync(join(root, "assets", ".hidden.js"), "SENTINEL");
   });
@@ -343,6 +345,19 @@ describe("the built web app", () => {
     }
   });
 
+  it("asks a browser to check the service worker and the manifest on every load (#46)", async () => {
+    const worker = await get("/sw.js");
+    expect(worker.status).toBe(200);
+    expect(worker.headers.get("content-type")).toMatch(/^text\/javascript/);
+    expect(worker.headers.get("cache-control")).toBe("no-cache");
+    // At the root, so its scope is the whole app without a `Service-Worker-Allowed`.
+    expect(worker.headers.get("service-worker-allowed")).toBeNull();
+    const manifest = await get("/manifest.webmanifest");
+    expect(manifest.status).toBe(200);
+    expect(manifest.headers.get("content-type")).toMatch(/^application\/manifest\+json/);
+    expect(manifest.headers.get("cache-control")).toBe("no-cache");
+  });
+
   it("answers 404, not HTML, for a missing file with an extension", async () => {
     for (const path of ["/assets/index-0ld0ld00.js", "/missing.png", "/.vite/manifest.json"]) {
       const response = await get(path);
@@ -357,6 +372,8 @@ describe("the built web app", () => {
       "/assets/index-C0ffee12.js",
       "/favicon.svg",
       "/index.html",
+      "/manifest.webmanifest",
+      "/sw.js",
       "/theme-init.js",
     ]);
   });

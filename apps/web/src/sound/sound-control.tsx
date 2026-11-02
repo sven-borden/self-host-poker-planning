@@ -5,6 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popove
 import { ARROW_SETTLE_MS, SEGMENT } from "../components/ui/segment.ts";
 import { Switch } from "../components/ui/switch.tsx";
 import { useT } from "../i18n/hooks.ts";
+import { HapticsRow } from "../room/haptics-row.tsx";
 import { useBackgroundMusic } from "./background-music.ts";
 import { useAudioWhile, useSoundEffects } from "./sound-effects.ts";
 import { preview, soundRunning, subscribeSound, unlock } from "./sound-engine.ts";
@@ -194,6 +195,7 @@ export default function SoundControl() {
             onChange={(event) => changeVolume(Number(event.target.value) / 100)}
           />
         </div>
+        <HapticsRow />
       </PopoverContent>
     </Popover>
   );

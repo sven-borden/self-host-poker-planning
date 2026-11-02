@@ -1,10 +1,20 @@
 import { createRoom } from "@pp/domain";
 import { toSnapshot } from "@pp/protocol";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { changeLanguage } from "../i18n/i18n.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { RoomStatus } from "./room-status.tsx";
+
+// The way home is a router link: a plain anchor stands in for it.
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, className }: { children: ReactNode; className?: string }) => (
+    <a href="/" className={className}>
+      {children}
+    </a>
+  ),
+}));
 
 afterEach(async () => {
   cleanup();
@@ -49,5 +59,32 @@ describe("RoomStatus", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Neu laden" }));
     expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    "offline",
+    "not_participant",
+    "unauthenticated",
+    "bad_payload",
+    "bad_command",
+    "from_the_future",
+  ])("%s asks for a reload and gives a button for it, beside the way home", (code) => {
+    const reload = vi.fn();
+    vi.spyOn(window, "location", "get").mockReturnValue({ ...window.location, reload });
+    useRoomStore.getState().open("abc");
+    useRoomStore.getState().fail(code);
+    render(<RoomStatus />);
+    expect(screen.getByRole("alert").textContent).toMatch(/reload/i);
+    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    expect(reload).toHaveBeenCalledOnce();
+    expect(screen.getByRole("link", { name: "Back to the home page" })).toBeTruthy();
+  });
+
+  it("offers no reload for an error that does not ask for one", () => {
+    useRoomStore.getState().open("abc");
+    useRoomStore.getState().fail("room_full");
+    render(<RoomStatus />);
+    expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Back to the home page" })).toBeTruthy();
   });
 });
