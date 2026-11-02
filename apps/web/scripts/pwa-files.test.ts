@@ -125,6 +125,38 @@ describe("the build", () => {
     expect(buildId([["ab", "c"]])).not.toBe(buildId([["a", "bc"]]));
   });
 
+  it("covers the offline files, which Vite does not put in the bundle", async () => {
+    // A stand-in for the build: emitted files get a content-hashed name and stay out of
+    // `bundle`, as under Vite 8.
+    async function worker(changed: { source?: Record<string, string>; page?: string } = {}) {
+      const emitted = new Map<string, string>();
+      const context = {
+        emitFile(file: { name?: string; fileName?: string; source: string }) {
+          const name = file.fileName ?? `assets/${file.name}-${buildId([["x", file.source]])}`;
+          emitted.set(name, file.source);
+          return name;
+        },
+        getFileName: (name: string) => name,
+      };
+      const read = (path: string) => changed.source?.[path] ?? text(`src/${path}`);
+      const page = (...args: Parameters<typeof offlinePage>) =>
+        offlinePage(...args) + (changed.page ?? "");
+      const bundle = {
+        "assets/index-1.js": { type: "chunk", fileName: "assets/index-1.js", code: "x" },
+      };
+      const { generateBundle } = pwa(read, page);
+      await (generateBundle as (...args: unknown[]) => unknown).call(context, {}, bundle);
+      return emitted.get("sw.js");
+    }
+    const same = await worker();
+    expect(same).toBeDefined();
+    expect(await worker()).toBe(same);
+    // The page's template alone: its file name does not change, so only the hash can tell.
+    expect(await worker({ page: "<!-- changed -->" })).not.toBe(same);
+    expect(await worker({ source: { "pwa/offline.js": "// changed" } })).not.toBe(same);
+    expect(await worker({ source: { "pwa/offline.css": "/* changed */" } })).not.toBe(same);
+  });
+
   it("refuses a worker that lost a placeholder", () => {
     expect(() => workerSource("const BUILD = 1;", "x", [])).toThrow("placeholder");
   });
