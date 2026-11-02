@@ -19,9 +19,11 @@ import { createMyRoomsStore } from "./db/my-rooms.ts";
 import { createGuestLinks, type GuestLinks } from "./guest-link.ts";
 import type { Logger } from "./logger.ts";
 import { registerMyRoomsApi } from "./my-rooms.ts";
-import { memoryRateLimit } from "./rate-limit.ts";
+import { memoryRateLimit, type RateLimitRule } from "./rate-limit.ts";
 import { type Retention, startRetention } from "./retention.ts";
 import { registerPasswordApi } from "./room-password.ts";
+import { createRoomRules } from "./room-rule.ts";
+import { registerRestrictionApi } from "./room-rule-api.ts";
 import { registerRoomApi } from "./rooms.ts";
 import type { Setup } from "./run.ts";
 import { connectScaleOut, type ScaleOut } from "./scale-out.ts";
@@ -29,6 +31,8 @@ import { createRoomSync, type RoomSync } from "./sync/room-sync.ts";
 
 /** Knobs for tests only; production runs with the defaults. */
 export interface SetupTuning {
+  /** Commits that set a rule (`RULE_CHANGE_LIMIT` by default). */
+  ruleChangeLimit?: RateLimitRule;
   /** The presence grace (`PRESENCE_GRACE_MS`, 15 s, by default). */
   presenceGraceMs?: number;
   /** The grace after a restart (`PRESENCE_RESTART_GRACE_MS`, 60 s, by default). */
@@ -88,15 +92,19 @@ export async function setupServer(
     }
   }
   const { runner, store, db, retention: retentionStore } = database;
+  const rules = createRoomRules(db, config);
   sync = createRoomSync({
+    limiter,
     runner,
     store,
     access: store,
+    rules,
     history: store,
     logger,
     sessionAlive: sessionChecker(db),
     touchRoom: (roomId) => retentionStore.touchRoom(roomId, config.roomTtlDays),
     settleLinks: (account) => links.settle(account),
+    ...(tuning.ruleChangeLimit !== undefined && { ruleChangeLimit: tuning.ruleChangeLimit }),
     ...(tuning.presenceGraceMs !== undefined && { presenceGraceMs: tuning.presenceGraceMs }),
     ...(tuning.presenceRestartGraceMs !== undefined && {
       presenceRestartGraceMs: tuning.presenceRestartGraceMs,
@@ -130,8 +138,9 @@ export async function setupServer(
       ...opened.deps,
       registerApi: (app) => {
         registerAuthApi(app, { auth, db: database.db, config, limiter });
-        registerRoomApi(app, { auth, rooms: store, config, limiter });
-        registerPasswordApi(app, { auth, rooms: store, sync, config, limiter });
+        registerRoomApi(app, { auth, rooms: store, config, limiter, rules });
+        registerPasswordApi(app, { auth, rooms: store, sync, config, limiter, rules });
+        registerRestrictionApi(app, { auth, rooms: store, sync, config, rules, limiter });
         registerMyRoomsApi(app, {
           auth,
           rooms: createMyRoomsStore(db),
@@ -139,6 +148,7 @@ export async function setupServer(
           sync,
           config,
           limiter,
+          rules,
         });
       },
       socketMiddleware: [sessionMiddleware(auth)],

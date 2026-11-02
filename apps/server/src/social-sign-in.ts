@@ -19,7 +19,7 @@
  *   `error_description`, which a provider or a crafted link can fill with anything.
  */
 import { createHash } from "node:crypto";
-import { isRoomCode } from "@pp/domain";
+import { isRoomCode, MICROSOFT_CONSUMER_TENANT } from "@pp/domain";
 import { SIGN_IN_ERROR_PARAM, type SignInErrorCode } from "@pp/protocol";
 import type { MicrosoftEntraIDProfile } from "better-auth/social-providers";
 import { z } from "zod";
@@ -30,9 +30,6 @@ import { type Config, socialProviderIds } from "./config.ts";
  * 30 behind one office address signing in together passes; a loop gets one every 2 s.
  */
 export const SOCIAL_SIGN_IN_LIMIT = { window: 60, max: 30 } as const;
-
-/** Every personal Microsoft account carries this `tid`. */
-const MICROSOFT_CONSUMER_TENANT = "9188040d-6c67-4c5b-b112-36a304b66dad";
 
 /** Better Auth's `error` for a Microsoft account `MICROSOFT_TENANT_ID` does not admit. */
 const TENANT_REFUSED = "tenant_not_allowed";

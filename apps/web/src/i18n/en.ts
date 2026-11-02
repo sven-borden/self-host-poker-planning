@@ -65,6 +65,15 @@ const errors = {
   queue_full:
     "The queue is full: it holds {{max, number}} items at most, fewer when they are long.",
   unknown_item: "That item is no longer in the queue.",
+  bad_restriction:
+    "One of these entries is not a domain or a tenant id, or there are too many. Check them and try again.",
+  owner_not_allowed:
+    "Only someone who meets this room’s sign-in rule can become its product owner.",
+  sign_in_required: "This room is limited to certain accounts. Sign in to continue.",
+  account_not_allowed: "This account cannot join this room.",
+  session_too_old: "Your sign-in is too old for this room. Sign out, then sign in again.",
+  restriction_unavailable:
+    "This server no longer offers that sign-in, so nobody can pass this rule.",
   /** Any code this version does not know yet. */
   unknown: "Something went wrong. Try again, or reload the page.",
 } as const satisfies Record<AckErrorCode | "unknown", string>;
@@ -268,6 +277,11 @@ export const en = {
       "Off, observers can still join a full room, up to {{total, number}} people in all.",
     observersCountRefused:
       "More than {{max, number}} people are here with the observers. Observers can count again once there are {{max, number}} or fewer.",
+    restriction: "Who can join",
+    restrictionHint:
+      "Limit this room to certain accounts. Anyone holding the link sees the allowed domains, so they can choose the right account.",
+    restrictionAnyone: "Anyone with the link",
+    restrictionLimited: "Limited",
   },
   deckField: {
     inUse: "In use",
@@ -542,6 +556,7 @@ export const en = {
     autoRevealOff: "The cards now wait for a reveal, even once everyone has voted.",
     autoAdvanceOn: "The next item now starts by itself after a final is recorded.",
     autoAdvanceOff: "The next item no longer starts by itself.",
+    restrictionChanged: "The product owner changed who can join this room.",
     queueAdded_one: "{{count, number}} item added to the queue. Next: {{item}}.",
     queueAdded_other: "{{count, number}} items added to the queue. Next: {{item}}.",
     queueAddedPlain_one: "{{count, number}} item added to the queue.",
@@ -648,6 +663,55 @@ export const en = {
         "You are signed in. Some of your rooms are still moving to your account: open them again in a moment.",
     },
   },
+  restriction: {
+    title: "This room is limited to certain accounts",
+    needsDomains: "To join, sign in with a Google account on {{domains}}.",
+    needsOrganisation: "To join, sign in with a Microsoft account from your organisation.",
+    needsBoth:
+      "To join, sign in with a Google account on {{domains}}, or a Microsoft account from your organisation.",
+    guest: "Guests cannot join this room. Sign in to continue.",
+    otherDomain:
+      "Your Google account is not on one of these domains, or Google has not verified its address. Sign out to use another account.",
+    otherOrganisation:
+      "Your Microsoft account belongs to another organisation. Sign out to use another account.",
+    microsoftDomain:
+      "A Microsoft sign-in never counts for an email domain, because it does not prove the address. Sign out to use a Google account, or ask the product owner to add your organisation.",
+    needsMicrosoft:
+      "This room takes Microsoft accounts from your organisation. Sign out to use one.",
+    otherAccount: "This account cannot join this room. Sign out to use another one.",
+    sessionTooOld:
+      "Your sign-in is more than {{days, number}} days old. This room asks for a recent one, as signing in again is how your provider confirms you are still there. Sign out, then sign in.",
+    unavailable:
+      "This server no longer offers the sign-in this room asks for, so nobody can join for now. Ask the product owner to change the room’s rule.",
+    yourOrganisation: "your organisation",
+    signInFirst: "Sign in to limit this room to certain accounts.",
+    domainsLabel: "Email domains",
+    domainsHint:
+      "One a line, matched exactly: example.com does not admit mail.example.com. Only a Google account whose address Google verified counts, and that proves only that someone could once receive mail there, a shared inbox included.",
+    tenantsLabel: "Microsoft tenant ids",
+    tenantsHint:
+      "One a line. People signing in with Microsoft pass by their organisation’s tenant id, never by their address: a domain above does not admit them.",
+    googleGone: "This server no longer offers Google sign-in: nobody can pass by a domain.",
+    microsoftGone: "This server no longer offers Microsoft sign-in: nobody can pass by a tenant.",
+    badDomain: "This is not a domain: {{entry}}",
+    badTenant: "This is not an organisation’s tenant id: {{entry}}",
+    tooMany: "Each list holds {{max, number}} entries at most.",
+    outsiders_one:
+      "{{count, number}} person here would not pass. They stay until they reload the page, lose their connection or leave.",
+    outsiders_other:
+      "{{count, number}} people here would not pass. They stay until they reload the page, lose their connection or leave.",
+    askFirst:
+      "You do not meet this rule yourself. You stay as long as you are the product owner, but you could not come back after handing the role over.",
+    removeOutsiders: "Remove everyone who would not pass",
+    removeAsk_one:
+      "{{count, number}} person leaves the room now, and can only come back with an account that passes.",
+    removeAsk_other:
+      "{{count, number}} people leave the room now, and can only come back with an account that passes.",
+    removeConfirm: "Remove them",
+    askConfirm: "Save it anyway",
+    save: "Save the rule",
+    remove: "Remove the rule",
+  },
   myRooms: {
     title: "My rooms",
     intro:
@@ -670,6 +734,8 @@ export const en = {
     kept: "Your room, with another product owner",
     keptWhy:
       "Someone else took over as product owner. Get the role back in the room, and you can delete it.",
+    signInAgain:
+      "Some of your rooms ask for a recent sign-in. Sign out, then sign in again to see them.",
     lastActive: "Active {{when}}",
     rounds_one: "{{count, number}} round",
     rounds_other: "{{count, number}} rounds",

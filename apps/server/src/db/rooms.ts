@@ -4,12 +4,12 @@
  * server instances stay correct without a lock; the command runner (runner.ts) retries a
  * lost one.
  */
-import type { Queue, RoomState, UserId } from "@pp/domain";
+import type { Queue, Restriction, RoomState, UserId } from "@pp/domain";
 import { and, desc, eq, inArray, lt, ne, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { guard } from "./errors.ts";
 import { type EndedRound, historyRow, isHistory, type StoredHistoryRound } from "./history.ts";
-import { room, roomAccess, roundHistory } from "./schema.ts";
+import { ROOM_RULE, room, roomAccess, roundHistory } from "./schema.ts";
 
 export type Db = NodePgDatabase;
 
@@ -39,6 +39,9 @@ export interface RoomHeader {
   name: string | null;
   /** Whether the room asks for a password (#31): the join screen shows its field. */
   hasPassword: boolean;
+  /** Its rule (#50) and PO, to judge the reader: the routes never hand either out here. */
+  restriction: Restriction | null;
+  ownerId: UserId;
 }
 
 /**
@@ -75,6 +78,9 @@ export interface StoredPassword {
   free: boolean;
   /** Seconds until the window of wrong tries ends (0 when none runs). */
   retryAfter: number;
+  /** Its rule (#50) and PO: someone the rule refuses gets no answer about the password. */
+  restriction: Restriction | null;
+  ownerId: UserId;
 }
 
 /** A try reserved on the room's count (`reserveTry`): the window it was counted in. */
@@ -161,6 +167,9 @@ export interface HistoryStore {
 }
 
 const hasHash = sql<boolean>`${room.passwordHash} is not null`;
+
+/** The rule in `live` (#50), without loading the state; null for a room without one. */
+const ruleOf = sql<Restriction | null>`${ROOM_RULE}`;
 
 /** A room's state, its queue and name apart: each has a column of its own. */
 function inColumns({ queue, name, ...live }: RoomState): {
@@ -271,7 +280,13 @@ export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore 
     loadRoomHeader: (code) =>
       guard("load room header", async () => {
         const rows = await db
-          .select({ code: room.code, name: room.name, hasPassword: hasHash })
+          .select({
+            code: room.code,
+            name: room.name,
+            hasPassword: hasHash,
+            restriction: ruleOf,
+            ownerId: room.ownerUserId,
+          })
           .from(room)
           .where(eq(room.code, code));
         return rows[0] ?? null;
@@ -412,6 +427,8 @@ export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore 
           .select({
             id: room.id,
             hash: room.passwordHash,
+            restriction: ruleOf,
+            ownerId: room.ownerUserId,
             free: sql<boolean>`(${room.ownerUserId} = ${who}
               or jsonb_exists(${room.live} -> 'participants', ${who})
               or exists (select 1 from ${roomAccess} a where a.room_id = ${room.id} and a.user_id = ${who}))`,

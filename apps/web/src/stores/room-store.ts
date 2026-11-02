@@ -1,3 +1,4 @@
+import type { RestrictionRefusal, RestrictionRequirement } from "@pp/domain";
 import type { Snapshot } from "@pp/protocol";
 import { create } from "zustand";
 
@@ -16,15 +17,34 @@ export type ConnectionStatus = "idle" | "connecting" | "connected" | "reconnecti
  *   snapshot stays on screen;
  * - `locked`: the room has a password and this viewer may not enter without it (#31);
  *   the socket stays connected, the page asks for the password;
+ * - `restricted`: the room's rule refused this viewer (#50): no snapshot, and the socket stays
+ *   connected, so a `signedIn` from another tab still reaches it;
  * - `error`: final until the page reloads; `error` says why.
  */
-export type RoomStatus = "idle" | "connecting" | "live" | "reconnecting" | "locked" | "error";
+export type RoomStatus =
+  | "idle"
+  | "connecting"
+  | "live"
+  | "reconnecting"
+  | "locked"
+  | "restricted"
+  | "error";
 
 /**
  * Why the room asks this viewer for its password (#31): it has one (`required`), or the
  * PO changed it since this page last saw the room (`changed`).
  */
 export type LockReason = "required" | "changed";
+
+/** Why the room's rule refused this viewer, and what would pass (#50). */
+export type RoomRefusal = RestrictionRequirement & { code: RestrictionRefusal };
+
+/** The codes of a room's rule (#50), as an `enter` or a `join` answers them. */
+export const isRestrictionRefusal = (code: string): code is RestrictionRefusal =>
+  code === "sign_in_required" ||
+  code === "account_not_allowed" ||
+  code === "session_too_old" ||
+  code === "restriction_unavailable";
 
 /**
  * Why the room is in `error`: an ack code (`room_not_found`, `protocol_mismatch`,
@@ -53,6 +73,8 @@ export interface RoomStoreState {
   removed: boolean;
   /** Set while `status` is `locked` (#31): why the page asks for the password. */
   locked: LockReason | null;
+  /** Set while `status` is `restricted` (#50): what the rule said. */
+  restricted: RoomRefusal | null;
   /** Starts following `code`; a different code drops the snapshot held. */
   open: (code: string) => void;
   /**
@@ -72,6 +94,8 @@ export interface RoomStoreState {
    * since the viewer is no longer in the room it shows.
    */
   lock: (reason: LockReason) => void;
+  /** The room's rule refused this viewer (#50): the snapshot held goes, as with `lock`. */
+  restrict: (refusal: RoomRefusal) => void;
   reset: () => void;
 }
 
@@ -84,6 +108,7 @@ const initialState = {
   said: { id: 0, text: "" },
   removed: false,
   locked: null as LockReason | null,
+  restricted: null as RoomRefusal | null,
 };
 
 export const useRoomStore = create<RoomStoreState>()((set, get) => ({
@@ -95,6 +120,7 @@ export const useRoomStore = create<RoomStoreState>()((set, get) => ({
       error: null,
       removed: false,
       locked: null,
+      restricted: null,
       snapshot: state.code === code ? state.snapshot : null,
     })),
   receive: (snapshot) => {
@@ -104,11 +130,14 @@ export const useRoomStore = create<RoomStoreState>()((set, get) => ({
     set({ snapshot });
     return true;
   },
-  setStatus: (status) => set({ status, error: null, locked: null }),
-  fail: (error) => set({ status: "error", error, locked: null }),
+  setStatus: (status) => set({ status, error: null, locked: null, restricted: null }),
+  fail: (error) => set({ status: "error", error, locked: null, restricted: null }),
   setConnection: (connection) => set({ connection }),
   announce: (text) => set((state) => ({ said: { id: state.said.id + 1, text } })),
   setRemoved: (removed) => set({ removed }),
-  lock: (reason) => set({ status: "locked", error: null, locked: reason, snapshot: null }),
+  lock: (reason) =>
+    set({ status: "locked", error: null, locked: reason, restricted: null, snapshot: null }),
+  restrict: (restricted) =>
+    set({ status: "restricted", error: null, locked: null, restricted, snapshot: null }),
   reset: () => set(initialState),
 }));

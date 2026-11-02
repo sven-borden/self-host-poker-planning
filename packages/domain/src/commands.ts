@@ -3,6 +3,7 @@
  */
 import type { CustomDeckErrorCode } from "./custom-deck.ts";
 import type { Card } from "./decks.ts";
+import type { RestrictionRefusal } from "./restriction.ts";
 import type { QueueEntry, Role, RoomState, Round, SettingsPatch, Subject, UserId } from "./room.ts";
 
 /**
@@ -110,7 +111,8 @@ export type Cause =
   | { type: "timerExtended" }
   | { type: "timeUp" }
   | { type: "finalSet"; card: Card }
-  | { type: "settingsUpdated"; password?: PasswordChange }
+  /** `restriction`: the room's rule (#50) changed, so its visitors are checked again. */
+  | { type: "settingsUpdated"; password?: PasswordChange; restriction?: true }
   | { type: "ownerChanged"; by: "transfer" | "claim"; to: UserId }
   | { type: "away"; who: UserId }
   | { type: "back"; who: UserId }
@@ -160,6 +162,9 @@ export type ErrorCode =
   | "bad_queue_item"
   | "queue_full"
   | "unknown_item"
+  | "bad_restriction"
+  | "owner_not_allowed"
+  | RestrictionRefusal
   | "bad_room_name"
   | CustomDeckErrorCode;
 

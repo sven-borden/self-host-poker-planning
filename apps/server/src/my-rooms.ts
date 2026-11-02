@@ -6,7 +6,7 @@
  *   after finishing a guest's move still pending (ADR-025);
  * - `PATCH /api/my-rooms/:id { name }`: renames a room, its PO only, through `apply`;
  * - `DELETE /api/my-rooms/:id`: deletes a room with all it holds, for someone who is its PO and
- *   its keeper (ADR-027);
+ *   its keeper (ADR-027), and for nobody else;
  * - `POST /api/my-rooms/:id/leave`: gives up the seat, through the `leave` command.
  *
  * A person who has nothing to do with a room hears what an unknown id hears, so an id says
@@ -14,22 +14,29 @@
  * deadline even for a command it refuses. Someone who knows the room, by a seat or a right to it,
  * hears why: their page may be out of date, and "no longer there" would be false.
  *
+ * A room with a rule (#50, ADR-028) tells someone it would refuse no more here than at its door. A
+ * seat there is off the list, as the seat goes when they next enter and the room says nothing to
+ * them meanwhile. So is a room that is theirs as keeper, with no delete: the role cannot come back
+ * to someone the rule shuts out, and a right that needed it waits, held, until the rule lets them
+ * pass (ADR-028). A sign-in too old for a rule hides the same rooms until they sign in again.
+ *
  * A room is named by its id in a path: a code is a bearer capability, and it stays out of every
  * address but the room's own. The list returns codes to people already in those rooms, and
  * nothing about anyone else in them. Every answer is `no-store`; an error is `{ code }`, never a
  * sentence. Logs name a room by its id: never its code or name.
  */
-import { cleanRoomName } from "@pp/domain";
+import { cleanRoomName, restrictionRefusal } from "@pp/domain";
 import { type CmdAck, WIRE_LIMITS } from "@pp/protocol";
 import type { Context, Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "./app.ts";
-import { type Auth, type SocketUser, sessionUser } from "./auth.ts";
+import { type Auth, type SocketUser, sessionOf } from "./auth.ts";
 import type { Config } from "./config.ts";
-import type { FoundRoom, MyRoomsCursor, MyRoomsStore } from "./db/my-rooms.ts";
+import type { FoundRoom, MyRoom, MyRoomsCursor, MyRoomsStore } from "./db/my-rooms.ts";
 import type { GuestLinks } from "./guest-link.ts";
 import { foreignOrigin, isJsonBody, rateLimited } from "./http.ts";
 import type { RateLimiter, RateLimitRule } from "./rate-limit.ts";
+import { identityOf, NO_RULES, type RoomRules, sessionTooOld } from "./room-rule.ts";
 import type { RoomSync } from "./sync/room-sync.ts";
 
 /** Rooms in one answer: the whole list of nearly everyone, in one request. */
@@ -60,6 +67,9 @@ function readCursor(raw: string): MyRoomsCursor | null {
   return micros !== undefined && id !== undefined ? { micros, id } : null;
 }
 
+/** Who is asking, and when their session began. */
+type Caller = SocketUser & { startedAt: number };
+
 export interface MyRoomsApiDeps {
   auth: Auth;
   rooms: MyRoomsStore;
@@ -67,11 +77,13 @@ export interface MyRoomsApiDeps {
   sync: Pick<RoomSync, "commandAs" | "roomDeleted">;
   config: Config;
   limiter: RateLimiter;
+  /** Rooms limited to accounts (#50); left out, a rule refuses everyone but the PO. */
+  rules?: RoomRules;
 }
 
 export function registerMyRoomsApi(
   app: Hono<AppEnv>,
-  { auth, rooms, links, sync, config, limiter }: MyRoomsApiDeps,
+  { auth, rooms, links, sync, config, limiter, rules = NO_RULES }: MyRoomsApiDeps,
 ): void {
   /**
    * What every route checks, in order: the origin, the session, that it is an account, the
@@ -81,14 +93,38 @@ export function registerMyRoomsApi(
     c: Context<AppEnv>,
     bucket: string,
     limit: RateLimitRule,
-  ): Promise<SocketUser | Response> {
+  ): Promise<Caller | Response> {
     c.header("Cache-Control", "no-store");
     if (foreignOrigin(c, config)) return c.json({ code: "not_allowed" }, 403);
-    const me = await sessionUser(auth, c.req.raw.headers);
-    if (!me) return c.json({ code: "unauthenticated" }, 401);
+    const session = await sessionOf(auth, c.req.raw.headers);
+    if (!session) return c.json({ code: "unauthenticated" }, 401);
+    const me = { ...session.user, startedAt: session.startedAt };
     if (me.isAnonymous) return c.json({ code: "not_allowed" }, 403);
     const allowed = await limiter.consume(`my-rooms|${bucket}|${me.id}`, limit);
     return allowed.allowed ? me : rateLimited(c, allowed.retryAfter);
+  }
+
+  /**
+   * The page as this person may read it. One read of their account, however many rooms have a
+   * rule: the rule is on each row, so the judgement costs no query per row. Their own PO role
+   * passes every rule, so a row they hold it on is left alone.
+   */
+  async function readable(list: MyRoom[], me: Caller) {
+    const ruled = (room: MyRoom) => room.rule !== null && !room.owned;
+    const identity = list.some(ruled) ? await identityOf(rules, me.id) : null;
+    const tooOld = sessionTooOld(me.startedAt, Date.now());
+    const shown: MyRoom[] = [];
+    let hidden = false;
+    for (const room of list) {
+      const refused =
+        room.rule !== null &&
+        !room.owned &&
+        restrictionRefusal(room.rule, identity, rules.providers) !== null;
+      if (refused) continue;
+      if (ruled(room) && tooOld) hidden = true;
+      else shown.push(room);
+    }
+    return { shown, hidden };
   }
 
   /** A refused command as HTTP: its code and status. */
@@ -129,11 +165,16 @@ export function registerMyRoomsApi(
     if (after === null) return c.json({ code: "bad_payload" }, 400);
     const settled = await links.settle(me.id, MY_ROOMS_SETTLE_MS);
     const { rooms: list, next } = await rooms.list(me.id, MY_ROOMS_PAGE, after);
+    const { shown, hidden } = await readable(list, me);
     return c.json({
-      rooms: list.map((room) => ({ ...room, lastActiveAt: room.lastActiveAt.toISOString() })),
+      rooms: shown.map(({ rule: _, ...room }) => ({
+        ...room,
+        lastActiveAt: room.lastActiveAt.toISOString(),
+      })),
       retentionDays: config.roomTtlDays,
       ...(next && { next: writeCursor(next) }),
       ...(!settled && { moving: true }),
+      ...(hidden && { signInAgain: true }),
     });
   });
 
@@ -160,11 +201,13 @@ export function registerMyRoomsApi(
     if (me instanceof Response) return me;
     const id = c.req.param("id");
     const room = await known(id, me.id);
-    if (room?.ownerId !== me.id || !room.keeper) return noDelete(c, room, me.id);
+    // The PO who is the keeper, and nobody else. A keeper the room's rule shuts out (ADR-028) is
+    // not the PO, and hears what anyone without the role hears.
+    if (!room || room.ownerId !== me.id || !room.keeper) return noDelete(c, room, me.id);
     // The statement is the judge. It refuses a claim or a hand-over that landed since, and a
     // second tab's delete: the row says which.
-    if (!(await rooms.deleteOwned(room.id, me.id)))
-      return noDelete(c, await known(id, me.id), me.id);
+    const deleted = await rooms.deleteOwned(room.id, me.id);
+    if (!deleted) return noDelete(c, await known(id, me.id), me.id);
     sync.roomDeleted(room.id);
     c.var.log.info({ room: room.id }, "room deleted");
     return c.body(null, 204);

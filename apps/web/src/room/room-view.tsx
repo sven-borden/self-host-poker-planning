@@ -7,6 +7,7 @@ import { useT } from "../i18n/hooks.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { JoinForm } from "./join-form.tsx";
 import { isRoomFull } from "./room-full.ts";
+import { RoomRestricted } from "./room-restricted.tsx";
 import { RoomStatus } from "./room-status.tsx";
 
 /** The table and the "You" panel: a chunk of their own, prefetched when the page mounts. */
@@ -17,7 +18,7 @@ const Seated = lazy(() => loadSeated().then((module) => ({ default: module.Seate
 type FocusTarget = "you" | "join" | null;
 
 /** What the room below its header shows. */
-type Screen = "none" | "join" | "full" | "seated";
+type Screen = "none" | "restricted" | "join" | "full" | "seated";
 
 /**
  * The room below its header (#16): the connection status, then, from the latest snapshot,
@@ -35,6 +36,10 @@ export function RoomView() {
   // The room asks for its password (#31): no snapshot, the join form with its field.
   const code = useRoomStore((state) => state.code);
   const locked = useRoomStore((state) => (state.status === "locked" ? state.locked : null));
+  // The room's rule refused the viewer (#50): no snapshot, and no form.
+  const refusal = useRoomStore((state) =>
+    state.status === "restricted" ? state.restricted : null,
+  );
   // The version the server answered `room_full` at; any newer snapshot asks again.
   const [refusedAt, setRefusedAt] = useState<number | null>(null);
   // Set just before the screen changes, and cleared once the new screen took the focus.
@@ -52,15 +57,17 @@ export function RoomView() {
   const me = ready ? room.participants.find((p) => p.id === room.you) : undefined;
   const full = ready && (isRoomFull(room) || (refusedAt !== null && refusedAt === version));
   const screen: Screen =
-    locked !== null
-      ? "join"
-      : !ready
-        ? "none"
-        : me !== undefined
-          ? "seated"
-          : full
-            ? "full"
-            : "join";
+    refusal !== null
+      ? "restricted"
+      : locked !== null
+        ? "join"
+        : !ready
+          ? "none"
+          : me !== undefined
+            ? "seated"
+            : full
+              ? "full"
+              : "join";
 
   // Someone left while the room-full screen showed: the form replaces it, so the focus
   // moves to the name field and the change is announced.
@@ -96,6 +103,7 @@ export function RoomView() {
       <p role="status" data-room-notice className="sr-only">
         {notice}
       </p>
+      {refusal !== null ? <RoomRestricted refusal={refusal} /> : null}
       {ready && screen === "full" ? <RoomFull /> : null}
       {screen === "join" && removed ? <RemovedNotice /> : null}
       {/* One place for the form, locked or not: it stays mounted while the password lets

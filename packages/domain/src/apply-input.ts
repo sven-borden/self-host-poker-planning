@@ -14,6 +14,8 @@ import {
   type SpecialCard,
   UNITS_PER_CHARACTER,
 } from "./decks.ts";
+import { cleanRestriction } from "./restriction.ts";
+import type { Restriction } from "./room.ts";
 import {
   MAX_NAME_LENGTH,
   MAX_ROOM_NAME_LENGTH,
@@ -130,6 +132,10 @@ export function canonicalSettings(s: RoomSettings): RoomSettings {
     observersCount: s.observersCount,
     // A room stored before #52 has none: off.
     autoAdvance: s.autoAdvance === true,
+    // As stored, malformed or not: a change of another setting must not open a room.
+    ...(s.restriction !== undefined && {
+      restriction: JSON.parse(JSON.stringify(s.restriction)) as Restriction,
+    }),
   };
 }
 
@@ -175,6 +181,7 @@ const SETTINGS_KEYS: readonly string[] = [
   "specials",
   "whoCanReveal",
   "timer",
+  "restriction",
   ...BOOLEAN_KEYS,
 ];
 const TIMER_KEYS: readonly string[] = ["seconds", "revealAtEnd"];
@@ -224,6 +231,15 @@ export function patchSettings(
     if (Object.hasOwn(timer, "revealAtEnd")) {
       if (typeof timer.revealAtEnd !== "boolean") return fail();
       next.timer.revealAtEnd = timer.revealAtEnd;
+    }
+  }
+  if (Object.hasOwn(patch, "restriction")) {
+    if (patch.restriction === null) {
+      delete next.restriction;
+    } else {
+      const rule = cleanRestriction(patch.restriction);
+      if (rule === null) return fail("bad_restriction");
+      next.restriction = rule;
     }
   }
   return { ok: true, settings: next };

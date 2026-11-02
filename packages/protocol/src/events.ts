@@ -38,8 +38,9 @@ export interface ServerToClientEvents {
   /** This user was removed from the room; the server disconnects the socket next. */
   kicked: () => void;
   /**
-   * The PO set or changed the room's password and this user is not in the room (#31): the
-   * socket left it, and its next `enter` asks for the password. An older client ignores it.
+   * The PO set or changed the room's password and this user is not in the room (#31), or the
+   * room's rule no longer lets them in (#50): the socket left it, and its next `enter` says
+   * what the room asks for. An older client ignores it.
    */
   locked: () => void;
   /**

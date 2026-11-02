@@ -35,6 +35,20 @@ export {
   UNITS_PER_CHARACTER,
 } from "./decks.ts";
 export { generateRange, type RangeErrorCode } from "./range.ts";
+export {
+  type AccessIdentity,
+  cleanDomain,
+  cleanRestriction,
+  cleanTenant,
+  MICROSOFT_CONSUMER_TENANT,
+  type RestrictionRefusal,
+  type RestrictionRequirement,
+  RULE_SESSION_MAX_AGE_DAYS,
+  type RuleProviders,
+  requirementOf,
+  restrictionRefusal,
+  roomRefusal,
+} from "./restriction.ts";
 export { computeResults, type Results } from "./results.ts";
 export {
   AUTO_ADVANCE_MS,
@@ -50,6 +64,7 @@ export {
   MAX_PASSWORD_LENGTH,
   MAX_QUEUE_BYTES,
   MAX_QUEUE_ITEMS,
+  MAX_RESTRICTION_ENTRIES,
   MAX_ROOM_NAME_LENGTH,
   MAX_TIMER_SECONDS,
   MAX_TITLE_LENGTH,
@@ -62,6 +77,7 @@ export {
   type QueueEntry,
   type QueueItem,
   type QueueSource,
+  type Restriction,
   ROLES,
   type Role,
   type RoomSettings,

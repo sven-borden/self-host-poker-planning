@@ -62,6 +62,8 @@ export interface SocketData {
    * the room sync checks it again on every `enter`.
    */
   sessionId?: string;
+  /** When that session began (epoch ms): a room with a rule asks a recent sign-in (ADR-028). */
+  sessionStartedAt?: number;
   /**
    * The room this socket entered, set once every check of `enter` passed; a socket
    * follows one room at a time. Logs and channel names use the id, never the code.

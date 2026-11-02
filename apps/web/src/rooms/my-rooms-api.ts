@@ -28,6 +28,8 @@ export interface MyRoomsPage {
   readonly next?: string;
   /** A guest's rooms are still moving to this account. */
   readonly moving: boolean;
+  /** Rooms were left out, as their rule asks for a more recent sign-in (ADR-028). */
+  readonly signInAgain: boolean;
 }
 
 function toRoom(raw: unknown): MyRoom {
@@ -71,6 +73,7 @@ export async function fetchMyRooms(after?: string): Promise<MyRoomsPage> {
     retentionDays,
     ...(typeof next === "string" && { next }),
     moving: field(body, "moving") === true,
+    signInAgain: field(body, "signInAgain") === true,
   };
 }
 

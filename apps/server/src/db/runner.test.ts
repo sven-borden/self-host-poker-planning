@@ -29,7 +29,9 @@ function memoryStore(rooms: StoredRoom[] = []) {
     },
     loadRoomHeader: async (code) => {
       const r = byCode.get(code);
-      return r ? { code: r.code, name: null, hasPassword: false } : null;
+      return r
+        ? { code: r.code, name: null, hasPassword: false, restriction: null, ownerId: "" }
+        : null;
     },
     commitRoom: async (id, expected, next, ended, access, _queueChanged, keepActivity) => {
       commits.push({
