@@ -38,7 +38,9 @@ export type Command =
   | { type: "transferOwner"; to: UserId }
   | { type: "claimOwner" }
   | { type: "presence"; who: UserId; connected: boolean }
-  | { type: "password"; on: boolean };
+  | { type: "password"; on: boolean }
+  /** A guest signed in: their place in this room becomes the account's (#48, ADR-025). */
+  | { type: "moveGuest"; guest: UserId; account: UserId };
 
 export type CommandType = Command["type"];
 
@@ -46,10 +48,10 @@ export type CommandType = Command["type"];
  * Commands only the server sends: `presence` (#17), after a person's last socket left
  * and the grace period passed, or when they come back; `password` (#31), when the PO
  * sets, changes or removes the room's password over HTTP (the password itself never
- * enters a command). The wire protocol has no schema for them, so a client that sends
- * one gets `bad_payload` before `apply` runs.
+ * enters a command); `moveGuest` (#48), when a guest signs in. The wire protocol has no
+ * schema for them, so a client that sends one gets `bad_payload` before `apply` runs.
  */
-export type ServerCommandType = "presence" | "password";
+export type ServerCommandType = "presence" | "password" | "moveGuest";
 /** What a client may send: every command except the server's own. */
 export type ClientCommand = Exclude<Command, { type: ServerCommandType }>;
 export type ClientCommandType = ClientCommand["type"];
