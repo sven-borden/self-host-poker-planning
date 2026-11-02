@@ -439,3 +439,89 @@ requires one to install, but offline would be the browser's error page).
 **Not tested.** No real iPhone or Android phone: the home-screen icon, the standalone start and
 the feel of the beats are for Sven. Plain http gets no worker and no install, as browsers
 require https (localhost aside); the app runs as before.
+
+## ADR-023: Sign-in with Google and Microsoft, narrow and without the providers' tokens (2026-11-02, #47)
+
+**Decision.** Better Auth's social providers for Google and Microsoft Entra ID, each there only
+when both its keys are set (`GOOGLE_CLIENT_ID` and `_SECRET`, `MICROSOFT_CLIENT_ID` and
+`_SECRET`, `MICROSOFT_TENANT_ID`, default `common`). One half set stops the start and names the
+missing variable, never a value. Without keys the routes do not exist, the page carries no tag
+and no button shows. Sign-in is never required, and everything a guest could do stays.
+
+**Only what sign-in needs reaches Better Auth.** Three more routes: `POST /sign-in/social`,
+`GET /callback/google` and `GET /callback/microsoft`, the last two per configured provider.
+Better Auth's sign-in body takes an `idToken`, scopes, `additionalData`, a login hint and three
+return URLs, so the page never writes it: it posts `{ provider, returnTo }`, strictly, and
+`signInRequest` builds the rest. Google's and Microsoft's id-token sign-in is off as well.
+
+**A full-page navigation, in two steps.** The page posts, gets the provider's URL back in JSON
+and navigates to it. A form post would follow the redirect under `form-action 'self'`, which
+refuses it; a popup would need `Cross-Origin-Opener-Policy` loosened. Navigating needs no
+directive at all, so neither the policy nor COOP changed, and `e2e/fixtures.ts` holds that over
+the whole flow.
+
+**A room's code never travels.** `returnTo` is `/` or `/r/<code>` and nothing else, checked by
+the domain's own pattern, so no spelling leaves the site. Better Auth keeps it in the
+`verification` row with the PKCE verifier (`storeStateStrategy: "database"`, set explicitly). The
+provider gets a random `state`, and `redirect_uri` is the fixed callback. This was read in
+Better Auth's code and is asserted on what the stand-in received, in Node and in a browser;
+`Referrer-Policy: same-origin` keeps the address out of `Referer` too. The purge clears sign-ins
+nobody finished, since Better Auth does so only when a callback arrives.
+
+**The provider's tokens are not kept.** Nothing here calls a provider after sign-in, and #53's
+connector tokens are a separate thing. A hook on `account` clears the access, refresh and id
+tokens and both expiries before the write, on create and on update, and
+`updateAccountOnSignIn: false` means a later sign-in writes nothing. So a stolen backup holds no
+way into anyone's Google or Microsoft account, and no encryption is needed for what is not there.
+Asked for is a name and an email: no `offline_access`, no Microsoft Graph, no profile photo
+(`user.image` stays null; the policy would refuse a provider's picture anyway). `prompt:
+select_account`, so that after signing out the next person at the browser gets a choice.
+
+**One thing is kept from the id token:** Microsoft's `tid`, in `account.tenant_id`, for #50's rooms
+limited to a tenant. The token is gone once written, so reading it later would mean asking
+everyone to sign in again. `(provider_id, account_id)` gets a unique index: every sign-in looks
+up by it, and one person at a provider is one account.
+
+**Errors.** A callback is a page a person sees, so it always ends in a redirect to the app,
+on the return path when it is known, with `?sign_in_error=<code>`: `cancelled`, `account_exists`,
+`no_email`, `rate_limited` or `failed`. The page takes the code out of the address before the
+router or the page views read it and says it once, in the reader's language. Better Auth's
+`error_description` is dropped: a provider or a crafted link can fill it with anything. A log line
+has the code and a reason from a fixed list (`invalid_code` is usually a wrong secret), never
+the query. A provider's name goes through `cleanName`; one it refuses is `""`, and the join form
+asks.
+
+**Linking by email stays Better Auth's cautious default.** A second provider joins an account only
+when both sides have a verified address. Entra's `email` claim is not verified unless the tenant
+says so, so a Microsoft sign-in with the address of an existing Google account is refused
+(`account_exists`), not linked: the nOAuth takeover needs exactly that link. #48 owns the merge
+rules and OQ-6. #50 must treat a Microsoft account's `email` the same way, and rely on
+`tenant_id`, not on the domain of an unverified address.
+
+**The guest stays, and pays until #48.** Better Auth's anonymous plugin deletes the guest on a
+sign-in; `disableDeleteAnonymousUser` keeps the row, and `auth.ts` marks where `onLinkAccount` goes.
+Until #48 the user id changes: the person returns to the room as somebody new, on the join form
+with the provider's name, must type a room's password again, and is not its PO any more (the old
+seat goes away like any other, and the role can be claimed after 120 s). The old guest's rooms
+and history stay, under the old guest. Production has no keys until Sven adds them, so he decides
+when that window opens. Signing out starts a fresh guest by reloading the page, since the old
+session's socket cannot carry on; the page stays the same.
+
+**A test seam that production cannot reach.** The provider's address is not configurable: no option
+of `authority`, `authorizationEndpoint`, `tokenEndpoint` or `redirectURI` is ever set, and no
+variable feeds one. `MICROSOFT_TENANT_ID` goes into Microsoft's path, so it must be a mode or a
+GUID. Tests run the real provider code against the real addresses: `fake-oidc.ts`, a real HTTP
+server with one-time codes and PKCE, is reached by replacing `fetch` in the test's own process,
+and in the browser by Playwright's routing. It is imported by no file that ships, and
+`social-sign-in.test.ts` holds that, with every plausible variable name set, against what the
+real provider objects ask for.
+
+**Alternatives.** `linkSocial`, which keeps the guest's id but fails for an account another user
+owns and needs `allowDifferentEmails`: #48's call, with `onLinkAccount`. An encrypted cookie for the
+state, equally private, with a replay window where the row is single-use. A base-URL override
+for tests, or an env switch: exactly the hole this avoids. `better-auth/client`: 12 kB for two
+fetch calls. Encrypting the tokens: there is nothing to keep them for.
+
+**Not tested.** Real Google and Microsoft: the stand-in follows their documented shape, and the
+provider code is theirs through Better Auth, but no real consent screen, real id token, or
+personal Microsoft account has been through it. That check is Sven's, and #47 stays open for it.

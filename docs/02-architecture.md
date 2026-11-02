@@ -540,8 +540,9 @@ anonymous users at least a day old (a sign-in writes the user before its session
 session that has not expired and no room they own (`room_owner_user_id_idx`); their
 sessions, accounts and grants go by cascade (`room_access_user_id_idx`), and a signed-in
 user is never one. Last, the ended windows of wrong passwords (#31) of the rooms that
-stay are cleared, without touching `last_active_at`. One `info` line per run: `rooms`,
-`history`, `guests`, `passwordWindows`, `interrupted`, `durationMs`; a failure logs its
+stay are cleared, without touching `last_active_at`, and so are the `verification` rows
+of sign-ins nobody finished. One `info` line per run: `rooms`,
+`history`, `guests`, `passwordWindows`, `verifications`, `interrupted`, `durationMs`; a failure logs its
 code alone. A restored backup, a lowered `ROOM_TTL_DAYS` or a long downtime makes every
 room past the period go in the first run after the start (README, "Privacy").
 
@@ -549,7 +550,7 @@ room past the period go in the first run after the start (README, "Privacy").
 
 Better Auth with the Drizzle adapter on the app's `pg` pool and the anonymous plugin
 (ADR-009), mounted under `/api/auth/*` (`apps/server/src/auth.ts`). No email and
-password, no social provider before W5.
+password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
 
 - **Guests**: every page load runs the web app's bootstrap: `GET /api/auth/get-session`,
   and without a session `POST /api/auth/sign-in/anonymous`, which creates a `user` row
@@ -575,7 +576,9 @@ password, no social provider before W5.
   Every other Better Auth cookie follows the same naming. `trustedOrigins` is `BASE_URL`
   alone.
 - **Endpoints**: only `GET /api/auth/get-session`, `POST /api/auth/sign-in/anonymous` and
-  `POST /api/auth/sign-out` reach Better Auth (`AUTH_ROUTES`); every other path under
+  `POST /api/auth/sign-out` reach Better Auth (`AUTH_ROUTES`), and with provider keys
+  `POST /api/auth/sign-in/social` and `GET /api/auth/callback/<provider>` for each configured
+  one (`socialRoutes`); every other path under
   `/api/auth` is a JSON 404 before its rate limiter (`/list-sessions` would hand out raw
   tokens, and the limiter keeps a counter per path). A POST from another `Origin` is
   refused with `not_allowed`. Bodies under `/api/auth/*` and `/api/me/*` are capped at
@@ -598,7 +601,8 @@ password, no social provider before W5.
   ignores an id it does not know. The room hears of it through `join` and `setAvatar`, as
   it hears of a name: other rooms keep what they have.
 - **Privacy**: sessions store neither the client address nor the user agent (a database
-  hook nulls both); Better Auth's telemetry is off.
+  hook nulls both); Better Auth's telemetry is off. An account adds an email and a name,
+  never a picture and never a provider's token.
 - **Logs**: a failed query's error carries its parameters (a session token), so no
   Better Auth or driver error is ever printed: Better Auth's logger goes to pino with a
   fixed message and at most its error code (`INTERNAL_SERVER_ERROR`);
@@ -610,14 +614,40 @@ password, no social provider before W5.
   `not_found`, 401 `unauthenticated`, 403 and a guest's second anonymous sign-in
   `not_allowed`, 429 `rate_limited` (with `Retry-After`), any other 4xx `bad_payload`,
   5xx `internal`. A database failure while reading a session is a 500, never "no
-  session", so an outage cannot hand out a new guest identity.
-- **W5**: Google and Microsoft Entra ID. Better Auth's anonymous plugin, on a social
-  sign-in, calls `onLinkAccount({ anonymousUser, newUser })` and then deletes the guest:
-  the user id changes. To keep the id, rooms and PO ownership, either link the provider
-  to the guest row (`linkSocial`, then clear `is_anonymous`), or move what the guest owns
-  in `onLinkAccount` (room `owner_user_id`, `live.ownerId`, participants, history), and
-  set `disableDeleteAnonymousUser` until that move is proven. Provider names must go
-  through `cleanName` too.
+  session", so an outage cannot hand out a new guest identity. A provider's callback is a
+  page a person sees: it answers with a redirect whatever happened (below).
+- **Sign-in with Google and Microsoft** (#47, ADR-023, `social-sign-in.ts`): each provider
+  exists when both its keys are set; one half set stops the start. The server names them in
+  `<meta name="pp-sign-in">` (ids only; no tag without keys), which the service worker cannot
+  freeze, as it stores no page.
+  - **Start**: the page posts `{ provider, returnTo }` to `/api/auth/sign-in/social`. The body
+    is strict, `returnTo` is `/` or `/r/<code>`, and Better Auth gets a body the server builds.
+    It answers `{ url }`, and the page navigates there: a form could not follow that redirect
+    under `form-action 'self'`, and neither the policy nor COOP changed for this.
+  - **State**: in the `verification` row with the PKCE verifier and the return path, and a
+    signed `state` cookie (`__Host-pp.state` on https). The provider gets a random `state` and
+    the fixed `redirect_uri`, never a room's code. The row is single-use; the purge clears
+    those nobody finished.
+  - **Callback**: `GET /api/auth/callback/google` or `/microsoft`, under `BASE_URL`; the
+    worker leaves `/api` alone. It always ends in a 302 to the app, with
+    `?sign_in_error=cancelled|account_exists|no_email|rate_limited|failed` when it failed. The
+    page takes that out of the address and says it once. A log line holds the code and a reason
+    from a fixed list, never the query.
+  - **Account**: `user` with the email (shown to its owner; in no snapshot), `emailVerified`,
+    the provider's name through `cleanName` (`""` when refused), no image; `account` with the
+    provider's id for the person and Microsoft's `tid` in `tenant_id` (#50). The access, refresh
+    and id tokens are cleared by a hook before the write; a later sign-in writes nothing. Asked
+    for: `openid profile email`, no `offline_access`, no Graph.
+  - **Linking**: Better Auth's default. Another provider joins an account only when both sides
+    have a verified address; otherwise `account_exists`. Entra's `email` is not verified by
+    default. OQ-6 and the merge rules are #48's.
+  - **The guest**: `disableDeleteAnonymousUser` keeps the row; a sign-in makes a new user, and
+    until #48 the person returns to the room as somebody new. #48 moves what the guest owns in
+    `onLinkAccount` (room `owner_user_id`, `live.ownerId`, participants, history), or links with
+    `linkSocial`, then clear `is_anonymous`.
+  - **No seam**: nothing configures a provider's address; tests replace `fetch` in their own
+    process (`fake-oidc.ts`, not in the image).
+  - **Sign-out**: `POST /api/auth/sign-out`, then a reload, which makes a new guest on the page.
 
 ## 8. Rooms, access and security
 
@@ -747,7 +777,8 @@ password, no social provider before W5.
   passes in a header of its own after dropping any client copy): anonymous sign-in 60 per
   address and minute, so a team of 30 behind one office address joins at once; every
   other auth endpoint 100 per 10 s; display name changes 10 per user and 60 per address
-  a minute; room creation 20 per address in 10 minutes, so an office behind one
+  a minute; starting a Google or Microsoft sign-in 30 per address and minute; room creation
+  20 per address in 10 minutes, so an office behind one
   address creates rooms freely while a loop gets two a minute; room header reads 120 per
   address and minute. Answer: 429
   `rate_limited` with `Retry-After`. The counters live in the process (per instance
@@ -761,6 +792,7 @@ password, no social provider before W5.
   | Room creation (`POST /api/rooms`) | rooms in a loop, the database | address | 20 in 10 min |
   | Room header reads (`GET /api/rooms/:code`) | guessing codes, a query each | address | 120 a minute |
   | Anonymous sign-in | guests in a loop | address | 60 a minute |
+  | Starting a Google or Microsoft sign-in | `verification` rows in a loop | address | 30 a minute |
   | Other auth endpoints | Better Auth's routes | address and path | 100 in 10 s |
   | Display name (`POST /api/me/name`) | name churn | person / address | 10 / 60 a minute |
   | Avatar (`POST /api/me/avatar`) | avatar churn | person / address | 10 / 60 a minute |
@@ -1065,7 +1097,9 @@ language, and an unknown code gets a generic one.
 | `REDIS_URL` | no | several instances only (#39): a `redis://` or `rediss://` URL that every instance reaches (Redis 6.2 or newer). Set, sockets use WebSocket only and `/api/health` adds `redis: ok` or `down`; may hold a password, never logged |
 | `SENTRY_DSN` | no | error reports to Sentry or GlitchTip from the server and the page (#40, section 11): `http(s)://<public key>@<host>[/<path>]/<project id>`; a DSN with a secret key is refused, since the page receives it |
 | `UMAMI_URL`, `UMAMI_WEBSITE_ID` | no | page views in Umami (#40, section 11), both or neither: Umami's address (the tracker is `/script.js` under it) or the tracker's own URL ending in `.js`, and the website's UUID |
-| Google / Microsoft keys | no (W5) | social sign-in |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | no | sign-in with Google (#47, section 7), both or neither; the secret is never logged. Redirect URI: `<BASE_URL>/api/auth/callback/google` |
+| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | no | sign-in with Microsoft Entra ID (#47), both or neither; the secret is never logged. Redirect URI: `<BASE_URL>/api/auth/callback/microsoft` |
+| `MICROSOFT_TENANT_ID` | no (`common`) | who may sign in with Microsoft: `common` (any work, school or personal account), `organizations` (work and school), `consumers` (personal) or one tenant's id (a GUID) |
 
 ## 13. Testing
 
@@ -1073,7 +1107,7 @@ language, and an unknown code gets a generic one.
 |---|---|---|
 | Unit | Vitest | every `apply` rule, decks, statistics, projections, parsers |
 | Integration | Vitest + Postgres (CI service) | write path with version conflicts, migrations, auth, sockets |
-| End-to-end | Playwright, several browser contexts | the built app served by the real server with its production headers; every page fails its test on a CSP or Permissions-Policy violation or an uncaught error (`e2e/fixtures.ts`); full rounds; secrecy asserted on WebSocket frames; `four-person.spec.ts` (#23) plays W1 end to end on every PR; a second server with Sentry and Umami on, their services answered by Playwright (`e2e/observed.ts`, #40) |
+| End-to-end | Playwright, several browser contexts | the built app served by the real server with its production headers; every page fails its test on a CSP or Permissions-Policy violation or an uncaught error (`e2e/fixtures.ts`); full rounds; secrecy asserted on WebSocket frames; `four-person.spec.ts` (#23) plays W1 end to end on every PR; a second server with Sentry and Umami on, their services answered by Playwright (`e2e/observed.ts`, #40); a third with provider keys and a stand-in for the providers in its own process (`e2e/signed-in.ts`, #47) |
 | Fuzzing | fast-check + Postgres | `fuzz.db.test.ts` (#36): random and malformed socket messages from the room's PO and a voter (wrong types, huge strings, deep objects, prototype keys, unknown commands and events, binary, extra arguments, oversized and undecodable frames); each gets an ack with `ok` or a known code other than `internal`, or is dropped; the stored room keeps `apply`'s invariants, honest people keep playing, no error is logged. 40 cases in CI, `FUZZ_RUNS` for more. Also a flood against the default limits and fuzzed HTTP bodies (never a 500) |
 | Dependencies | `pnpm audit` in CI (`scripts/audit.mjs`) | a high or critical advisory in a production dependency fails the `check` job; an unreachable audit endpoint is a warning, not a failure; the rest is listed |
 | Visual | Playwright screenshots | table with 1–16 seats, both themes, 360 px to 1440 px |

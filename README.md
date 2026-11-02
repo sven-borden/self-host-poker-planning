@@ -61,6 +61,9 @@ Variables compose reads from `.env` (the full list is in
 | `CSP_EXTRA_SOURCES` | no | origins your own additions load from, such as `script-src https://stats.example.com` (see "Security") |
 | `SENTRY_DSN` | no | turns on error reports to Sentry (or GlitchTip) from the server and the page, such as `https://0123abcd@o0.ingest.sentry.io/0` (see "Privacy") |
 | `UMAMI_URL`, `UMAMI_WEBSITE_ID` | no | turn on page views in Umami: its address, such as `https://stats.example.com` (or its tracker's URL if you renamed `script.js`), and the website's id; both or neither (see "Privacy") |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | no | turn on "Sign in with Google"; both or neither, or the server does not start (see below) |
+| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | no | turn on "Sign in with Microsoft"; both or neither, or the server does not start (see below) |
+| `MICROSOFT_TENANT_ID` | no (`common`) | who may sign in with Microsoft: `common` (any work, school or personal account), `organizations` (work and school), `consumers` (personal) or one tenant's id |
 
 Compose refuses to start while a required variable is empty. `DATABASE_URL` is built
 from the bundled database; to use your own Postgres, run the image alone with
@@ -113,6 +116,37 @@ from the bundled database; to use your own Postgres, run the image alone with
 - **Health**: `GET /api/health` answers `{ status, version, commit, db, uptime }`; the
   image's `HEALTHCHECK` uses it. With `REDIS_URL` it adds `redis: "ok"` or `"down"`
   (never the URL); Redis down does not make an instance unhealthy.
+
+### Signing in with Google or Microsoft
+
+Optional: without keys the app shows no sign-in at all, and everyone plays as a guest. A
+provider turns on when both its keys are set. `BASE_URL` must be the public address, as the
+redirect URIs below are built on it, and a provider needs an exact match with what you register.
+
+**Google** ([Google Cloud console](https://console.cloud.google.com/)):
+
+1. Create a project, or pick one.
+2. Under "Google Auth Platform", set up the app (name, support email), with the audience
+   "External", and publish it, or only the test users you list can sign in.
+3. Under "Clients", create an OAuth client of type "Web application". Add the authorized
+   redirect URI `<BASE_URL>/api/auth/callback/google`.
+4. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` from the client.
+
+**Microsoft** ([Microsoft Entra admin center](https://entra.microsoft.com/), "App registrations"):
+
+1. Create a new registration. Under "Supported account types" choose who may sign in: this must
+   agree with `MICROSOFT_TENANT_ID` (accounts in any directory and personal accounts:
+   `common`; any directory: `organizations`; personal only: `consumers`; your directory only:
+   your tenant's id).
+2. Add a redirect URI of platform "Web": `<BASE_URL>/api/auth/callback/microsoft`.
+3. Under "Certificates & secrets", create a client secret. Copy its **value**, not its id; it
+   is shown once and expires, so note the date: sign-in with Microsoft stops when it does.
+4. Set `MICROSOFT_CLIENT_ID` to the "Application (client) ID", `MICROSOFT_CLIENT_SECRET` to the
+   value, and `MICROSOFT_TENANT_ID` if it is not `common`.
+
+Restart the server after changing them. Sign-in asks for a name and an email and nothing more;
+the provider's tokens are not stored. Failed sign-ins are logged with a reason and no secret: on
+`invalid_code`, check the secret and the redirect URI.
 
 ### Running several instances
 
@@ -170,13 +204,18 @@ nothing about Redis is loaded or opened.
   subject, deck, votes with the voter's display name in a named round or the cards alone
   in an anonymous one, results and final estimate); the password grants (which guest may
   enter a room with a password without typing it); and guests (a random id, the display
-  name, sessions without client address or user agent). No email, no password of a
-  person, no analytics.
+  name, sessions without client address or user agent). No password of a person, no
+  analytics, and no email of a guest.
+- **Accounts**, only for someone who signs in with Google or Microsoft: the email address,
+  the name the provider gives and which provider it was (for Microsoft, the tenant). No picture,
+  and none of the provider's tokens, so nothing here can reach a person's Google or Microsoft
+  account afterwards. The email is shown to its owner alone, never to others in a room.
 - **For how long**: a room idle for `ROOM_TTL_DAYS` days (default 90) is deleted with
   its history and its password grants. Activity is any change in the room, and opening
   it (counted at most once a day, or once a 24th of a shorter period). A guest's session
   ends after the same number of days without a visit; a guest with no session left and
-  no room is deleted too. Rooms of signed-in users (planned) stay until deleted.
+  no room is deleted too. Rooms owned by a signed-in user stay until deleted, and so does the
+  account, for now: deleting an account comes with #51.
 - **The purge** runs inside the server 3 to 5 minutes after each start and then daily;
   with several instances only one runs it. It logs counts only, never a room code, a
   name or a vote. Set `ROOM_TTL_DAYS` (1 to 3650) to keep rooms shorter or longer.
