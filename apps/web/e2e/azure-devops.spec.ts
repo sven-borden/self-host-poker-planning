@@ -433,7 +433,7 @@ test("a new paste replaces a refused token, and a write goes out with it", async
 
   await page.locator("[data-queue-open]").click();
   await section(page).locator("[data-connector-saved]").waitFor();
-  await control({ reset: false, fail: [{ match: "/_apis/wit/queries", status: 401 }] });
+  await control({ fail: [{ match: "/_apis/wit/queries", status: 401 }] });
   await section(page).getByRole("radio", { name: "A WIQL query" }).check();
   await section(page).getByRole("radio", { name: "A saved query" }).check();
   await expect(problem(page, "connector_token_refused")).toBeVisible();

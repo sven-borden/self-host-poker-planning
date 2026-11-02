@@ -694,7 +694,11 @@ propagation, as the paste form does. Codes are `connector.errors.*`, apart from 
 pickers' classes, `SitePicker`) with `connector-section.tsx`, so that each chunk loads or fails by itself. Its token field is `type="password"`
 and empties the moment it is sent, and `connectAzure` is the one call that ever carries a token. A
 project is a site with `words` of its own, and six refusals have `connector.azure.errors.*`, since a
-template cannot say "an Azure DevOps project" or "d’Azure DevOps". `ROUND_SYSTEMS` and `connectorOf`
+template cannot say "an Azure DevOps project" or "d’Azure DevOps". `connector_token_refused` is sticky
+in `useConnection` (`refused`), since the alert outlasts `problem`: it holds `RefusedToken`, "Try
+again" and a `TokenForm` that replaces the token, until something the token does goes through
+(`accepted`). `attempt` keys the pickers, so a token that works again reads them once more; the
+import form keeps its key, and with it what was typed. `ROUND_SYSTEMS` and `connectorOf`
 go between a round's `system` and a connector's name, and `TrackerLines` holds one set of lines per
 tracker, since a queue can hold items of both.
 

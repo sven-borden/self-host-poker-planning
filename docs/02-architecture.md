@@ -621,16 +621,18 @@ deletes takes its rows by cascade, and #51 will too.
 ### Connectors (#54, ADR-030; #55, ADR-031)
 
 `apps/server/src/connectors/`, registered by `setup.ts` only when `connectorNames(config)` names
-one: the tracker's keys if it has any, the vault and a sign-in provider. Otherwise nothing exists,
-and `/api/*` answers 404.
+one: the tracker's keys, or `AZURE_DEVOPS_CONNECTOR=on` for the one with none, the vault and a sign-in
+provider. Otherwise nothing exists, and `/api/*` answers 404.
 
 - `connector.ts`, the seam: `BacklogConnector`, what every tracker must do, parts for what only some
   have (`OAuthSignIn`, `PastedToken`, `SprintBoards`, `SavedQueries`, `ItemFields`), and `Outcome`, a
   value or a code. `jira.ts` is one implementation, `azure-devops.ts` the other.
 - `azure-devops.ts`: a pasted personal access token, for one organisation. A site is a project, and
-  `Site.home` the organisation an item's `source.site` names. Only a 200 in JSON is an answer: a 203
-  sign-in page or a redirect means the token is gone, and `redirect: "manual"` follows neither. The
-  estimate's field is read for each item from what its type carries (`fieldFor`).
+  `Site.home` the organisation an item's `source.site` names, without regard to case. Only a 200 in
+  JSON is an answer. A 401, a 203 sign-in page and a redirect, which `redirect: "manual"` does not
+  follow, are `connector_token_refused`, and a refusal never deletes the row: `access.ts` never
+  reaches `dropToken` here. Connecting lists the projects before anything is saved. The estimate's
+  field is read for each item from what its type carries (`fieldFor`).
 - `access.ts`: `withToken(account, call)`, a person's live token, refreshed through `replaceToken`.
   Two instances refreshing at once is normal; a row is dropped only by `dropToken`. A token refused
   after a refresh is `connector_setup`, and costs no further rotation.
@@ -1376,6 +1378,7 @@ language, and an unknown code gets a generic one.
 | `MICROSOFT_TENANT_ID` | no (`common`) | who may sign in with Microsoft: `common` (any work, school or personal account), `organizations` (work and school), `consumers` (personal) or one tenant's id (a GUID) |
 | `POKER_VAULT_KEY` | no | encrypts the connectors' tokens (#53, section 6): 32 random bytes in base64 (`openssl rand -base64 32`), never `BETTER_AUTH_SECRET`, never logged. Unset, the vault is off. Malformed, repeated or the session secret, it stops the start |
 | `JIRA_CLIENT_ID`, `JIRA_CLIENT_SECRET` | no | the Jira Cloud connector (#54, section 6), both or neither, with `POKER_VAULT_KEY` and a sign-in provider; without any of them it is dark. The secret is never logged. Redirect URI `BASE_URL/api/connectors/jira/callback`. Azure DevOps (#55) has no variable of its own: `POKER_VAULT_KEY` and a sign-in provider turn it on |
+| `AZURE_DEVOPS_CONNECTOR` | no | exactly `on` turns on the Azure DevOps connector (#55, section 6), with `POKER_VAULT_KEY` and a sign-in provider; any other value or none leaves it dark. Not a secret. With `on` and either missing, the start logs a warning naming the variables |
 | `POKER_VAULT_OLD_KEYS` | no | during a key change: previous keys, in the same form, comma-separated, that open tokens and seal none (README, "Connector tokens"); needs `POKER_VAULT_KEY` |
 
 ## 13. Testing

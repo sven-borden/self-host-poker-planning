@@ -257,8 +257,13 @@ Atlassian password changes, is asked to connect again.
 
 There is nothing to register and no key of its own. A person who signs in can connect their own
 organisation with a personal access token, import a saved query or a WIQL query into the queue, and
-send each final estimate back. It is there as soon as `POKER_VAULT_KEY` and a sign-in provider
-(Google or Microsoft) are set. With either missing, the page has no button and the server no route.
+send each final estimate back.
+
+It is off until you set `AZURE_DEVOPS_CONNECTOR=on`, because it stores people's own tokens for a
+third party on your server, and setting the vault for Jira must not open that by itself. It also
+needs `POKER_VAULT_KEY` and a sign-in provider (Google or Microsoft). Any other value, or either of
+those missing, leaves the page without a button and the server without a route, and with `on` the
+start logs which variables are missing.
 
 This covers Azure DevOps Services at `https://dev.azure.com/{organisation}`. **Azure DevOps Server
 (on-premises) is not supported:** the server never takes an address from a person. Entra sign-in is
@@ -267,15 +272,17 @@ not built either; a token needs no app registration and works for any organisati
 **Making a token**, for each person:
 
 1. Open `https://dev.azure.com/{your organisation}/_usersSettings/tokens` and press **New Token**.
-2. Under **Organization**, pick that one organisation. Microsoft retires tokens for all organisations
-   on 1 December 2026, and this connector uses one organisation per connection anyway.
-3. Give it the shortest expiry that suits you. It stops working on that date, and you connect again
-   with a new one.
-4. Under **Scopes**, choose **Custom defined**, then **Work Items: Read & write** (`vso.work_write`),
-   and nothing else.
+2. Under **Organization**, pick that one organisation. This connector uses one organisation per
+   connection, and Microsoft is moving away from tokens for all organisations.
+3. Give it the shortest expiry that suits you. It stops working by itself on that date at Microsoft,
+   and you paste a new one.
+4. Under **Scopes**, choose **Custom defined**, then **Work Items: Read & write** (`vso.work_write`).
+   Microsoft's documentation says that scope also lists projects, but this has not yet been seen on
+   a real organisation. If connecting says the token cannot list projects, tick **Project and Team:
+   Read** too.
 5. Press **Create** and copy the token: Microsoft shows it once.
-6. In a room's queue, give the organisation's name and the token. The server tests it with one read
-   before it keeps it, and says what is wrong if it refuses.
+6. In a room's queue, give the organisation's name and the token. The server tests it, and lists the
+   organisation's projects, before it keeps it, and says what is wrong if it refuses.
 
 Your organisation's administrators may limit who can make tokens, for how long, and with which
 scopes. A token can do no more than the person who made it.
@@ -287,9 +294,16 @@ or Size. An item with none, such as a Task in many processes, keeps its estimate
 says so. A person with a process of their own can choose another of a type's number fields. A final
 with no number is not written, and an anonymous round sends nothing but its number.
 
-Disconnecting deletes the token here. It still exists at Microsoft until it expires or is revoked at
-the address in step 1, and the page links there. A token that stops working, expired or revoked, is
-deleted here too at the next call, and the page asks to connect again.
+A token stays here, sealed, until the person disconnects, pastes another or deletes their account.
+Disconnecting deletes it here; it still exists at Microsoft until it expires or is revoked at the
+address in step 1, and the page links there. If Azure DevOps refuses a token or asks for a sign-in,
+it is not deleted, because the server cannot tell an expired token from one that needs a fresh
+sign-in at Azure DevOps. The page offers **Try again** after that sign-in, and a field for a new
+token.
+
+Microsoft's own advice is not to use personal access tokens as long-term credentials for production
+applications or services. A token can go inactive after 90 days in organisations backed by Entra, and
+administrators can restrict them. ADR-031 weighs this.
 
 ### Running several instances
 

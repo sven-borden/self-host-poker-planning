@@ -41,7 +41,8 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   `src/vault-rotation.ts`: `runVaultRotation(env, destination?)`, what `node dist/main.mjs
   vault:rotate` runs; it answers with an exit code.
 - `src/connectors/`: the trackers (#54, ADR-030; #55, ADR-031). `connector.ts` is the seam, `jira.ts`
-  Jira, `azure-devops.ts` Azure DevOps (a pasted token, where only a 200 in JSON is an answer), `access.ts`
+  Jira, `azure-devops.ts` Azure DevOps (a pasted token, where only a 200 in JSON is an answer and no
+  refusal ever deletes the token), `access.ts`
   a person's live token (`withToken`), `oauth-state.ts` a connection's `state`, `routes.ts` the HTTP
   routes. Everything comes back as an `Outcome`, whose failure is a code: never let a tracker's text,
   a URL or a `fetch` error through, and never test `instanceof Response`, which the HTTP adapter
@@ -49,7 +50,9 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   (`routeAtlassianTo`), and `src/fake-jira-start.ts` loads it into the e2e server; `main.ts` imports
   neither. Its `POST /__control` and `GET /__state` are how a spec drives it. `src/fake-azure-devops.ts`
   and `src/fake-azure-devops-start.ts` do the same for Azure DevOps (`routeAzureTo`); its `signIn`
-  says how a bad token is answered, a 203 page by default.
+  says how a bad token is answered, by default as the real service was seen to (a 302, and a 401
+  on PATCH), `projectScope` what lists projects, and `fail` forces an answer, `skip` calls after the
+  first.
 - `src/auth.ts`: identity. `createAuth(config, db, logger)` builds Better Auth (Drizzle
   adapter, anonymous plugin, options in `authOptions`); `registerAuthApi` mounts
   `/api/auth/*`, and `POST /api/me/name` and `/api/me/avatar`; `sessionMiddleware(auth)` is the socket
