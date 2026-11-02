@@ -84,6 +84,7 @@ export const en = {
   app: {
     name: "Poker Planning",
     tagline: "Planning poker for teams",
+    description: "Self-hosted planning poker for teams.",
     skipToContent: "Skip to content",
   },
   theme: {

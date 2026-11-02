@@ -215,6 +215,10 @@ describe("catalogs", () => {
       "connector.sprint",
       // Azure DevOps (#55): the same word in both.
       "connector.azure.organization",
+      // The copy review (#41): both are the German words, and "Timer" is what a team says.
+      "createRoom.optional",
+      "timer.button",
+      "timer.menu",
     ],
   };
 
@@ -255,6 +259,57 @@ describe("catalogs", () => {
       expect(closing, `de: ${key}: every „ closes with “`).toBe(opening);
       expect(text, `de: ${key}: “ before „`).not.toMatch(/^[^„]*“/);
     }
+  });
+});
+
+// The reader is vous and Sie, everywhere (OQ-2, ADR-012). Whole words only, and  knows no
+// accents, so the edges are spelt out: "ta" must not match in "état", nor "dir" in "direkt". A
+// reader's verb has no pronoun to find, so the imperatives these catalogs would slip into are
+// listed too. Placeholders go first: their names are code.
+describe("tone", () => {
+  const wholeWord = (forms: string) =>
+    new RegExp(`(?<![\\p{L}\\p{N}])(?:${forms})(?![\\p{L}\\p{N}])`, "iu");
+  const atSentenceStart = (forms: string) =>
+    new RegExp(`(?:^|[.;:!?]\\s)(?:${forms})(?![\\p{L}\\p{N}])`, "u");
+  const prose = (catalog: unknown) =>
+    leaves(catalog).map(([key, value]) => [key, String(value).replace(/{{[^}]*}}/g, "")] as const);
+
+  const INFORMAL = {
+    fr: [
+      wholeWord("tu|te|ton|ta|tes|toi"),
+      atSentenceStart("Choisis|Saisis|Clique|Réessaie|Vérifie|Recharge|Rejoins|Attends|Colle"),
+    ],
+    de: [
+      wholeWord("du|dir|dich|dein\\p{L}*|euch|euer|eure\\p{L}*"),
+      atSentenceStart("Wähle|Gib|Prüfe|Lade|Melde|Versuche|Füge|Starte|Warte|Kopiere|Behalte"),
+    ],
+  };
+
+  it.each(["fr", "de"] as const)("never speaks informally in %s", (language) => {
+    for (const [key, text] of prose(CATALOGS[language])) {
+      for (const informal of INFORMAL[language]) {
+        expect(text, `${language}: ${key}`).not.toMatch(informal);
+      }
+    }
+  });
+
+  it("capitalises the German Sie", () => {
+    // A small "sie" and "ihr" are right for they and it, as in "bis sie die Seite neu lädt". An
+    // order to the reader and the reader's own things are not.
+    const order = /(?:^|[.;:!?]\s)\p{Lu}\p{Ll}+en sie(?![\p{L}\p{N}])/u;
+    const yours =
+      /(?<![\p{L}\p{N}])ihr(?:e|en|em|er)? (?:Konto|Team|Browser|Anmeldung|Verbindung)/u;
+    for (const [key, text] of prose(CATALOGS.de)) {
+      expect(text, `de: ${key}`).not.toMatch(order);
+      expect(text, `de: ${key}`).not.toMatch(yours);
+    }
+  });
+
+  it("knows a word from the letters inside another", () => {
+    expect("l’état du bouton").not.toMatch(INFORMAL.fr[0] as RegExp);
+    expect("Connecte-toi").toMatch(INFORMAL.fr[0] as RegExp);
+    expect("Direkt dieser Ton").not.toMatch(INFORMAL.de[0] as RegExp);
+    expect("Wähle deine Karte").toMatch(INFORMAL.de[0] as RegExp);
   });
 });
 
@@ -389,6 +444,17 @@ describe("language choice", () => {
     expect(readSavedLanguage()).toBeNull();
     await chooseLanguage("de");
     expect(currentLanguage()).toBe("de");
+  });
+
+  it("gives the page's description to the language", async () => {
+    const meta = document.createElement("meta");
+    meta.name = "description";
+    document.head.append(meta);
+    await changeLanguage("de");
+    expect(meta.content).toBe(de.app.description);
+    await changeLanguage("en");
+    expect(meta.content).toBe(en.app.description);
+    meta.remove();
   });
 
   it("saves a choice, applies it to <html lang>, and starts in it next time", async () => {

@@ -141,7 +141,7 @@ const fr: Copy & Partial<Record<`${FrenchMany}_many`, string>> = {
     "Les salles y figurent par leur nom et leur identifiant, jamais par leur code : un code ouvre une salle, et ce fichier peut circuler.",
   exportAction: "Télécharger mes données",
   exportBusy: "Préparation de votre fichier…",
-  exported: "Votre fichier arrive.",
+  exported: "Votre téléchargement commence.",
   exportMore_one:
     "{{count, number}} salle n’y figure que par son identifiant : reconnectez-vous pour tout avoir.",
   exportMore_many:
@@ -149,7 +149,7 @@ const fr: Copy & Partial<Record<`${FrenchMany}_many`, string>> = {
   exportMore_other:
     "{{count, number}} salles n’y figurent que par leur identifiant : reconnectez-vous pour tout avoir.",
   exportIncomplete:
-    "Votre fichier arrive, mais certaines salles n’avaient pas encore rejoint votre compte. Téléchargez-le à nouveau dans un instant.",
+    "Votre téléchargement commence, mais certaines salles n’avaient pas encore rejoint votre compte. Téléchargez le fichier à nouveau dans un instant.",
 
   deleteTitle: "Supprimer mon compte",
   deleteIntro:
@@ -157,10 +157,10 @@ const fr: Copy & Partial<Record<`${FrenchMany}_many`, string>> = {
   goesTitle: "Ce qui disparaît",
   goesAccount: "Votre nom, votre adresse, votre mode de connexion, votre avatar et vos connexions.",
   goesAlone_one: "{{count, number}} salle sans personne d’autre, avec son historique.",
-  goesAlone_many: "{{count, number}} salles sans personne d’autre, avec leur historique.",
+  goesAlone_many: "{{count, number}} de salles sans personne d’autre, avec leur historique.",
   goesAlone_other: "{{count, number}} salles sans personne d’autre, avec leur historique.",
   goesSeats_one: "Votre place dans {{count, number}} salle qui appartient à quelqu’un d’autre.",
-  goesSeats_many: "Votre place dans {{count, number}} salles qui appartiennent à d’autres.",
+  goesSeats_many: "Votre place dans {{count, number}} de salles qui appartiennent à d’autres.",
   goesSeats_other: "Votre place dans {{count, number}} salles qui appartiennent à d’autres.",
   goesHeld_one:
     "Votre droit sur {{count, number}} salle dont la règle n’admet pas ce compte. La salle reste.",
@@ -169,11 +169,11 @@ const fr: Copy & Partial<Record<`${FrenchMany}_many`, string>> = {
   goesHeld_other:
     "Votre droit sur {{count, number}} salles dont la règle n’admet pas ce compte. Ces salles restent.",
   goesAfter_one:
-    "Une salle que personne ne peut détenir disparaît après {{count, number}} jour sans activité.",
+    "Une salle que personne ne peut reprendre disparaît après {{count, number}} jour sans activité.",
   goesAfter_many:
-    "Une salle que personne ne peut détenir disparaît après {{count, number}} de jours sans activité.",
+    "Une salle que personne ne peut reprendre disparaît après {{count, number}} de jours sans activité.",
   goesAfter_other:
-    "Une salle que personne ne peut détenir disparaît après {{count, number}} jours sans activité.",
+    "Une salle que personne ne peut reprendre disparaît après {{count, number}} jours sans activité.",
   moreRooms_one:
     "Reconnectez-vous pour voir {{count, number}} salle de plus : sa règle demande une connexion récente.",
   moreRooms_many:
@@ -183,7 +183,7 @@ const fr: Copy & Partial<Record<`${FrenchMany}_many`, string>> = {
   goesNames: "Votre nom sur vos cartes dans les tours nominatifs.",
   staysTitle: "Ce qui reste",
   staysCards:
-    "Vos cartes des tours passés, sans nom et sans rien qui vous y relie, pour que les résultats de l’équipe tiennent.",
+    "Vos cartes des tours passés, sans nom et sans rien qui vous y relie, pour que les résultats de l’équipe restent valables.",
   staysWords:
     "Les mots saisis dans une salle qui continue : son nom, le sujet d’un tour, un ticket de sa file. Le serveur ne peut pas savoir lesquels parlent de vous.",
   staysCopies:
@@ -195,22 +195,22 @@ const fr: Copy & Partial<Record<`${FrenchMany}_many`, string>> = {
 
   sharedTitle: "Salles où d’autres personnes sont présentes",
   sharedIntro:
-    "Ces salles sont les vôtres, et d’autres personnes y ont une place. Choisissez qui reprend chacune : la salle et le droit de la supprimer vont à cette personne. Sans choix de votre part, elle revient à la personne qui la dirige en ce moment si elle est là ; sinon à la personne ici depuis le plus longtemps ; sinon à celle qui y a sa place depuis le plus longtemps. Seule une personne admise par la règle d’une salle peut la reprendre. Une salle ne disparaît que si vous le demandez.",
+    "Ces salles sont les vôtres, et d’autres personnes y ont une place. Choisissez qui reprend chacune\u{202f}: la salle et le droit de la supprimer vont à cette personne. Sans choix de votre part, elle revient à la personne qui l’anime en ce moment si elle est là\u{202f}; sinon à la personne présente qui y a sa place depuis le plus longtemps\u{202f}; sinon à celle qui y a sa place depuis le plus longtemps. Seule une personne admise par la règle d’une salle peut la reprendre. Une salle ne disparaît que si vous le demandez.",
   sharedGuest_one:
     "Une salle reprise par un invité reste tant qu’elle sert : après {{count, number}} jour sans activité, elle est supprimée.",
   sharedGuest_many:
-    "Une salle reprise par un invité reste tant qu’elle sert : après {{count, number}} jours sans activité, elle est supprimée.",
+    "Une salle reprise par un invité reste tant qu’elle sert : après {{count, number}} de jours sans activité, elle est supprimée.",
   sharedGuest_other:
     "Une salle reprise par un invité reste tant qu’elle sert : après {{count, number}} jours sans activité, elle est supprimée.",
   unnamed: "Salle sans nom",
   takerLabel: "Qui reprend {{name}}",
   takerNobody: "Personne ici",
-  takerRunning: "{{name}} dirige la salle en ce moment.",
-  takerHere: "{{name}} est là, avec la présence la plus ancienne.",
+  takerRunning: "{{name}} anime la salle en ce moment.",
+  takerHere: "{{name}} est là, et y a sa place depuis le plus longtemps.",
   takerAway:
-    "Aucune personne pouvant la reprendre n’est là. {{name}} a la présence la plus ancienne.",
+    "Aucune personne pouvant la reprendre n’est là. {{name}} y a sa place depuis le plus longtemps.",
   takerChosen: "{{name}} reprend cette salle et le droit de la supprimer.",
-  takerNone: "Personne ici ne peut reprendre cette salle : elle reste sans détenteur.",
+  takerNone: "Personne ici ne peut reprendre cette salle\u{202f}: elle reste sans propriétaire.",
   takerDelete: "Personne : supprimer cette salle",
   deleteChosen:
     "Cette salle disparaît pour tous ses participants, avec son historique, dès que votre compte disparaît.",
@@ -265,13 +265,13 @@ const de: Copy = {
     "Räume stehen darin mit Name und ID, nie mit ihrem Code: Ein Code öffnet einen Raum, und diese Datei kann weitergegeben werden.",
   exportAction: "Meine Daten herunterladen",
   exportBusy: "Ihre Datei wird vorbereitet…",
-  exported: "Ihre Datei ist unterwegs.",
+  exported: "Ihre Datei wird heruntergeladen.",
   exportMore_one:
     "{{count, number}} Raum steht nur mit seiner ID darin: Melden Sie sich erneut an, um alles zu erhalten.",
   exportMore_other:
     "{{count, number}} Räume stehen nur mit ihrer ID darin: Melden Sie sich erneut an, um alles zu erhalten.",
   exportIncomplete:
-    "Ihre Datei ist unterwegs, aber einige Räume waren noch nicht in Ihrem Konto. Laden Sie sie gleich noch einmal herunter.",
+    "Ihre Datei wird heruntergeladen, aber einige Räume waren noch nicht in Ihrem Konto. Laden Sie sie gleich noch einmal herunter.",
 
   deleteTitle: "Mein Konto löschen",
   deleteIntro:
@@ -287,9 +287,9 @@ const de: Copy = {
   goesHeld_other:
     "Ihr Recht an {{count, number}} Räumen, deren Regel dieses Konto nicht zulässt. Diese Räume bleiben.",
   goesAfter_one:
-    "Ein Raum, den niemand halten darf, verschwindet nach {{count, number}} Tag ohne Aktivität.",
+    "Ein Raum, den niemand übernehmen darf, verschwindet nach {{count, number}} Tag ohne Aktivität.",
   goesAfter_other:
-    "Ein Raum, den niemand halten darf, verschwindet nach {{count, number}} Tagen ohne Aktivität.",
+    "Ein Raum, den niemand übernehmen darf, verschwindet nach {{count, number}} Tagen ohne Aktivität.",
   moreRooms_one:
     "Melden Sie sich erneut an, um {{count, number}} weiteren Raum zu sehen: Seine Regel verlangt eine aktuelle Anmeldung.",
   moreRooms_other:
@@ -297,9 +297,9 @@ const de: Copy = {
   goesNames: "Ihr Name auf Ihren Karten in Runden mit Namen.",
   staysTitle: "Was bleibt",
   staysCards:
-    "Ihre Karten aus vergangenen Runden, ohne Namen und ohne etwas, das sie mit Ihnen verbindet, damit die Ergebnisse des Teams stehen bleiben.",
+    "Ihre Karten aus vergangenen Runden, ohne Namen und ohne etwas, das sie mit Ihnen verbindet, damit die Ergebnisse des Teams erhalten bleiben.",
   staysWords:
-    "Was Sie in einem Raum getippt haben, der weiterbesteht: sein Name, das Thema einer Runde, ein Ticket in seiner Warteschlange. Der Server kann nicht wissen, was davon Sie nennt.",
+    "Was Sie in einem Raum getippt haben, der weiterbesteht: sein Name, das Thema einer Runde, ein Ticket in seiner Warteschlange. Der Server kann nicht wissen, was davon Sie betrifft.",
   staysCopies:
     "Was andere bereits haben: einen Export, einen Screenshot, ihre Erinnerung. Das gehört ihnen.",
   staysBackups:
@@ -348,7 +348,7 @@ const de: Copy = {
 
   doneTitle: "Ihr Konto ist gelöscht",
   doneBody:
-    "Unter Ihrem Namen ist auf diesem Server nichts mehr vorhanden. Dieser Browser ist jetzt ein neuer Gast ohne alles von früher, und eine neue Anmeldung beginnt ein neues Konto.",
+    "Unter Ihrem Namen ist auf diesem Server nichts mehr vorhanden. Dieser Browser gilt jetzt als neuer Gast, ohne Daten von früher, und eine neue Anmeldung legt ein neues Konto an.",
   doneRemains:
     "Was bleibt, ist, was diese Seite genannt hat: Sicherungen, bis sie ablaufen, Kopien anderer Personen und Protokolle mit IDs.",
   goingTitle: "Ihr Konto wird gelöscht",
@@ -356,10 +356,10 @@ const de: Copy = {
     "Sie sind überall abgemeldet, und niemand kann das Konto mehr nutzen. Ein Teil ist noch nicht verschwunden: Das erledigt sich von selbst, innerhalb von zwei Tagen, und Sie müssen nichts mehr tun. Ein seltener Fehler kann länger dauern. Eine Anmeldung mit diesem Konto sagt das, bis es erledigt ist.",
   lostTitle: "Sie sind abgemeldet",
   lostBody:
-    "Der Server hat nicht rechtzeitig geantwortet, und Sie sind abgemeldet. So beginnt eine Löschung: Sie ist sehr wahrscheinlich durchgegangen und erledigt sich von selbst. Wenn Sie sich anmelden und Ihr Konto noch da ist, wurde nichts gelöscht.",
+    "Der Server hat nicht rechtzeitig geantwortet, und Sie sind abgemeldet. So beginnt eine Löschung: Sie ist sehr wahrscheinlich angelaufen und läuft von selbst zu Ende. Wenn Sie sich anmelden und Ihr Konto noch da ist, wurde nichts gelöscht.",
   outBody:
     "Ihre Sitzung endete, bevor diese Anfrage ankam, also hat diese Anfrage nichts gelöscht. Melden Sie sich an, um Ihr Konto zu löschen oder Ihre Daten herunterzuladen.",
-  home: "Zurück zum Anfang",
+  home: "Zurück zur Startseite",
 };
 
 /** The page's words, per language: `i18n.test.ts` reads this too. */

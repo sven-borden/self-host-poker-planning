@@ -6,6 +6,7 @@ export const de: Catalog = {
   app: {
     name: "Poker Planning",
     tagline: "Planning Poker für Teams",
+    description: "Selbst gehostetes Planning Poker für Teams.",
     skipToContent: "Zum Inhalt springen",
   },
   theme: {
@@ -41,17 +42,17 @@ export const de: Catalog = {
   createRoom: {
     lede: "Sie werden sein Product Owner. Teilen Sie den Link, und Ihr Team kommt dazu, ohne Konto.",
     nameLabel: "Raumname",
-    optional: "Freiwillig",
+    optional: "Optional",
     nameHint: "Alle mit dem Link sehen ihn. Höchstens {{max, number}} Zeichen.",
     deckLabel: "Kartendeck",
     submit: "Raum erstellen",
     creating: "Raum wird erstellt…",
     notAllowed:
-      "Der Server hat diese Anfrage abgelehnt: Seine eingestellte Adresse ist nicht die, die Sie verwenden. Bitten Sie die Betreiberin oder den Betreiber, BASE_URL zu prüfen.",
+      "Der Server hat diese Anfrage abgelehnt: Seine eingestellte Adresse ist nicht die, die Sie verwenden. Bitten Sie die Person, die diesen Server betreibt, BASE_URL zu prüfen.",
   },
   decks: {
     fib: "Fibonacci",
-    mfib: "Modifizierte Fibonacci-Folge",
+    mfib: "Modifiziertes Fibonacci",
     tshirt: "T-Shirt-Größen",
     pow2: "Zweierpotenzen",
     seq: "1 bis 10",
@@ -168,7 +169,7 @@ export const de: Catalog = {
     specialsHint:
       "Zusätzliche Karten für „unsicher“, „Pause nötig“ oder „zu groß zum Schätzen“. Sie zählen nie in den Ergebnissen.",
     specialsNone: "Keine",
-    timer: "Zeitlimit für jede Runde",
+    timer: "Timer für jede Runde",
     timerHint: "Jede Runde startet mit diesem Countdown. Eine Änderung gilt ab der nächsten Runde.",
     timerThenReveal: "Am Ende werden die Karten aufgedeckt.",
     timerThenTimeUp: "Am Ende sehen alle, dass die Zeit um ist.",
@@ -178,7 +179,7 @@ export const de: Catalog = {
     timerCustomBad:
       "Geben Sie 5 Sekunden bis 60 Minuten ein, in Sekunden (90) oder in Minuten und Sekunden (1:30).",
     timerSet: "Übernehmen",
-    timerRevealAtEnd: "Aufdecken, wenn das Zeitlimit abläuft",
+    timerRevealAtEnd: "Aufdecken, wenn der Timer abläuft",
     timerRevealAtEndHint: "Aus: Alle sehen, dass die Zeit um ist, und der Product Owner deckt auf.",
     whoCanReveal: "Wer aufdecken darf",
     whoCanRevealHint: "Wer die Karten umdrehen darf. Beobachter nie.",
@@ -197,12 +198,12 @@ export const de: Catalog = {
     changeAfterReveal: "Stimme nach dem Aufdecken ändern",
     changeAfterRevealHint:
       "Wer abstimmt, kann die Karte nach dem Aufdecken noch ändern. Nie in einer anonymen Runde: Dort stehen die Stimmen mit dem Aufdecken fest.",
-    changeAfterRevealLocked: "Anonyme Runden halten ihre Stimmen beim Aufdecken fest.",
+    changeAfterRevealLocked: "In anonymen Runden stehen die Stimmen mit dem Aufdecken fest.",
     allowed: "Erlaubt",
     notAllowed: "Nicht erlaubt",
-    autoAdvance: "Nächsten Eintrag von selbst starten",
+    autoAdvance: "Nächsten Eintrag automatisch starten",
     autoAdvanceHint:
-      "{{seconds, number}} Sekunden nach einer erfassten Schätzung startet der nächste Eintrag der Warteschlange. Alle sehen den Countdown, und der Product Owner kann bei der Runde bleiben.",
+      "{{seconds, number}} Sekunden nach einer festgehaltenen Schätzung startet der nächste Eintrag der Warteschlange. Alle sehen den Countdown, und der Product Owner kann bei der Runde bleiben.",
     poVotes: "Der Product Owner stimmt mit ab",
     poVotesHint: "Aus: Der Product Owner leitet die Sitzung ohne Karten.",
     observersCount: "Beobachter belegen einen der {{max, number}} Plätze",
@@ -381,16 +382,16 @@ export const de: Catalog = {
     minutesSeconds: "{{minutes}} {{seconds}}",
     shortSeconds: "{{n, number}} s",
     shortMinutes: "{{n, number}} min",
-    button: "Zeitlimit",
-    buttonRunning: "Zeitlimit, läuft",
-    buttonUp: "Zeitlimit, Zeit ist um",
-    menu: "Zeitlimit",
-    start: "Zeitlimit starten",
+    button: "Timer",
+    buttonRunning: "Timer läuft",
+    buttonUp: "Timer, Zeit ist um",
+    menu: "Timer",
+    start: "Timer starten",
     restart: "Neu starten",
     add: "+30 s",
     addSpoken: "30 Sekunden hinzufügen",
     stop: "Stoppen",
-    stopSpoken: "Zeitlimit stoppen",
+    stopSpoken: "Timer stoppen",
     customLabel: "Dauer",
     customStart: "Starten",
     left: "Verbleibende Zeit: {{time}}",
@@ -447,7 +448,7 @@ export const de: Catalog = {
     level: "{{level, number(style: percent; maximumFractionDigits: 0)}}",
   },
   haptics: {
-    enable: "Vibrieren",
+    enable: "Vibration",
     hint: "Eine kurze Vibration bei Ihrer Stimme und beim Aufdecken.",
   },
   offline: {
@@ -498,8 +499,9 @@ export const de: Catalog = {
     anonymousOff: "Ab Runde {{round, number}} wird wieder mit Namen abgestimmt.",
     autoRevealOn: "Die Karten werden jetzt aufgedeckt, sobald alle abgestimmt haben.",
     autoRevealOff: "Die Karten warten jetzt auf das Aufdecken, auch wenn alle abgestimmt haben.",
-    autoAdvanceOn: "Der nächste Eintrag startet jetzt von selbst nach einer erfassten Schätzung.",
-    autoAdvanceOff: "Der nächste Eintrag startet nicht mehr von selbst.",
+    autoAdvanceOn:
+      "Der nächste Eintrag startet jetzt automatisch, sobald eine Schätzung festgehalten ist.",
+    autoAdvanceOff: "Der nächste Eintrag startet nicht mehr automatisch.",
     restrictionChanged: "Der Product Owner hat geändert, wer diesem Raum beitreten kann.",
     queueAdded_one:
       "{{count, number}} Eintrag zur Warteschlange hinzugefügt. Als Nächstes: {{item}}.",
@@ -522,11 +524,11 @@ export const de: Catalog = {
     voteAgain: "Stimmen Sie erneut ab.",
     deckNow: "Der Product Owner hat zu {{deck}} gewechselt.",
     specialsNow: "Der Product Owner hat die Sonderkarten geändert.",
-    timerChanged: "Der Product Owner hat das Zeitlimit geändert.",
-    timerStarted: "Zeitlimit gestartet: {{duration}}.",
+    timerChanged: "Der Product Owner hat den Timer geändert.",
+    timerStarted: "Timer gestartet: {{duration}}.",
     timerExtended: "{{duration}} mehr.",
     timerExtendedSome: "Mehr Zeit.",
-    timerStopped: "Zeitlimit gestoppt.",
+    timerStopped: "Timer gestoppt.",
     timeUp: "Die Zeit ist um.",
     tenLeft: "Noch {{n, number}} Sekunden.",
     revealAnyone: "Alle, die abstimmen, können die Karten jetzt aufdecken.",
@@ -599,7 +601,7 @@ export const de: Catalog = {
     errors: {
       cancelled: "Anmeldung abgebrochen. Sie können ohne Konto weitermachen.",
       accountExists:
-        "Zu dieser E-Mail-Adresse gibt es schon ein Konto, das sich anders anmeldet. Melden Sie sich auf dem anderen Weg an.",
+        "Zu dieser E-Mail-Adresse gibt es schon ein Konto mit einer anderen Anmeldung. Melden Sie sich auf diesem Weg an.",
       noEmail:
         "Ihr Konto hat keine E-Mail-Adresse übermittelt, deshalb konnte die Anmeldung nicht abgeschlossen werden.",
       tenantNotAllowed:
@@ -610,7 +612,7 @@ export const de: Catalog = {
         "Die Anmeldung wurde nicht abgeschlossen. Versuchen Sie es erneut oder machen Sie ohne Konto weiter.",
       stillMoving:
         "Sie sind angemeldet. Einige Ihrer Räume werden noch in Ihr Konto übertragen. Öffnen Sie sie gleich noch einmal.",
-      accountGoing: "Ihr Konto wird gelöscht. Danach beginnt eine Anmeldung ein neues Konto.",
+      accountGoing: "Ihr Konto wird gelöscht. Danach legt eine neue Anmeldung ein neues Konto an.",
     },
   },
   account: {
@@ -631,7 +633,7 @@ export const de: Catalog = {
     microsoftDomain:
       "Eine Microsoft-Anmeldung zählt nie für eine E-Mail-Domain, weil sie die Adresse nicht belegt. Melden Sie sich ab, um ein Google-Konto zu verwenden, oder bitten Sie den Product Owner, Ihre Organisation hinzuzufügen.",
     needsMicrosoft:
-      "Dieser Raum nimmt Microsoft-Konten Ihrer Organisation an. Melden Sie sich ab, um eines zu verwenden.",
+      "Dieser Raum lässt Microsoft-Konten Ihrer Organisation zu. Melden Sie sich ab, um eines zu verwenden.",
     otherAccount:
       "Mit diesem Konto können Sie diesem Raum nicht beitreten. Melden Sie sich ab, um ein anderes zu verwenden.",
     sessionTooOld:
@@ -681,7 +683,7 @@ export const de: Catalog = {
       "Melden Sie sich an, um die Räume zu sehen, die Ihnen gehören und in denen Sie einen Platz haben. Was Sie als Gast getan haben, kommt mit.",
     loading: "Ihre Räume werden geladen…",
     moving:
-      "Einige Ihrer Räume sind noch unterwegs zu Ihrem Konto. Versuchen Sie es gleich noch einmal.",
+      "Einige Ihrer Räume werden noch in Ihr Konto übertragen. Versuchen Sie es gleich noch einmal.",
     emptyTitle: "Noch keine Räume",
     emptyBody: "Räume, die Sie angemeldet erstellen oder betreten, erscheinen hier.",
     owned: "Ihr Raum",
@@ -785,7 +787,7 @@ export const de: Catalog = {
     today: "Heute",
     all: "Alle Runden",
     rounds: "Runden",
-    total: "Summe der Endschätzungen",
+    total: "Summe der endgültigen Schätzungen",
     withoutNumber_one: "{{count, number}} Runde ohne Zahlenwert",
     withoutNumber_other: "{{count, number}} Runden ohne Zahlenwert",
     agreement: "Durchschnittliche Einigkeit",
@@ -862,7 +864,7 @@ export const de: Catalog = {
     partial_other:
       "{{count, number}} Einträge wurden aufgenommen, bevor der Vorgang abbrach. Der Rest steht noch im Feld: Fügen Sie ihn erneut hinzu, nichts kommt doppelt hinein.",
     empty: "Die Warteschlange ist noch leer.",
-    loading: "Warteschlange wird geladen …",
+    loading: "Warteschlange wird geladen…",
     failed: "Die Warteschlange konnte nicht geladen werden.",
     retry: "Erneut versuchen",
     loadFailed:
@@ -888,7 +890,7 @@ export const de: Catalog = {
   },
   connector: {
     connect: "{{system}} verbinden",
-    lede: "Importieren Sie einen Sprint oder eine Suche in die Warteschlange und schicken Sie Schätzungen zurück. Sie verbinden Ihr eigenes Konto, und niemand sonst im Raum nutzt es.",
+    lede: "Importieren Sie einen Sprint oder eine Suche in die Warteschlange und senden Sie Schätzungen zurück. Sie verbinden Ihr eigenes Konto, und niemand sonst im Raum nutzt es.",
     signIn: "Melden Sie sich mit einem Konto an, um {{system}} zu verbinden.",
     connectedTo: "Verbunden mit {{site}}",
     site: "Website",
@@ -931,7 +933,7 @@ export const de: Catalog = {
     disconnectNote: "Damit wird Ihr Token hier gelöscht. {{system}} behält seine eigene Freigabe:",
     grantsLink: "Entfernen Sie sie in Ihrem Atlassian-Konto",
     loadFailed:
-      "Der {{system}}-Teil dieser Seite konnte nicht geladen werden. Der Raum funktioniert weiter: Laden Sie neu, um ihn zurückzuholen.",
+      "Der {{system}}-Teil dieser Seite konnte nicht geladen werden. Der Raum funktioniert weiter: Laden Sie die Seite neu, um ihn wieder zu sehen.",
     result: {
       connected: "{{system}} ist verbunden.",
       cancelled: "Nichts wurde verbunden: Sie sind bei {{system}} zurückgegangen.",
@@ -976,8 +978,8 @@ export const de: Catalog = {
       fieldHint: "Einträge eines Typs ohne dieses Feld bleiben bei Story Points, Effort oder Size.",
       fieldNone: "Dieser Typ hat kein Zahlenfeld.",
       fieldCancel: "Abbrechen",
-      bySaved: "Eine gespeicherte Abfrage",
-      byWiql: "Eine WIQL-Abfrage",
+      bySaved: "Einer gespeicherten Abfrage",
+      byWiql: "Einer WIQL-Abfrage",
       saved: "Gespeicherte Abfrage",
       noSaved: "Dieses Projekt hat keine gespeicherte Abfrage, die Sie sehen können.",
       savedMore: "Einige Ordner wurden nicht gelesen, die Liste ist also nicht vollständig.",
@@ -1073,7 +1075,7 @@ export const de: Catalog = {
       "Das Thema der Runde ist ungültig. Prüfen Sie Titel oder Link und versuchen Sie es erneut.",
     no_round: "Es läuft keine Runde. Starten Sie zuerst eine Runde.",
     not_voter: "Beobachter stimmen nicht ab. Wechseln Sie zum Abstimmen, um eine Karte zu spielen.",
-    bad_card: "Diese Karte gehört nicht zum Kartensatz des Raums. Wählen Sie eine andere.",
+    bad_card: "Diese Karte gehört nicht zum Kartendeck des Raums. Wählen Sie eine andere.",
     round_revealed: "Die Karten sind bereits aufgedeckt. Stimmen lassen sich nicht mehr ändern.",
     round_changed:
       "Eine neue Runde hat begonnen, bevor Ihre Stimme ankam. Wählen Sie Ihre Karte erneut.",
@@ -1083,8 +1085,8 @@ export const de: Catalog = {
       "Nicht aufgedeckt: In einer anonymen Runde zeigt eine einzelne Karte, von wem sie ist. Warten Sie auf eine zweite Karte.",
     not_revealed: "Decken Sie zuerst die Karten auf.",
     bad_seconds:
-      "Ein Zeitlimit dauert {{min, number}} Sekunden bis {{max, number}} Minuten. Wählen Sie eine andere Dauer.",
-    no_timer: "Es läuft kein Zeitlimit.",
+      "Ein Timer läuft {{min, number}} Sekunden bis {{max, number}} Minuten. Wählen Sie eine andere Dauer.",
+    no_timer: "Es läuft kein Timer.",
     target_not_present:
       "Diese Person ist gerade nicht im Raum. Nur wer anwesend ist, kann Product Owner werden.",
     already_owner: "Sie sind bereits der Product Owner.",
@@ -1107,23 +1109,23 @@ export const de: Catalog = {
       "Ihre Anmeldung ist für diesen Raum zu alt. Melden Sie sich ab und dann wieder an.",
     restriction_unavailable:
       "Dieser Server bietet diese Anmeldung nicht mehr an, darum kann niemand diese Regel erfüllen.",
-    deck_empty: "Ein Kartensatz braucht mindestens eine Karte.",
+    deck_empty: "Ein Kartendeck braucht mindestens eine Karte.",
     deck_too_many_cards:
-      "Ein Kartensatz hat höchstens {{max, number}} Karten. Entfernen Sie einige und versuchen Sie es erneut.",
+      "Ein Kartendeck hat höchstens {{max, number}} Karten. Entfernen Sie einige und versuchen Sie es erneut.",
     card_empty: "Eine Karte darf nicht leer sein.",
     card_invalid:
       "Diese Karte enthält Zeichen, die sich nicht anzeigen lassen. Geben Sie sie erneut ein.",
     card_too_long: "Eine Kartenbeschriftung hat höchstens {{max, number}} Zeichen. Kürzen Sie sie.",
-    card_duplicate: "Diese Karte ist bereits im Kartensatz.",
+    card_duplicate: "Diese Karte ist bereits im Kartendeck.",
     card_special:
-      "Die Sonderkarten (?, ☕, ∞) schalten Sie in den Raumeinstellungen ein, nicht im Kartensatz.",
+      "Die Sonderkarten (?, ☕, ∞) schalten Sie in den Raumeinstellungen ein, nicht im Kartendeck.",
     bad_payload:
       "Der Server konnte diese Anfrage nicht lesen. Laden Sie die Seite neu und versuchen Sie es erneut.",
     protocol_mismatch: "Eine neue Version der App ist verfügbar. Laden Sie die Seite neu.",
     bad_room_name:
       "Ein Raumname hat {{min, number}} bis {{max, number}} sichtbare Zeichen. Kürzen Sie ihn, oder lassen Sie das Feld leer.",
     room_not_found:
-      "Diesen Raum gibt es nicht, oder er wurde nach langer Zeit ohne Nutzung gelöscht. Prüfen Sie den Link.",
+      "Diesen Raum gibt es nicht, oder er wurde nach langer Zeit ohne Aktivität gelöscht. Prüfen Sie den Link.",
     password_required: "Dieser Raum hat ein Passwort. Geben Sie es ein, um beizutreten.",
     wrong_password: "Dieses Passwort ist nicht richtig.",
     bad_password: "Ein Passwort braucht {{min, number}} bis {{max, number}} Zeichen.",

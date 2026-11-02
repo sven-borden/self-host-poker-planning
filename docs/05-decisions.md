@@ -154,6 +154,12 @@ platforms (Weblate, Crowdin) read them and a switch back stays cheap. Numbers an
 follow the reader's region: the first `navigator.languages` tag in the UI language
 (`de-CH` writes 6.5 and 1’234), else the bare language (French and German write 5,5).
 
+**Amended 2026-11-02 (#41, OQ-2, Sven).** French says vous and German says Sie, everywhere,
+to everyone: a tool that strangers open from a link addresses them formally, and one register
+is one less thing to keep straight. The words each language uses are in
+`docs/08-glossary.md`. `i18n.test.ts` fails on informal forms in a catalog and on a German
+Sie written small.
+
 ## ADR-013: pnpm monorepo and the serial issue loop
 
 **Decision.** `apps/web`, `apps/server`, `packages/domain`, `packages/protocol`;
