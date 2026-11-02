@@ -5,12 +5,17 @@ Close an entry by recording the answer here (and an ADR when it changes the desi
 
 | # | Question | Default until decided | Decided in |
 |---|---|---|---|
-| OQ-1 | Azure: Container Apps, App Service, or a VM with Docker? | Container Apps with Postgres Flexible Server | #38 |
-| OQ-2 | French and German tone: tu or vous, du or Sie? | vous and Sie | #41 |
 | OQ-3 | Licence and pricing model for branding: open core or paid hosted edition? | everything MIT until W7 | #56 |
 | OQ-4 | Vercel hosting: needed by anyone? | no; containers only (ADR-001) | on demand |
 | OQ-5 | Product name | "Poker Planning" | any time |
 | OQ-7 | Node 26 becomes LTS on 2026-10-28: when do we move from Node 24? | when our dependencies support it | any time |
+
+## Answered on 2026-11-02 (Sven)
+
+- OQ-1, Azure: **App Service** (Web App for Containers on Linux) with Postgres Flexible Server,
+  not the Container Apps default. The template comes with #38.
+- OQ-2, French and German tone: **vous and Sie**, the default the copy already used. The review is
+  #41.
 
 ## Answered on 2026-11-02 (#48)
 

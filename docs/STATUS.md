@@ -118,17 +118,18 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- Nothing in flight. All that is left needs Sven (Owner items).
+- #38 and #41, one agent each, since Sven answered OQ-1 and OQ-2 on 2026-11-02. After them, a
+  comparison for #56 and the local reveal budget below.
 - #54 and #55 are merged and stay open until the live checks at Sven's site and organisation.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
 - **Agents again, issue after issue, until the end of 2026-11-02** (Sven, 2026-11-01). The
-  unblocked work ran out that day at W6; the session stopped and reported.
+  unblocked work ran out that day at W6 and the session stopped; his answers the same day
+  started it again.
 
 ## Next
 
-- W3 (#33–#41): all merged but #38 and #41, which need Sven's OQ-1 and OQ-2.
-- W7 waits for his
-  OQ-3 (#56).
+- W3 (#33–#41): all merged but #38 and #41, both in flight.
+- W7 waits for his OQ-3 (#56). A comparison comes first, for him to decide from.
 - The local reveal budget fails on clean `main` since 2026-11-02 (named reveal, 1 run of 4
   clean, worst 67 ms; #43 had 10 of 10). CI passes at the first try. Cause not looked for.
 - Image size: 239 MB of 250 MB after #40 (236 MB before; architecture section 12 still
@@ -223,10 +224,6 @@ issues are merged.
   Nobody has heard either; they were measured, not judged. The sounds are numbers in
   `sound-recipes.ts`, each mood's level one number in `music-moods.ts`. A real iPhone and
   Safari are untested too.
-- **#19**: close the issue. PR #82 shipped it on 2026-10-27; the session's permissions
-  refused `gh issue close`.
-- **#38**: pick the Azure service (OQ-1).
-- **#41**: French and German tone (OQ-2).
 - **#56**: licence and pricing model for branding (OQ-3).
 
 ## Merge gate
