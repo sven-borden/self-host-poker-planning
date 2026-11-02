@@ -227,8 +227,11 @@ export interface RoomSync extends RealtimeHandlers {
    * a room whose state the domain cannot read, which the caller names by its id.
    */
   moveGuest(room: RoomRef, guest: string, account: string): Promise<ServerRun>;
-  /** The guest's sockets, on every instance, hear `signedIn` and are closed (#48). */
-  dropGuest(guest: string): void;
+  /**
+   * The guest's sockets, on every instance, hear `signedIn` and are closed (#48). `account` is
+   * who the guest's PO roles go to: a countdown stays if that person is in the room.
+   */
+  dropGuest(guest: string, account: string): void;
 }
 
 /** The Socket.IO room of a room, by its id (never its code). */
@@ -397,6 +400,8 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   let sweeping = false;
   /** Per room (by id): how many away runs of each person failed in a row. */
   const awayFailures = new Map<string, Map<string, number>>();
+  /** Set while a guest's sockets close (`dropLocalGuest`), with the account the guest became. */
+  let guestLeaving: { guest: string; account: string } | undefined;
   /** Shutting down: no new grace starts. */
   let closed = false;
   /** The server is closing its sockets: they are not people leaving. */
@@ -1136,14 +1141,19 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
    * start in a room nobody can stop, and the stored deadline would start the item for the
    * first person to enter, days later. Decided in the room's queue: a PO back by then keeps
    * it. The grace is too long to wait for (15 s to a 10 s countdown), so a reload ends it
-   * too, which costs a press of "Next item" and no round.
+   * too, which costs a press of "Next item" and no round. A PO whose sockets close because they
+   * signed in (`dropLocalGuest`, #48) is one person with the account the role goes to: a socket
+   * of that account keeps it, in the moment before the role has moved.
    */
   async function endCountdown(room: RoomRef) {
     if (closed || stopping) return;
+    const signedIn = guestLeaving;
     try {
       const elsewhere = await presentElsewhere(room.id);
       const outcome = await runner.run(room.code, (state): ApplyResult => {
-        const stays = isHere(room.id, state.ownerId) || elsewhere.has(state.ownerId);
+        const po =
+          state.ownerId === signedIn?.guest ? [state.ownerId, signedIn.account] : [state.ownerId];
+        const stays = po.some((who) => isHere(room.id, who) || elsewhere.has(who));
         return state.round?.advanceAt === undefined || stays
           ? { ok: true, state, causes: [] }
           : apply(state, { type: "endCountdown" }, { actor: SERVER_ACTOR, now: now() });
@@ -1562,7 +1572,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       }
       void publish(room, outcome, { serverRun: true });
       if (!outcome.changed) return "unchanged";
-      followSeat(outcome.id, guest, account, outcome.result.state);
+      followSeat(room, guest, account, outcome.result.state);
       return "changed";
     } catch (error) {
       if (!(error instanceof DatabaseError)) throw error;
@@ -1574,9 +1584,15 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
 
   /**
    * The seat a move left behind: no grace of the guest's runs on, and a seat the room shows
-   * connected, with no socket of the account here, gets the grace any seat gets.
+   * connected, with no socket of the account here, gets the grace any seat gets. A countdown
+   * that came with a PO role now answers to the account: with several instances a move can land
+   * before the guest's socket closes, and that close no longer finds a PO to end it for.
    */
-  function followSeat(id: string, guest: string, account: string, state: RoomState) {
+  function followSeat(room: RoomRef, guest: string, account: string, state: RoomState) {
+    const { id } = room;
+    if (state.ownerId === account && state.round?.advanceAt !== undefined) {
+      void endCountdown(room);
+    }
     graces.cancel(id, guest);
     awayFailures.get(id)?.delete(guest);
     const seat = participant(state, account);
@@ -1584,17 +1600,23 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     if (watched.has(id) && !isHere(id, account)) graces.start(id, account);
   }
 
-  function dropLocalGuest(guest: string) {
-    for (const socket of io?.sockets.sockets.values() ?? []) {
-      if (socket.data.user?.id !== guest) continue;
-      socket.emit("signedIn");
-      socket.disconnect(true);
+  function dropLocalGuest(guest: string, account: string) {
+    // A socket's close runs its handlers synchronously, so they see who is leaving and why.
+    guestLeaving = { guest, account };
+    try {
+      for (const socket of io?.sockets.sockets.values() ?? []) {
+        if (socket.data.user?.id !== guest) continue;
+        socket.emit("signedIn");
+        socket.disconnect(true);
+      }
+    } finally {
+      guestLeaving = undefined;
     }
   }
 
-  function dropGuest(guest: string) {
-    dropLocalGuest(guest);
-    if (shared && io && !closed) io.serverSideEmit("guestLinked", guest);
+  function dropGuest(guest: string, account: string) {
+    dropLocalGuest(guest, account);
+    if (shared && io && !closed) io.serverSideEmit("guestLinked", guest, account);
   }
 
   return {
@@ -1602,8 +1624,10 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       io = server;
       if (!shared) return;
       server.on("roomChanged", onRoomChanged);
-      server.on("guestLinked", (guest) => {
-        if (typeof guest === "string") dropLocalGuest(guest);
+      server.on("guestLinked", (guest, account) => {
+        if (typeof guest === "string" && typeof account === "string") {
+          dropLocalGuest(guest, account);
+        }
       });
       // The adapter does not await these: a throw would be an unhandled rejection.
       server.on("present", (roomId, answer) => {

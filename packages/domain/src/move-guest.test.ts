@@ -7,7 +7,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { apply } from "./apply.ts";
 import type { Command } from "./commands.ts";
-import { createRoom, OWNER_CLAIM_AFTER_MS, type RoomState } from "./room.ts";
+import { AUTO_ADVANCE_MS, createRoom, OWNER_CLAIM_AFTER_MS, type RoomState } from "./room.ts";
 
 const SERVER = ":server";
 const T0 = 1_700_000_000_000;
@@ -228,6 +228,81 @@ describe("both the guest and the account in the room", () => {
       "8",
     );
     expect(move(before).state.round?.votes).toEqual({ [ACCOUNT]: { card: "8" } });
+  });
+});
+
+describe("a countdown to the next item (#52)", () => {
+  /** A named reveal with a final recorded, a queue, and the countdown running. */
+  function counting(people: readonly string[], po = people[0] ?? ""): RoomState {
+    let state = room(people, { autoAdvance: true });
+    state = act(state, po, {
+      type: "queueAdd",
+      items: [{ key: "PP-1", title: "The next one" }],
+    });
+    state = reveal(vote(voting(state), po, "5"));
+    state = act(state, po, { type: "setFinal", card: "5" });
+    expect(state.round?.advanceAt).toBe(T0 + AUTO_ADVANCE_MS);
+    return state;
+  }
+
+  it("goes on when the guest's seat moves: the seat is as present as it was", () => {
+    const { state, causes } = move(counting([GUEST, "ben"]));
+    expect(state.ownerId).toBe(ACCOUNT);
+    expect(state.round?.advanceAt).toBe(T0 + AUTO_ADVANCE_MS);
+    expect(causes).toEqual([]);
+  });
+
+  it("is not ended by an old away of the account's seat", () => {
+    let before = room([GUEST, ACCOUNT, "ben"], { autoAdvance: true });
+    before = act(before, SERVER, { type: "presence", who: ACCOUNT, connected: false });
+    before = act(before, GUEST, { type: "queueAdd", items: [{ key: "PP-1" }] });
+    before = reveal(vote(voting(before), GUEST, "5"));
+    before = act(before, GUEST, { type: "setFinal", card: "5" });
+    const { state, causes } = move(before);
+    expect(state.round?.advanceAt).toBe(T0 + AUTO_ADVANCE_MS);
+    expect(causes).toEqual([]);
+  });
+
+  it("starts the next item for the account when it runs out, and the PO is the account", () => {
+    const { state } = move(counting([GUEST, "ben"]));
+    const after = apply(
+      state,
+      { type: "timeUp" },
+      {
+        actor: SERVER,
+        now: T0 + AUTO_ADVANCE_MS + 1,
+      },
+    );
+    expect(after.state.round).toMatchObject({ number: 2, phase: "voting" });
+    expect(after.state.ownerId).toBe(ACCOUNT);
+  });
+
+  it("keeps a stay on this round through the move", () => {
+    const held = act(counting([GUEST, "ben"]), GUEST, { type: "holdAdvance" });
+    const { state } = move(held);
+    expect(state.round?.stayed).toBe(true);
+    expect(state.round).not.toHaveProperty("advanceAt");
+    expect(act(state, ACCOUNT, { type: "setFinal", card: "8" }).round).not.toHaveProperty(
+      "advanceAt",
+    );
+  });
+
+  it("leaves a countdown alone when the guest is not the PO", () => {
+    const { state } = move(counting(["ben", GUEST], "ben"));
+    expect(state.ownerId).toBe("ben");
+    expect(state.round?.advanceAt).toBe(T0 + AUTO_ADVANCE_MS);
+  });
+
+  it("starts the item first when the deadline passed, and reports the round it ended", () => {
+    const later = T0 + AUTO_ADVANCE_MS + 1;
+    const before = counting([GUEST, "ben"]);
+    const result = move(before, later);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.ended?.number).toBe(before.round?.number);
+    expect(result.state.round).toMatchObject({ number: 2, phase: "voting" });
+    expect(result.state.ownerId).toBe(ACCOUNT);
+    expect(result.state.participants).not.toHaveProperty(GUEST);
   });
 });
 

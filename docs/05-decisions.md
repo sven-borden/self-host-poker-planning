@@ -841,7 +841,8 @@ their own, namely the rate limits per user (`rename|user`, `avatar|user`, `passw
 presence timers. So a sign-in starts a person's count of wrong passwords afresh; the limits per
 address and per room still hold. Rows an unfinished sign-in holds in `verification` name the
 guest, and find it gone. Anonymous rounds store no person, so nothing of them moves, and a test
-compares them byte for byte.
+compares them byte for byte. `room.queue` holds no user id (ADR-024: an item is an id, a key, a
+title, a link and a source), and neither do `round.stayed` and `round.advanceAt`.
 
 **A room changes through `apply`.** `moveGuest` is a server command in `packages/domain`, run by
 the room's runner with the compare-and-set, the way `presence` is, so the room's people get a
@@ -948,7 +949,19 @@ Cases the rules did not name:
   connected if either is, away only if both are, then since the later of the two. An old away of
   the account's seat says nothing about a person sitting there now: kept, it would let anyone
   claim the guest's PO role at once, and take the seat out of the eligible voters.
-- **A deadline that has passed** reveals first, as before any command, exactly once.
+- **A deadline that has passed** reveals first, as before any command, exactly once. A countdown
+  that has run out starts the next item the same way. That commit is not quiet: the round it ended
+  gets its history row and `last_active_at`, and `complete` names the account in that row.
+- **A countdown to the next item (ADR-024).** A PO who signs in from the room leaves it for the
+  provider, and that close ends the countdown as a reload does: it costs a press of "Next item" and
+  no round. With another tab left in the room it runs on, and the PO can stop it there. When
+  `signedIn` closes the PO's last socket the same rule holds, with one correction: the account is
+  the same person, so a socket of the account in the room keeps the countdown, in the moment before
+  the role moves. Otherwise it ends and nothing starts. The move itself changes nothing about it:
+  the seat is as present as it was, and `stayed` travels on the round. After a move the question
+  is asked again of the account, since with several instances a move can land before the guest's
+  socket closes. If the move of that room fails while the account sits there, the countdown runs
+  on under the guest's seat, and the same person can stop it by hand once the seat has moved.
 - **A guest with a card and no seat** (left after a named reveal): the card, with its kept name,
   becomes the account's, so the next history row names the account.
 - **A room the guest owns but left:** `ownerId` moves, and no seat appears.

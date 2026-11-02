@@ -1098,6 +1098,136 @@ describe("live sockets", () => {
   });
 });
 
+describe("a countdown to the next item (#52)", () => {
+  /** A guest PO's room with a queue, and a final recorded by `po`: the countdown runs. */
+  async function counting(po: TestClient, code: string) {
+    await must(po.cmd("updateSettings", { patch: { autoAdvance: true } }));
+    await must(po.cmd("queueAdd", { items: [{ key: "PP-1", title: "The next one" }] }));
+    await must(po.cmd("startRound", { subject: { kind: "none" } }));
+    await must(po.cmd("castVote", { card: "5", round: 1 }));
+    await must(po.cmd("reveal"));
+    await must(po.cmd("setFinal", { card: "5" }));
+    const { state } = await liveOf(code);
+    expect(state.round?.advanceAt).toBeDefined();
+    return state.round?.advanceAt;
+  }
+
+  it("ends when the PO's last socket closes with the sign-in, and starts nothing", async () => {
+    const browser = new Browser();
+    const guest = await browser.guest();
+    const { id, code } = await roomOf(guest);
+    const tab = await browser.sit(code, "Ana");
+    const other = new Browser();
+    await other.guest();
+    const ben = await other.sit(code, "Ben");
+    await counting(tab, code);
+
+    await signIn(browser, person());
+
+    const account = (await browser.session())?.user.id ?? "";
+    const { state } = await vi.waitFor(async () => {
+      const loaded = await liveOf(code);
+      expect(loaded.state.round).not.toHaveProperty("advanceAt");
+      return loaded;
+    });
+    expect(state.ownerId).toBe(account);
+    expect(state.round).toMatchObject({ number: 1, phase: "revealed" });
+    expect(sync.deadlines.armed(id)).toBeUndefined();
+    const told = await ben.waitFor((s) => s.room.ownerId === account);
+    expect(told.snapshot.room.round).not.toHaveProperty("advanceAt");
+
+    // A press of "Next item" brings it back, as after a reload.
+    const back = await browser.sit(code);
+    await must(back.cmd("startNext", { id: 1 }));
+    expect((await liveOf(code)).state.round).toMatchObject({ number: 2, phase: "voting" });
+  });
+
+  it("ends after the move too, for a socket of the guest that closed late or never", async () => {
+    const browser = new Browser();
+    const guest = await browser.guest();
+    const { code } = await roomOf(guest);
+    const tab = await browser.sit(code, "Ana");
+    await counting(tab, code);
+    // On another instance the move can land first: this close then finds no PO to end it for.
+    vi.spyOn(sync, "dropGuest").mockImplementation(() => {});
+    // As long as in production against a countdown: the seat's own grace must not do this.
+    const graces = sync.presence as GraceTimers;
+    const start = graces.start.bind(graces);
+    vi.spyOn(graces, "start").mockImplementation((room, who) => start(room, who, 600_000));
+
+    await signIn(browser, person());
+
+    await vi.waitFor(async () =>
+      expect((await liveOf(code)).state.round).not.toHaveProperty("advanceAt"),
+    );
+    expect((await liveOf(code)).state.round).toMatchObject({ number: 1, phase: "revealed" });
+  });
+
+  it("goes on when the account that becomes PO is at the table", async () => {
+    const signed = new Browser();
+    const who = person();
+    await signIn(signed, who);
+    const account = (await signed.session())?.user.id ?? "";
+    const browser = new Browser();
+    const guest = await browser.guest();
+    const { id, code } = await roomOf(guest);
+    const tab = await browser.sit(code, "Ana");
+    const seated = await signed.sit(code, "Same Person");
+    const advanceAt = await counting(tab, code);
+
+    await signIn(browser, who);
+
+    const { state } = await liveOf(code);
+    expect(state.ownerId).toBe(account);
+    expect(state.round?.advanceAt).toBe(advanceAt);
+    expect(sync.deadlines.armed(id)).toBe(advanceAt);
+    // Nothing ended it after the move either.
+    await must(seated.cmd("rename", { name: "Still Here" }));
+    expect((await liveOf(code)).state.round?.advanceAt).toBe(advanceAt);
+  });
+
+  it("writes the round a move ended, and its activity, when it lands as a countdown runs out", async () => {
+    const browser = new Browser();
+    const guest = await browser.guest();
+    const { id, code } = await roomOf(guest);
+    const tab = await browser.sit(code, "Ana");
+    await counting(tab, code);
+    tab.close();
+    await vi.waitFor(async () =>
+      expect((await liveOf(code)).state.round).not.toHaveProperty("advanceAt"),
+    );
+    // As the state stands with nobody here to end it: the deadline passed, unresolved.
+    const { state, version } = await liveOf(code);
+    const past = Date.now() - 1000;
+    const round = { ...state.round, advanceAt: past };
+    const live = { ...state, round };
+    await admin.query(`update room set live = $1, version = $2 + 1 where id = $3`, [
+      JSON.stringify(Object.fromEntries(Object.entries(live).filter(([key]) => key !== "queue"))),
+      version,
+      id,
+    ]);
+    await admin.query(`update room set last_active_at = now() - interval '3 days' where id = $1`, [
+      id,
+    ]);
+    await admin.query("delete from round_history where room_id = $1", [id]);
+    const idle = (await rowOf(id))?.last_active_at.getTime() ?? 0;
+
+    await signIn(browser, person());
+
+    const account = (await browser.session())?.user.id ?? "";
+    const after = (await liveOf(code)).state;
+    expect(after.ownerId).toBe(account);
+    expect(after.round).toMatchObject({ number: 2, phase: "voting" });
+    expect(after.queue?.items).toEqual([]);
+    expect((await rowOf(id))?.last_active_at.getTime()).toBeGreaterThan(idle);
+    const { rows } = await admin.query<{ votes: { votes: { who: string }[] } }>(
+      "select votes from round_history where room_id = $1",
+      [id],
+    );
+    expect(rows.map((row) => row.votes.votes.map((vote) => vote.who))).toEqual([[account]]);
+  });
+});
+
 describe("retention", () => {
   it("does not touch `last_active_at`, and the room is a signed-in owner's from then on", async () => {
     const browser = new Browser();

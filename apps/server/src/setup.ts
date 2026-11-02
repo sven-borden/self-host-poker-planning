@@ -65,7 +65,7 @@ export async function setupServer(
     store: createGuestLinkStore(database.db),
     rooms: {
       moveGuest: (room, guest, account) => sync.moveGuest(room, guest, account),
-      dropGuest: (guest) => sync.dropGuest(guest),
+      dropGuest: (guest, account) => sync.dropGuest(guest, account),
     },
     logger,
   });

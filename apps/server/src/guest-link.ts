@@ -41,7 +41,7 @@ export const LINK_STUCK_MS = 24 * 60 * 60 * 1000;
 
 export interface GuestRooms {
   moveGuest(room: GuestRoom, guest: string, account: string): Promise<ServerRun>;
-  dropGuest(guest: string): void;
+  dropGuest(guest: string, account: string): void;
 }
 
 export interface GuestLinks {
@@ -107,7 +107,7 @@ export function createGuestLinks(options: GuestLinkOptions): GuestLinks {
     const { account, since } = link;
     const level = Date.now() - since.getTime() > LINK_STUCK_MS ? "error" : "warn";
     try {
-      rooms.dropGuest(guest);
+      rooms.dropGuest(guest, account);
       for (let done = 0; done < MAX_PASSES; done++) {
         const finished = await pass(guest, account, level);
         if (finished === "failed") return false;

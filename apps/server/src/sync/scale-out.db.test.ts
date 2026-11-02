@@ -409,7 +409,7 @@ describe.skipIf(!REDIS_URL)("two instances on one room (Redis)", () => {
         return events;
       });
 
-      syncOf(one()).dropGuest(bob.id);
+      syncOf(one()).dropGuest(bob.id, "an-account");
 
       await vi.waitFor(() => expect(heard).toEqual([BOTH, BOTH]));
       expect(bystander.socket.connected).toBe(true);
@@ -420,7 +420,8 @@ describe.skipIf(!REDIS_URL)("two instances on one room (Redis)", () => {
       const a = client(ada, two());
       await a.enter(code);
       publisher ??= await redisClient();
-      const request = { uid: "another-instance", type: 6, data: ["guestLinked", { not: "an id" }] };
+      const data = ["guestLinked", { not: "an id" }, "an-account"];
+      const request = { uid: "another-instance", type: 6, data };
       await publisher.publish(REQUESTS, JSON.stringify(request));
       await sleep(100);
       expect(a.socket.connected).toBe(true);
