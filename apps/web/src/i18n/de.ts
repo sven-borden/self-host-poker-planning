@@ -688,9 +688,6 @@ export const de: Catalog = {
     kept: "Ihr Raum, mit einem anderen Product Owner",
     keptWhy:
       "Jemand anderes hat die Rolle des Product Owners übernommen. Holen Sie sich die Rolle im Raum zurück, dann können Sie ihn löschen.",
-    refused: "Ihr Raum, für dieses Konto gesperrt",
-    refusedWhy:
-      "Die Regel des Raums lässt dieses Konto nicht zu: Sie können ihn nicht öffnen, und die Rolle kann nicht an Sie zurückgehen. Er gehört weiterhin Ihnen, Sie können ihn also löschen.",
     signInAgain:
       "Einige Ihrer Räume verlangen eine aktuelle Anmeldung. Melden Sie sich ab und wieder an, um sie zu sehen.",
     lastActive: "Aktiv {{when}}",

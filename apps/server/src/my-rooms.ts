@@ -6,7 +6,7 @@
  *   after finishing a guest's move still pending (ADR-025);
  * - `PATCH /api/my-rooms/:id { name }`: renames a room, its PO only, through `apply`;
  * - `DELETE /api/my-rooms/:id`: deletes a room with all it holds, for someone who is its PO and
- *   its keeper (ADR-027), or its keeper when the room's rule refuses them (ADR-028);
+ *   its keeper (ADR-027), and for nobody else;
  * - `POST /api/my-rooms/:id/leave`: gives up the seat, through the `leave` command.
  *
  * A person who has nothing to do with a room hears what an unknown id hears, so an id says
@@ -16,8 +16,9 @@
  *
  * A room with a rule (#50, ADR-028) tells someone it would refuse no more here than at its door. A
  * seat there is off the list, as the seat goes when they next enter and the room says nothing to
- * them meanwhile. A room that is theirs stays, blanked: no name, rounds or activity, and their
- * right to delete it. A sign-in too old for a rule hides the same rooms until they sign in again.
+ * them meanwhile. So is a room that is theirs as keeper, with no delete: the role cannot come back
+ * to someone the rule shuts out, and a right that needed it waits, held, until the rule lets them
+ * pass (ADR-028). A sign-in too old for a rule hides the same rooms until they sign in again.
  *
  * A room is named by its id in a path: a code is a bearer capability, and it stays out of every
  * address but the room's own. The list returns codes to people already in those rooms, and
@@ -69,15 +70,6 @@ function readCursor(raw: string): MyRoomsCursor | null {
 /** Who is asking, and when their session began. */
 type Caller = SocketUser & { startedAt: number };
 
-/** A row someone the room's rule refuses reads: theirs to delete, and nothing about the room. */
-const blanked = (room: MyRoom): MyRoom & { refused: true } => ({
-  ...room,
-  name: null,
-  rounds: 0,
-  lastActiveAt: new Date(0),
-  refused: true,
-});
-
 export interface MyRoomsApiDeps {
   auth: Auth;
   rooms: MyRoomsStore;
@@ -121,26 +113,18 @@ export function registerMyRoomsApi(
     const ruled = (room: MyRoom) => room.rule !== null && !room.owned;
     const identity = list.some(ruled) ? await identityOf(rules, me.id) : null;
     const tooOld = sessionTooOld(me.startedAt, Date.now());
-    const shown: (MyRoom & { refused?: true })[] = [];
+    const shown: MyRoom[] = [];
     let hidden = false;
     for (const room of list) {
       const refused =
         room.rule !== null &&
         !room.owned &&
         restrictionRefusal(room.rule, identity, rules.providers) !== null;
-      if (refused) {
-        if (room.keeper) shown.push(blanked(room));
-      } else if (ruled(room) && tooOld) hidden = true;
+      if (refused) continue;
+      if (ruled(room) && tooOld) hidden = true;
       else shown.push(room);
     }
     return { shown, hidden };
-  }
-
-  /** Whether the room's rule refuses this keeper, who cannot then take the role back to delete. */
-  async function shutOut(room: FoundRoom, me: Caller): Promise<boolean> {
-    if (room.rule === null || !room.keeper || room.ownerId === me.id) return false;
-    const refused = restrictionRefusal(room.rule, await identityOf(rules, me.id), rules.providers);
-    return refused !== null;
   }
 
   /** A refused command as HTTP: its code and status. */
@@ -217,17 +201,12 @@ export function registerMyRoomsApi(
     if (me instanceof Response) return me;
     const id = c.req.param("id");
     const room = await known(id, me.id);
-    // A keeper the rule refuses keeps the right (ADR-028): the room is theirs, and with the role
-    // out of reach, as neither a claim nor a hand-over can reach them, the role cannot ask it.
-    const rule = room && (await shutOut(room, me)) ? room.rule : null;
-    if (!room || (!rule && (room.ownerId !== me.id || !room.keeper))) {
-      return noDelete(c, room, me.id);
-    }
+    // The PO who is the keeper, and nobody else. A keeper the room's rule shuts out (ADR-028) is
+    // not the PO, and hears what anyone without the role hears.
+    if (!room || room.ownerId !== me.id || !room.keeper) return noDelete(c, room, me.id);
     // The statement is the judge. It refuses a claim or a hand-over that landed since, and a
     // second tab's delete: the row says which.
-    const deleted = rule
-      ? await rooms.deleteKept(room.id, me.id, rule)
-      : await rooms.deleteOwned(room.id, me.id);
+    const deleted = await rooms.deleteOwned(room.id, me.id);
     if (!deleted) return noDelete(c, await known(id, me.id), me.id);
     sync.roomDeleted(room.id);
     c.var.log.info({ room: room.id }, "room deleted");

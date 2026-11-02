@@ -918,8 +918,8 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
     }`: how many here the stored rule would refuse, and the PO's own account, for the question
     before a rule they do not meet. Never who, never why. `POST .../remove-outsiders` takes those
     seats and answers how many.
-  - **"My rooms"**: a room that would refuse the person is off the list. A keeper it refuses keeps a
-    blank row and may delete the room without the role, which can no longer come back to them; the
+  - **"My rooms"**: a room that would refuse the person is off the list, a keeper it refuses
+    included, who has no delete either: the right waits for a rule that lets them pass. The
     account is read once per list, however many rules it holds. `leave` over HTTP goes through
     `publish`, so it is read like any other.
   - **In a snapshot**: `settings.restriction` is `{ domains, organisation }` for those let in, plus

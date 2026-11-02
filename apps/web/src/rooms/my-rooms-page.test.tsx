@@ -462,39 +462,7 @@ describe("leaving", () => {
   });
 });
 
-describe("a room whose rule refuses this account (#50)", () => {
-  const SHUT = {
-    ...ROOM_A,
-    name: null,
-    owned: false,
-    keeper: true,
-    rounds: 0,
-    lastActiveAt: new Date(0).toISOString(),
-    refused: true,
-  };
-
-  it("says nothing of the room, and offers to delete it, which is all that is left", async () => {
-    asAccount();
-    const calls = serve({
-      "GET /api/my-rooms": () => json(page([SHUT])),
-      [`DELETE /api/my-rooms/${SHUT.id}`]: noContent,
-    });
-    await renderRooms();
-    const row = await waitFor(() => {
-      const found = document.querySelector('[data-my-room="refused"]');
-      if (!found) throw new Error("no row");
-      return found as HTMLElement;
-    });
-    expect(row.textContent).toContain("closed to this account");
-    expect(row.textContent).toContain("you can delete it");
-    expect(row.querySelector("time")).toBeNull();
-    expect(row.textContent).not.toContain("rounds");
-    fireEvent.click(named(`Delete Room ${SHUT.code}`));
-    fireEvent.click(await screen.findByRole("button", { name: "Delete this room" }));
-    await waitFor(() => expect(rowCount()).toBe(0));
-    expect(calls).toContain(`DELETE /api/my-rooms/${SHUT.id}`);
-  });
-
+describe("rooms a rule hides (#50)", () => {
   it("says that a recent sign-in brings the others back", async () => {
     asAccount();
     serve({ "GET /api/my-rooms": () => json(page([ROOM_A], { signInAgain: true })) });

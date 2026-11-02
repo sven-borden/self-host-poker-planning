@@ -18,7 +18,7 @@
  * account, however long the list, so a room that would refuse them says nothing here.
  */
 import type { Restriction } from "@pp/domain";
-import { and, eq, ne, type SQL, sql } from "drizzle-orm";
+import { and, eq, type SQL, sql } from "drizzle-orm";
 import { guard } from "./errors.ts";
 import type { Db } from "./rooms.ts";
 import {
@@ -66,8 +66,6 @@ export interface FoundRoom {
   ownerId: string;
   keeper: boolean;
   seated: boolean;
-  /** The room's rule, null without one. */
-  rule: Restriction | null;
 }
 
 export interface MyRoomsStore {
@@ -82,12 +80,6 @@ export interface MyRoomsStore {
    * column of the row. Resolves whether it deleted one.
    */
   deleteOwned(id: string, user: string): Promise<boolean>;
-  /**
-   * Deletes the room if `user` is its keeper, someone else holds the PO role, and its rule is
-   * still `rule`, the one that refuses them (ADR-028): judged by the statement, so a rule taken
-   * off meanwhile leaves them the way ADR-027 gives anyone, the role. Resolves whether it did.
-   */
-  deleteKept(id: string, user: string, rule: Restriction): Promise<boolean>;
 }
 
 /** What a row of the list reads. */
@@ -166,7 +158,6 @@ export function createMyRoomsStore(db: Db): MyRoomsStore {
             ownerId: room.ownerUserId,
             keeper: sql<boolean>`${ROOM_KEEPER} = ${user}`,
             seated: sql<boolean>`coalesce(${room.live} -> 'participants' ? ${user}, false)`,
-            rule: sql<Restriction | null>`${ROOM_RULE}`,
           })
           .from(room)
           .where(eq(room.id, id));
@@ -178,22 +169,6 @@ export function createMyRoomsStore(db: Db): MyRoomsStore {
         const rows = await db
           .delete(room)
           .where(and(eq(room.id, id), eq(room.ownerUserId, user), sql`${ROOM_KEEPER} = ${user}`))
-          .returning({ id: room.id });
-        return rows.length === 1;
-      }),
-
-    deleteKept: (id, user, rule) =>
-      guard("delete kept room", async () => {
-        const rows = await db
-          .delete(room)
-          .where(
-            and(
-              eq(room.id, id),
-              ne(room.ownerUserId, user),
-              sql`${ROOM_KEEPER} = ${user}`,
-              sql`${ROOM_RULE} = ${JSON.stringify(rule)}::jsonb`,
-            ),
-          )
           .returning({ id: room.id });
         return rows.length === 1;
       }),

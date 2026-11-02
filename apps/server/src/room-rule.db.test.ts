@@ -19,7 +19,6 @@ import { createRoom, type Restriction, type RoomState } from "@pp/domain";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Config } from "./config.ts";
 import { DatabaseError } from "./db/errors.ts";
-import { createMyRoomsStore } from "./db/my-rooms.ts";
 import { createTestDatabase, type TestDatabase, testClient } from "./db/test-db.ts";
 import {
   atFake,
@@ -34,7 +33,7 @@ import { hashPassword } from "./password.ts";
 import { RESTRICTION_READ_LIMIT, RESTRICTION_REMOVE_LIMIT } from "./room-rule-api.ts";
 import { createServer, type PokerServer } from "./server.ts";
 import { setupServer } from "./setup.ts";
-import { RULE_CHANGE_LIMIT } from "./sync/room-sync.ts";
+import { type RoomSync, RULE_CHANGE_LIMIT } from "./sync/room-sync.ts";
 import { roomCode, testClient as socketClient, type TestClient } from "./sync/test-support.ts";
 import { collectLogs, testConfig, VALID_ENV } from "./test-support.ts";
 
@@ -322,6 +321,14 @@ async function storeRaw(id: string, rule: string) {
     [rule, id],
   );
 }
+
+const countOf = async (table: string, column: string, id: string) => {
+  const { rows } = await admin.query(
+    `select count(*)::int as n from ${table} where ${column} = $1`,
+    [id],
+  );
+  return (rows[0] as { n: number }).n;
+};
 
 const ageSession = (user: string, days: number) =>
   admin.query(
@@ -1461,6 +1468,12 @@ describe('"My rooms" and a room with a rule', () => {
     const keeperBrowser = new Browser();
     const keeper = await keeperBrowser.signIn("google", outsider());
     const room = await roomOf(keeper);
+    await admin.query(
+      `insert into round_history
+         (room_id, number, subject, deck, votes, stats, started_at, revealed_at, finished_at)
+       values ($1, 1, '{}', '{}', '{"kind":"anonymous","cards":[]}', '{}', now(), now(), now())`,
+      [room.id],
+    );
     const owner = await keeperBrowser.sit(room.code, "The maker");
     const colleagueBrowser = new Browser();
     const colleague = await colleagueBrowser.signIn("google", person());
@@ -1470,7 +1483,7 @@ describe('"My rooms" and a room with a rule', () => {
     await must(newPo.cmd("claimOwner"));
     await must(newPo.cmd("startRound", { subject: { kind: "none" } }));
     owner.close();
-    return { room, keeperBrowser, colleagueBrowser, colleague };
+    return { room, keeperBrowser, colleagueBrowser, colleague, newPo };
   }
 
   const list = async (browser: Browser) => (await browser.go("/api/my-rooms")).json();
@@ -1491,46 +1504,74 @@ describe('"My rooms" and a room with a rule', () => {
     expect((await browser.post(`/api/my-rooms/${room.id}/leave`, {})).status).toBe(204);
   });
 
-  it("shows a keeper the rule refuses a blank row, and lets them delete the room", async () => {
+  const remove = (browser: Browser, id: string) =>
+    browser.go(`/api/my-rooms/${id}`, { method: "DELETE", headers: { origin: ORIGIN } });
+
+  it("leaves a keeper the rule refuses with no row and no delete, and the room whole", async () => {
     const { room, keeperBrowser } = await handedOver();
-    const body = (await list(keeperBrowser)) as { rooms: Record<string, unknown>[] };
-    expect(body.rooms).toEqual([
-      {
-        id: room.id,
-        code: room.code,
-        name: null,
-        owned: false,
-        keeper: true,
-        seated: false,
-        rounds: 0,
-        lastActiveAt: new Date(0).toISOString(),
-        refused: true,
-      },
-    ]);
-    const answer = await keeperBrowser.go(`/api/my-rooms/${room.id}`, {
-      method: "DELETE",
-      headers: { origin: ORIGIN },
+    const text = JSON.stringify(await list(keeperBrowser));
+    expect(await list(keeperBrowser)).toMatchObject({ rooms: [] });
+    expect(text).not.toContain(room.code);
+    expect(text).not.toContain(SECRET_NAME);
+    // The same answer as for anyone who is not the PO, and nothing about the room beyond it.
+    const refused = await remove(keeperBrowser, room.id);
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({ code: "not_owner" });
+    expect(refused.headers.get("cache-control")).toBe("no-store");
+    await expect(setup.database.store.loadRoom(room.code)).resolves.not.toBeNull();
+    expect(await countOf("round_history", "room_id", room.id)).toBe(1);
+  });
+
+  it("answers a refused keeper's delete as it answers a seat that holds no role", async () => {
+    const { room, keeperBrowser, colleagueBrowser } = await handedOver();
+    const refusedKeeper = await remove(keeperBrowser, room.id);
+    const seated = await remove(colleagueBrowser, room.id);
+    // The colleague holds the role, not the right; the keeper holds the right, not the role.
+    expect(await seated.json()).toEqual({ code: "not_keeper" });
+    expect(await refusedKeeper.json()).toEqual({ code: "not_owner" });
+    const stranger = new Browser();
+    await stranger.signIn("google", person());
+    const unknown = await remove(stranger, room.id);
+    expect(unknown.status).toBe(404);
+    expect(await unknown.json()).toEqual({ code: "room_not_found" });
+  });
+
+  it("brings the row and the right back once the rule no longer refuses the keeper", async () => {
+    const { room, keeperBrowser, newPo } = await handedOver();
+    expect(await list(keeperBrowser)).toMatchObject({ rooms: [] });
+    // The rule changes to one that lets the keeper's address in, and then it goes altogether.
+    await must(
+      newPo.cmd("updateSettings", {
+        patch: { restriction: { domains: ["elsewhere.example"], tenants: [] } },
+      }),
+    );
+    expect(await list(keeperBrowser)).toMatchObject({
+      rooms: [{ id: room.id, name: SECRET_NAME, keeper: true, owned: false }],
     });
-    expect(answer.status).toBe(204);
+    await must(newPo.cmd("updateSettings", { patch: { restriction: null } }));
+    const row = ((await list(keeperBrowser)) as { rooms: Record<string, unknown>[] }).rooms[0];
+    expect(row).toMatchObject({ id: room.id, name: SECRET_NAME, keeper: true, owned: false });
+    // Still no delete without the role; the role comes back by a claim, and then the delete is theirs.
+    expect((await remove(keeperBrowser, room.id)).status).toBe(403);
+    await must(newPo.cmd("leave"));
+    const seat = await keeperBrowser.sit(room.code, "The maker");
+    await must(seat.cmd("claimOwner"));
+    expect((await remove(keeperBrowser, room.id)).status).toBe(204);
     await expect(setup.database.store.loadRoom(room.code)).resolves.toBeNull();
   });
 
-  it("gives a refused keeper's delete to nobody else, and only while the rule stands", async () => {
-    const { room, keeperBrowser, colleagueBrowser, colleague } = await handedOver();
-    const rooms = createMyRoomsStore(setup.database.db);
-    const keeper = await keeperBrowser.id();
-    await expect(
-      rooms.deleteKept(room.id, keeper, { domains: ["other.example"], tenants: [] }),
-    ).resolves.toBe(false);
-    await expect(rooms.deleteKept(room.id, colleague, DOMAIN_RULE)).resolves.toBe(false);
-    // The PO who passes holds the role, not the right.
-    const refused = await colleagueBrowser.go(`/api/my-rooms/${room.id}`, {
-      method: "DELETE",
-      headers: { origin: ORIGIN },
-    });
-    expect(refused.status).toBe(403);
-    expect(await refused.json()).toEqual({ code: "not_keeper" });
-    await expect(setup.database.store.loadRoom(room.code)).resolves.not.toBeNull();
+  it("keeps a room for the keeper the rule refuses: retention follows the keeper, not the rule", async () => {
+    const { room, newPo } = await handedOver();
+    newPo.close();
+    // The room is the sync's to say empty: `setupServer` hands it over as the socket handlers.
+    const sync = setup.deps?.handlers as unknown as RoomSync;
+    await expect.poll(() => sync.occupiedRooms()).not.toContain(room.id);
+    await admin.query("update room set last_active_at = '2020-01-01T00:00:00Z' where id = $1", [
+      room.id,
+    ]);
+    await setup.retention.runNow();
+    expect(await countOf("room", "id", room.id)).toBe(1);
+    expect(await countOf("round_history", "room_id", room.id)).toBe(1);
   });
 
   it("a keeper the rule passes takes the role back to delete, as without a rule", async () => {

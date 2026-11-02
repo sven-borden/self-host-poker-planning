@@ -775,9 +775,9 @@ ADR-028 says why. Two faces, and neither shows anyone else's account.
   rule", as the count goes. A rule the PO does not meet asks first, in the row: "Save it anyway" or "Cancel". A guest
   PO reads "Sign in to limit this room to certain accounts."; no provider, no row at all, unless a
   rule stands, when the row names what is gone and can take it off.
-- **"My rooms".** A room that would refuse this account is off the list. One that is theirs stays,
-  saying only "Your room, closed to this account", no activity and no rounds, why, and "Delete". A
-  line above the list says when a recent sign-in would bring rooms back.
+- **"My rooms".** A room that would refuse this account is off the list, one that is theirs by the
+  keeper's right included. A line above the list says when a recent sign-in would bring rooms
+  back.
 - **Everyone else**, in "Room rules": "Anyone with the link" or "Limited", and under it the domains
   and "your organisation". A change is said once in the live region: "The product owner changed
   who can join this room."

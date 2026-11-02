@@ -1267,9 +1267,9 @@ the right do:
 | A guest signs in (`moveGuest`, ADR-025) | moves if the guest held it | moves if the guest held it, on its own |
 | Kick, leave, rename | stays | stays |
 
-A delete needs the person to be the PO **and** the keeper, in the statement (ADR-028 adds one case:
-a keeper the room's rule refuses, who can no longer get the role back). Rename stays with the
-PO: it can be undone, and a meeting that goes on may want it. The field is server-held. No command
+A delete needs the person to be the PO **and** the keeper, in the statement (ADR-028 weighed a case
+for a keeper the room's rule refuses, who cannot get the role back, and left it out). Rename stays
+with the PO: it can be undone, and a meeting that goes on may want it. The field is server-held. No command
 sets it, the strict wire schemas refuse it, `updateSettings` cannot reach it, and `toSnapshot` picks
 its fields, so no frame carries it, which a test asserts; the list says `keeper` to that person alone.
 The list and the page tell the truth: a role that came by a claim or from a claimer shows "You are
@@ -1302,7 +1302,8 @@ same rule as any claim, and a seat, which takes the room's password like anyone'
 who sets a password and kicks the keeper shuts the keeper out until someone gives them the password:
 the room survives and stays on the keeper's list, and nobody can delete it. Letting a keeper past
 the password touches the enter path and the commit's grant check, for a case that destroys nothing,
-so it stays out of #49. That is the price of the role being the room's use.
+so it stays out of #49. That is the price of the role being the room's use. ADR-028 has a twin: a
+keeper that a room's rule shuts out has no row and no delete either, for the same reason.
 
 **A delete is one statement, and every instance hears it.** `delete from room where id = ? and
 owner_user_id = ? and coalesce(live ->> 'keeperId', owner_user_id) = ?`, judged on the row's latest
@@ -1578,16 +1579,21 @@ so.
 **"My rooms" (#49, ADR-027).** A list that named a room would undo the header's `name: null`. A row
 brings the room's rule, and the person's account is read once for the page, so a list costs one
 query more however many rules it holds. A room that would refuse them is off the list: the seat goes
-when they next enter, and `POST /api/my-rooms/:id/leave` still gives it up. **A keeper the rule refuses
-keeps the right to delete the room** (PO's decision), which is ADR-027's row of the table with the
-role taken out: the room stays on their list, blank (no name, no rounds, no activity), and they
-may delete it with no role. The role cannot come back to them, as a claim and a hand-over are both
-refused, so a right that needed it would be a right they can never use, and the room is theirs.
-It also answers the case ADR-027 could not: a stranger who claims a room and sets a rule that
-shuts its owner out. The price is that a keeper who is out of a team can destroy what the team uses,
-which cannot be undone, and only that keeper: nobody else gains it, a keeper the rule passes takes the
-role back as before, and the statement holds only while the rule that refused them stands
-(`deleteKept`). A rename stays the PO's, and the PO always passes.
+when they next enter, and `POST /api/my-rooms/:id/leave` still gives it up. **A keeper the rule
+refuses has no row and no delete** (PO's decision). A keeper is apart from the PO only after a claim,
+so the person this rule shuts out is exactly someone the team has decided should not be in the room,
+and a delete for them would be that person destroying what the team uses, which cannot be undone.
+The other direction costs less: the room survives, nothing is lost, and it is the limit ADR-027
+already records for a claimer who sets a password and removes the keeper ("The room survives; nobody
+can delete it"). A loosening later is easy, and the other order could not be taken back. Their
+`DELETE` is answered as anyone's without the role (`not_owner`, 403), which says nothing of the
+room that its keeper did not know. So a stranger who claims a room and sets a rule that shuts its
+keeper out is not answered: the keeper can neither open the room nor delete it, and it lives on.
+**The keeper keeps the right**, though: if a later account or a changed rule lets them pass, the row
+and the right come back, they take the role as ADR-027 says and delete as before, and retention
+still follows the keeper. A delete for a refused keeper was built (`deleteKept`: the statement held
+only while the rule that refused them stood) and dropped for this reason; Sven may ask for it back.
+A rename stays the PO's, and the PO always passes.
 
 **A provider that goes away fails closed.** With no provider, as production is until Sven adds
 keys, nobody could ever pass, so the row does not appear. A rule set before keys were removed is
@@ -1616,7 +1622,8 @@ for these refusals and would strand on the generic error, so it is told to reloa
   removed from a tenant or a domain passes for up to 30 days in a room with a rule, and a socket that
   stays seated for longer. A room is not a company's identity system.
 - `outsiders` can be read as a test of a guess, and a refused hand-over as one bit, as said above.
-- A keeper the rule refuses can destroy a room others use, as said above.
+- A stranger who claims a room and sets a rule that shuts its keeper out is not answered: the keeper
+  has no delete, as said above, and the room survives with the right waiting.
 - A second tab left open after a sign-out keeps the snapshots until its next command finds the
   session gone, as in any room: its seat is still there.
 - An international domain reads as `xn--…` on the join screen.

@@ -734,9 +734,6 @@ export const en = {
     kept: "Your room, with another product owner",
     keptWhy:
       "Someone else took over as product owner. Get the role back in the room, and you can delete it.",
-    refused: "Your room, closed to this account",
-    refusedWhy:
-      "The room’s rule does not admit this account, so you cannot open it and the role cannot come back to you. It is still yours: you can delete it.",
     signInAgain:
       "Some of your rooms ask for a recent sign-in. Sign out, then sign in again to see them.",
     lastActive: "Active {{when}}",

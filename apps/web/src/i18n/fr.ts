@@ -707,9 +707,6 @@ export const fr: Catalog<"many"> = {
     kept: "Votre salle, avec un autre product owner",
     keptWhy:
       "Quelqu’un d’autre a repris le rôle de product owner. Récupérez ce rôle dans la salle, et vous pourrez la supprimer.",
-    refused: "Votre salle, fermée à ce compte",
-    refusedWhy:
-      "La règle de la salle n’admet pas ce compte : vous ne pouvez pas l’ouvrir, et le rôle ne peut pas vous revenir. Elle est toujours à vous : vous pouvez la supprimer.",
     signInAgain:
       "Certaines de vos salles demandent une connexion récente. Déconnectez-vous, puis reconnectez-vous pour les voir.",
     lastActive: "Activité {{when}}",
