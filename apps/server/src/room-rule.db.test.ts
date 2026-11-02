@@ -1247,12 +1247,10 @@ describe.skipIf(!process.env.TEST_REDIS_URL)("the one invariant across two insta
 
     // The password changes on A, and B never hears: the visitor's grant goes.
     const { setup: own, server: running } = started[0] as Instance;
-    const emit = running.io.serverSideEmit;
-    running.io.serverSideEmit = ((event: string, ...rest: never[]) =>
-      event === "roomChanged" || emit.call(running.io, event, ...rest)) as typeof emit;
+    const lost = vi.spyOn(running.io, "serverSideEmit").mockReturnValue(true);
     const sync = own.deps?.handlers as unknown as RoomSync;
     await must(sync.changePassword(room.code, po, await hashPassword("a-new-password")));
-    running.io.serverSideEmit = emit;
+    lost.mockRestore();
     expect(await countOf("room_access", "room_id", room.id)).toBe(1);
 
     // The next version reaches B with a gap, so it goes out blind, past the visitor being read.
