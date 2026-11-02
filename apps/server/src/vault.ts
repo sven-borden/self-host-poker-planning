@@ -135,6 +135,11 @@ export class Vault {
     this.#currentKeyId = [...keys.keys()][0] as string;
   }
 
+  /** The id of the key that seals: 8 hex digits in every row's value, nothing of the key. */
+  get currentKeyId(): string {
+    return this.#currentKeyId;
+  }
+
   seal(token: Secret, context: SealContext): string {
     const key = this.#keys.get(this.#currentKeyId) as KeyObject;
     const iv = randomBytes(IV_BYTES);
@@ -153,19 +158,23 @@ export class Vault {
   open(sealed: string, context: SealContext): OpenResult {
     const parts = SEALED.exec(sealed);
     if (!parts) return { ok: false, cause: "corrupt" };
-    const [, keyId = "", iv = "", tag = "", ciphertext = ""] = parts;
+    const [, keyId = "", ivText = "", tagText = "", ciphertextText = ""] = parts;
     const key = this.#keys.get(keyId);
     if (!key) return { ok: false, cause: "unknown_key" };
+    // Base64url has spare bits in a last character, so several spellings decode to the same
+    // bytes. Only the one `seal` writes opens: a value that has changed in any way is refused.
+    const iv = Buffer.from(ivText, "base64url");
+    const tag = Buffer.from(tagText, "base64url");
+    const ciphertext = Buffer.from(ciphertextText, "base64url");
+    if (encode(iv) !== ivText || encode(tag) !== tagText || encode(ciphertext) !== ciphertextText) {
+      return { ok: false, cause: "corrupt" };
+    }
     try {
-      const decipher = createDecipheriv(ALGORITHM, key, Buffer.from(iv, "base64url"), {
-        authTagLength: TAG_BYTES,
-      });
+      // `authTagLength` makes Node refuse a short tag; without it a 4-byte tag would open.
+      const decipher = createDecipheriv(ALGORITHM, key, iv, { authTagLength: TAG_BYTES });
       decipher.setAAD(additionalData(keyId, context));
-      decipher.setAuthTag(Buffer.from(tag, "base64url"));
-      const plain = Buffer.concat([
-        decipher.update(Buffer.from(ciphertext, "base64url")),
-        decipher.final(),
-      ]);
+      decipher.setAuthTag(tag);
+      const plain = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
       return {
         ok: true,
         token: new Secret(plain.toString("utf8")),

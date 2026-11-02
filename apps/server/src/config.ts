@@ -117,9 +117,9 @@ const REASONS = {
   MICROSOFT_CLIENT_SECRET: "must be a client secret value from the Microsoft Entra admin center",
   MICROSOFT_TENANT_ID: "must be common, organizations, consumers or a tenant id (a GUID)",
   POKER_VAULT_KEY:
-    "must be 32 random bytes in base64, such as the output of openssl rand -base64 32, and must not be BETTER_AUTH_SECRET",
+    "must be 32 random bytes in base64 on one line, with no line break or space, such as the output of openssl rand -base64 32, and must not be BETTER_AUTH_SECRET",
   POKER_VAULT_OLD_KEYS:
-    "must be keys like POKER_VAULT_KEY separated by commas, each listed once, none of them POKER_VAULT_KEY or BETTER_AUTH_SECRET",
+    "must be keys like POKER_VAULT_KEY separated by commas with no space or line break, each listed once, none of them POKER_VAULT_KEY or BETTER_AUTH_SECRET",
   BETTER_AUTH_SECRET:
     "must be at least 32 random characters, such as the output of openssl rand -base64 32",
 } as const;

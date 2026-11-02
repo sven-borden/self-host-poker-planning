@@ -96,6 +96,55 @@ describe("seal and open", () => {
     expect(vault.open(sealed.slice(0, 20), ALICE)).toEqual({ ok: false, cause: "corrupt" });
   });
 
+  it("refuses another spelling of the same bytes, as a changed value", () => {
+    const vault = new Vault(newKey());
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const respelledAt: number[] = [0, 0, 0, 0, 0];
+    for (const text of [TOKEN, "x", "xy", "xyz", "wxyz", ""]) {
+      const sealed = vault.seal(new Secret(text), ALICE);
+      const parts = sealed.split(".");
+      expect(vault.open(sealed, ALICE)).toMatchObject({ ok: true });
+      for (const index of [2, 3, 4]) {
+        const part = parts[index] as string;
+        if (part === "") continue;
+        const bytes = Buffer.from(part, "base64url");
+        for (const letter of alphabet) {
+          if (letter === part.slice(-1)) continue;
+          const other = `${part.slice(0, -1)}${letter}`;
+          if (Buffer.from(other, "base64url").equals(bytes))
+            respelledAt[index] = (respelledAt[index] ?? 0) + 1;
+          const changed = [...parts];
+          changed[index] = other;
+          expect(vault.open(changed.join("."), ALICE)).toEqual({ ok: false, cause: "corrupt" });
+        }
+      }
+    }
+    // The tag of 16 bytes is 22 characters and the last holds 4 spare bits: 15 other spellings
+    // of each, so the loop did meet respellings rather than only different bytes.
+    expect(respelledAt[3]).toBe(15 * 6);
+    expect(respelledAt[4] ?? 0).toBeGreaterThan(0);
+  });
+
+  it("opens only a value that is unchanged, however its last character is spelled", () => {
+    const vault = new Vault(newKey());
+    fc.assert(
+      fc.property(
+        fc.string({ unit: "grapheme", maxLength: 40 }),
+        fc.integer({ min: 2, max: 4 }),
+        fc.integer({ min: 0, max: 63 }),
+        (text, index, pick) => {
+          const sealed = vault.seal(new Secret(text), ALICE);
+          const parts = sealed.split(".");
+          const part = parts[index] as string;
+          const letter = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"[pick];
+          fc.pre(part !== "" && letter !== undefined);
+          parts[index] = `${part.slice(0, -1)}${letter}`;
+          expect(vault.open(parts.join("."), ALICE).ok).toBe(parts.join(".") === sealed);
+        },
+      ),
+    );
+  });
+
   it("cannot be told another key id: the id is authenticated", () => {
     const [current, old] = [newKey(), newKey()];
     const vault = new Vault(current, [old]);
