@@ -192,7 +192,7 @@ const fr: Copy & Partial<Record<`${FrenchMany}_many`, string>> = {
   staysBackups:
     "Les sauvegardes de ce serveur conservent vos données jusqu’à leur expiration. Si l’une d’elles est restaurée, votre compte revient avec elle, et vous pouvez le supprimer à nouveau.",
   staysLogs:
-    "Les journaux du serveur contiennent des identifiants, jamais votre nom ni votre adresse, et sont effacés au rythme propre au serveur.",
+    "Les journaux du serveur contiennent des identifiants, jamais votre nom ni votre adresse, et sont effacés selon le calendrier du serveur.",
 
   sharedTitle: "Salles où d’autres personnes sont présentes",
   sharedIntro:
