@@ -250,7 +250,7 @@ describe("nothing prints a token or a key", () => {
     expect(structuredClone({ a: 1, b: { ...secret } })).toEqual({ a: 1, b: {} });
   });
 
-  it("not in a log line, at any level or depth, nor a plain string by a telling name", () => {
+  it("not in a log line when held as a Secret, nor a plain string by a telling name", () => {
     const logs = collectLogs("trace");
     logs.logger.info({ secret, vault, deep: { token: secret } }, "objects");
     logs.logger.error({ err: new Error("failed"), context: { secret } }, "with an error");
@@ -264,9 +264,18 @@ describe("nothing prints a token or a key", () => {
       },
       "plain strings",
     );
+    // A Secret needs no name on the redact list, at any depth: it prints for itself.
+    logs.logger.info(
+      { whatever: { a: { b: { c: { d: { e: secret } } } } }, list: [[secret]] },
+      "deep",
+    );
     const output = logs.raw.join("");
     expect(output).not.toContain(TOKEN);
     expect(output).not.toContain(key);
+    expect(logs.lines[3]).toMatchObject({
+      whatever: { a: { b: { c: { d: { e: "[secret]" } } } } },
+      list: [["[secret]"]],
+    });
     expect(logs.lines[0]).toMatchObject({ vault: "[vault]", deep: { token: "[redacted]" } });
     expect(logs.lines[1]).toMatchObject({ context: { secret: "[redacted]" } });
   });
