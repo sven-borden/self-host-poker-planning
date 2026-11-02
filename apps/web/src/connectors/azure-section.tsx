@@ -33,7 +33,7 @@ import {
   returnFocus,
   SitePicker,
   useConnection,
-} from "./connector-section.tsx";
+} from "./connector-parts.tsx";
 
 const NAME = "azure-devops";
 const SYSTEM = SYSTEM_NAMES[NAME];

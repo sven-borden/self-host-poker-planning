@@ -690,8 +690,8 @@ the history. These forms sit inside the subject field's in React's tree: a submi
 propagation, as the paste form does. Codes are `connector.errors.*`, apart from the ack codes, and
 `i18n.test.ts` holds each one to a message.
 
-`azure-section.tsx` (#55, ADR-031) is Azure DevOps' own chunk, and shares `useConnection`, the
-pickers' classes and `SitePicker` with `connector-section.tsx`. Its token field is `type="password"`
+`azure-section.tsx` (#55, ADR-031) is Azure DevOps' own chunk, and shares `connector-parts.tsx` (`useConnection`, the
+pickers' classes, `SitePicker`) with `connector-section.tsx`, so that each chunk loads or fails by itself. Its token field is `type="password"`
 and empties the moment it is sent, and `connectAzure` is the one call that ever carries a token. A
 project is a site with `words` of its own, and six refusals have `connector.azure.errors.*`, since a
 template cannot say "an Azure DevOps project" or "d’Azure DevOps". `ROUND_SYSTEMS` and `connectorOf`
