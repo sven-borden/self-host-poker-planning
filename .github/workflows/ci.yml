@@ -94,7 +94,7 @@ jobs:
   # (playwright.config.ts refuses to start without DATABASE_URL).
   web-e2e:
     runs-on: ubuntu-26.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:17
