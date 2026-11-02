@@ -65,8 +65,12 @@ cd self-host-poker-planning
 
 Pick a name for your install. It becomes part of the web address and must be free across all of
 Azure: 3 to 40 characters, lower-case letters, digits and hyphens, starting with a letter. Here it
-is `poker-acme`, and the registry is the same without hyphens. Pick a region near your people;
-`az account list-locations --output table` lists them, by the `Name` column.
+is `poker-acme`, and the registry is the same without hyphens. Nothing checks the name before step
+6, so choose something unlikely to be taken. Pick a region near your people;
+`az account list-locations --output table` lists them, by the `Name` column. Subscriptions from
+Azure programs (Azure Pass, Azure for Students, Visual Studio and others) cannot create Postgres in
+some regions without a request: check
+[Microsoft's list](https://learn.microsoft.com/azure/postgresql/troubleshoot/how-to-resolve-capacity-errors#azure-program-regions).
 
 Change the first four lines, then run this **once**:
 
@@ -76,7 +80,7 @@ export AZURE_RESOURCE_GROUP=poker-planning
 export AZURE_LOCATION=westeurope
 export POKER_NAME=poker-acme
 export POKER_REGISTRY=pokeracme
-export POKER_POSTGRES_PASSWORD='$(openssl rand -base64 24)'
+export POKER_POSTGRES_PASSWORD='Pp1-$(openssl rand -hex 24)'
 export POKER_BETTER_AUTH_SECRET='$(openssl rand -base64 32)'
 EOF
 chmod 600 infra/.env.azure
@@ -87,10 +91,12 @@ git check-ignore infra/.env.azure
 The last line must print `infra/.env.azure`: git ignores that file, so it cannot be committed. Every
 later deployment reads it. **Copy the file to your password manager now.** If you lose it, you lose
 the Postgres password, and a new `POKER_BETTER_AUTH_SECRET` signs everybody out. Running the block
-again would make new secrets. In a new terminal, load the file again with `. infra/.env.azure`.
+again would make new secrets. In a new terminal, load the file again with `. infra/.env.azure`. It
+does not hold `POKER_IMAGE_TAG`, which step 5 sets: to deploy from a new terminal without building,
+[redeploy without a new image](#redeploy-without-a-new-image).
 
-The Postgres password is base64 rather than hex because Azure wants three kinds of character. Its
-`/`, `+` and `=` are safe: the template encodes them for the connection string.
+The Postgres password starts with a fixed `Pp1-` because Azure wants three kinds of character and
+hex has two. The random part is what makes it secret.
 
 `infra/main.bicepparam` holds no value of its own: it reads these variables, which is why it can
 stay in git. Never type a secret into it. Do not run `bicep build-params` on a real environment:
@@ -136,6 +142,10 @@ Expect many minutes: Postgres is the slow part. It ends by printing your address
 `https://poker-acme.azurewebsites.net`. It may look different, because Azure can give new apps a
 longer unique name; the template reads whichever it is into `BASE_URL`.
 
+If it fails, fix what the message names and run the same command again: a repeat updates what exists
+and creates the rest. Only a taken name and a restricted region mean starting over: see
+"Troubleshooting".
+
 Secrets are `@secure()` parameters: Azure masks them in the deployment history, and no output
 carries them.
 
@@ -145,7 +155,7 @@ The web app still has to pull the image and start, and the first start applies t
 it some minutes, then:
 
 ```sh
-POKER_URL=https://<the address printed above>
+POKER_URL=<the address printed above>
 curl -s "$POKER_URL/api/health"
 ```
 
@@ -164,11 +174,38 @@ Then check what a health answer cannot:
 1. Open the address in two browsers and join one room from both. Vote in one: the other shows
    that someone voted. In the browser's developer tools, under Network, `socket.io` shows a request
    with status 101. Reveal.
-2. Start a short timer, close every tab, and open the room after it ended. The reveal has happened.
-3. Create rooms until the app refuses: one address gets 20 in 10 minutes. Then create one from a
+2. Start a short timer, leave one tab open and click nothing. The reveal must come by itself when
+   the time is up. Closing every tab would prove nothing: with nobody in the room the server keeps no
+   timer, and the reveal happens when someone comes back.
+3. Check that a client cannot choose its own rate-limit key, which is what the limits rest on. Each
+   request below claims another address and none creates a room, because it has no session. Run
+   this before check 4: the two share a budget, and you would have to wait 10 minutes.
+
+   ```sh
+   for i in $(seq 1 25); do curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+     -H 'content-type: application/json' -H "X-Forwarded-For: 198.51.100.$i" -d '{}' \
+     "$POKER_URL/api/rooms"; done | sort | uniq -c
+   ```
+
+   It must print 20 × `401` and 5 × `429`: the server saw through the forged header, and, since each
+   `curl` is a new connection, the port is not part of the key either. 25 × `401` means the client
+   chooses its key and **every rate limit is void**, so do not leave the app public like that: set
+   `TRUST_PROXY: '0'` in `infra/main.bicep` and [redeploy without a new image](#redeploy-without-a-new-image). Every
+   visitor then shares the front end's address and one set of limits, which is tight but cannot be
+   forged. Please tell us what you saw, on issue #38.
+4. Create rooms until the app refuses: one address gets 20 in 10 minutes. Then create one from a
    phone on mobile data. It must work. If the phone is refused too, every visitor shares one
    address, and `TRUST_PROXY` or the header parsing is wrong for what your front end sends.
-4. Check that Postgres is private. This must print `Disabled`:
+5. Check Always On. This must print `true`:
+
+   ```sh
+   az webapp config show --resource-group "$AZURE_RESOURCE_GROUP" --name "$POKER_NAME" \
+     --query alwaysOn --output tsv
+   ```
+
+   Then close every tab, leave the app alone for 30 minutes, and call `/api/health` as above:
+   `uptime`, in seconds since the container started, must be above 1800.
+6. Check that Postgres is private. This must print `Disabled`:
 
    ```sh
    az postgres flexible-server show --resource-group "$AZURE_RESOURCE_GROUP" \
@@ -188,6 +225,9 @@ az acr run --registry "$POKER_REGISTRY" --file infra/acr-task.yaml --timeout 300
   --set commit="$(git rev-parse HEAD)" \
   --set version="$(git describe --tags --always)" .
 ```
+
+`az acr run` uploads this folder to Azure, minus what `.dockerignore` lists, and that is all that
+keeps `infra/.env.azure` and other secrets on your machine. Keep them under names that file lists.
 
 This route is the less certain one. Microsoft documents `DOCKER_BUILDKIT=1` for such a task, but
 the Docker version inside is Microsoft's, and Microsoft says ACR Tasks are paused for subscriptions
@@ -225,8 +265,8 @@ For `poker.example.com`:
    `ssl create` is marked preview in the CLI. The same is in the portal: your web app, then
    **Certificates**, **Managed certificates**, **Add certificate**, then a binding under
    **Custom domains**.
-4. Add `export POKER_CUSTOM_DOMAIN=poker.example.com` to `infra/.env.azure`, load it, and repeat
-   step 6. The app restarts with the new `BASE_URL`. People on the old address can load the page but
+4. Add `export POKER_CUSTOM_DOMAIN=poker.example.com` to `infra/.env.azure`, load it, and
+   [redeploy without a new image](#redeploy-without-a-new-image). The app restarts with the new `BASE_URL`. People on the old address can load the page but
    not join a room, so send them the new one.
 5. Change anything built on the old address: the redirect URIs of Google, Microsoft and Jira.
 
@@ -237,7 +277,7 @@ change. Do not add a redirect from it, because a check that gets a 301 counts as
 
 The template's app settings replace the whole list on every deployment, so a setting made by hand
 in the portal is gone after the next one. Put them in `infra/.env.azure` instead, as one line of
-JSON, then repeat step 6:
+JSON, then [redeploy without a new image](#redeploy-without-a-new-image):
 
 ```sh
 export POKER_EXTRA_SETTINGS='{"ROOM_TTL_DAYS":"30","GOOGLE_CLIENT_ID":"...","GOOGLE_CLIENT_SECRET":"..."}'
@@ -254,7 +294,7 @@ unless you add them to `infra/main.bicepparam`.
 ## Upgrading
 
 An upgrade is steps 5 and 6 again, after `git pull`. Load `infra/.env.azure` first. A deployment needs
-the image tag each time, so it can never roll the image back by accident. App Service keeps the old
+the image tag each time, so it can never roll the image back by accident: step 5 sets it. App Service keeps the old
 container serving until the new one answers. The new one applies pending migrations before it
 listens, and rooms, even rounds in progress, live in Postgres and survive.
 
@@ -262,6 +302,21 @@ To go back, repeat step 6 with the earlier tag in `POKER_IMAGE_TAG`. Old tags st
 and count towards its storage; delete those you no longer want.
 
 The base images need updating by hand (README, "Base image updates").
+
+### Redeploy without a new image
+
+A changed setting, domain or server needs step 6 and no build. Step 6 needs `POKER_IMAGE_TAG`, and
+without it stops with `BCP427`. Take the tag the site runs now, in any terminal:
+
+```sh
+. infra/.env.azure
+export POKER_IMAGE_TAG=$(az webapp config show --resource-group "$AZURE_RESOURCE_GROUP" \
+  --name "$POKER_NAME" --query linuxFxVersion --output tsv | sed 's/.*://')
+echo "$POKER_IMAGE_TAG"
+```
+
+Then run step 6. Never set the tag from `git rev-parse` here: after a `git pull` that names an image
+nobody pushed, and the site would stop on a pull it cannot do.
 
 ## Backups and restoring
 
@@ -285,9 +340,10 @@ dumps outside Azure, you need a machine in the network, which this guide does no
    ```
 
 3. Add `export POKER_POSTGRES_SERVER=$POKER_NAME-db2` to `infra/.env.azure` (after the line that sets
-   `POKER_NAME`), load it, and repeat step 6. The app moves to the restored server.
+   `POKER_NAME`), load it, and [redeploy without a new image](#redeploy-without-a-new-image). The app moves
+   to the restored server.
 4. Once people have opened the rooms they care about, or you have accepted losing the others, take
-   `ROOM_TTL_DAYS` out again and repeat step 6.
+   `ROOM_TTL_DAYS` out again and [redeploy without a new image](#redeploy-without-a-new-image).
 5. Delete the old server when you are sure, with `az postgres flexible-server delete`.
 
 The connectors' tokens stay encrypted in a backup, and `POKER_VAULT_KEY` is not in it, so keep the
@@ -298,12 +354,14 @@ key apart from Azure's backups (README, "Connector tokens").
 - **One instance.** Do not scale out in the portal. More than one needs `REDIS_URL`, and sockets
   then use WebSocket only (README, "Running several instances"). The template fixes the count at 1.
   Scaling up to a larger tier is fine. Autoscale stays off.
-- **Always On.** The server reveals timers and purges old rooms by itself, which needs a process
-  that stays up. App Service stops an idle app without it, so the template sets it and refuses the
-  tiers that lack it.
+- **Always On.** The server purges old rooms by itself, which needs a process that stays up with
+  nobody connected. App Service stops an idle app without it, so the template sets it and refuses
+  the tiers that lack it. A timer needs the process only while someone is in the room: with nobody
+  there, the reveal waits for the next arrival.
 - **WebSockets.** Microsoft gives about 50,000 per instance for Linux from Basic up, and 5 on Free.
 - **`TRUST_PROXY=1`.** App Service's front end is the one proxy, and clients cannot reach the
-  container past it. The front end writes `ip:port` into `X-Forwarded-For`, which the server handles.
+  container past it. No Microsoft page says what it writes into `X-Forwarded-For`; one outside report
+  says `ip:port`. The server reads that and a plain address, and checks 3 and 4 of step 7 test yours.
 - **Affinity is on.** App Service sets its own `ARRAffinity` cookies. They only pin a browser to an
   instance, which keeps Socket.IO's long-polling on one process when App Service briefly runs two.
 - **The image's `HEALTHCHECK` is ignored here.** App Service pings `/api/health` once a minute
@@ -313,9 +371,10 @@ key apart from Azure's backups (README, "Connector tokens").
 ## Logs and privacy
 
 Container logs hold only what the server writes, which never includes a room code or a secret. Keep
-it that way: **do not send `AppServiceHTTPLogs` to Log Analytics or turn on Application Insights for
-this app.** Those record request paths, and `/r/<code>` carries a room code, which works as a key to
-the room. This template turns on neither.
+it that way: **do not send `AppServiceHTTPLogs` to Log Analytics, turn on web server logging
+(`az webapp log config --web-server-logging filesystem`) or turn on Application Insights for this
+app.** Those record request paths, and `/r/<code>` carries a room code, which works as a key to the
+room. This template turns on none of them.
 
 App settings, `DATABASE_URL` and `BETTER_AUTH_SECRET` included, are readable by anyone with
 Contributor rights on the app. Give that role only to people you would give the secrets to.
@@ -344,10 +403,12 @@ deployment yet.
 
 | What you see | Likely reason | What to do |
 |---|---|---|
-| `az deployment` fails with "location is restricted" or offer restricted for Postgres | new subscriptions cannot create Flexible Server in every region | delete the group, change `AZURE_LOCATION` and start again at step 4 |
-| The log shows the image pull refused, `UNAUTHORIZED` | the role is still spreading, or the registry refuses ARM tokens | wait some minutes and run `az webapp restart`; then `az acr config authentication-as-arm show --registry "$POKER_REGISTRY"` must say enabled |
+| `az deployment` says a web app or server name is taken | those names are global, and the first run has already made the network and the plan, perhaps a Postgres server that bills | do not just change `POKER_NAME` and repeat, which leaves all that in the group: run `az group delete --name "$AZURE_RESOURCE_GROUP"`, change the name in `infra/.env.azure`, load it and start again at step 4. The image goes with the registry, so step 5 runs again |
+| `az deployment` fails with "Provisioning is restricted in this region", "Subscriptions are restricted from provisioning in this region", "is not accepting creation" or "Specified SKU is not supported in this region" | not every subscription can create Flexible Server, or this size, in every region | [Microsoft's page](https://learn.microsoft.com/azure/postgresql/troubleshoot/how-to-resolve-capacity-errors) has the request. Otherwise delete the group as above, change `AZURE_LOCATION` and start again at step 4 |
+| `az deployment` fails with `MissingSubscriptionRegistration` | a provider this deployment needs is not registered | `az provider register --namespace <the name in the message> --wait`, then repeat step 6 |
+| The log shows the image pull refused, `UNAUTHORIZED` | the role is still spreading, or the registry refuses ARM tokens | wait some minutes and run `az webapp restart --resource-group "$AZURE_RESOURCE_GROUP" --name "$POKER_NAME"`. If it stays, `az acr config authentication-as-arm show -r "$POKER_REGISTRY"` must say enabled, and `az acr config authentication-as-arm update -r "$POKER_REGISTRY" --status enabled` turns it on |
 | `Invalid configuration: ...` in the log | a variable is missing or malformed; the message names it | check `POKER_EXTRA_SETTINGS`: a pair such as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` needs both |
-| `database: not reachable, retrying` with a code such as `ERR_TLS_CERT_ALTNAME_INVALID` or `UNABLE_TO_VERIFY_LEAF_SIGNATURE` | `sslmode=verify-full` failed on your network; Microsoft warns that it may with virtual network integration | add `export POKER_POSTGRES_SSLMODE=require` to `infra/.env.azure`, load it, repeat step 6. It still encrypts, on a network nothing else is in, without checking the certificate. Tell us |
+| `database: not reachable, retrying` with a code such as `ERR_TLS_CERT_ALTNAME_INVALID` or `UNABLE_TO_VERIFY_LEAF_SIGNATURE` | `sslmode=verify-full` failed on your network; Microsoft warns that it may with virtual network integration | add `export POKER_POSTGRES_SSLMODE=require` to `infra/.env.azure`, load it, [redeploy without a new image](#redeploy-without-a-new-image). It still encrypts, on a network nothing else is in, without checking the certificate. Tell us |
 | The same line with `ENOTFOUND` or `EAI_AGAIN` | the app cannot resolve the private DNS name | check that the zone's link to the network exists: `az network private-dns link vnet list --resource-group "$AZURE_RESOURCE_GROUP" --zone-name "$POKER_NAME.private.postgres.database.azure.com"` |
 | The page loads but nobody can join a room | the address you opened is not `BASE_URL` | open exactly the address in `BASE_URL`, or fix it with `POKER_CUSTOM_DOMAIN` |
 | The container is killed during start | it took longer than 600 s | read the log for why. `WEBSITES_CONTAINER_START_TIME_LIMIT` can go up to 1800 |

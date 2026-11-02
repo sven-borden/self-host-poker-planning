@@ -1359,15 +1359,19 @@ language, and an unknown code gets a generic one.
   private DNS zone and a user-assigned identity with AcrPull on the operator's registry, which the
   guide creates first, since no image is published. Settings the app relies on:
   - Plan: one instance (more need `REDIS_URL`, ADR-016), and `@allowed` refuses every tier without
-    Always On, since the timer reveal and the retention purge need a live process.
+    Always On, since the retention purge needs a live process with nobody connected. A timer needs
+    one only while someone is in the room; otherwise the next arrival resolves its deadline.
   - `BASE_URL` comes from `site.properties.defaultHostName`, or the custom domain, in a separate
     `config/appsettings` resource. That resource replaces the whole list, so other variables go
     through `extraAppSettings`.
-  - Client address: the front end writes `ip:port` to `X-Forwarded-For`; `clientIp` drops the port
-    and `TRUST_PROXY=1`.
+  - Client address: one outside report says the front end writes `ip:port` to `X-Forwarded-For`,
+    and no Microsoft page says what it writes; `clientIp` drops a port and `TRUST_PROXY=1`. The
+    guide's forged-header and two-network checks test it.
   - `WEBSITES_PORT=3000`, `WEBSITES_ENABLE_APP_SERVICE_STORAGE=false`,
-    `WEBSITES_CONTAINER_START_TIME_LIMIT=600`, health check on `/api/health` (App Service ignores
-    the image's `HEALTHCHECK`), WebSockets on, HTTPS only.
+    `WEBSITES_CONTAINER_START_TIME_LIMIT=600`, `WEBSITES_CONTAINER_STOP_TIME_LIMIT=15` (the default
+    of 5 s would cut the server's shutdown of up to 10 s, and a lost ack can apply a command twice;
+    the same 15 s as `compose.yaml`), health check on `/api/health` (App Service ignores the image's
+    `HEALTHCHECK`), WebSockets on, HTTPS only.
   - `DATABASE_URL` carries `sslmode=verify-full` and a `uriComponent`-encoded password. Node's own
     roots hold both of Azure's, so the image needs no CA file.
   - Build: Docker with BuildKit, or `infra/acr-task.yaml`; never `az acr build`, whose classic builder
