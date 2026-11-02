@@ -94,6 +94,10 @@ test("the room: join screen, voting, revealed, the decision bar, settings, rules
     await page.locator("[data-sound]").click();
     await page.getByRole("switch", { name: "Play sound effects" }).click();
     await audit(page, "sound panel, on");
+    await page.getByRole("switch", { name: "Play background music" }).click();
+    await expect(page.getByRole("radio", { name: "Tide" })).toBeEnabled();
+    await audit(page, "sound panel, music on");
+    await page.getByRole("switch", { name: "Play background music" }).click();
     await page.getByRole("switch", { name: "Play sound effects" }).click();
     await audit(page, "sound panel, off");
     await page.keyboard.press("Escape");

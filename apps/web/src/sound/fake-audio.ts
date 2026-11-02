@@ -25,6 +25,7 @@ class FakeSource extends FakeNode {
   frequency = new FakeParam();
   detune = new FakeParam();
   buffer: unknown = null;
+  loop = false;
   onended: (() => void) | null = null;
   start: Mock = vi.fn();
   stop: Mock = vi.fn();
@@ -89,6 +90,11 @@ export class FakeAudioContext {
       this.state = "running";
       for (const listener of this.listeners) listener();
     }
+  }
+  /** What a phone call does to a running context: it stops, and no `ended` comes. */
+  async suspend() {
+    this.state = "suspended";
+    for (const listener of this.listeners) listener();
   }
   async close() {
     this.closed = true;
