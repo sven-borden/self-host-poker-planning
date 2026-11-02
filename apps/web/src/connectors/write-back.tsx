@@ -2,6 +2,7 @@ import type { ConnectorName, RoundView } from "@pp/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
+import { keyLabel } from "../room/subject.ts";
 import { RoomApiError } from "../rooms/api.ts";
 import { connectorMessage, ROUND_SYSTEMS, SYSTEM_NAMES } from "./connector.ts";
 import { ConnectorAlert } from "./connector-alert.tsx";
@@ -26,7 +27,9 @@ const OUTCOME_CODES: ReadonlySet<string> = new Set([
 
 function subjectLabel(round: RoundView): string {
   const { subject } = round;
-  if (subject.kind === "link") return subject.key ?? subject.title ?? subject.url;
+  if (subject.kind === "link") {
+    return subject.key === undefined ? (subject.title ?? subject.url) : keyLabel(subject.key);
+  }
   return subject.kind === "title" ? subject.text : "";
 }
 

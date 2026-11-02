@@ -131,6 +131,8 @@ export interface FakeAzureControl {
   items?: FakeWorkItem[];
   signIn?: "203" | "302" | "401";
   scopeRefusal?: 401 | 403;
+  projects?: FakeProject[];
+  saved?: FakeAzure["saved"];
   reset?: boolean;
 }
 
@@ -635,6 +637,8 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
       if (control.items) fake.items = control.items;
       if (control.signIn) fake.signIn = control.signIn;
       if (control.scopeRefusal) fake.scopeRefusal = control.scopeRefusal;
+      if (control.projects) fake.projects = control.projects;
+      if (control.saved) fake.saved = control.saved;
       json(response, 200, {});
       return;
     }

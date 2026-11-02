@@ -2216,3 +2216,156 @@ here (ADR-016).
 **Limits.** A response's body is read whole by `response.json()` with no cap on its size. What bounds
 it is the 10 s timeout and a fixed host at Atlassian: nothing a client sends picks the address, so
 this is left as it is.
+
+## ADR-031: Azure DevOps through a token a person pastes, for the field each item's type carries (2026-11-02, #55)
+
+**Decision.** A signed-in account connects its own Azure DevOps organisation with a personal access
+token. The PO of a room imports by WIQL or by a saved query, over HTTP and then `queueImport`, and a
+recorded final goes back to the item it estimated, with that same person's token, under the rule of
+ADR-030. It needs no variable of its own: `POKER_VAULT_KEY` and a sign-in provider turn it on, and
+with either missing there is no route, no button and no tag in `index.html`.
+
+**A PAT, not Entra, for now.** The issue allows either. A PAT needs no app registration and no keys,
+and works for any organisation, also one with no Entra behind it, which suits a product others host
+themselves. An Entra app is a tenant-side registration each operator would have to make, and
+Microsoft's own advice is the other way round: a PAT is a long-lived secret a person pastes, it
+carries that person's whole reach within its scope, and it ends by itself on a date. So the page
+says what a token is used for, asks for the shortest life that suits, and shows the one scope to
+tick; an expiry is a "connect again"; and the seam leaves room: Entra would be `OAuthSignIn` on this
+connector, a third way in `AnyConnector`, with the routes Jira already has. Azure DevOps' own OAuth
+is deprecated and takes no new apps, so that is not an alternative. Microsoft retires global PATs on
+2026-12-01, so a token here is made for one organisation, and the page says so.
+
+**Whose token.** As ADR-030: the account comes from the session and from nothing else. The token is
+used for that account's own actions, never another seated person's, never the keeper's for a PO who
+claimed the role. A guest has none. A PAT is sealed by the vault as a `Grant` with an empty refresh
+token and an end of `Number.MAX_SAFE_INTEGER`: the server does not know when it ends, Azure DevOps
+does. Nothing in `access.ts` changed. `refresh` answers `connector_reconnect`, so a refused token
+takes the same road as a dead grant: a short wait, `dropToken` by version, and "connect again". The
+row goes rather than stays: a token that no longer works is a secret with no use, and the page has
+no other way back to the form. The price is that a false refusal costs a person a new paste.
+
+**Connecting.** `POST /api/connectors/azure-devops/connect { organization, token }`, under the same
+origin check and limit as every change, and not room-bound: the token is the person's, not a
+room's. The body is the only place a token ever travels. The organisation fits a strict pattern
+(letters, digits and hyphens, 50 at most, no hyphen at either end) before anything leaves, and the
+token has to be printable. The server reads once before it saves, `GET _apis/wit/fields/System.Title`:
+the smallest answer that needs `vso.work`, which a token with only `vso.work_write` has by
+inheritance. A refused read is followed by one more, `_apis/projects`, which any token reaches,
+since `vso.project` or `vso.profile` suffice and `vso.work` inherits the latter through
+`vso.hooks_write`: if that one works the token is good and lacks the scope (`connector_scope`), which
+tells the two cases apart without reading Microsoft's words. Otherwise a sign-in page, a redirect or a
+plain 401 is `connector_bad_token`, a 401 with TF400813 or VS30063 or a 403 is
+`connector_no_access`, and a 404 is `connector_no_organization`. This is one read more than the
+brief's one read, on the refused path only.
+
+A read cannot show the right to write, and no read is a write. So a token with `vso.work` alone
+connects, imports, and is told at its first write: a 401 on a write is followed by the same read as
+above, and a token that still reads is `connector_scope`, with the row kept. A `validateOnly` write
+would prove it at connecting, but it needs an item or a type, and a project picked first.
+
+**The trap: not every failure is one.** Azure DevOps often answers a bad or expired PAT not with 401
+but with 203 Non-Authoritative and an HTML sign-in page, or a 302 to one. `fetch` calls a 203 `ok`.
+So `read` takes exactly one thing for an answer: status 200 with `application/json`. A 203 or any
+3xx is `connector_reconnect`. A 200 in HTML is `connector_unavailable`, not "connect again", since
+that would drop a working token over a proxy's page.
+
+**`redirect: "manual"`, and why not `"error"`.** Jira uses `"error"`, and so did the brief. There, a
+redirect becomes a `TypeError` that reads like a dead network, so a sign-in redirect would say "not
+answering" instead of "connect again", and telling them apart means matching undici's message.
+`"manual"` follows nothing either: a token still goes nowhere it was not sent, and a test holds that
+the sign-in address is never called.
+
+**Scope of calls.** Always `https://dev.azure.com/{organisation}/…`, from a constant, with
+`api-version=7.1` pinned. Project ids are GUIDs, item ids are numbers, a field is a reference name of
+a strict shape before it enters a JSON Patch path, and a type's or project's name is percent-encoded
+and can be no `.` or `..`, no separator. A project comes from that person's own list, read again at
+the moment of picking. Every call has a 10 s timeout and paging is bounded: five pages of projects,
+five folders past the first call, 200 queries.
+
+**No Azure DevOps Server.** Nothing a client sends becomes a host, so an on-premises server is out.
+That is a limit, on purpose: its address would have to come from a person, and a server that fetches a
+person's address with a token is what this design exists to avoid. It would need an operator's
+allow-list.
+
+**What a site is.** `Site` is a project: its `id` is `{organisation}/{project GUID}`, which the
+connector takes apart and checks, so the seam's `site: string` carries it with no change. `Site.home`,
+new and optional, is the organisation, and that is what `source.site` holds, because an item's id is
+unique across an organisation and a write needs no project. So a PO connected to another project of
+the same organisation can write, and one connected to another organisation gets
+`connector_other_site` and no call leaves. `connector_token.settings` gains `organization`, kept
+apart from `site` because a connection with several projects has no site yet. No migration: both
+columns carry it. The same organisation connected again keeps its project and field.
+
+**The seam.** It held, with four changes. `BacklogConnector` lost what only some trackers have, into
+parts: `OAuthSignIn`, `PastedToken`, `SprintBoards`, `SavedQueries`, `ItemFields`. `jira.ts` has
+OAuth and boards, `azure-devops.ts` the other three, and `AnyConnector` is the union `routes.ts`
+narrows by `in`, so a route exists only for a tracker that has it and Jira's answers are as they
+were. A connector names its import's schema (`query`), generic in `Q`, because a Jira body must stay
+refused here and the reverse. `sites` takes an optional `home`, since a PAT does not say its
+organisation, and `numberFields` an optional `type`. `FoundPage` gains `unreadable`.
+
+**Import.** A WIQL is POSTed, so a query is in no URL, at most 4,000 characters, and an empty one does
+not leave. A saved query is `GET wiql/{id}`. Saved queries come as a tree, and one call gives two
+levels: `children` are walked, a folder is never offered, and a folder the first call left unread is
+read by its id, up to five; past that the list says it is not complete. A tree or one-hop query
+answers with links, not items, so ids are read from both and each kept once. Items come from
+`workitemsbatch`, 200 at a time, with `errorPolicy: omit`, whose nulls for an item gone or hidden count
+as left out. Only `System.Title` is asked for, and the id and a link built from constants are all that
+reach the queue; the batch goes to the organisation, not the project, since a WIQL can cross
+projects. `#52`'s limits hold through `fitToQueue`, and nothing from Azure DevOps is HTML.
+
+**WIQL's cap.** Past 20,000 results Azure DevOps refuses a query (VS402337) unless `$top` is given, so
+`$top=20000` always goes, and that is one answer of ids, about 1.4 MB at worst. Under the cap the page
+says how many lay past the queue; at the cap it cannot know, and says "more lie past the limit". A
+`VS402337` that comes anyway is `connector_query_cap`.
+
+**The field.** The estimate goes to the one the item's type carries: Story Points (Agile), Effort
+(Scrum, Basic), Size (CMMI), by reference name. A custom process can differ, so this is read and not
+derived from a process's name. `fieldFor` reads the item's `System.WorkItemType` and
+`System.TeamProject` for every write, then the type's fields. The type's list does not say a field's
+kind, so the project's field list gives that, and a number field is `double` or `integer`, writable,
+outside `System.`. The pair is cached for five minutes, by a hash of the token, so nothing one person
+read reaches another, and it is dropped when a write is refused with a 400. A person may choose a
+field for the connection from a type's own number fields; that choice wins where an item's type
+carries it, and elsewhere the standard three apply: a choice made for stories must not stop bugs.
+An item with none reads as `connector_no_estimate_field`, an outcome and not a failure, with no "Try
+again". Unlike Jira nothing asks for a field first: a guess by name is not at stake here, since the
+reference name is exact.
+
+**Write-back.** The rule of ADR-030 unchanged, by the same code: `final-press.ts` decides, and a
+final this tab did not record waits for a press. Only `[{ op: "add", path: "/fields/{field}", value }]`
+leaves, as `application/json-patch+json`, to `PATCH _apis/wit/workitems/{id}`, so an anonymous round
+gives nothing but its number. `add` sets a field whether or not it held a value, so writing twice is
+harmless. Failures keep ADR-030's codes where they mean the same. A `TF` or `VS` number at the start
+of Microsoft's message is the only part of it ever read, and only to tell a query that is gone
+(TF401232, TF401243) and the cap; a 400 on a write, a rule of the type, is `connector_field_refused`.
+
+**Words.** A site is a project here, and "Azure DevOps" takes "an" and, in French, an elision. So six
+codes have `connector.azure.errors.*`, chosen by `connectorMessage`, and the rest are shared.
+
+**Disconnect.** Deletes the row. A PAT outlives that at Microsoft, so the page says it exists until it
+expires or is revoked, and links to the person's tokens page in that organisation.
+
+**An account's deletion and export (ADR-029).** Nothing new was needed, and tests hold it: `begin` and
+`endSessions` delete every `connector_token`, `saveToken` writes nothing past a deletion marker, and the
+catalog-driven deletion test sees no new table or column. The export lists `azure-devops` by name.
+
+**Alternatives.** Entra now: see above. A connection per project: a second row for one token.
+`source.site` as the project: a PO changing project would be refused for an item whose id still holds.
+`redirect: "error"`: see above. Reading Microsoft's words for a missing scope: they are not a contract,
+and the second read does not need them. A separate route file for a pasted token: most of a route is
+the same, and two copies of who may import is what ADR-030 kept to one. Deciding the field once per
+connection, as Jira does: a project mixes types, and a Task has none.
+
+**Not tested.** Everything here ran against a stand-in built from Microsoft's REST reference. No real
+organisation has seen this code. The documentation does not say what a missing scope, an expired PAT
+or an unknown organisation really answers, so these are readings: a scope refusal as 401 or 403 (both
+are tested), a token-less `_apis/projects` as refused, an unknown organisation as 404 and not a sign-in
+page, `$depth` capped at 2, TF400813 and VS30063 for a stranger. That `vso.work_write` reaches
+`_apis/projects` rests on the inheritance table alone. The live check needs Sven's test organisation
+and a PAT, and a second person, and the issue stays open for it.
+
+**Limits.** An organisation with more than 500 projects shows the first 500. A person who changes a
+project's process is believed for up to five minutes. A response's body is read whole, bounded by the
+10 s timeout and a fixed host, as in ADR-030. A rate limit holds per instance (ADR-016).

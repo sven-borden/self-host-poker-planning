@@ -306,11 +306,12 @@ async function estimated(card = "5") {
 
 describe("dark", () => {
   it("has no route and no tag without the vault, or without a way to sign in", async () => {
-    for (const env of [
+    const envs: Record<string, string>[] = [
       { GOOGLE_CLIENT_ID: "g", GOOGLE_CLIENT_SECRET: "s" },
       { POKER_VAULT_KEY: KEYS.POKER_VAULT_KEY },
       {},
-    ]) {
+    ];
+    for (const env of envs) {
       const dark = await setupServer(testConfig({ DATABASE_URL: t.url, ...env }), logs.logger);
       const other = createServer(testConfig({ DATABASE_URL: t.url, ...env }), {
         ...dark.deps,

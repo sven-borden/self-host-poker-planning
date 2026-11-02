@@ -427,7 +427,7 @@ describe("the lines of a round from Azure DevOps", () => {
     const press = await screen.findByRole("button", { name: "Write to Azure DevOps" });
     expect(api.writeBack).not.toHaveBeenCalled();
     fireEvent.click(press);
-    await screen.findByText("1: 5 is in Azure DevOps.");
+    await screen.findByText("#1: 5 is in Azure DevOps.");
     expect(api.writeBack).toHaveBeenCalledWith("azure-devops", CODE, 1);
   });
 

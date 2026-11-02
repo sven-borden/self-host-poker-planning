@@ -668,7 +668,7 @@ waits, and says so as `fromQueue`, which names `Decision`'s button. `room/next-u
 under the table and the countdown; `useDeadlinePing` in `timer.tsx` is the vote timer's ping
 for any deadline. An item is named by `itemName` in `subject.ts`.
 
-## Connectors (#54)
+## Connectors (#54, #55)
 
 `connectors/connector.ts` is what the room's own chunk carries: `connectorOn` reads the server's
 `<meta name="pp-connectors">`, `readConnectorResult` takes `?connector=` out of the address in
@@ -689,6 +689,14 @@ for a connection with no room to come back to. `history-write.tsx` is the same p
 the history. These forms sit inside the subject field's in React's tree: a submit stops its
 propagation, as the paste form does. Codes are `connector.errors.*`, apart from the ack codes, and
 `i18n.test.ts` holds each one to a message.
+
+`azure-section.tsx` (#55, ADR-031) is Azure DevOps' own chunk, and shares `useConnection`, the
+pickers' classes and `SitePicker` with `connector-section.tsx`. Its token field is `type="password"`
+and empties the moment it is sent, and `connectAzure` is the one call that ever carries a token. A
+project is a site with `words` of its own, and six refusals have `connector.azure.errors.*`, since a
+template cannot say "an Azure DevOps project" or "d’Azure DevOps". `ROUND_SYSTEMS` and `connectorOf`
+go between a round's `system` and a connector's name, and `TrackerLines` holds one set of lines per
+tracker, since a queue can hold items of both.
 
 ## Rules
 

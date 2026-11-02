@@ -14,7 +14,7 @@ import { SIGN_IN_ENV, SIGN_IN_PORT } from "./e2e/signed-in.ts";
 // on the next port, has Sentry and Umami on (#40, e2e/observed.ts); it starts once the
 // first is up, so locally it serves the fresh build too. A third, on the next free port, has
 // provider keys and a stand-in for the providers in its own process (#47, e2e/signed-in.ts), and
-// Jira's keys, the vault and a stand-in for Atlassian beside it (#54).
+// Jira's keys, the vault and a stand-in for Atlassian beside it (#54), and one for Azure DevOps (#55).
 
 const PORT = Number(process.env.E2E_WEB_PORT ?? 4173);
 const ci = Boolean(process.env.CI);
@@ -26,7 +26,7 @@ if (!databaseUrl) {
 }
 const serve = "pnpm --filter @pp/server exec tsx src/main.ts";
 const serveWithFakeProviders =
-  "pnpm --filter @pp/server exec tsx --import ./src/fake-oidc-start.ts --import ./src/fake-jira-start.ts src/main.ts";
+  "pnpm --filter @pp/server exec tsx --import ./src/fake-oidc-start.ts --import ./src/fake-jira-start.ts --import ./src/fake-azure-devops-start.ts src/main.ts";
 const env = {
   DATABASE_URL: databaseUrl,
   PORT: String(PORT),
