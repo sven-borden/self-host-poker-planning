@@ -92,6 +92,7 @@ export async function setupServer(
   const { runner, store, db, retention: retentionStore } = database;
   const rules = createRoomRules(db, config);
   sync = createRoomSync({
+    limiter,
     runner,
     store,
     access: store,
@@ -136,7 +137,7 @@ export async function setupServer(
         registerAuthApi(app, { auth, db: database.db, config, limiter });
         registerRoomApi(app, { auth, rooms: store, config, limiter, rules });
         registerPasswordApi(app, { auth, rooms: store, sync, config, limiter, rules });
-        registerRestrictionApi(app, { auth, rooms: store, rules, limiter });
+        registerRestrictionApi(app, { auth, rooms: store, sync, config, rules, limiter });
         registerMyRoomsApi(app, {
           auth,
           rooms: createMyRoomsStore(db),
@@ -144,6 +145,7 @@ export async function setupServer(
           sync,
           config,
           limiter,
+          rules,
         });
       },
       socketMiddleware: [sessionMiddleware(auth)],

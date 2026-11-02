@@ -6,6 +6,9 @@
  * A Microsoft address proves nothing: Entra's `email` claim is whatever a tenant's admin set. So
  * a domain is met only by an address its provider verified, today a Google account's, and a
  * tenant only by the id from the token. The two never stand in for each other.
+ *
+ * A stored rule is read as strictly as a typed one. Only `apply` writes it, but a rule is what
+ * keeps a room shut, so one that does not read as a rule, however it came to be, admits nobody.
  */
 import { MAX_RESTRICTION_ENTRIES, type Restriction, type RoomState, type UserId } from "./room.ts";
 
@@ -22,11 +25,15 @@ export type AccessIdentity = { domain: string | null; tenant: string | null };
 /** The sign-in providers this install has. A rule on one that is gone admits nobody. */
 export type RuleProviders = { google: boolean; microsoft: boolean };
 
-/** Why a person does not pass: guest, wrong account, or a rule nobody can meet here. */
+/**
+ * Why a person does not pass: guest, wrong account, a rule nobody can meet here, or a sign-in too
+ * old to go by (`session_too_old`, which the server says: a session is none of the domain's).
+ */
 export type RestrictionRefusal =
   | "sign_in_required"
   | "account_not_allowed"
-  | "restriction_unavailable";
+  | "restriction_unavailable"
+  | "session_too_old";
 
 /** What the refused may read: what would pass. "Your organisation", never a tenant's id. */
 export type RestrictionRequirement = { domains: string[]; organisation: boolean };
@@ -78,16 +85,18 @@ export function cleanRestriction(raw: unknown): Restriction | null {
  * so what a person is told to do is what can work.
  */
 export function requirementOf(rule: Restriction, providers: RuleProviders): RestrictionRequirement {
+  const read = cleanRestriction(rule);
+  if (read === null) return { domains: [], organisation: false };
   return {
-    domains: providers.google ? rule.domains : [],
-    organisation: providers.microsoft && rule.tenants.length > 0,
+    domains: providers.google ? read.domains : [],
+    organisation: providers.microsoft && read.tenants.length > 0,
   };
 }
 
 /**
  * Whether the rule refuses this identity, and why. Domains match exactly: `example.com` admits
  * neither `mail.example.com` nor `example.com.evil.net`. Fails closed: when no provider this rule
- * needs is left, nobody passes, whatever account they hold.
+ * needs is left, or the stored rule is malformed, nobody passes, whatever account they hold.
  */
 export function restrictionRefusal(
   rule: Restriction,
@@ -99,14 +108,15 @@ export function restrictionRefusal(
   if (identity === null) return "sign_in_required";
   const { domain, tenant } = identity;
   const byDomain = domain !== null && domains.includes(domain);
-  const byTenant = organisation && tenant !== null && rule.tenants.includes(tenant.toLowerCase());
+  const tenants = organisation ? (cleanRestriction(rule)?.tenants ?? []) : [];
+  const byTenant = tenant !== null && tenants.includes(tenant.toLowerCase());
   return byDomain || byTenant ? null : "account_not_allowed";
 }
 
 /**
  * The room's rule applied to one person, when they enter or join: its PO always passes, so no rule
  * locks its PO out. A seat does not pass (ADR-028): a person seated before the rule stays while
- * their socket does, and meets it when they next enter.
+ * their socket does, and meets it when they next enter, where the seat goes.
  */
 export function roomRefusal(
   state: RoomState,

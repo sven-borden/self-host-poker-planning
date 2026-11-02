@@ -71,6 +71,13 @@
       "when": 1793599821007,
       "tag": "0009_add_room_keeper_apart_index",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793602504700,
+      "tag": "0010_add_account_hosted_domain",
+      "breakpoints": true
     }
   ]
 }

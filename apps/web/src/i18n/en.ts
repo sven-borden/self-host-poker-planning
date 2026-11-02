@@ -71,6 +71,7 @@ const errors = {
     "Only someone who meets this room’s sign-in rule can become its product owner.",
   sign_in_required: "This room is limited to certain accounts. Sign in to continue.",
   account_not_allowed: "This account cannot join this room.",
+  session_too_old: "Your sign-in is too old for this room. Sign out, then sign in again.",
   restriction_unavailable:
     "This server no longer offers that sign-in, so nobody can pass this rule.",
   /** Any code this version does not know yet. */

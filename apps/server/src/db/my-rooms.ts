@@ -13,11 +13,22 @@
  *
  * A row's rounds are `live.round.number`, a number the row already holds: no room's history is
  * read for a list. It counts rounds started, the one on the table included.
+ *
+ * A row brings the room's rule (#50, ADR-028), which `my-rooms.ts` judges: one read of the person's
+ * account, however long the list, so a room that would refuse them says nothing here.
  */
-import { and, eq, type SQL, sql } from "drizzle-orm";
+import type { Restriction } from "@pp/domain";
+import { and, eq, ne, type SQL, sql } from "drizzle-orm";
 import { guard } from "./errors.ts";
 import type { Db } from "./rooms.ts";
-import { IS_KEEPER_APART, KEEPER_APART, ROOM_KEEPER, ROOM_PEOPLE, room } from "./schema.ts";
+import {
+  IS_KEEPER_APART,
+  KEEPER_APART,
+  ROOM_KEEPER,
+  ROOM_PEOPLE,
+  ROOM_RULE,
+  room,
+} from "./schema.ts";
 
 /** One row of a person's list. Nothing here says who else is in the room. */
 export interface MyRoom {
@@ -32,6 +43,8 @@ export interface MyRoom {
   seated: boolean;
   rounds: number;
   lastActiveAt: Date;
+  /** The room's rule, null without one. For the server to judge: never sent. */
+  rule: Restriction | null;
 }
 
 /** Where a page ended: the last row's `last_active_at`, in microseconds, and id. */
@@ -53,6 +66,8 @@ export interface FoundRoom {
   ownerId: string;
   keeper: boolean;
   seated: boolean;
+  /** The room's rule, null without one. */
+  rule: Restriction | null;
 }
 
 export interface MyRoomsStore {
@@ -67,6 +82,12 @@ export interface MyRoomsStore {
    * column of the row. Resolves whether it deleted one.
    */
   deleteOwned(id: string, user: string): Promise<boolean>;
+  /**
+   * Deletes the room if `user` is its keeper, someone else holds the PO role, and its rule is
+   * still `rule`, the one that refuses them (ADR-028): judged by the statement, so a rule taken
+   * off meanwhile leaves them the way ADR-027 gives anyone, the role. Resolves whether it did.
+   */
+  deleteKept(id: string, user: string, rule: Restriction): Promise<boolean>;
 }
 
 /** What a row of the list reads. */
@@ -79,6 +100,7 @@ interface ListRow {
   seated: boolean;
   rounds: number;
   micros: string;
+  rule: Restriction | null;
   [column: string]: unknown;
 }
 
@@ -100,14 +122,14 @@ export function myRoomsQuery(user: string, limit: number, after?: MyRoomsCursor)
       select ${room.id} as id, ${room.code} as code, ${room.name} as name,
         ${room.ownerUserId} = ${user} as owned, ${keeper} as keeper,
         coalesce(${seated}, false) as seated, ${rounds} as rounds,
-        ${room.lastActiveAt} as last_active_at, ${micros} as micros
+        ${room.lastActiveAt} as last_active_at, ${micros} as micros, ${ROOM_RULE} as rule
       from ${room}
       where ((${room.ownerUserId} = ${user} and ${keeper})
         or (${ROOM_PEOPLE} ? ${user} and ${seated})
         or (${KEEPER_APART} = ${user} and ${IS_KEEPER_APART}))
         ${past}
     )
-    select id, code, name, owned, keeper, seated, rounds, micros from mine
+    select id, code, name, owned, keeper, seated, rounds, micros, rule from mine
     order by last_active_at desc, id desc
     limit ${limit + 1}`;
 }
@@ -120,7 +142,7 @@ export function createMyRoomsStore(db: Db): MyRoomsStore {
         const page = rows.slice(0, limit);
         const last = page.at(-1);
         return {
-          rooms: page.map(({ id, code, name, owned, keeper, seated, rounds, micros }) => ({
+          rooms: page.map(({ id, code, name, owned, keeper, seated, rounds, micros, rule }) => ({
             id,
             code,
             name,
@@ -129,6 +151,7 @@ export function createMyRoomsStore(db: Db): MyRoomsStore {
             seated,
             rounds,
             lastActiveAt: new Date(Number(micros) / 1000),
+            rule,
           })),
           ...(rows.length > limit && last && { next: { micros: last.micros, id: last.id } }),
         };
@@ -143,6 +166,7 @@ export function createMyRoomsStore(db: Db): MyRoomsStore {
             ownerId: room.ownerUserId,
             keeper: sql<boolean>`${ROOM_KEEPER} = ${user}`,
             seated: sql<boolean>`coalesce(${room.live} -> 'participants' ? ${user}, false)`,
+            rule: sql<Restriction | null>`${ROOM_RULE}`,
           })
           .from(room)
           .where(eq(room.id, id));
@@ -154,6 +178,22 @@ export function createMyRoomsStore(db: Db): MyRoomsStore {
         const rows = await db
           .delete(room)
           .where(and(eq(room.id, id), eq(room.ownerUserId, user), sql`${ROOM_KEEPER} = ${user}`))
+          .returning({ id: room.id });
+        return rows.length === 1;
+      }),
+
+    deleteKept: (id, user, rule) =>
+      guard("delete kept room", async () => {
+        const rows = await db
+          .delete(room)
+          .where(
+            and(
+              eq(room.id, id),
+              ne(room.ownerUserId, user),
+              sql`${ROOM_KEEPER} = ${user}`,
+              sql`${ROOM_RULE} = ${JSON.stringify(rule)}::jsonb`,
+            ),
+          )
           .returning({ id: room.id });
         return rows.length === 1;
       }),

@@ -16,7 +16,7 @@ import { WIRE_LIMITS } from "@pp/protocol";
 import type { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "./app.ts";
-import { type Auth, sessionUser } from "./auth.ts";
+import { type Auth, sessionOf, sessionUser } from "./auth.ts";
 import type { Config } from "./config.ts";
 import type { RoomStore, StoredRoom } from "./db/rooms.ts";
 import { foreignOrigin, isJsonBody, rateLimited, requestIp } from "./http.ts";
@@ -133,8 +133,9 @@ export function registerRoomApi(
     }
     // A session is read for a room with a rule only: no other header costs one more query.
     if (header.restriction !== null) {
-      const me = await sessionUser(auth, c.req.raw.headers);
-      if ((await refusalOf(rules, header, me?.id ?? null)) !== null) {
+      const me = await sessionOf(auth, c.req.raw.headers);
+      const who = me && { id: me.user.id, startedAt: me.startedAt };
+      if ((await refusalOf(rules, header, who)) !== null) {
         return c.json({ code: header.code, name: null, hasPassword: false });
       }
     }

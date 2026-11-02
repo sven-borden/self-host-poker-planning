@@ -10,8 +10,13 @@
  * - A tenant comes only from `account.tenant_id`, which #47 read from the token and checked.
  *
  * None of this leaves the server but as a yes or a no, and it reaches no log line.
+ *
+ * What an account proves was true at sign-in, and only a new sign-in asks the provider again. A
+ * session slides, so someone who left would pass for as long as they visit: in a room with a rule
+ * a session older than `RULE_SESSION_MAX_AGE_MS` must sign in again. Its PO is exempt, as from
+ * every rule.
  */
-import { domainToASCII } from "node:url";
+import { domainToASCII, domainToUnicode } from "node:url";
 import {
   type AccessIdentity,
   type Command,
@@ -40,17 +45,32 @@ export const NO_RULES: RoomRules = {
   identitiesOf: async () => new Map(),
 };
 
+/** How long a sign-in counts in a room with a rule, by `session.created_at`: 30 days. */
+export const RULE_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Whether a session that started at `startedAt` (epoch ms) is too old for a room with a rule. */
+export const sessionTooOld = (startedAt: number | undefined, now: number): boolean =>
+  startedAt !== undefined && now - startedAt > RULE_SESSION_MAX_AGE_MS;
+
 export const identityOf = async (rules: RoomRules, who: UserId): Promise<AccessIdentity | null> =>
   (await rules.identitiesOf([who])).get(who) ?? null;
 
+/** Characters a URL parser ends a host at, or reads as something else: as the panel's guard. */
+const NOT_OF_A_HOST = /[/\\@:?#%[\]]/;
+
 /**
  * An entry as the domain's `cleanDomain` reads it: an international name in its `xn--` form, by
- * the platform's IDNA, since the domain has no `URL`. "" for a name IDNA refuses. Plain ASCII is
- * left alone for `cleanDomain`, as `new URL` would quietly turn `a@b.com/x` into `b.com`.
+ * the platform's IDNA, since the domain has no `URL`. `domainToASCII` is a URL parser: it answers
+ * the host of whatever it is given, so `bücher.example/x` reads as `bücher.example`, and it drops
+ * or maps characters a name does not hold. So an entry with a character no host holds stays as
+ * typed, and one IDNA does not give back whole does too, and `cleanDomain` refuses either: it
+ * takes ASCII alone. Plain ASCII never meets the parser at all.
  */
 export function asciiDomain(raw: string): string {
   const domain = raw.trim();
-  return /[^\p{ASCII}]/u.test(domain) ? domainToASCII(domain) : domain;
+  if (!/[^\p{ASCII}]/u.test(domain) || NOT_OF_A_HOST.test(domain)) return domain;
+  const ascii = domainToASCII(domain);
+  return domainToUnicode(ascii) === domain.normalize("NFC").toLowerCase() ? ascii : domain;
 }
 
 /** A patch's rule with its domains in that form, so the domain judges what it can read. */
@@ -110,9 +130,17 @@ export function createRoomRules(db: Db, config: Pick<Config, "socialProviders">)
 export async function refusalOf(
   rules: RoomRules,
   { restriction, ownerId }: { restriction: Restriction | null; ownerId: UserId },
-  who: UserId | null,
+  who: Pick<Session, "id" | "startedAt"> | null,
+  now: number = Date.now(),
 ): Promise<RestrictionRefusal | null> {
-  if (restriction === null || who === ownerId) return null;
-  const identity = who === null ? null : await identityOf(rules, who);
-  return restrictionRefusal(restriction, identity, rules.providers);
+  if (restriction === null || who?.id === ownerId) return null;
+  const identity = who === null ? null : await identityOf(rules, who.id);
+  const refused = restrictionRefusal(restriction, identity, rules.providers);
+  return refused ?? (sessionTooOld(who?.startedAt, now) ? "session_too_old" : null);
+}
+
+/** Who a request came from: the user, and when their session began. */
+interface Session {
+  id: UserId;
+  startedAt: number;
 }

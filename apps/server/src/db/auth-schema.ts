@@ -79,6 +79,8 @@ export const account = pgTable(
     updatedAt: instant("updated_at").notNull().defaultNow(),
     /** A Microsoft account's tenant (`tid`), for rooms limited to one (#50). */
     tenantId: text("tenant_id"),
+    /** A Google account's Workspace domain (`hd`), stored and read by nothing yet (ADR-028). */
+    hostedDomain: text("hosted_domain"),
     /**
      * The address a Microsoft token claims (#48, ADR-025): shown to its owner, proof of nothing,
      * and unique in nothing, so a claim cannot lock out the person who owns the address.

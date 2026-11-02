@@ -8,6 +8,7 @@
  */
 import {
   type Cause,
+  cleanRestriction,
   computeResults,
   type DeckSpec,
   OWNER_CLAIM_AFTER_MS,
@@ -192,7 +193,8 @@ function deckView(deck: DeckSpec): DeckSpec {
  */
 function restrictionView({ restriction }: RoomSettings, isOwner: boolean): RestrictionView | null {
   if (restriction === undefined) return null;
-  const { domains, tenants } = restriction;
+  // Malformed, it admits nobody: the PO's row shows a rule with nothing in it, to take off.
+  const { domains, tenants } = cleanRestriction(restriction) ?? { domains: [], tenants: [] };
   return {
     domains: [...domains],
     organisation: tenants.length > 0,

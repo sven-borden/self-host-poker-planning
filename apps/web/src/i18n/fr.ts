@@ -948,6 +948,8 @@ export const fr: Catalog<"many"> = {
       "Seule une personne qui respecte la règle de connexion de cette salle peut en devenir le product owner.",
     sign_in_required: "Cette salle est réservée à certains comptes. Connectez-vous pour continuer.",
     account_not_allowed: "Ce compte ne peut pas rejoindre cette salle.",
+    session_too_old:
+      "Votre connexion est trop ancienne pour cette salle. Déconnectez-vous, puis reconnectez-vous.",
     restriction_unavailable:
       "Ce serveur ne propose plus cette connexion, personne ne peut donc satisfaire cette règle.",
     deck_empty: "Un jeu doit contenir au moins une carte.",

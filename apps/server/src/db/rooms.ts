@@ -9,7 +9,7 @@ import { and, desc, eq, inArray, lt, ne, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { guard } from "./errors.ts";
 import { type EndedRound, historyRow, isHistory, type StoredHistoryRound } from "./history.ts";
-import { room, roomAccess, roundHistory } from "./schema.ts";
+import { ROOM_RULE, room, roomAccess, roundHistory } from "./schema.ts";
 
 export type Db = NodePgDatabase;
 
@@ -168,8 +168,8 @@ export interface HistoryStore {
 
 const hasHash = sql<boolean>`${room.passwordHash} is not null`;
 
-/** The rule in `live` (#50), without loading the state; SQL null for a room without one. */
-const ruleOf = sql<Restriction | null>`${room.live} #> '{settings,restriction}'`;
+/** The rule in `live` (#50), without loading the state; null for a room without one. */
+const ruleOf = sql<Restriction | null>`${ROOM_RULE}`;
 
 /** A room's state, its queue and name apart: each has a column of its own. */
 function inColumns({ queue, name, ...live }: RoomState): {

@@ -85,6 +85,7 @@ export const ACK_ERROR_CODES = [
   "owner_not_allowed",
   "sign_in_required",
   "account_not_allowed",
+  "session_too_old",
   "restriction_unavailable",
   "deck_empty",
   "deck_too_many_cards",

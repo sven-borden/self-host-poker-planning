@@ -15,6 +15,7 @@ import {
   UNITS_PER_CHARACTER,
 } from "./decks.ts";
 import { cleanRestriction } from "./restriction.ts";
+import type { Restriction } from "./room.ts";
 import {
   MAX_NAME_LENGTH,
   MAX_ROOM_NAME_LENGTH,
@@ -131,8 +132,9 @@ export function canonicalSettings(s: RoomSettings): RoomSettings {
     observersCount: s.observersCount,
     // A room stored before #52 has none: off.
     autoAdvance: s.autoAdvance === true,
-    ...(s.restriction && {
-      restriction: { domains: [...s.restriction.domains], tenants: [...s.restriction.tenants] },
+    // As stored, malformed or not: a change of another setting must not open a room.
+    ...(s.restriction !== undefined && {
+      restriction: JSON.parse(JSON.stringify(s.restriction)) as Restriction,
     }),
   };
 }

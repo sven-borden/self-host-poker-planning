@@ -173,6 +173,19 @@ function microsoftTenant(providerId: string, idToken: string | null | undefined)
   return typeof tenant === "string" ? tenant : null;
 }
 
+/**
+ * The Workspace domain in a Google id token (`hd`), kept and read by nothing yet (ADR-028): an
+ * account that exists today has no way to hand it over later, and a rule may want it one day.
+ */
+function googleHostedDomain(
+  providerId: string,
+  idToken: string | null | undefined,
+): string | null {
+  if (providerId !== "google") return null;
+  const domain = idTokenClaims(idToken ?? undefined)?.hd;
+  return typeof domain === "string" ? domain : null;
+}
+
 /** The address a Microsoft token claims, which is kept beside `tid` and proves nothing. */
 function microsoftClaim(providerId: string, idToken: string | null | undefined): string | null {
   return providerId === "microsoft" ? claimedAddress(idTokenClaims(idToken ?? undefined)) : null;
@@ -228,6 +241,7 @@ export function authOptions(
       // `input: false`: only the hook below writes them.
       additionalFields: {
         tenantId: { type: "string", required: false, input: false },
+        hostedDomain: { type: "string", required: false, input: false },
         claimedEmail: { type: "string", required: false, input: false },
       },
     },
@@ -303,6 +317,7 @@ export function authOptions(
               ...data,
               ...NO_PROVIDER_TOKENS,
               tenantId: microsoftTenant(data.providerId, data.idToken),
+              hostedDomain: googleHostedDomain(data.providerId, data.idToken),
               claimedEmail: microsoftClaim(data.providerId, data.idToken),
             },
           }),
@@ -377,11 +392,14 @@ export async function sessionUser(auth: Auth, headers: Headers): Promise<SocketU
   return (await sessionOf(auth, headers))?.user ?? null;
 }
 
-/** `sessionUser` plus the session's id (not its token), which a socket keeps. */
+/**
+ * `sessionUser` plus the session's id (not its token), which a socket keeps, and when the session
+ * began, which never moves: its expiry slides, so a room with a rule goes by this (ADR-028).
+ */
 export async function sessionOf(
   auth: Auth,
   headers: Headers,
-): Promise<{ user: SocketUser; sessionId: string } | null> {
+): Promise<{ user: SocketUser; sessionId: string; startedAt: number } | null> {
   const result = await guard("read session", () =>
     auth.api.getSession({ headers, query: { disableRefresh: true } }).catch((error: unknown) => {
       if (isAPIError(error) && error.statusCode < 500) return null;
@@ -396,6 +414,7 @@ export async function sessionOf(
       isAnonymous: result.user.isAnonymous === true,
     },
     sessionId: result.session.id,
+    startedAt: new Date(result.session.createdAt).getTime(),
   };
 }
 
@@ -703,6 +722,7 @@ export function sessionMiddleware(auth: Auth): SocketMiddleware {
     }
     socket.data.user = me.user;
     socket.data.sessionId = me.sessionId;
+    socket.data.sessionStartedAt = me.startedAt;
     next();
   };
 }

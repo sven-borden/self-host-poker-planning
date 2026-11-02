@@ -31,9 +31,16 @@
  * judges it: a `join`, a hand-over and a claim are judged again in the run's step, on the state
  * the compare-and-set commits over, so a rule set meanwhile holds. Its PO always passes. A seat
  * does not: someone seated before the rule stays while their socket does, and meets it at their
- * next `enter`, with their seat left as it was. A visitor who has no seat is read again when the
- * rule changes, or when they leave their seat, and hears `locked`. No snapshot reaches a socket
- * that has not passed.
+ * next `enter`, which takes the seat, through `apply`, as `leave` does.
+ *
+ * One invariant holds it together, at `broadcast`, the only place a room's frames leave: `admitted`
+ * keeps what each socket was judged against, and no frame reaches a socket without a seat or the
+ * PO role unless that judgement is of the gate in the frame's state. A socket whose judgement is
+ * out of date is read again (`recheck`), gets nothing meanwhile, and hears `locked` if refused.
+ * So however a socket came to have no seat, and however a gate came to change, on this instance
+ * or another, the next frame finds it: a `leave` on another tab, an `enter` that raced a rule, a
+ * commit whose reply was lost, a role lost to a claim. A rule change and a `left` are read at
+ * once as well, so nobody waits for the next change to hear `locked`.
  *
  * History (#33): `history` answers one page of the entered room's finished rounds to
  * someone in it (a voter, an observer or the PO), checked on a fresh load at every
@@ -99,11 +106,13 @@ import { historyView } from "../db/history.ts";
 import type { AccessStore, AccessWrite, HistoryStore, RoomStore } from "../db/rooms.ts";
 import type { CommandRunner, RunOutcome } from "../db/runner.ts";
 import type { Logger } from "../logger.ts";
+import { memoryRateLimit, type RateLimiter } from "../rate-limit.ts";
 import type { RealtimeHandlers, RealtimeServer, RealtimeSocket } from "../realtime.ts";
 import {
   NO_RULES,
   type RoomRules,
   identityOf as readIdentity,
+  sessionTooOld,
   withAsciiDomains,
 } from "../room-rule.ts";
 import { CLUSTER_REQUEST_TIMEOUT_MS } from "../scale-out.ts";
@@ -126,6 +135,13 @@ const TIME_UP: Command = { type: "timeUp" };
  * compare-and-set) starts the grace again before the person is left shown connected.
  */
 export const MAX_AWAY_RETRIES = 3;
+
+/**
+ * Commits that set a rule, per person and per instance: each can test up to 40 entries against
+ * the people in the room, read back by the count and a refused hand-over (ADR-028). Five an hour
+ * is more than a PO getting a rule right needs. Taking a rule off is free: it tests nothing.
+ */
+export const RULE_CHANGE_LIMIT = { window: 3600, max: 5 } as const;
 
 /** A command re-checks the socket's session once its last check is older than this. */
 export const SESSION_RECHECK_MS = 60_000;
@@ -173,6 +189,8 @@ export interface SharedOptions {
 }
 
 export interface RoomSyncOptions {
+  /** Counts the commits that set a rule (`RULE_CHANGE_LIMIT`). Left out, one of its own. */
+  limiter?: RateLimiter;
   runner: CommandRunner;
   store: Pick<RoomStore, "loadRoom">;
   /**
@@ -271,9 +289,10 @@ export interface RoomSync extends RealtimeHandlers {
   dropGuest(guest: string, account: string): void;
   /**
    * `actor`'s command on a room, from the HTTP API (#49): through the room's queue and the
-   * compare-and-set, and everyone in the room hears it, like any command.
+   * compare-and-set, and everyone in the room hears it, like any command. `guard`: what must
+   * hold on the state it commits over (#50).
    */
-  commandAs(room: RoomRef, actor: string, command: Command): Promise<CmdAck>;
+  commandAs(room: RoomRef, actor: string, command: Command, guard?: Guard): Promise<CmdAck>;
   /** The room (by id) is gone from the database: its sockets, on every instance, are told. */
   roomDeleted(id: string): void;
 }
@@ -346,6 +365,10 @@ const isGated = (state: RoomState, viewer: string) =>
   (state.hasPassword === true && !isMember(state, viewer)) ||
   (state.settings.restriction !== undefined && viewer !== state.ownerId);
 
+/** A command that sets a rule, not one that takes it off (`RULE_CHANGE_LIMIT`). */
+const setsRule = (command: Command) =>
+  command.type === "updateSettings" && Boolean(command.patch.restriction);
+
 /** The room's rule changed (#50): visitors it no longer admits leave. */
 const changesRule = (cause: Cause) =>
   cause.type === "settingsUpdated" && cause.restriction === true;
@@ -355,11 +378,36 @@ const REFUSED_JOIN: ReadonlySet<string> = new Set<ErrorCode | "password_required
   "password_required",
   "sign_in_required",
   "account_not_allowed",
+  "session_too_old",
   "restriction_unavailable",
 ]);
 
 /** What must hold when a command's step runs, on the state it commits over (#50). */
-type Guard = (state: RoomState) => ErrorCode | null;
+export type Guard = (state: RoomState) => ErrorCode | null;
+
+/**
+ * The gate of a state: what a judgement of someone without a seat or the PO role goes by. `blind`
+ * and a lockout cover a password changed for another; this covers one that arrives, and a rule.
+ */
+const gateOf = ({ settings, hasPassword }: RoomState) =>
+  `${hasPassword === true}|${JSON.stringify(settings.restriction ?? null)}`;
+
+/**
+ * What `admitted` holds for a seat or the PO role: they stay by that, so no gate was judged, and
+ * this is no gate's, so the first frame after they lose it finds the judgement out of date.
+ */
+const UNJUDGED = "";
+
+/** What a socket passed: the room (by id), and the gate (`gateOf`) it was judged against. */
+interface Pass {
+  room: string;
+  gate: string;
+}
+
+const passOf = (room: string, state: RoomState, who: string): Pass => ({
+  room,
+  gate: isMember(state, who) ? UNJUDGED : gateOf(state),
+});
 
 /**
  * The grants a step's result writes (#31): a kick drops the removed person's grant, so
@@ -396,13 +444,14 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   const requestTimeoutMs = shared?.requestTimeoutMs ?? CLUSTER_REQUEST_TIMEOUT_MS;
   const hasAccess = options.access?.hasAccess ?? (async () => false);
   const rules = options.rules ?? NO_RULES;
+  const limiter = options.limiter ?? memoryRateLimit();
   const loadHistory =
     options.history?.loadHistory ?? (async () => ({ rounds: [], more: false }) as const);
   const log = logger.child({ part: "rooms" });
-  // A `busy` answer stored nothing: the same command id may run again.
+  // A `busy` answer stored nothing, nor does a rule's `rate_limited`: the same id may run again.
   const acks = createRecentAcks({
     ...options.recentAcks,
-    forget: (ack) => !ack.ok && ack.code === "busy",
+    forget: (ack) => !ack.ok && (ack.code === "busy" || ack.code === "rate_limited"),
   });
   /** The id behind each code, and back, for the rooms with a socket on this instance. */
   const idOf = new Map<string, string>();
@@ -417,11 +466,11 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   const sessionChecked = new WeakMap<RealtimeSocket, number>();
   const pendingChecks = new WeakMap<RealtimeSocket, Promise<boolean>>();
   /**
-   * The room (by id) each socket passed the gate of (#31, #50). A socket still entering sits
-   * in the room's channel before that: a gated room sends it nothing until it passed
-   * (`isGated`).
+   * What each socket passed (#31, #50). A socket still entering sits in the room's channel before
+   * that: a gated room sends it nothing until it passed (`isGated`), and nothing after that a
+   * judgement of another gate does not cover (`broadcast`).
    */
-  const admitted = new WeakMap<RealtimeSocket, string>();
+  const admitted = new WeakMap<RealtimeSocket, Pass>();
   /**
    * How often each room (by id) locked its sockets out for a new password (#31) or a rule
    * (#50). An enter that read a grant before a lockout ran read the old password's grant,
@@ -510,10 +559,11 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
 
   /**
    * Sends every socket of the room its own snapshot of `state`, except those that already
-   * hold this version or a newer one. A late, older state goes nowhere. `blind` (shared):
-   * versions before this one came without their signal, so a lockout or a kick may have
-   * been missed; in a room with a password, every visitor's grant is read again before
-   * they get anything (`recheck`).
+   * hold this version or a newer one. A late, older state goes nowhere. Someone without a seat
+   * or the PO role whose judgement is not of this state's gate is read again before they get
+   * anything (`recheck`): this is the one place that holds for every way out of a seat and every
+   * way a gate moves. `blind` (shared): versions before this one came without their signal, so a
+   * lockout or a kick may have been missed, and every visitor is read again.
    */
   function broadcast(
     room: RoomRef,
@@ -526,6 +576,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     if (sockets.length === 0 || !advance(room.id, version, state)) return;
     if (shared) sent.set(room.id, { version, hasPassword: state.hasPassword === true });
     const meta = { code: room.code, version, now: now(), causes };
+    const gate = gateOf(state);
     // Two tabs of one person get the same snapshot: build it once per viewer.
     const views = new Map<string, Snapshot>();
     for (const socket of sockets) {
@@ -533,8 +584,9 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       if (viewer === undefined || (held.get(socket) ?? 0) >= version) continue;
       if (rechecking.has(socket)) continue;
       if (isGated(state, viewer)) {
-        if (admitted.get(socket) !== room.id) continue;
-        if (blind && !isMember(state, viewer)) {
+        const pass = admitted.get(socket);
+        if (pass?.room !== room.id) continue;
+        if (!isMember(state, viewer) && (blind || pass.gate !== gate)) {
           recheck(room.id, socket, viewer);
           continue;
         }
@@ -600,6 +652,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     // Before the broadcast: a visitor being read again gets nothing meanwhile.
     if (result.causes.some(changesRule)) recheckAll(room.id, result.state);
     broadcast(room, outcome.version, result.state, result.causes);
+    recheckLeavers(room.id, result.causes, result.state);
     for (const cause of result.causes) {
       if (cause.type === "kicked") removeKicked(room.id, cause.who);
     }
@@ -844,13 +897,9 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     if (!blind && covered.some((signal) => signal.causes.some(changesRule))) {
       recheckAll(room.id, state);
     }
-    broadcast(
-      room,
-      version,
-      state,
-      covered.flatMap((signal) => signal.causes),
-      blind,
-    );
+    const causes = covered.flatMap((signal) => signal.causes);
+    broadcast(room, version, state, causes, blind);
+    recheckLeavers(room.id, causes, state);
     kickAll(room.id, covered, state);
     settleWaiters(room.id, version);
   }
@@ -866,6 +915,13 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     const lockedOut = state?.hasPassword && signals.some((signal) => signal.lockout);
     if (state && (lockedOut || signals.some((signal) => signal.causes.some(changesRule)))) {
       recheckAll(id, state);
+    }
+    if (state) {
+      recheckLeavers(
+        id,
+        signals.flatMap((signal) => signal.causes),
+        state,
+      );
     }
     kickAll(id, signals, state);
   }
@@ -902,15 +958,31 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   function recheckAll(id: string, state: RoomState) {
     for (const socket of socketsOf(id)) {
       const viewer = socket.data.user?.id;
-      if (viewer === undefined || isMember(state, viewer) || admitted.get(socket) !== id) continue;
-      recheck(id, socket, viewer);
+      if (viewer === undefined || isMember(state, viewer)) continue;
+      if (admitted.get(socket)?.room === id) recheck(id, socket, viewer);
+    }
+  }
+
+  /**
+   * Out of a seat, nothing holds a visitor in a room with a rule: every socket of whoever `left`
+   * is read at once, on this instance or any, whichever door the leave came through, and any tab
+   * of theirs. A frame would find them anyway (`broadcast`); this is so they hear it now.
+   */
+  function recheckLeavers(id: string, causes: readonly Cause[], state: RoomState) {
+    if (state.settings.restriction === undefined) return;
+    const leavers = new Set(causes.flatMap((cause) => (cause.type === "left" ? [cause.who] : [])));
+    if (leavers.size === 0) return;
+    for (const socket of socketsOf(id)) {
+      const viewer = socket.data.user?.id;
+      if (viewer === undefined || !leavers.has(viewer) || isMember(state, viewer)) continue;
+      if (admitted.get(socket)?.room === id) recheck(id, socket, viewer);
     }
   }
 
   /**
    * Reads a visitor's grant and account again; they get no snapshot meanwhile. Refused (or
    * when either cannot be read) they hear `locked` and leave, as after a new password, and an
-   * `enter` in progress is refused; let in they get the newest state.
+   * `enter` in progress is refused; let in they get the newest state, judged on it.
    */
   function recheck(id: string, socket: RealtimeSocket, viewer: string) {
     if (rechecking.has(socket)) return;
@@ -919,10 +991,11 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       .catch((): [boolean, null] => [false, null])
       .then(([granted, identity]) => {
         rechecking.delete(socket);
-        if (!socket.connected || admitted.get(socket) !== id) return;
+        const pass = admitted.get(socket);
+        if (!socket.connected || pass?.room !== id) return;
         const state = stateOf.get(id);
         const version = newest.get(id) ?? 0;
-        if (!stays(state, viewer, granted, identity)) {
+        if (!stays(state, viewer, granted, identity, socket.data.sessionStartedAt)) {
           lockouts.set(id, (lockouts.get(id) ?? 0) + 1);
           admitted.delete(socket);
           if (socket.data.room?.id !== id) return;
@@ -930,6 +1003,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
           socket.emit("locked");
           return;
         }
+        if (state && !isMember(state, viewer)) pass.gate = gateOf(state);
         const code = codeOf.get(id);
         if (!state || code === undefined || (held.get(socket) ?? 0) >= version) return;
         if (socket.data.room?.id !== id) return;
@@ -947,10 +1021,11 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     viewer: string,
     granted: boolean,
     identity: AccessIdentity | null,
+    startedAt: number | undefined,
   ): boolean {
     if (state === undefined) return granted;
     if (isMember(state, viewer)) return true;
-    if (roomRefusal(state, viewer, identity, rules.providers) !== null) return false;
+    if (ruleRefusal(state, viewer, identity, startedAt) !== null) return false;
     return granted || state.hasPassword !== true;
   }
 
@@ -1430,6 +1505,9 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     let joined: string | undefined;
     const undo = () => {
       leaveRoom(socket);
+      // `leaveRoom` stops at a socket with no room yet: a pass kept here would feed a refused one.
+      admitted.delete(socket);
+      held.delete(socket);
       if (joined !== undefined) leaveChannel(socket, joined);
     };
     const gone = () => {
@@ -1466,23 +1544,23 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       if (isGated(loaded.state, user.id)) {
         // This socket sits in the room's channel already, so a lockout from here on finds it.
         const lockedBefore = lockouts.get(loaded.id) ?? 0;
-        const ruled = loaded.state.settings.restriction !== undefined;
-        const identity = ruled ? await identityOf(user.id) : null;
-        if (!socket.connected) return gone();
-        const refused = ruled && roomRefusal(loaded.state, user.id, identity, rules.providers);
-        if (refused) {
-          undo();
-          return refuseEntry(refused, loaded.state);
-        }
-        if (loaded.state.hasPassword && !isMember(loaded.state, user.id)) {
-          const granted = await hasAccess(loaded.id, user.id);
-          if (!socket.connected) return gone();
-          if (!granted) {
-            undo();
-            return refuse("password_required");
+        // Read when a state first asks for them: a rule or a password may land between loads.
+        let identity: AccessIdentity | null | undefined;
+        let granted: boolean | undefined;
+        const refusal = async (state: RoomState) => {
+          if (state.settings.restriction !== undefined && user.id !== state.ownerId) {
+            if (identity === undefined) identity = await identityOf(user.id);
+            const refused = ruleRefusal(state, user.id, identity, socket.data.sessionStartedAt);
+            if (refused) return refused;
           }
-        }
-        admitted.set(socket, loaded.id);
+          if (!state.hasPassword || isMember(state, user.id)) return null;
+          granted ??= await hasAccess(loaded?.id ?? "", user.id);
+          return granted ? null : ("password_required" as const);
+        };
+        const first = await refusal(loaded.state);
+        if (!socket.connected) return gone();
+        if (first) return refuseEntry(first, { id: loaded.id, code }, loaded.state, user.id, undo);
+        admitted.set(socket, passOf(loaded.id, loaded.state, user.id));
         // Snapshots skipped this socket until now: load again, so none is missed.
         loaded = await store.loadRoom(code);
         if (!socket.connected) return gone();
@@ -1490,6 +1568,10 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
           undo();
           return refuse("room_not_found");
         }
+        // The gates as they stand now: `broadcast` holds from here, so this is the last load
+        // anyone is judged on, and the judgement must be of this state, whatever the first said.
+        const last = await refusal(loaded.state);
+        if (!socket.connected) return gone();
         // A new password locked the room out while the grant was read (before this socket
         // had a room to be locked out of): the grant was the old password's.
         if ((lockouts.get(loaded.id) ?? 0) !== lockedBefore) {
@@ -1497,14 +1579,10 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
           // In a room with a rule it may have been the rule: the page enters again, and asks.
           return loaded.state.settings.restriction ? refuse("busy") : refuse("password_required");
         }
-        // The rule as it stands now, on what this enter read: nothing awaits past this line.
-        const still = ruled && roomRefusal(loaded.state, user.id, identity, rules.providers);
-        if (still) {
-          undo();
-          return refuseEntry(still, loaded.state);
-        }
+        if (last) return refuseEntry(last, { id: loaded.id, code }, loaded.state, user.id, undo);
       }
-      admitted.set(socket, loaded.id);
+      const pass = passOf(loaded.id, loaded.state, user.id);
+      admitted.set(socket, pass);
       const room = { id: loaded.id, code };
       socket.data.room = room;
       idOf.set(code, room.id);
@@ -1523,6 +1601,11 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
         if ((inbox.get(room.id)?.size ?? 0) > 0) drain(room.id);
       }
       presenceOnEnter(room, user.id, loaded.state);
+      // A change this enter's load did not see went past this socket: it had not passed yet.
+      const seen = stateOf.get(room.id);
+      if (seen && isGated(seen, user.id) && !isMember(seen, user.id) && pass.gate !== gateOf(seen)) {
+        recheck(room.id, socket, user.id);
+      }
       log.debug({ room: room.id, version: loaded.version }, "socket entered");
       touchRoom?.(room.id).catch((error: unknown) => {
         log.warn({ room: room.id, err: errorCodeOf(error) }, "visit not recorded");
@@ -1554,7 +1637,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     }
     const room = socket.data.room;
     if (room === undefined) return refuse("room_not_found");
-    const guard = await guardOf(user, command);
+    const guard = await guardOf(socket, user, command);
     if (command.type === "join") {
       // The room got a rule or a password since this socket entered (on another instance, or
       // in between): the person meets it first.
@@ -1566,8 +1649,9 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     }
     // Locked out by a new password while the grant was read: the grant was the old one's.
     if (command.type === "join" && socket.data.room !== room) return refuse("password_required");
+    const run = () => runOnce(room, user.id, id, withAsciiDomains(command), guard);
     const ack = await acks.remember(user.id, ackKey(room.id, id), () =>
-      runOnce(room, user.id, id, withAsciiDomains(command), guard),
+      setsRule(command) ? countingRule(user.id, run) : run(),
     );
     // The rule, or the grant, stopped the join when it ran (a kick, a new password, a new rule):
     // the socket leaves the room, and the person meets what is asked first.
@@ -1579,37 +1663,88 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     ) {
       leaveRoom(socket);
     }
-    // Out of their seat, nothing holds a visitor in a room with a rule (#50): read them again.
-    if (command.type === "leave" && ack.ok && socket.data.room === room) {
-      if (stateOf.get(room.id)?.settings.restriction) recheck(room.id, socket, user.id);
-    }
     return ack;
   }
 
   const identityOf = (who: string) => readIdentity(rules, who);
 
-  /** A refused `enter` of a room with a rule (#50): the code, and what would pass. */
-  function refuseEntry(code: RestrictionRefusal, state: RoomState): EnterAck {
+  /** What stops `who` on a room's rule (#50): their account, then how old their sign-in is. */
+  function ruleRefusal(
+    state: RoomState,
+    who: string,
+    identity: AccessIdentity | null,
+    startedAt: number | undefined,
+  ): RestrictionRefusal | null {
+    const refused = roomRefusal(state, who, identity, rules.providers);
+    if (refused) return refused;
+    const ruled = state.settings.restriction !== undefined && who !== state.ownerId;
+    return ruled && sessionTooOld(startedAt, now()) ? "session_too_old" : null;
+  }
+
+  /** A commit that sets a rule counts, and one that stored nothing gives its place back. */
+  async function countingRule(who: string, run: () => Promise<CmdAck>): Promise<CmdAck> {
+    const slot = await limiter.reserve(`restriction|change|${who}`, RULE_CHANGE_LIMIT);
+    if (!slot.allowed) return refuse("rate_limited");
+    const ack = await run();
+    if (!ack.ok) slot.release();
+    return ack;
+  }
+
+  /**
+   * A refused `enter` (#50, #31): out of the room, with the code and, under a rule, what would
+   * pass. A seat the rule refuses goes there and then: it could never come back, and would stay
+   * shown, counted at the reveal, with no way for its owner to give it up. Not one whose sign-in
+   * is too old: a new sign-in brings that person back to it. Judged again in the run's step.
+   */
+  async function refuseEntry(
+    code: RestrictionRefusal | "password_required",
+    room: RoomRef,
+    state: RoomState,
+    who: string,
+    undo: () => void,
+  ): Promise<EnterAck> {
+    undo();
+    if (code === "password_required") return refuse(code);
+    if (code !== "session_too_old" && participant(state, who) !== undefined) {
+      await takeSeat(room, who);
+    }
     const rule = state.settings.restriction;
-    return rule
-      ? { ok: false, code, requirement: requirementOf(rule, rules.providers) }
-      : { ok: false, code };
+    return rule === undefined
+      ? { ok: false, code }
+      : { ok: false, code, requirement: requirementOf(rule, rules.providers) };
+  }
+
+  /** The seat of someone the rule refuses goes, as `leave` takes it. A failure costs only this. */
+  async function takeSeat(room: RoomRef, who: string) {
+    try {
+      const identity = await identityOf(who);
+      await execute(room, who, { type: "leave" }, (state) =>
+        roomRefusal(state, who, identity, rules.providers) === null ? "not_participant" : null,
+      );
+    } catch (error) {
+      log.warn({ room: room.id, err: errorCodeOf(error) }, "a refused seat was not taken");
+    }
   }
 
   /**
    * What `command` needs from the room's rule (#50), read now and judged in the run's step. A
    * person the rule refuses never becomes PO: the PO passes every rule, so the role would be a
    * way around it. A rule is set by someone signed in, for a provider this install has. A seat
-   * of someone it refuses is not touched.
+   * of someone it refuses is not touched here.
    */
-  async function guardOf(user: SocketUser, command: Command): Promise<Guard | undefined> {
+  async function guardOf(
+    socket: RealtimeSocket,
+    user: SocketUser,
+    command: Command,
+  ): Promise<Guard | undefined> {
+    const startedAt = socket.data.sessionStartedAt;
     switch (command.type) {
       case "join": {
         const identity = await identityOf(user.id);
-        return (state) => roomRefusal(state, user.id, identity, rules.providers);
+        return (state) => ruleRefusal(state, user.id, identity, startedAt);
       }
       case "claimOwner":
-        return ownerGuard(user.id);
+        return ownerGuard(user.id, startedAt);
       case "transferOwner":
         return ownerGuard(command.to);
       case "updateSettings": {
@@ -1628,10 +1763,10 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     }
   }
 
-  async function ownerGuard(who: string): Promise<Guard> {
+  async function ownerGuard(who: string, startedAt?: number): Promise<Guard> {
     const identity = await identityOf(who);
     return (state) =>
-      roomRefusal(state, who, identity, rules.providers) === null ? null : "owner_not_allowed";
+      ruleRefusal(state, who, identity, startedAt) === null ? null : "owner_not_allowed";
   }
 
   /**

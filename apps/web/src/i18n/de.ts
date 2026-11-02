@@ -923,6 +923,8 @@ export const de: Catalog = {
     sign_in_required:
       "Dieser Raum ist bestimmten Konten vorbehalten. Melden Sie sich an, um fortzufahren.",
     account_not_allowed: "Mit diesem Konto können Sie diesem Raum nicht beitreten.",
+    session_too_old:
+      "Ihre Anmeldung ist für diesen Raum zu alt. Melden Sie sich ab und dann wieder an.",
     restriction_unavailable:
       "Dieser Server bietet diese Anmeldung nicht mehr an, darum kann niemand diese Regel erfüllen.",
     deck_empty: "Ein Kartensatz braucht mindestens eine Karte.",

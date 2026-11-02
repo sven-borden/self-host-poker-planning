@@ -51,6 +51,14 @@ export const ROOM_KEEPER = sql`coalesce(live ->> 'keeperId', owner_user_id)`;
  * list, a guest's move and, one day, an account's deletion. A query must spell the two exactly,
  * or it scans. A keeper who is the PO is found by `room_owner_user_id_idx`.
  */
+/**
+ * A room's rule (#50) where its state is not loaded: SQL null only for a room without one. A JSON
+ * null, which `live` must never hold but which reads as "no rule" in JavaScript, comes back as an
+ * object no rule looks like, so it refuses everyone but the PO (`cleanRestriction`).
+ */
+export const ROOM_RULE = sql`(case when live -> 'settings' ? 'restriction'
+  then coalesce(nullif(live #> '{settings,restriction}', 'null'::jsonb), '{}'::jsonb) end)`;
+
 export const KEEPER_APART = sql`(live ->> 'keeperId')`;
 export const IS_KEEPER_APART = sql`(live ->> 'keeperId') <> owner_user_id`;
 

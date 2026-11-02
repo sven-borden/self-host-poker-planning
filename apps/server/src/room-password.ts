@@ -15,7 +15,7 @@
 import type { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "./app.ts";
-import { type Auth, sessionUser } from "./auth.ts";
+import { type Auth, sessionOf, sessionUser } from "./auth.ts";
 import type { Config } from "./config.ts";
 import type { AccessStore, RoomStore } from "./db/rooms.ts";
 import { foreignOrigin, isJsonBody, rateLimited, requestIp } from "./http.ts";
@@ -147,8 +147,9 @@ export function registerPasswordApi(
     const ip = ipOf(c);
     const checks = await limiter.consume(`password|ip|${ip}`, PASSWORD_LIMITS.address);
     if (!checks.allowed) return rateLimited(c, checks.retryAfter);
-    const me = await sessionUser(auth, c.req.raw.headers);
-    if (!me) return c.json({ code: "unauthenticated" }, 401);
+    const session = await sessionOf(auth, c.req.raw.headers);
+    if (!session) return c.json({ code: "unauthenticated" }, 401);
+    const me = { id: session.user.id, startedAt: session.startedAt };
     const body = passwordBodySchema.safeParse(await c.req.json().catch(() => undefined));
     if (!body.success) return c.json({ code: "bad_payload" }, 400);
     const code = c.req.param("code");
@@ -156,7 +157,7 @@ export function registerPasswordApi(
       ? await rooms.loadPassword(code, me.id, PASSWORD_LIMITS.room.window)
       : null;
     if (!stored) return c.json({ code: "room_not_found" }, 404);
-    const refused = await refusalOf(rules, stored, me.id);
+    const refused = await refusalOf(rules, stored, me);
     if (refused !== null) return c.json({ code: refused }, 403);
     // No password (removed meanwhile), or the caller needs none (the PO, a participant, a
     // grant holder): nothing to check, and no hash to run.
