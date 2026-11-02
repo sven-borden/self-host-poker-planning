@@ -98,6 +98,10 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
   Microsoft tenants, or both. One invariant in `broadcast` keeps anyone refused off the feed. A
   keeper the rule refuses has no row and no delete. Sign-ins over 30 days cannot pass. Live at
   ff158df.
+- Export and delete my account from #51 (ADR-029), dark until sign-in has keys, at `/account`.
+  The deletion is repeatable and finishes from a sign-in, an `enter` or the sweep. Rooms pass
+  on only to someone who may hold the role, else they stay with no keeper and follow
+  `ROOM_TTL_DAYS`. Live at 439b4a3.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -108,8 +112,8 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- #51 (PR #113): review findings being fixed in `../pp-wt-51`, the rule's wiring last.
-- #54: an implementer in `../pp-wt-54`. Its live check needs Sven's site and keys.
+- #54 (PR #114): review findings being fixed in `../pp-wt-54`. Its live check needs Sven's
+  site and keys.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
 - **Agents again, issue after issue, until the end of 2026-11-02** (Sven, 2026-11-01): the
   main session orchestrates and does not stop between issues (see `CLAUDE.md`).
@@ -184,6 +188,15 @@ issues are merged.
   me what came out: the parser's fixtures are reconstructed. Then the issue can close.
 - **#47: sign-in is ready for your keys.** #48 is live, so it is safe now. Follow the list in
   PR #107, do both proxy steps first (above), run the live check, then close #47.
+- **After #50 and #51**, with keys set:
+  - Decide how long Coolify's backups live: a restore brings deleted accounts back, and the
+    server keeps no list of who was deleted (README).
+  - Judge three choices made for you, each the safe way round and easy to loosen: a keeper a
+    room's rule refuses has no delete, so a stranger who claims a room and shuts its owner out
+    keeps it; a room can end with no keeper when nobody seated passes its rule; a seat refused
+    at `enter` is gone, so a network blip ends it.
+  - Read the wording of "What stays" on `/account` in all three languages. Nobody has judged
+    the last line under the room select by eye.
 - **After #46**: install the app on a phone and check the icon, the name "Poker" and the bar
   colour, and on Android feel the reveal's beats. No real phone has run it. #46 closed with
   the icon judged by eye and Lighthouse's check replaced by Chromium's.
