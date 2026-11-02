@@ -567,6 +567,28 @@ export const de: Catalog = {
     cookiesBlocked:
       "Diese Website braucht Cookies, um Sie in einem Raum wiederzuerkennen. Erlauben Sie Cookies für diese Website und laden Sie die Seite dann neu.",
   },
+  signIn: {
+    google: "Mit Google anmelden",
+    microsoft: "Mit Microsoft anmelden",
+    hint: "Optional: Ihr Name begleitet Sie auf Ihre anderen Geräte.",
+    signedInAs: "Angemeldet als",
+    signedInWith: "Angemeldet mit {{provider}}",
+    signOut: "Abmelden",
+    signingOut: "Wird abgemeldet…",
+    errors: {
+      cancelled: "Anmeldung abgebrochen. Sie können ohne Konto weitermachen.",
+      accountExists:
+        "Zu dieser E-Mail-Adresse gibt es schon ein Konto, das sich anders anmeldet. Melden Sie sich auf dem anderen Weg an.",
+      noEmail:
+        "Ihr Konto hat keine E-Mail-Adresse übermittelt, deshalb konnte die Anmeldung nicht abgeschlossen werden.",
+      tenantNotAllowed:
+        "Diese Seite akzeptiert dieses Microsoft-Konto nicht. Versuchen Sie es mit einem anderen oder machen Sie ohne Konto weiter.",
+      rateLimited:
+        "Zu viele Anmeldeversuche. Warten Sie eine Minute und versuchen Sie es dann erneut.",
+      failed:
+        "Die Anmeldung wurde nicht abgeschlossen. Versuchen Sie es erneut oder machen Sie ohne Konto weiter.",
+    },
+  },
   password: {
     label: "Passwort",
     show: "Passwort anzeigen",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConfigError, loadConfig } from "./config.ts";
+import { ConfigError, loadConfig, socialProviderIds } from "./config.ts";
 import { SECRET, VALID_ENV } from "./test-support.ts";
 
 function configError(env: Record<string, string | undefined>): ConfigError {
@@ -31,6 +31,7 @@ describe("loadConfig", () => {
       redisUrl: undefined,
       sentryDsn: undefined,
       umami: undefined,
+      socialProviders: { google: undefined, microsoft: undefined },
       betterAuthSecret: VALID_ENV.BETTER_AUTH_SECRET,
     });
     expect(Object.isFrozen(config)).toBe(true);
@@ -76,6 +77,7 @@ describe("loadConfig", () => {
         scriptUrl: "https://stats.example.com/script.js",
         websiteId: "6639e935-21ce-47c9-89d2-da5d28b7dc15",
       },
+      socialProviders: { google: undefined, microsoft: undefined },
       betterAuthSecret: VALID_ENV.BETTER_AUTH_SECRET,
     });
   });
@@ -132,6 +134,77 @@ describe("loadConfig", () => {
     expect(badId.variables).toEqual(["UMAMI_WEBSITE_ID"]);
     expect(badId.message).toContain("UMAMI_WEBSITE_ID must be the website's id in Umami, a UUID");
     expect(badId.message).not.toContain(SECRET);
+  });
+
+  it("has a provider when both its keys are set, in Microsoft's case with a tenant (#47)", () => {
+    expect(loadConfig(VALID_ENV).socialProviders).toEqual({
+      google: undefined,
+      microsoft: undefined,
+    });
+    expect(socialProviderIds(loadConfig(VALID_ENV))).toEqual([]);
+    const config = loadConfig({
+      ...VALID_ENV,
+      GOOGLE_CLIENT_ID: "123-abc.apps.googleusercontent.com",
+      GOOGLE_CLIENT_SECRET: "GOCSPX-abc_def",
+      MICROSOFT_CLIENT_ID: "a1b2c3d4-0000-1111-2222-333344445555",
+      MICROSOFT_CLIENT_SECRET: "abc~def.ghi_jkl",
+    });
+    expect(config.socialProviders).toEqual({
+      google: {
+        clientId: "123-abc.apps.googleusercontent.com",
+        clientSecret: "GOCSPX-abc_def",
+      },
+      microsoft: {
+        clientId: "a1b2c3d4-0000-1111-2222-333344445555",
+        clientSecret: "abc~def.ghi_jkl",
+        tenantId: "common",
+      },
+    });
+    expect(socialProviderIds(config)).toEqual(["google", "microsoft"]);
+  });
+
+  it("names the missing half of a provider's keys, never the value (#47)", () => {
+    const halves = [
+      ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+      ["GOOGLE_CLIENT_SECRET", "GOOGLE_CLIENT_ID"],
+      ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"],
+      ["MICROSOFT_CLIENT_SECRET", "MICROSOFT_CLIENT_ID"],
+    ] as const;
+    for (const [set, missing] of halves) {
+      const error = configError({ ...VALID_ENV, [set]: SECRET });
+      expect(error.variables).toEqual([missing]);
+      expect(error.message).toContain(`${missing} is required when ${set} is set`);
+      expect(error.message).not.toContain(SECRET);
+    }
+  });
+
+  it("refuses a key with a space or a line break in it, without showing it (#47)", () => {
+    const error = configError({
+      ...VALID_ENV,
+      GOOGLE_CLIENT_ID: "id",
+      GOOGLE_CLIENT_SECRET: `${SECRET}\n`,
+    });
+    expect(error.variables).toEqual(["GOOGLE_CLIENT_SECRET"]);
+    expect(error.message).toContain("GOOGLE_CLIENT_SECRET must be the OAuth client secret");
+    expect(error.message).not.toContain(SECRET);
+  });
+
+  it("takes a tenant mode or a tenant's id, nothing that could change the address (#47)", () => {
+    const keys = { ...VALID_ENV, MICROSOFT_CLIENT_ID: "id", MICROSOFT_CLIENT_SECRET: "secret" };
+    const tenant = (MICROSOFT_TENANT_ID: string) =>
+      loadConfig({ ...keys, MICROSOFT_TENANT_ID }).socialProviders.microsoft?.tenantId;
+    expect(loadConfig(keys).socialProviders.microsoft?.tenantId).toBe("common");
+    for (const value of ["common", "organizations", "consumers"]) {
+      expect(tenant(value)).toBe(value);
+    }
+    expect(tenant("11111111-2222-3333-4444-555555555555")).toBe(
+      "11111111-2222-3333-4444-555555555555",
+    );
+    for (const value of ["../evil", "evil.example/x", "Common", "contoso.onmicrosoft.com"]) {
+      const error = configError({ ...keys, MICROSOFT_TENANT_ID: value });
+      expect(error.variables).toEqual(["MICROSOFT_TENANT_ID"]);
+      expect(error.message).not.toContain(value);
+    }
   });
 
   it("needs UMAMI_URL and UMAMI_WEBSITE_ID together (#40)", () => {

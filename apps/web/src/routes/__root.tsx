@@ -1,3 +1,4 @@
+import type { SignInErrorCode } from "@pp/protocol";
 import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect } from "react";
 import { BrandMark } from "../components/shell/brand-mark.tsx";
@@ -10,7 +11,9 @@ import { usePageTitle } from "../components/shell/use-page-title.ts";
 import { buttonVariants } from "../components/ui/button.tsx";
 import { errorMessage } from "../i18n/errors.ts";
 import { useT } from "../i18n/hooks.ts";
+import type { MessageKey } from "../i18n/i18n.ts";
 import { COOKIES_BLOCKED, UNAUTHENTICATED } from "../identity/identity.ts";
+import { takeSignInError } from "../identity/sign-in.ts";
 import { RoomSoundButton } from "../sound/sound-button.tsx";
 import { useIdentityStore } from "../stores/identity-store.ts";
 
@@ -78,6 +81,7 @@ function RootLayout() {
         <Toaster />
       </Suspense>
       <IdentityToasts />
+      <SignInToast />
     </>
   );
 }
@@ -114,6 +118,34 @@ function IdentityToasts() {
       }
     });
   }, [status, error, t]);
+  return null;
+}
+
+/** The catalog key of each reason a sign-in came back without finishing (#47). */
+const SIGN_IN_FAILURES = {
+  cancelled: "signIn.errors.cancelled",
+  account_exists: "signIn.errors.accountExists",
+  no_email: "signIn.errors.noEmail",
+  tenant_not_allowed: "signIn.errors.tenantNotAllowed",
+  rate_limited: "signIn.errors.rateLimited",
+  failed: "signIn.errors.failed",
+} as const satisfies Record<SignInErrorCode, MessageKey>;
+
+/**
+ * A sign-in ends in a full-page redirect, so what went wrong arrives with the page: said once,
+ * in the reader's language. Going back at the provider is no error, and does not look like one.
+ */
+function SignInToast() {
+  const t = useT();
+  useEffect(() => {
+    const code = takeSignInError();
+    if (code === null) return;
+    const message = t(SIGN_IN_FAILURES[code]);
+    void import("sonner").then(({ toast }) => {
+      if (code === "cancelled") toast(message, { id: "sign-in" });
+      else toast.error(message, { id: "sign-in" });
+    });
+  }, [t]);
   return null;
 }
 

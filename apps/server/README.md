@@ -280,9 +280,18 @@ keeps (#35).
   an id on the domain's list, or back to null, under the same checks and limits as the
   name (`changeMine`), and it reads back with the session. It is an additional field with
   `input: false`, so a sign-in cannot set it.
-- Only `AUTH_ROUTES` (get-session, sign-in/anonymous, sign-out) reach Better Auth; add
-  an endpoint there only after checking what it returns (no tokens) and what it lets a
-  client change. Cookie names come from `cookieNaming` (`__Host-pp.*` on https).
+- Only `AUTH_ROUTES` (get-session, sign-in/anonymous, sign-out) reach Better Auth, and
+  `socialRoutes` with provider keys; add an endpoint there only after checking what it returns
+  (no tokens) and what it lets a client change. Cookie names come from `cookieNaming`
+  (`__Host-pp.*` on https); a new Better Auth cookie goes on `AUTH_COOKIES`.
+- Sign-in with Google and Microsoft (#47, ADR-023) lives in `social-sign-in.ts`. Never set a
+  provider's `authority`, `authorizationEndpoint`, `tokenEndpoint` or `redirectURI`: tests reach
+  the stand-in (`fake-oidc.ts`, not imported by `main.ts`) by replacing `fetch` in their own
+  process, and `social-sign-in.test.ts` holds that nothing else can. The `account` hooks in
+  `auth.ts` clear the provider's tokens. #48's `onLinkAccount` goes on `anonymous()` there.
+  Implicit linking stays off, and a Microsoft account stays `tid:oid` and unverified
+  (`microsoftIdentity`): no check may ever read a Microsoft address as proved. A route's raw path
+  must equal its decoded one, or it is a 404 before Better Auth.
 - The room password (#31) lives in `room-password.ts` (the three routes),
   `password.ts` (NFC and bounds, argon2id PHC hashing with `crypto.argon2`, the
   constant-time check against its own parameters only, the hash gate: 2 at once, 32 in
