@@ -32,8 +32,12 @@ server sends and never decides the outcome of a round.
 - "My rooms" (#49, ADR-027): `routes/rooms.tsx` is a lazy route; `rooms/my-rooms-page.tsx` holds
   the page and `rooms/my-rooms-api.ts` its calls, so nothing of it joins the landing page's or the
   room's JavaScript. Who sees what comes from the identity store (`isSignedIn`, which an account
-  with no address passes too) and `signInProviders()`: an install without keys gets
-  `NotFoundPage`. `SignInRow` holds the one link to it. A room's page takes its name from the
+  with no address passes too) and `signInProviders()`: an install without keys gets the
+  page's own `NoSuchPage`, as importing `NotFoundPage` into this lazy chunk splits the entry chunk
+  and costs every page 1.8 kB. A row's `owned` is the PO role and `keeper` the right to delete
+  (ADR-027): the two can part, and the buttons follow them. Dialogs give the focus back through
+  `onCloseAutoFocus`, since Radix drops it on `<body>` without a `DialogTrigger`; jsdom has no
+  focus trap, so `e2e/my-rooms.spec.ts` is the test of that. `SignInRow` holds the one link to it. A room's page takes its name from the
   snapshot once there is one, and the socket's `deleted` ends the connection with
   `room_not_found`, so `RoomNotFound` shows at once. Copy: `myRooms.*`. Tests:
   `rooms/my-rooms-page.test.tsx`, `e2e/my-rooms.spec.ts`.

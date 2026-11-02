@@ -86,7 +86,7 @@ export const room = pgTable(
     lastActiveAt: instant("last_active_at").notNull().defaultNow(),
   },
   // The retention purge (ROOM_TTL_DAYS) deletes by `last_active_at`, and keeps a room
-  // whose owner is signed in; "my rooms" (W5) reads by owner too.
+  // whose keeper is signed in; "my rooms" (W5) reads by owner too.
   (t) => [
     index("room_last_active_at_idx").on(t.lastActiveAt),
     index("room_owner_user_id_idx").on(t.ownerUserId),

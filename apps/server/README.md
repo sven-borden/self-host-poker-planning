@@ -304,14 +304,19 @@ keeps (#35).
   before Better Auth.
 - "My rooms" (#49, ADR-027): `my-rooms.ts` holds the routes under `/api/my-rooms`, for an account
   alone, and `db/my-rooms.ts` the SQL. **A new table keyed to a room needs `on delete cascade`:**
-  a delete is one statement, and a test lists every foreign key to `room`.
+  a delete is one statement, and a test lists every foreign key to `room`. **The right to delete a
+  room is `keeperId`, not the PO role:** `ROOM_KEEPER` in `schema.ts` reads it, a claim never moves
+  it, and whatever acts on "this person's room" as a property, not a role, reads it too, as the
+  purge does. **The list's filter stays inside its materialized CTE:** a `limit` beside it makes
+  the planner walk `room_last_active_at_idx`.
 - A guest who signs in (#48, ADR-025): `guest-link.ts` holds the order, `db/guest-links.ts` the
   SQL, `moveGuest` in `packages/domain` the rules for one room, and `moveGuest` and `dropGuest` in
   `room-sync.ts` the run. **A new place that stores a user id must move with them:** add it to
   `complete` (or to `moveGuest`, when it lives in `live`) and to ADR-025's list. A failure before
   the `guest_link` row must stay a plain error, not an `APIError`, which would send the cookie.
   Anything keyed by a person in `live` must stay visible to `ROOM_PEOPLE`, the expression behind
-  `room_people_idx`; any query must spell that expression exactly, or it scans. `StepResult.quiet`
+  `room_people_idx`, or to an index of its own (`keeperId` has `room_keeper_apart_idx`); any query
+  must spell that expression exactly, or it scans. `StepResult.quiet`
   commits without touching `last_active_at` or history: only for what nobody in a room did, and
   a step that ended a round is not quiet whatever it says. A log line of a move says a room's id
   and an error's code and class, never more, and turns to `error` once the link is a day old:

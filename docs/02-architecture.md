@@ -555,8 +555,9 @@ older than a day or a 24th of `ROOM_TTL_DAYS`, whichever is shorter (an hour at 
 `UPDATE … WHERE last_active_at < now() - that`, not awaited): a team that only opens its
 room keeps it, whichever instance it reached, at least 23/24 of the period after the
 visit, as its guests keep their sessions. Never deleted: a room with a socket on this
-instance, a room whose owner is a signed-in user (`is_anonymous` not true; none before
-W5), and a room a commit holds at that moment. Rooms go in batches of 500, oldest first,
+instance, a room whose keeper (ADR-027: `live.keeperId`, or the PO of a room stored
+before it; a claim does not change it) is a signed-in user (`is_anonymous` not true; none
+before W5), and a room a commit holds at that moment. Rooms go in batches of 500, oldest first,
 each in one statement that locks its rows `for update skip locked` (which re-checks the
 idle condition on a row's latest version once locked) and deletes them, so a commit or a
 visit that lands during the run keeps the room; `round_history` and `room_access` go by
@@ -770,9 +771,12 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   id in these addresses, so a code stays out of them. All four check the origin, answer
   `no-store`, and log the route and the room's id, never its code or name.
   - `GET /api/my-rooms?after=<cursor>` answers `{ rooms, retentionDays, next?, moving? }`. A
-    row is `{ id, code, name, owned, rounds, lastActiveAt }`, the last active first, 100 to a
-    page. The rows are the rooms the person owns, and the rooms where they hold a seat now
-    (`live.participants`), found through `room_owner_user_id_idx` and `room_people_idx`. A
+    row is `{ id, code, name, owned, keeper, seated, rounds, lastActiveAt }`, the last active
+    first, 100 to a page: `owned` is the PO role, `keeper` the right to delete (ADR-027), both
+    about the asker. The rows are the rooms the person is PO and keeper of, keeper of with
+    someone else in the role, or holds a seat in now (`live.participants`), found through
+    `room_owner_user_id_idx`, `room_keeper_apart_idx` and `room_people_idx`, inside a
+    materialized CTE, so a `limit` cannot pull the plan onto `room_last_active_at_idx`. A
     departed voter's kept card is in that index and is no seat: the row is checked again.
     `rounds` is `live.round.number`, rounds started, read from the row: no history is
     counted. A row says nothing about anyone else. It first runs a guest's pending move
@@ -784,14 +788,18 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
     queue and the compare-and-set, so everyone in the room gets a snapshot with the new
     `room.name`. A name passes `cleanRoomName` (`bad_room_name` 400), and only the PO on the
     fresh state may (`not_owner` 403).
-  - `DELETE /api/my-rooms/:id` is one `delete ... where id and owner_user_id = me`, judged on
-    the row's latest version: a hand-over that commits first refuses it (`not_owner` 403),
-    and a commit after it finds no room. `round_history` and `room_access` go by cascade in
-    that statement, and the queue is a column of the row. Then the room's sockets are told
-    (`deleted`) on every instance.
+  - `DELETE /api/my-rooms/:id` is one `delete ... where id and owner_user_id = me and keeper =
+    me`, judged on the row's latest version: a claim or hand-over that commits first refuses
+    it (`not_keeper` or `not_owner` 403), a second delete hears `room_not_found`, and a commit
+    after it finds no room. `round_history` and `room_access` go by cascade in that statement,
+    and the queue is a column of the row. Then the room's sockets are told (`deleted`) on
+    every instance.
   - `POST /api/my-rooms/:id/leave` runs the `leave` command as that person (`not_participant`
     403 without a seat). The domain does not refuse a PO, as on a socket; the page offers it
-    only to someone who does not own the room.
+    to anyone with a seat who may not delete the room.
+  - On all three, someone with no seat in the room and no right to it hears 404
+    `room_not_found`, as for an unknown id, and no command runs: `apply` would resolve a passed
+    deadline even for a command it refuses.
 - Password (optional, #31). The PO sets, changes or removes it over HTTP, never over
   the socket, so a password never enters the command pipeline, its idempotency cache or
   a log line: `PUT /api/rooms/:code/password { password }` and `DELETE
