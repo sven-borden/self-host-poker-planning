@@ -120,6 +120,8 @@ export interface FakeJira extends FakeJiraState, FakeJiraControl {
   expiresIn: number;
   /** A used refresh token stops working at once: no leeway. */
   strictRotation: boolean;
+  /** The nth page of a search (from 1) answers this, once. */
+  pageFailure?: { page: number; status: number };
   /** Called while the token address holds a refresh, so a test can make two overlap. */
   beforeRefresh: () => Promise<void>;
   /** Refresh tokens it would still accept. */
@@ -167,6 +169,7 @@ export async function startFakeJira(port = 0): Promise<FakeJira> {
     issues: [] as FakeIssue[],
     fail: [] as FakeFailure[],
     approximate: undefined as number | undefined,
+    pageFailure: undefined as FakeJira["pageFailure"],
     expiresIn: 3600,
     strictRotation: false,
     beforeRefresh: async () => {},
@@ -276,6 +279,12 @@ export async function startFakeJira(port = 0): Promise<FakeJira> {
     const found = matching(body.jql);
     const start = Number(body.nextPageToken ?? 0);
     const size = Math.min(body.maxResults ?? 50, 100);
+    if (fake.pageFailure && start / size + 1 === fake.pageFailure.page) {
+      const { status } = fake.pageFailure;
+      delete fake.pageFailure;
+      json(response, status, { errorMessages: ["Forced"] });
+      return;
+    }
     const page = found.slice(start, start + size);
     const end = start + page.length;
     json(response, 200, {

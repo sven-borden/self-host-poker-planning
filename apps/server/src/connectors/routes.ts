@@ -136,7 +136,10 @@ function entryOf(item: FoundItem, site: Site, system: BacklogConnector["system"]
   const entry = titled ?? cleanQueueItem(parts);
   if (entry === null) return null;
   const source = { system, site: site.id, id: item.id };
-  return { entry: { ...entry, source } as QueueEntry, shortened: long || titled === null };
+  return {
+    entry: { ...entry, source } as QueueEntry,
+    shortened: long || (title !== "" && titled === null),
+  };
 }
 
 export function registerConnectorApi(app: Hono<AppEnv>, deps: ConnectorApiDeps): void {

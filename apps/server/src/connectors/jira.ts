@@ -151,14 +151,19 @@ function fetchFailure(error: unknown): Failure {
   };
 }
 
-async function send(url: string, init: RequestInit): Promise<Response | Failure> {
+/**
+ * One call, with its timeout. `Outcome`, not `instanceof Response`: the HTTP server's adapter
+ * replaces the global `Response`, and `fetch` still answers with the original.
+ */
+async function send(url: string, init: RequestInit): Promise<Outcome<Response>> {
   try {
     // A redirect would be a surprise worth stopping at: a token goes nowhere it was not sent.
-    return await fetch(url, {
+    const response = await fetch(url, {
       ...init,
       redirect: "error",
       signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
     });
+    return success(response);
   } catch (error) {
     return fetchFailure(error);
   }
@@ -168,13 +173,14 @@ const UNREADABLE: Failure = { ok: false, code: "connector_unavailable" };
 
 /** A JSON answer through its schema. Anything else is a tracker that is not itself. */
 async function read<T>(
-  answer: Response | Failure,
+  answer: Outcome<Response>,
   schema: z.ZodType<T>,
   bad: UpstreamCode = "connector_unavailable",
 ): Promise<Outcome<T>> {
-  if (!(answer instanceof Response)) return answer;
-  if (!answer.ok) return failureOf(answer, bad);
-  const parsed = schema.safeParse(await answer.json().catch(() => undefined));
+  if (!answer.ok) return answer;
+  const response = answer.value;
+  if (!response.ok) return failureOf(response, bad);
+  const parsed = schema.safeParse(await response.json().catch(() => undefined));
   return parsed.success ? success(parsed.data) : UNREADABLE;
 }
 
@@ -216,17 +222,18 @@ function itemsOf(
   }));
 }
 
-async function grantFrom(answer: Response | Failure, now: number): Promise<Outcome<Grant>> {
-  if (!(answer instanceof Response)) return answer;
-  if (!answer.ok) {
+async function grantFrom(answer: Outcome<Response>, now: number): Promise<Outcome<Grant>> {
+  if (!answer.ok) return answer;
+  const response = answer.value;
+  if (!response.ok) {
     // Atlassian answers a dead refresh token with 403; a fresh code gone stale with 400 or 403.
-    const body = grantErrorSchema.safeParse(await answer.json().catch(() => undefined));
+    const body = grantErrorSchema.safeParse(await response.json().catch(() => undefined));
     if (body.success && body.data.error === "invalid_grant") {
       return { ok: false, code: "connector_reconnect" };
     }
     return UNREADABLE;
   }
-  const parsed = tokenSchema.safeParse(await answer.json().catch(() => undefined));
+  const parsed = tokenSchema.safeParse(await response.json().catch(() => undefined));
   if (!parsed.success) return UNREADABLE;
   return success({
     accessToken: new Secret(parsed.data.access_token),
@@ -382,8 +389,10 @@ export function createJiraConnector(
         ...postJson({ fields: { [field]: value } }, bearer(token)),
         method: "PUT",
       });
-      if (!(answer instanceof Response)) return answer;
-      return answer.ok ? success(undefined) : failureOf(answer, "connector_field_refused");
+      if (!answer.ok) return answer;
+      return answer.value.ok
+        ? success(undefined)
+        : failureOf(answer.value, "connector_field_refused");
     },
   };
 }

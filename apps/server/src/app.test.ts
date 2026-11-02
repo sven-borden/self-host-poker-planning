@@ -348,6 +348,22 @@ describe("the built web app", () => {
     expect(await one.text()).toContain('content="microsoft"');
   });
 
+  it("names the connectors in index.html, and says nothing while they are dark (#54)", async () => {
+    const keys = {
+      GOOGLE_CLIENT_ID: "google-id",
+      GOOGLE_CLIENT_SECRET: "google-secret",
+      JIRA_CLIENT_ID: "jira-id",
+      JIRA_CLIENT_SECRET: "jira-secret-not-for-the-page",
+      POKER_VAULT_KEY: Buffer.alloc(32, 7).toString("base64"),
+    };
+    const html = await (await app({ staticDir: root }, keys).app.request("/")).text();
+    expect(html).toContain('<meta name="pp-connectors" content="jira">');
+    expect(html).not.toContain("jira-secret-not-for-the-page");
+    const { POKER_VAULT_KEY: _, ...noVault } = keys;
+    const dark = await (await app({ staticDir: root }, noVault).app.request("/")).text();
+    expect(dark).not.toContain("pp-connectors");
+  });
+
   it("answers HEAD on a fallback route", async () => {
     const response = await get("/r/AbCdEf1234", "HEAD");
     expect(response.status).toBe(200);
