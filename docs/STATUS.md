@@ -8,7 +8,8 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 - **https://poker.borden.ch is live** (#12, 2026-10-27). Every merge that changes the
   image deploys in about three minutes. After a merge, check that `/api/health`
-  reports the merge commit. Docs-only pushes do not deploy.
+  reports the merge commit, several times over: for about two minutes the old and the new
+  container answer in turn, so one good answer proves nothing. Docs-only pushes do not deploy.
 - **W0 to W2 are complete** (#1 to #32, to 2026-10-28; the build log has each). pnpm 12,
   Node 24, TypeScript 7, Biome, Vitest, Vite and tsdown; `pnpm gate`. CI on every pull request:
   `check`, `db-tests`, `web-e2e`, `docker`. Hono and Socket.IO on one port, Drizzle on `pg`
@@ -108,6 +109,10 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 - The Azure DevOps connector from #55 (ADR-031), merged and dark behind
   `AZURE_DEVOPS_CONNECTOR=on`: a personal access token, WIQL or saved queries, the estimate
   written back. A refusal never deletes a token. Never run with a valid token. Live at 3e6c7d1.
+- The Azure guide and template from #38 (ADR-032): App Service with Postgres 17 Flexible Server
+  in private access, Bicep in `infra/`, `docs/07-self-hosting-azure.md`. **Never run on Azure.**
+  The server takes the port off an `X-Forwarded-For` entry, and compose now passes the optional
+  variables the README promised. Live at 7ae63ef.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -118,8 +123,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- #38 and #41, one agent each, since Sven answered OQ-1 and OQ-2 on 2026-11-02. After them, a
-  comparison for #56 and the local reveal budget below.
+- #41, PR #117, reviewed and fixed, on its last CI run. The local reveal budget below is being
+  diagnosed.
+- #38 is merged and stays open until Sven's run on a fresh subscription.
 - #54 and #55 are merged and stay open until the live checks at Sven's site and organisation.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
 - **Agents again, issue after issue, until the end of 2026-11-02** (Sven, 2026-11-01). The
@@ -128,12 +134,13 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## Next
 
-- W3 (#33–#41): all merged but #38 and #41, both in flight.
-- W7 waits for his OQ-3 (#56). A comparison comes first, for him to decide from.
+- W3 (#33–#41): all merged but #41, in flight. #38 waits for its live run.
+- W7 waits for his OQ-3 (#56). The comparison is written and with him, in a private page: the
+  repo is public. His decision becomes ADR-033, not the ADR-016 the issues name.
 - The local reveal budget fails on clean `main` since 2026-11-02 (named reveal, 1 run of 4
   clean, worst 67 ms; #43 had 10 of 10). CI passes at the first try. Cause not looked for.
-- Image size: 239 MB of 250 MB after #40 (236 MB before; architecture section 12 still
-  quotes #11's 220 MB). A dependency of more than a few MB needs a look first.
+- Image size: 239 MB of 250 MB after #40 (236 MB before). A dependency of more than a few MB
+  needs a look first. The Dockerfile's header comments still quote 220 MB and 247 MB.
 - Chores to fold into a later issue: a lazy catalog for the panels' copy (settings and
   history, a few kB off both pages); the burst test's one `room_not_found` under load;
   a higher anonymous sign-in limit for the db tests through `SetupTuning` (about 41 of
@@ -224,7 +231,13 @@ issues are merged.
   Nobody has heard either; they were measured, not judged. The sounds are numbers in
   `sound-recipes.ts`, each mood's level one number in `music-moods.ts`. A real iPhone and
   Safari are untested too.
-- **#56**: licence and pricing model for branding (OQ-3).
+- **#38: Azure.** Follow `docs/07-self-hosting-azure.md` from the top on a fresh subscription; it
+  costs money from step 4 until `az group delete`. PR #116 lists 15 things to watch, most
+  doubtful first: Azure's validation at step 6, then the forged-header check at step 7, on which
+  every rate limit rests. Say what differed. Then #38 can close. Also add `!infra/**` to
+  Coolify's watch paths, or a push touching only `infra/` deploys.
+- **#56**: licence and pricing model for branding (OQ-3). Read the comparison and answer the six
+  questions at its end.
 
 ## Merge gate
 
