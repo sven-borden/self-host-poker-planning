@@ -157,10 +157,10 @@ With two proxies that takes both steps: the second must trust the first, and the
 
 ### Connector tokens
 
-The Jira and Azure DevOps connectors keep each person's token encrypted with AES-256-GCM, under a
-key that lives in the environment and never in the database. A guest holds no token. Without a
-key the server runs as usual and the connectors stay off, and turning this on needs no migration
-of yours:
+The Jira and Azure DevOps connectors, still to come (#54, #55), keep each person's token encrypted
+with AES-256-GCM, under a key that lives in the environment and never in the database. A guest
+holds no token. Without a key the server runs as usual and the connectors stay off. To turn it
+on, set a key and restart:
 
 ```bash
 openssl rand -base64 32   # POKER_VAULT_KEY in .env, or in Coolify's variables; runtime only
@@ -259,7 +259,8 @@ nothing about Redis is loaded or opened.
   and none of the provider's tokens, so nothing here can reach a person's Google or Microsoft
   account afterwards. The email is shown to its owner alone, on the landing page, and nowhere in
   a room, where a screen may be shared.
-- **Connectors**, only for an account that connects Jira or Azure DevOps: the token, encrypted
+- **Connectors**, once they exist (#54, #55), only for an account that connects Jira or Azure
+  DevOps: the token, encrypted
   with a key kept outside the database, and when it was connected. It goes when the person
   disconnects, and with the account. It is never logged.
 - **For how long**: a room idle for `ROOM_TTL_DAYS` days (default 90) is deleted with
