@@ -13,7 +13,7 @@
  *
  * For a tracker where a person pastes a token (Azure DevOps, #55, ADR-031), instead of the callback,
  * the boards and the room's `connect`:
- * - `POST …/connect { organization, token }` tests the token with one read, and seals it;
+ * - `POST …/connect { organization, token }` tests the token, lists its projects, and seals it;
  * - `GET …/types`, `GET …/fields?type=`, `PUT …/field { id, type }`, `DELETE …/field`: a person's
  *   choice over the field each item's type carries, read from the type;
  * - `GET …/queries`: the saved queries an import can name.
@@ -131,6 +131,8 @@ const organizationSchema = z.object({ organization: z.string() });
 const STATUS_OF: Record<Failure["code"], 401 | 403 | 404 | 409 | 422 | 429 | 502 | 504> = {
   connector_not_connected: 409,
   connector_reconnect: 409,
+  connector_token_refused: 409,
+  connector_no_projects: 403,
   connector_bad_token: 422,
   connector_no_access: 403,
   connector_scope: 403,
@@ -196,6 +198,8 @@ export function registerConnectorApi<Q>(app: Hono<AppEnv>, deps: ConnectorApiDep
   const { name } = connector;
   const oauth = "authorizeUrl" in connector ? connector : null;
   const pasted = "checkToken" in connector ? connector : null;
+  /** Azure DevOps treats an organisation's name without regard to case. Jira's ids stay exact. */
+  const plainHome = (home: string | undefined) => (pasted ? home?.toLowerCase() : home);
   const fieldBody: z.ZodType<{ id: string; type?: string }> = pasted ? typedFieldBody : idBody;
   const own = `/api/connectors/${name}`;
   const inRoom = `/api/rooms/:code/connectors/${name}`;
@@ -310,10 +314,10 @@ export function registerConnectorApi<Q>(app: Hono<AppEnv>, deps: ConnectorApiDep
       if (me instanceof Response) return me;
       const given = await body(c, connectBody);
       if (given instanceof Response) return given;
-      const { organization } = given;
-      if (!pasted.organization.test(organization)) {
+      if (!pasted.organization.test(given.organization)) {
         return c.json({ code: "connector_bad_organization" }, 422);
       }
+      const organization = given.organization.toLowerCase();
       if (!TOKEN_SHAPE.test(given.token)) return c.json({ code: "connector_bad_token" }, 422);
       const token = new Secret(given.token);
       const checked = await pasted.checkToken(organization, token);
@@ -323,9 +327,8 @@ export function registerConnectorApi<Q>(app: Hono<AppEnv>, deps: ConnectorApiDep
       if (saved.status !== "saved") return c.json({ code: "connector_not_connected" }, 409);
       // The same organisation keeps its project and field; one project needs no question.
       const before = await settingsOf(me.account);
-      const kept = before?.site.home === organization ? before : null;
-      const sites = kept === null ? await pasted.sites(token, organization) : null;
-      const only = sites?.ok && sites.value.length === 1 ? sites.value[0] : undefined;
+      const kept = plainHome(before?.site.home) === organization ? before : null;
+      const only = checked.value.length === 1 ? checked.value[0] : undefined;
       await tokens.writeSettings(
         me.account,
         name,
@@ -636,7 +639,9 @@ export function registerConnectorApi<Q>(app: Hono<AppEnv>, deps: ConnectorApiDep
     const settings = await siteOf(c, me);
     if (settings instanceof Response) return settings;
     // The item names its own site: a PO connected elsewhere writes nothing, to no other issue.
-    if (homeOf(settings.site) !== source.site) return c.json({ code: "connector_other_site" }, 409);
+    if (plainHome(homeOf(settings.site)) !== plainHome(source.site)) {
+      return c.json({ code: "connector_other_site" }, 409);
+    }
     const { field } = settings;
     if (pasted === null && field === undefined) return c.json({ code: "connector_no_field" }, 409);
     const written = await access.withToken(me.account, async (token) => {

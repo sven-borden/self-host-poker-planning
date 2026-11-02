@@ -42,6 +42,7 @@ services:
       # The Jira Cloud app, off while empty (README, "Jira Cloud").
       JIRA_CLIENT_ID: ${JIRA_CLIENT_ID:-}
       JIRA_CLIENT_SECRET: ${JIRA_CLIENT_SECRET:-}
+      AZURE_DEVOPS_CONNECTOR: ${AZURE_DEVOPS_CONNECTOR:-}
     # The server drains and exits within 10 s of SIGTERM.
     stop_grace_period: 15s
     # The server writes nothing to disk and needs no privilege.

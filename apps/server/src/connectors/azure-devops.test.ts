@@ -5,6 +5,8 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  CUSTOM_BAND,
+  CUSTOM_GRADE,
   CUSTOM_POINTS,
   EFFORT,
   FAKE_CODE_TOKEN,
@@ -37,6 +39,7 @@ import {
   azureUrl,
   createAzureConnector,
   FIELD_CACHE_MS,
+  MAX_CACHED_TYPES,
   MAX_PROJECT_PAGES,
   WIQL_CAP,
   WORK_ITEM_BATCH,
@@ -44,6 +47,8 @@ import {
 
 const ORG = FAKE_ORGANIZATION;
 const token = new Secret(FAKE_TOKEN);
+const NO_PROJECTS = { ok: false, code: "connector_no_projects" };
+const TOKEN_REFUSED = { ok: false, code: "connector_token_refused" };
 const site = (project: string) => `${ORG}/${project}`;
 const SITE = {
   id: site(PROJECT_AGILE),
@@ -110,7 +115,7 @@ describe("an address", () => {
 });
 
 describe("checking a token", () => {
-  it("takes a token that reads work items, with one read, as Basic with no user", async () => {
+  it("takes a token that reads work items and lists projects, as Basic with no user", async () => {
     const seen: string[] = [];
     const real = globalThis.fetch;
     globalThis.fetch = (input, init) => {
@@ -118,29 +123,90 @@ describe("checking a token", () => {
       return real(input, init);
     };
     try {
-      expect(await azure.checkToken(ORG, token)).toEqual({ ok: true, value: undefined });
+      const checked = await azure.checkToken(ORG, token);
+      expect(checked.ok && checked.value.map(({ name }) => name)).toContain("Fabrikam Fiber");
     } finally {
       globalThis.fetch = real;
     }
-    expect(fake.calls).toEqual([`GET /${ORG}/_apis/wit/fields/System.Title`]);
-    expect(seen).toEqual([`Basic ${Buffer.from(`:${FAKE_TOKEN}`).toString("base64")}`]);
+    expect(fake.calls).toEqual([
+      `GET /${ORG}/_apis/wit/fields/System.Title`,
+      `GET /${ORG}/_apis/projects`,
+    ]);
+    const basic = `Basic ${Buffer.from(`:${FAKE_TOKEN}`).toString("base64")}`;
+    expect(seen).toEqual([basic, basic]);
+  });
+
+  it.each([401, 403] as const)(
+    "refuses a token that cannot list projects, by a %s",
+    async (status) => {
+      fake.projectScope = "own";
+      fake.scopeRefusal = status;
+      expect(await azure.checkToken(ORG, token)).toEqual(NO_PROJECTS);
+    },
+  );
+
+  it("takes that token once it may list them", async () => {
+    fake.projectScope = "own";
+    const ticked = "ticked-project-too";
+    fake.tokens[ticked] = { organizations: [ORG], scopes: ["vso.work_write", "vso.project"] };
+    expect((await azure.checkToken(ORG, new Secret(ticked))).ok).toBe(true);
+  });
+
+  it.each([
+    ["a 203", { status: 203, text: "<html>", contentType: "text/html" }],
+    ["a redirect", { status: 302, location: "https://example.invalid/" }],
+    ["a 404", { status: 404 }],
+  ])("calls %s on the list of projects a token that cannot list them", async (_, answer) => {
+    fake.fail = [{ match: "/_apis/projects", ...answer }];
+    expect(await azure.checkToken(ORG, token)).toEqual(NO_PROJECTS);
+  });
+
+  it("leaves a passing failure of the list what it is", async () => {
+    fake.fail = [{ match: "/_apis/projects", status: 500 }];
+    expect(await azure.checkToken(ORG, token)).toEqual({
+      ok: false,
+      code: "connector_unavailable",
+    });
+    fake.fail = [{ match: "/_apis/projects", status: 429, retryAfter: "3" }];
+    expect(await azure.checkToken(ORG, token)).toEqual({
+      ok: false,
+      code: "connector_rate_limited",
+      retryAfter: 3,
+    });
   });
 
   it("takes a token that can only read: a read cannot show the right to write", async () => {
     expect((await azure.checkToken(ORG, new Secret(FAKE_READ_TOKEN))).ok).toBe(true);
   });
 
-  it.each(["203", "302", "401"] as const)("reads a %s for a bad token", async (signIn) => {
-    fake.signIn = signIn;
-    expect(await azure.checkToken(ORG, new Secret("no-such-token"))).toEqual({
-      ok: false,
-      code: "connector_bad_token",
-    });
-  });
+  it.each(["observed", "203", "302", "401"] as const)(
+    "reads %s for a bad token",
+    async (signIn) => {
+      fake.signIn = signIn;
+      expect(await azure.checkToken(ORG, new Secret("no-such-token"))).toEqual({
+        ok: false,
+        code: "connector_bad_token",
+      });
+    },
+  );
 
   it("follows no redirect, so a token never reaches where one points", async () => {
     fake.signIn = "302";
     await azure.checkToken(ORG, new Secret("no-such-token"));
+    expect(fake.calls).not.toContain("GET /_signin");
+  });
+
+  it.each([300, 301, 302, 303, 307, 308])("reads a %s as a sign-in", async (status) => {
+    const location = `${fake.origin}/_signin`;
+    fake.fail = [{ match: "/fields/", status, location, text: "" }];
+    expect(await azure.checkToken(ORG, token)).toEqual({ ok: false, code: "connector_bad_token" });
+    fake.fail = [
+      { match: "/fields/", status: 401, text: "", contentType: "text/plain" },
+      { match: "/_apis/projects", status, location, text: "" },
+    ];
+    expect(await azure.checkToken(ORG, token)).toEqual({ ok: false, code: "connector_bad_token" });
+    fake.fail = [{ match: "/_apis/projects", status, location, text: "" }];
+    expect(await azure.sites(token, ORG)).toEqual(TOKEN_REFUSED);
     expect(fake.calls).not.toContain("GET /_signin");
   });
 
@@ -149,6 +215,22 @@ describe("checking a token", () => {
       ok: false,
       code: "connector_no_access",
     });
+  });
+
+  it.each(["TF400813", "VS30063"])("reads %s on the first read for no access", async (number) => {
+    fake.fail = [
+      { match: "/fields/", status: 401, message: `${number}: Words.` },
+      { match: "/_apis/projects", status: 401, text: "", contentType: "text/plain" },
+    ];
+    expect(await azure.checkToken(ORG, token)).toEqual({ ok: false, code: "connector_no_access" });
+  });
+
+  it.each(["TF400813", "VS30063"])("reads %s on the second read for no access", async (number) => {
+    fake.fail = [
+      { match: "/fields/", status: 401, text: "", contentType: "text/plain" },
+      { match: "/_apis/projects", status: 401, message: `${number}: Words.` },
+    ];
+    expect(await azure.checkToken(ORG, token)).toEqual({ ok: false, code: "connector_no_access" });
   });
 
   it("calls a 403 on both reads no access", async () => {
@@ -223,7 +305,7 @@ describe("checking a token", () => {
   });
 });
 
-describe("every call with a dead token", () => {
+describe("every call with a refused token", () => {
   const calls: [string, () => Promise<{ ok: boolean; code?: string }>][] = [
     ["projects", () => azure.sites(new Secret("dead"), ORG)],
     ["types", () => azure.workItemTypes(new Secret("dead"), SITE.id)],
@@ -234,15 +316,20 @@ describe("every call with a dead token", () => {
     ["the item's field", () => azure.fieldFor(new Secret("dead"), ORG, "1", undefined)],
   ];
 
-  it.each(["203", "302", "401"] as const)("says connect again, on a %s", async (signIn) => {
-    fake.signIn = signIn;
-    for (const [name, call] of calls) {
-      expect(await call(), name).toEqual({ ok: false, code: "connector_reconnect" });
-    }
-    expect(await azure.refresh(new Secret(""))).toEqual({
-      ok: false,
-      code: "connector_reconnect",
-    });
+  it.each(["observed", "203", "302", "401"] as const)(
+    "ends no connection, on %s",
+    async (signIn) => {
+      fake.signIn = signIn;
+      fake.items = fakeWorkItems(1);
+      for (const [name, call] of calls) expect(await call(), name).toEqual(TOKEN_REFUSED);
+      expect(await azure.writeEstimate(new Secret("dead"), ORG, "1", STORY_POINTS, 5)).toEqual(
+        TOKEN_REFUSED,
+      );
+    },
+  );
+
+  it("has no refresh that could end one either", async () => {
+    expect(await azure.refresh(new Secret(""))).toEqual(TOKEN_REFUSED);
   });
 });
 
@@ -362,7 +449,18 @@ describe("the estimate's field", () => {
   });
 
   it("refuses a type or project name that would change the path", async () => {
-    for (const type of ["..", ".", "a/b", "a?b", "a#b", "a%2fb", "a\\b", "a\nb"]) {
+    for (const type of [
+      "..",
+      ".",
+      "a/b",
+      "a?b",
+      "a#b",
+      "a%2fb",
+      "a\\b",
+      "a\nb",
+      "\ud800",
+      "a\udc00",
+    ]) {
       expect(await azure.numberFields(token, SITE.id, type), type).toEqual({
         ok: false,
         code: "connector_not_found",
@@ -389,6 +487,12 @@ describe("the estimate's field", () => {
     expect(fake.calls.at(-1)).toContain("R%26D%20Story");
   });
 
+  it("takes a name beyond the first plane: only half a pair cannot be encoded", async () => {
+    fake.calls.length = 0;
+    await azure.numberFields(token, SITE.id, "Story 🃏");
+    expect(fake.calls.at(-1)).toContain(encodeURIComponent("🃏"));
+  });
+
   it("lists a type's own number fields, and no field of the system", async () => {
     const fields = await azure.numberFields(token, site(PROJECT_CUSTOM), "Story");
     expect(fields).toEqual({
@@ -396,6 +500,8 @@ describe("the estimate's field", () => {
       value: [
         { id: STORY_POINTS, name: "Story Points" },
         { id: CUSTOM_POINTS, name: "Points" },
+        { id: CUSTOM_GRADE, name: "Grade" },
+        { id: CUSTOM_BAND, name: "Band" },
       ],
     });
     const task = await azure.numberFields(token, SITE.id, "Task");
@@ -432,6 +538,31 @@ describe("the estimate's field", () => {
     now += FIELD_CACHE_MS;
     await azure.fieldFor(token, ORG, "1", undefined);
     expect(fake.calls.length).toBe(after + 7);
+  });
+
+  it("holds a bounded number of types, whatever a person asks for", async () => {
+    const seen: string[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = async (input) => {
+      seen.push(String(input));
+      return new Response('{"value":[]}', {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    try {
+      await azure.numberFields(token, SITE.id, "Type 0");
+      await azure.numberFields(token, SITE.id, "Type 0");
+      expect(seen).toHaveLength(2);
+      for (let n = 1; n <= MAX_CACHED_TYPES; n++) {
+        await azure.numberFields(token, SITE.id, `Type ${n}`);
+      }
+      seen.length = 0;
+      await azure.numberFields(token, SITE.id, "Type 0");
+      expect(seen).toHaveLength(2);
+    } finally {
+      globalThis.fetch = real;
+    }
   });
 
   it("does not cache a failure", async () => {
@@ -509,7 +640,7 @@ describe("saved queries", () => {
     });
   });
 
-  it("says a saved query is gone", async () => {
+  it("says a saved query is gone, by its 404 alone", async () => {
     expect(
       await azure.search(token, SITE, { saved: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }, undefined),
     ).toEqual({ ok: false, code: "connector_not_found" });
@@ -572,6 +703,7 @@ describe("a search", () => {
     expect(second.value.items.map(({ id }) => id)).toEqual(["201"]);
     expect(second.value.next).toBeUndefined();
     expect(fake.batches.map((ids) => ids.length)).toEqual([200, 1]);
+    expect(fake.batchFields).toEqual([["System.Title"], ["System.Title"]]);
     expect(fake.wiql).toHaveLength(1);
   });
 
@@ -694,20 +826,17 @@ describe("writing an estimate", () => {
     expect(fake.writes).toEqual([]);
   });
 
-  it("calls a token that is dead on the write and on the read what it is", async () => {
+  it("calls a token refused on the write and on the read what it is", async () => {
     fake.fail = [
       { match: "/workitems/1", status: 401, text: "", contentType: "text/plain" },
       { match: "/fields/", status: 203, text: "<html>", contentType: "text/html" },
     ];
-    expect(await azure.writeEstimate(token, ORG, "1", STORY_POINTS, 5)).toEqual({
-      ok: false,
-      code: "connector_reconnect",
-    });
+    expect(await azure.writeEstimate(token, ORG, "1", STORY_POINTS, 5)).toEqual(TOKEN_REFUSED);
   });
 
   it.each([
-    [203, "connector_reconnect"],
-    [302, "connector_reconnect"],
+    [203, "connector_token_refused"],
+    [302, "connector_token_refused"],
     [400, "connector_field_refused"],
     [403, "connector_forbidden"],
     [404, "connector_not_found"],
@@ -809,7 +938,7 @@ describe("what a call can fail with", () => {
     }
   });
 
-  it("gives every call a timeout and follows no redirect", async () => {
+  it("gives every call a timeout, follows no redirect, and asks for no special answer", async () => {
     const seen: RequestInit[] = [];
     const real = globalThis.fetch;
     globalThis.fetch = (input, init) => {
@@ -826,18 +955,26 @@ describe("what a call can fail with", () => {
     for (const init of seen) {
       expect(init.redirect).toBe("manual");
       expect(init.signal).toBeInstanceOf(AbortSignal);
+      expect(new Headers(init.headers).has("x-tfs-fedauthredirect")).toBe(false);
     }
   });
 
   it.each([
     [400, "connector_unavailable"],
-    [401, "connector_reconnect"],
+    [401, "connector_token_refused"],
     [403, "connector_forbidden"],
     [404, "connector_not_found"],
     [500, "connector_unavailable"],
   ] as const)("reads a %s on a list", async (status, code) => {
     fake.fail = [{ match: "/_apis/projects", status }];
     expect(await azure.sites(token, ORG)).toEqual({ ok: false, code });
+  });
+
+  it("reads an organisation it does not know as a 404 in plain text", async () => {
+    expect(await azure.sites(token, "no-such-org")).toEqual({
+      ok: false,
+      code: "connector_not_found",
+    });
   });
 
   it("carries no words of Microsoft's, whatever it said", async () => {

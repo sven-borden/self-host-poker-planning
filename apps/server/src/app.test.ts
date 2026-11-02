@@ -354,6 +354,7 @@ describe("the built web app", () => {
       GOOGLE_CLIENT_SECRET: "google-secret",
       JIRA_CLIENT_ID: "jira-id",
       JIRA_CLIENT_SECRET: "jira-secret-not-for-the-page",
+      AZURE_DEVOPS_CONNECTOR: "on",
       POKER_VAULT_KEY: Buffer.from(Array.from({ length: 32 }, (_, n) => n * 7 + 1)).toString(
         "base64",
       ),

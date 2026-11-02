@@ -18,6 +18,8 @@ import type { Secret } from "../vault.ts";
 export type UpstreamCode = Extract<
   ConnectorErrorCode,
   | "connector_reconnect"
+  | "connector_token_refused"
+  | "connector_no_projects"
   | "connector_bad_token"
   | "connector_no_access"
   | "connector_scope"
@@ -109,7 +111,10 @@ export interface BacklogConnector<Q = BacklogQuery> {
   readonly system: "jira" | "ado";
   /** What an import's body must be. */
   readonly query: z.ZodType<Q>;
-  /** `connector_reconnect` means the provider said the grant is gone. */
+  /**
+   * `connector_reconnect` means the provider said the grant is gone, and `access.ts` drops the row.
+   * Any other failure leaves the row alone.
+   */
   refresh(refreshToken: Secret): Promise<Outcome<Grant>>;
   /**
    * The person's own sites, as the tracker lists them for this token. `home`: the organisation a
@@ -149,8 +154,11 @@ export interface OAuthSignIn {
 export interface PastedToken {
   /** What an organisation's name must look like, checked before anything leaves. */
   readonly organization: RegExp;
-  /** One read that tells a good token from every way of being a bad one. */
-  checkToken(organization: string, token: Secret): Promise<Outcome<void>>;
+  /**
+   * Tells a good token from every way of being a bad one, and answers the projects it lists, since
+   * a token that cannot list them could not be used.
+   */
+  checkToken(organization: string, token: Secret): Promise<Outcome<readonly Site[]>>;
 }
 
 export interface SprintBoards {

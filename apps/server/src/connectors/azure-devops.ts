@@ -5,11 +5,15 @@
  * So Azure DevOps Server (on-premises) is out, and that is on purpose: its address would have to
  * come from a person.
  *
- * Two things are not as Jira's. Azure DevOps often answers a bad or expired token not with a 401
+ * Three things are not as Jira's. Azure DevOps often answers a bad or expired token not with a 401
  * but with a 203 and a sign-in page, or a redirect to one. `read` takes nothing but a 200 in JSON
  * for an answer, and `send` follows no redirect, so that neither can pass for success and a token
- * never goes where it was not sent. And the field of an estimate depends on the item's type, so
- * `fieldFor` reads it for each item, from what the type carries, and not from a process's name.
+ * never goes where it was not sent. Such a refusal says nothing of the token's life: a good token
+ * can be asked for a fresh sign-in at Azure DevOps and work again after it, and its value cannot be
+ * shown twice. So no refusal ends a connection: they all read as `connector_token_refused`, the row
+ * stays, and `access.ts` never reaches `dropToken`. And the field of an estimate depends on the
+ * item's type, so `fieldFor` reads it for each item, from what the type carries, and not from a
+ * process's name.
  *
  * Bodies go through a schema. A failure carries a code and no text of Microsoft's, which can quote
  * a query or an item: only the `TF` or `VS` number at the start of a message is ever looked at.
@@ -52,7 +56,7 @@ export const MAX_SAVED_QUERIES = 200;
 
 /** How long a type's fields are believed: a process changes rarely, and a write should not wait. */
 export const FIELD_CACHE_MS = 5 * 60_000;
-const MAX_CACHED_TYPES = 200;
+export const MAX_CACHED_TYPES = 200;
 
 /**
  * Where the estimate goes when a person chose nothing, as the process templates name it: Agile,
@@ -69,19 +73,25 @@ const ITEM_ID = /^[1-9][0-9]{0,9}$/;
 /** A field's reference name: `Custom.Points`. It goes into a JSON Patch path. */
 const FIELD_ID = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+$/;
 /** A project's or a type's name: it goes into a path, so it can be no step and no separator. */
-const NAME_IN_PATH = /^(?!\.+$)[^/\\?#%\p{Cc}]{1,128}$/u;
+const NAME_IN_PATH = /^(?!\.+$)[^/\\?#%\p{Cc}\p{Cs}]{1,128}$/u;
 const CONTINUATION = /^[\w=+/-]{1,512}$/;
 
 /** Numbers a person can set. An `integer` field refuses 2.5 itself, and that is a code too. */
-const NUMBER_TYPES: ReadonlySet<string> = new Set(["double", "integer"]);
+const NUMBER_TYPES: ReadonlySet<string> = new Set([
+  "double",
+  "integer",
+  "picklistDouble",
+  "picklistInteger",
+]);
 
 /** The one field that proves a token reads work items, and the smallest answer that does. */
 const PROBE_FIELD = "_apis/wit/fields/System.Title";
 
-/** What Azure DevOps says of an account that is not in the organisation. */
-const NOT_A_MEMBER: ReadonlySet<string> = new Set(["TF400813", "VS30063"]);
-/** A saved query that is gone: TF401243 for its folder, TF401232 for itself. */
-const QUERY_GONE: ReadonlySet<string> = new Set(["TF401232", "TF401243"]);
+/**
+ * What Azure DevOps says of a token it does not let into this organisation. Not a stranger alone:
+ * TF400813 also answers a made-up token, and VS30063 an expired token or a wrong scope.
+ */
+const NOT_LET_IN: ReadonlySet<string> = new Set(["TF400813", "VS30063"]);
 /** "The number of work items returned exceeds the size limit": a query past `WIQL_CAP`. */
 const QUERY_CAP = "VS402337";
 
@@ -164,13 +174,21 @@ const queriesSchema = z.object({ value: z.array(queryNodeSchema) });
 
 const NOT_FOUND: Failure = { ok: false, code: "connector_not_found" };
 const UNREADABLE: Failure = { ok: false, code: "connector_unavailable" };
-const RECONNECT: Failure = { ok: false, code: "connector_reconnect" };
+const TOKEN_REFUSED: Failure = { ok: false, code: "connector_token_refused" };
+const NO_PROJECTS: Failure = { ok: false, code: "connector_no_projects" };
 const BAD_TOKEN: Failure = { ok: false, code: "connector_bad_token" };
 const NO_ACCESS: Failure = { ok: false, code: "connector_no_access" };
 const NO_ORGANIZATION: Failure = { ok: false, code: "connector_no_organization" };
 const SCOPE: Failure = { ok: false, code: "connector_scope" };
 const NO_ESTIMATE_FIELD: Failure = { ok: false, code: "connector_no_estimate_field" };
 const AT_CAP: Failure = { ok: false, code: "connector_query_cap" };
+
+/** Why a list of projects is the token's fault and not a passing failure. */
+const CANNOT_LIST: ReadonlySet<Failure["code"]> = new Set([
+  "connector_token_refused",
+  "connector_forbidden",
+  "connector_not_found",
+]);
 
 /** Every address. A bad organisation is refused here, before a token goes anywhere. */
 export function azureUrl(
@@ -240,13 +258,13 @@ async function errorNumber(response: Response): Promise<string | undefined> {
   }
 }
 
-/** What an answer that is not an answer means. `bad`: what this call makes of a 400. */
+/**
+ * What an answer that is not an answer means. `bad`: what this call makes of a 400. A 401, a 203
+ * and a 3xx cannot be told apart, and none of them ends a connection.
+ */
 async function refused(response: Response, bad: UpstreamCode): Promise<Failure> {
-  if (toSignIn(response)) return RECONNECT;
-  const number = await errorNumber(response);
-  if (number === QUERY_CAP) return AT_CAP;
-  if (number !== undefined && QUERY_GONE.has(number)) return NOT_FOUND;
-  return failureOf(response, bad);
+  if (toSignIn(response) || response.status === 401) return TOKEN_REFUSED;
+  return (await errorNumber(response)) === QUERY_CAP ? AT_CAP : failureOf(response, bad);
 }
 
 /** A JSON answer through its schema. Anything else is not Azure DevOps answering. */
@@ -293,6 +311,33 @@ export type AzureConnector = BacklogConnector<AzureQuery> & PastedToken & ItemFi
 interface CachedFields {
   at: number;
   fields: readonly Field[];
+}
+
+/** The projects of the organisation this token reaches. A site is a project. */
+async function projectsOf(token: Secret, organization: string): Promise<Outcome<readonly Site[]>> {
+  const sites: Site[] = [];
+  let next: string | null = null;
+  for (let page = 0; page < MAX_PROJECT_PAGES; page++) {
+    const url = azureUrl(organization, "_apis/projects", {
+      $top: String(PROJECT_PAGE),
+      ...(next === null ? {} : { continuationToken: next }),
+    });
+    if (url === null) return NOT_FOUND;
+    const answer = await send(url, { headers: headers(token) });
+    const projects = await read(answer, projectsSchema);
+    if (!projects.ok) return projects;
+    for (const { id, name } of projects.value.value) {
+      sites.push({
+        id: `${organization}/${id}`,
+        name,
+        url: `${API_ROOT}/${organization}`,
+        home: organization,
+      });
+    }
+    next = answer.ok ? answer.value.headers.get("x-ms-continuationtoken") : null;
+    if (next === null || !CONTINUATION.test(next)) break;
+  }
+  return success(sites);
 }
 
 export function createAzureConnector(now: () => number = Date.now): AzureConnector {
@@ -366,14 +411,16 @@ export function createAzureConnector(now: () => number = Date.now): AzureConnect
     query: AZURE_QUERY,
     organization: ADO_ORGANIZATION,
 
-    // A PAT has nothing to renew it with: refused, it is gone, and the person connects again.
-    refresh: async () => RECONNECT,
+    // A PAT has nothing to renew it with. Never `connector_reconnect`, which would drop the row:
+    // no call here answers that either, so `access.ts` has no reason to come here at all.
+    refresh: async () => TOKEN_REFUSED,
 
     /**
-     * One read that needs what the app needs. A read cannot show the right to write: a token that
-     * reads and cannot write is found at its first write, and says so then (`writeEstimate`).
-     * A refused read is read once more for a place every token reaches, which tells a token
-     * without the scope from one this organisation does not know, without Microsoft's wording.
+     * One read that needs what the app needs, then the list of projects, without which a token
+     * could not be used. A read cannot show the right to write: a token that reads and cannot write
+     * is found at its first write, and says so then (`writeEstimate`). A refused read is read once
+     * more for a place every token reaches, which tells a token without the scope from one this
+     * organisation does not let in, without Microsoft's wording.
      */
     checkToken: async (organization, token) => {
       const probe = azureUrl(organization, PROBE_FIELD);
@@ -382,7 +429,10 @@ export function createAzureConnector(now: () => number = Date.now): AzureConnect
       const first = await send(probe, { headers: headers(token) });
       if (!first.ok) return first;
       const work = first.value;
-      if (answered(work)) return success(undefined);
+      if (answered(work)) {
+        const projects = await projectsOf(token, organization);
+        return !projects.ok && CANNOT_LIST.has(projects.code) ? NO_PROJECTS : projects;
+      }
       if (toSignIn(work)) return BAD_TOKEN;
       if (work.status === 404) return NO_ORGANIZATION;
       if (work.status !== 401 && work.status !== 403) return refused(work, "connector_unavailable");
@@ -395,36 +445,11 @@ export function createAzureConnector(now: () => number = Date.now): AzureConnect
       if (reach.status === 404) return NO_ORGANIZATION;
       if (reach.status === 403) return NO_ACCESS;
       if (reach.status !== 401) return refused(reach, "connector_unavailable");
-      return NOT_A_MEMBER.has(number ?? (await errorNumber(reach)) ?? "") ? NO_ACCESS : BAD_TOKEN;
+      return NOT_LET_IN.has(number ?? (await errorNumber(reach)) ?? "") ? NO_ACCESS : BAD_TOKEN;
     },
 
-    /** The projects of the organisation this token reaches. A site is a project. */
-    sites: async (token, organization) => {
-      if (organization === undefined) return NOT_FOUND;
-      const sites: Site[] = [];
-      let next: string | null = null;
-      for (let page = 0; page < MAX_PROJECT_PAGES; page++) {
-        const url = azureUrl(organization, "_apis/projects", {
-          $top: String(PROJECT_PAGE),
-          ...(next === null ? {} : { continuationToken: next }),
-        });
-        if (url === null) return NOT_FOUND;
-        const answer = await send(url, { headers: headers(token) });
-        const projects = await read(answer, projectsSchema);
-        if (!projects.ok) return projects;
-        for (const { id, name } of projects.value.value) {
-          sites.push({
-            id: `${organization}/${id}`,
-            name,
-            url: `${API_ROOT}/${organization}`,
-            home: organization,
-          });
-        }
-        next = answer.ok ? answer.value.headers.get("x-ms-continuationtoken") : null;
-        if (next === null || !CONTINUATION.test(next)) break;
-      }
-      return success(sites);
-    },
+    sites: async (token, organization) =>
+      organization === undefined ? NOT_FOUND : projectsOf(token, organization),
 
     numberFields: async (token, site, type) => {
       const parts = partsOf(site);

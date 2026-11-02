@@ -65,13 +65,23 @@ export const CONNECTOR_ERROR_CODES = [
   "connector_bad_organization",
   /** The tracker did not take this token, or it ran out. */
   "connector_bad_token",
-  /** The token is good, and this organisation does not know the person behind it. */
+  /**
+   * This organisation did not let the token in. A stranger's token, a made-up one, an expired one
+   * and a wrong scope can all read like this, so the words name them all.
+   */
   "connector_no_access",
   /** The token works and lacks the scope the app needs. */
   "connector_scope",
   "connector_no_organization",
   /** The grant is gone: the row went with it, and the person connects again. */
   "connector_reconnect",
+  /**
+   * A saved token was refused, or a sign-in was asked for: a 401, a 203 and a 3xx cannot be told
+   * apart. It may come back after a sign-in at the tracker, so the row stays.
+   */
+  "connector_token_refused",
+  /** The token reads work items and cannot list the organisation's projects: nothing was saved. */
+  "connector_no_projects",
   /**
    * The tracker refused a token it had just renewed, so connecting again would change nothing:
    * the app's scopes do not fit what the call asks. The connection stays.

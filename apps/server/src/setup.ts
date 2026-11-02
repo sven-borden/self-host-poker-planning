@@ -15,7 +15,7 @@ import {
   sessionChecker,
   sessionMiddleware,
 } from "./auth.ts";
-import { type Config, connectorGaps, connectorNames } from "./config.ts";
+import { azureDevOpsGaps, type Config, connectorGaps, connectorNames } from "./config.ts";
 import { createConnectorAccess } from "./connectors/access.ts";
 import { createAzureConnector } from "./connectors/azure-devops.ts";
 import { createJiraConnector } from "./connectors/jira.ts";
@@ -75,6 +75,10 @@ export async function setupServer(
   // A keyed connector that stays dark looks like a bug from outside: the start says why.
   const missing = connectorGaps(config);
   if (missing.length > 0) logger.warn({ missing }, "jira connector off: variables missing");
+  const azureMissing = azureDevOpsGaps(config);
+  if (azureMissing.length > 0) {
+    logger.warn({ missing: azureMissing }, "azure devops connector off: variables missing");
+  }
   const opened = await setupDatabase(config, logger, signal);
   const { database } = opened;
   // Building the auth instance queries nothing; if it throws, release the pool first.
@@ -189,7 +193,7 @@ export async function setupServer(
           config,
           limiter,
         });
-        // Dark without its keys, the vault and a way to sign in: nothing is registered.
+        // Dark without the operator's word, the vault and a way to sign in: nothing is registered.
         const connectors = connectorNames(config);
         const tokens = database.connectorTokens;
         const states = createOAuthStateStore(db);

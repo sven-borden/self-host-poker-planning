@@ -6,9 +6,11 @@
  * templates, WIQL with its cap, saved queries as a tree, `workitemsbatch` with its limit of 200,
  * and JSON Patch.
  *
- * Above all it answers a bad token as Azure DevOps often does: not with a 401, but with a 203 and a
- * sign-in page, or a redirect to one (`signIn`). What real errors look like past that is partly a
- * reading of the documentation, and ADR-031 says which parts.
+ * Above all it answers a bad token as Azure DevOps does: not always with a 401. By default as the
+ * real one was seen to, a 302 to a sign-in address on GET and POST and a 401 with TF400813 on PATCH;
+ * `signIn` forces the rest of what the documentation describes, a 203 and a sign-in page above all.
+ * An unknown organisation is a 404 in plain text, as seen too. What real errors look like past that
+ * is partly a reading of the documentation, and ADR-031 says which parts.
  *
  * Nothing in the app points at it: a test, in its own process, replaces `fetch` with
  * `routeAzureTo`. An e2e spec reaches it by HTTP: `POST /__control` takes a `FakeAzureControl`,
@@ -33,6 +35,8 @@ export const REMAINING = "Microsoft.VSTS.Scheduling.RemainingWork";
 export const CUSTOM_POINTS = "Custom.Points";
 const CUSTOM_COLOUR = "Custom.Colour";
 const CUSTOM_ROLLUP = "Custom.Rollup";
+export const CUSTOM_GRADE = "Custom.Grade";
+export const CUSTOM_BAND = "Custom.Band";
 
 export const QUERY_FOLDER = "11111111-aaaa-4aaa-8aaa-111111111111";
 export const QUERY_MINE = "22222222-aaaa-4aaa-8aaa-222222222222";
@@ -63,7 +67,10 @@ const TYPES: Record<FakeProcess, Record<string, string[]>> = {
   Scrum: { "Product Backlog Item": [EFFORT], Bug: [EFFORT], Task: [REMAINING] },
   Basic: { Issue: [EFFORT], Task: [REMAINING] },
   CMMI: { Requirement: [SIZE], Task: [REMAINING] },
-  Custom: { Story: [CUSTOM_POINTS, STORY_POINTS, CUSTOM_COLOUR, CUSTOM_ROLLUP], Note: [] },
+  Custom: {
+    Story: [CUSTOM_POINTS, STORY_POINTS, CUSTOM_COLOUR, CUSTOM_ROLLUP, CUSTOM_GRADE, CUSTOM_BAND],
+    Note: [],
+  },
 };
 
 /** The fields of a project, with their kind. `System.Id` is read-only; a title is no number. */
@@ -79,6 +86,8 @@ const FIELDS = [
   { referenceName: CUSTOM_POINTS, name: "Points", type: "integer", readOnly: false },
   { referenceName: CUSTOM_COLOUR, name: "Colour", type: "string", readOnly: false },
   { referenceName: CUSTOM_ROLLUP, name: "Rollup", type: "double", readOnly: true },
+  { referenceName: CUSTOM_GRADE, name: "Grade", type: "picklistInteger", readOnly: false },
+  { referenceName: CUSTOM_BAND, name: "Band", type: "picklistDouble", readOnly: false },
 ];
 
 export interface FakeWorkItem {
@@ -114,6 +123,13 @@ export interface FakeWrite {
 }
 
 /** An answer forced on the next calls whose path holds `match`. */
+export type FakeSignIn = "observed" | "203" | "302" | "401";
+/**
+ * What lists projects. `inherited`: any token that holds work items or code, as Microsoft's table
+ * reads. `own`: only `vso.project` ticked, which is what a live run may yet show.
+ */
+export type FakeProjectScope = "inherited" | "own";
+
 export interface FakeAzureFailure {
   match: string;
   /** Only this method; any by default. */
@@ -127,14 +143,17 @@ export interface FakeAzureFailure {
   contentType?: string;
   location?: string;
   hang?: boolean;
+  /** Lets this many matching calls through first. */
+  skip?: number;
 }
 
 export interface FakeAzureControl {
   fail?: FakeAzureFailure[];
   tokens?: Record<string, FakeToken>;
   items?: FakeWorkItem[];
-  signIn?: "203" | "302" | "401";
+  signIn?: FakeSignIn;
   scopeRefusal?: 401 | 403;
+  projectScope?: FakeProjectScope;
   projects?: FakeProject[];
   saved?: FakeAzure["saved"];
   reset?: boolean;
@@ -153,9 +172,10 @@ export interface FakeAzure extends FakeAzureState {
   projects: FakeProject[];
   fail: FakeAzureFailure[];
   /** How an unknown token is answered. */
-  signIn: "203" | "302" | "401";
+  signIn: FakeSignIn;
   /** How a token without a scope is answered. */
   scopeRefusal: 401 | 403;
+  projectScope: FakeProjectScope;
   /** Rows of a page of projects, whatever `$top` says. */
   projectPage: number;
   /** Every query string it received, by call. */
@@ -164,6 +184,8 @@ export interface FakeAzure extends FakeAzureState {
   tops: string[];
   /** Each batch's ids. */
   batches: number[][];
+  /** The `fields` each batch asked for. */
+  batchFields: (string[] | undefined)[];
   /** The WIQL of each run. */
   wiql: string[];
   /** The PAT of each run of a WIQL. */
@@ -231,12 +253,14 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
     items: [] as FakeWorkItem[],
     projects: [...PROJECTS],
     fail: [] as FakeAzureFailure[],
-    signIn: "203" as FakeAzure["signIn"],
+    signIn: "observed" as FakeAzure["signIn"],
     scopeRefusal: 401 as FakeAzure["scopeRefusal"],
+    projectScope: "inherited" as FakeAzure["projectScope"],
     projectPage: 100,
     queries: [] as string[],
     tops: [] as string[],
     batches: [] as number[][],
+    batchFields: [] as FakeAzure["batchFields"],
     wiql: [] as string[],
     wiqlTokens: [] as string[],
     saved: {} as FakeAzure["saved"],
@@ -247,12 +271,14 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
       fake.items = [];
       fake.projects = [...PROJECTS];
       fake.fail = [];
-      fake.signIn = "203";
+      fake.signIn = "observed";
       fake.scopeRefusal = 401;
+      fake.projectScope = "inherited";
       fake.projectPage = 100;
       fake.queries.length = 0;
       fake.tops.length = 0;
       fake.batches.length = 0;
+      fake.batchFields.length = 0;
       fake.wiql.length = 0;
       fake.wiqlTokens.length = 0;
       fake.saved = {};
@@ -261,11 +287,17 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
 
   let origin = "";
 
-  function signIn(response: ServerResponse) {
-    if (fake.signIn === "401") {
+  function signIn(response: ServerResponse, method: string | undefined) {
+    if (fake.signIn === "observed" && method === "PATCH") {
+      json(
+        response,
+        401,
+        refusal("TF400813: The user 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' is not authorized."),
+      );
+    } else if (fake.signIn === "401") {
       response.writeHead(401, { "content-type": "text/html" });
       response.end(SIGN_IN_PAGE);
-    } else if (fake.signIn === "302") {
+    } else if (fake.signIn === "302" || fake.signIn === "observed") {
       response.writeHead(302, { location: `${origin}/_signin?reply=to` });
       response.end();
     } else {
@@ -279,6 +311,12 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
     if (scopes.has("vso.work_write")) scopes.add("vso.work");
     return scopes.has(scope);
   };
+
+  /** Whether a token lists projects. `vso.work` and `vso.code` hold `vso.profile` by inheritance. */
+  const listsProjects = (token: FakeToken) =>
+    token.scopes.includes("vso.project") ||
+    (fake.projectScope === "inherited" &&
+      (has(token, "vso.work") || token.scopes.includes("vso.code")));
 
   function noScope(response: ServerResponse) {
     json(response, fake.scopeRefusal, refusal("The token lacks a scope: this says so in words."));
@@ -331,7 +369,7 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
     }
     const result = fake.saved[id];
     if (result === undefined) {
-      json(response, 404, refusal("TF401232: The query does not exist."));
+      json(response, 404, refusal(`TF401243: The query ${id} does not exist.`));
       return;
     }
     if (result.tree) {
@@ -498,7 +536,8 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
       return;
     }
     if (path === "/_apis/projects") {
-      projects(url, response);
+      if (listsProjects(token)) projects(url, response);
+      else noScope(response);
       return;
     }
     if (!has(token, "vso.work")) {
@@ -510,19 +549,35 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
       return;
     }
     if (method === "POST" && path === "/_apis/wit/workitemsbatch") {
-      const body = JSON.parse(await bodyOf(request)) as { ids: number[] };
+      const body = JSON.parse(await bodyOf(request)) as {
+        ids: number[];
+        fields?: string[];
+        errorPolicy?: string;
+      };
       fake.batches.push(body.ids);
+      fake.batchFields.push(body.fields);
       if (body.ids.length > 200) {
         json(response, 400, refusal("VS402336: A batch takes at most 200 ids."));
         return;
       }
+      const readable = (id: number) =>
+        fake.items.find((each) => each.id === id && each.hidden !== true);
+      const unread = body.ids.find((id) => readable(id) === undefined);
+      // Without `omit`, one item gone or hidden fails the whole batch.
+      if (unread !== undefined && body.errorPolicy !== "omit") {
+        json(response, 404, refusal(`TF401232: Work item ${unread} does not exist.`));
+        return;
+      }
       const value = body.ids.map((id) => {
-        const item = fake.items.find((each) => each.id === id);
-        if (item === undefined || item.hidden) return null;
+        const item = readable(id);
+        if (item === undefined) return null;
+        const all = { "System.Title": item.title, "System.CreatedBy": { displayName: "No one" } };
         return {
           id: item.id,
           rev: 1,
-          fields: { "System.Title": item.title, "System.CreatedBy": { displayName: "No one" } },
+          fields: Object.fromEntries(
+            Object.entries(all).filter(([field]) => body.fields?.includes(field) ?? true),
+          ),
           url: `${origin}/_apis/wit/workItems/${item.id}`,
         };
       });
@@ -557,12 +612,7 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
       return;
     }
     if (method === "GET" && rest === "/_apis/wit/queries") {
-      const depth = Number(url.searchParams.get("$depth") ?? 0);
-      if (depth > 2) {
-        json(response, 400, refusal("TF401243: The depth is limited to 2."));
-        return;
-      }
-      const value = queryTree(depth);
+      const value = queryTree(Number(url.searchParams.get("$depth") ?? 0));
       json(response, 200, { count: value.length, value });
       return;
     }
@@ -623,6 +673,10 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
       (each) => path.includes(each.match) && (each.method ?? method) === method,
     );
     if (failure === undefined) return false;
+    if ((failure.skip ?? 0) > 0) {
+      failure.skip = (failure.skip ?? 0) - 1;
+      return false;
+    }
     failure.times = (failure.times ?? 1) - 1;
     if (failure.times <= 0) fake.fail.splice(fake.fail.indexOf(failure), 1);
     if (failure.hang) return true;
@@ -646,6 +700,7 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
       if (control.items) fake.items = control.items;
       if (control.signIn) fake.signIn = control.signIn;
       if (control.scopeRefusal) fake.scopeRefusal = control.scopeRefusal;
+      if (control.projectScope) fake.projectScope = control.projectScope;
       if (control.projects) fake.projects = control.projects;
       if (control.saved) fake.saved = control.saved;
       json(response, 200, {});
@@ -662,19 +717,22 @@ export async function startFakeAzure(port = 0): Promise<FakeAzure> {
       json(response, 500, refusal("A redirect was followed: this should never be read."));
       return;
     }
-    const [, organization, rest] = /^\/([^/]+)(\/.*)$/.exec(path) ?? [];
-    if (organization === undefined || rest === undefined) {
+    const [, named, rest] = /^\/([^/]+)(\/.*)$/.exec(path) ?? [];
+    if (named === undefined || rest === undefined) {
       json(response, 404, refusal("VS800001: No such address."));
       return;
     }
+    // A name has no case at Azure DevOps.
+    const organization = named.toLowerCase();
     if (organization !== FAKE_ORGANIZATION && organization !== FAKE_OTHER_ORGANIZATION) {
-      json(response, 404, refusal(`VS800050: The organization ${organization} was not found.`));
+      response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      response.end("Not Found");
       return;
     }
     const pat = patOf(request);
     const token = fake.tokens[pat];
     if (token === undefined) {
-      signIn(response);
+      signIn(response, request.method);
       return;
     }
     if (!token.organizations.includes(organization)) {

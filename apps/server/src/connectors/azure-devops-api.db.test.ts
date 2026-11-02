@@ -54,6 +54,7 @@ const KEYS = {
   GOOGLE_CLIENT_ID: "test-google-client-id",
   GOOGLE_CLIENT_SECRET: "test-google-secret-do-not-log",
   POKER_VAULT_KEY: randomBytes(32).toString("base64"),
+  AZURE_DEVOPS_CONNECTOR: "on",
 } as const;
 const API = "/api/connectors/azure-devops";
 const UNLIMITED = { perSecond: 1e6, burst: 1e6 };
@@ -232,6 +233,27 @@ class Browser {
   }
 }
 
+/** A connection as an older row may hold it, with the organisation as it was typed. */
+const STORED_IN_CASE = {
+  organization: "Fabrikam",
+  site: {
+    id: `Fabrikam/${PROJECT_AGILE}`,
+    name: "Fabrikam Fiber",
+    url: "https://dev.azure.com/Fabrikam",
+    home: "Fabrikam",
+  },
+};
+
+/** Where an item's organisation is stored: as an older row may have it, in another case. */
+const setSourceSite = async (code: string, round: number, site: string) => {
+  const room = await loadedRoom(code);
+  await admin.query(
+    `update round_history set source = jsonb_set(source, '{site}', to_jsonb($1::text))
+     where room_id = $2 and number = $3`,
+    [site, room.id, round],
+  );
+};
+
 const tokenRows = async (id: string) =>
   (await admin.query("select 1 from connector_token where user_id = $1", [id])).rowCount;
 
@@ -305,14 +327,30 @@ async function estimated(card = "5") {
 }
 
 describe("dark", () => {
-  it("has no route and no tag without the vault, or without a way to sign in", async () => {
-    const envs: Record<string, string>[] = [
-      { GOOGLE_CLIENT_ID: "g", GOOGLE_CLIENT_SECRET: "s" },
-      { POKER_VAULT_KEY: KEYS.POKER_VAULT_KEY },
-      {},
+  it("has no route and no tag without the operator's word, the vault or a way to sign in", async () => {
+    const { AZURE_DEVOPS_CONNECTOR: on, ...keys } = KEYS;
+    const envs: [Record<string, string>, readonly string[]][] = [
+      [keys, []],
+      [{ ...keys, AZURE_DEVOPS_CONNECTOR: "true" }, []],
+      [{ ...keys, AZURE_DEVOPS_CONNECTOR: "ON" }, []],
+      [
+        { AZURE_DEVOPS_CONNECTOR: on, GOOGLE_CLIENT_ID: "g", GOOGLE_CLIENT_SECRET: "s" },
+        ["POKER_VAULT_KEY"],
+      ],
+      [
+        { AZURE_DEVOPS_CONNECTOR: on, POKER_VAULT_KEY: KEYS.POKER_VAULT_KEY },
+        ["GOOGLE_CLIENT_ID", "MICROSOFT_CLIENT_ID"],
+      ],
+      [{}, []],
     ];
-    for (const env of envs) {
+    for (const [env, missing] of envs) {
+      const logged = logs.lines.length;
       const dark = await setupServer(testConfig({ DATABASE_URL: t.url, ...env }), logs.logger);
+      // A word that does nothing says why at the start, by the variable's name and never a value.
+      const said = logs.lines
+        .slice(logged)
+        .filter(({ msg }) => String(msg).includes("azure devops connector off"));
+      expect(said.map((line) => line.missing)).toEqual(missing.length === 0 ? [] : [missing]);
       const other = createServer(testConfig({ DATABASE_URL: t.url, ...env }), {
         ...dark.deps,
         logger: logs.logger,
@@ -334,6 +372,8 @@ describe("dark", () => {
         expect(answer.status, `${method} ${path}`).toBe(404);
       }
       expect(azure.calls).toHaveLength(calls);
+      const page = await fetch(urlOf(other));
+      expect(await page.text()).not.toContain("azure-devops");
       await other.close();
       await dark.database.close();
     }
@@ -443,7 +483,81 @@ describe("connecting", () => {
     });
   });
 
+  it("takes an organisation in any case, and stores it in one", async () => {
+    const { browser } = await account();
+    expect((await browser.connect("FabriKam")).status).toBe(204);
+    const status = await browser.status();
+    expect(status.organization).toBe(ORG);
+    expect(status.site?.id).toBe(`${ORG}/${PROJECT_AGILE}`);
+  });
+
+  it("keeps a project and a field through connecting again in another case", async () => {
+    azure.projects = [{ id: PROJECT_CUSTOM, name: "Own Way", process: "Custom" }];
+    const { browser } = await connectedPo();
+    const chosen = await browser.send("PUT", `${API}/field`, {
+      id: CUSTOM_POINTS,
+      type: "Story",
+    });
+    expect(chosen.status).toBe(204);
+    expect((await browser.connect("FABRIKAM")).status).toBe(204);
+    const status = await browser.status();
+    expect(status.site?.id).toBe(`${ORG}/${PROJECT_CUSTOM}`);
+    expect(status.field?.id).toBe(CUSTOM_POINTS);
+  });
+
+  it("keeps a row stored in another case when the same organisation connects again", async () => {
+    const { browser, id } = await connectedPo();
+    await setup.database.connectorTokens.writeSettings(
+      id as AccountId,
+      "azure-devops",
+      STORED_IN_CASE,
+    );
+    expect((await browser.connect()).status).toBe(204);
+    expect((await browser.status()).site?.id).toBe(`Fabrikam/${PROJECT_AGILE}`);
+  });
+
   it.each([
+    ["by a 401", { match: "/_apis/projects", status: 401 }],
+    ["by a 403", { match: "/_apis/projects", status: 403 }],
+    ["by a sign-in page", { match: "/_apis/projects", status: 203, text: "<html>" }],
+  ])("refuses a token that cannot list projects %s, and saves nothing", async (_, failure) => {
+    const { browser, id } = await account();
+    azure.fail = [failure];
+    const answer = await browser.connect();
+    expect(answer.status).toBe(403);
+    expect(await codeOf(answer)).toBe("connector_no_projects");
+    expect(await tokenRows(id)).toBe(0);
+    expect((await browser.status()).connected).toBe(false);
+  });
+
+  it("leaves a saved token alone when the next one cannot list projects", async () => {
+    const { browser, code } = await connectedPo();
+    await browser.sit(code, "Pia");
+    azure.projectScope = "own";
+    const answer = await browser.connect(ORG, FAKE_SECOND_TOKEN);
+    expect(await codeOf(answer)).toBe("connector_no_projects");
+    azure.projectScope = "inherited";
+    await browser.import(code, { wiql: WIQL });
+    expect(azure.wiqlTokens).toEqual([FAKE_TOKEN]);
+  });
+
+  it("saves nothing while the list of projects does not answer", async () => {
+    const { browser, id } = await account();
+    azure.fail = [{ match: "/_apis/projects", status: 500 }];
+    const answer = await browser.connect();
+    expect(answer.status).toBe(502);
+    expect(await tokenRows(id)).toBe(0);
+  });
+
+  it.each([
+    [
+      "a bad token, as Azure DevOps was seen to",
+      "no-such-token",
+      ORG,
+      "observed",
+      "connector_bad_token",
+      422,
+    ],
     ["a bad token, by a sign-in page", "no-such-token", ORG, "203", "connector_bad_token", 422],
     ["a bad token, by a redirect", "no-such-token", ORG, "302", "connector_bad_token", 422],
     ["a bad token, by a 401", "no-such-token", ORG, "401", "connector_bad_token", 422],
@@ -549,22 +663,108 @@ describe("connecting", () => {
   });
 });
 
-describe("a token's end", () => {
-  it("takes a token Azure DevOps stopped accepting off the row, and says connect again", async () => {
-    for (const signIn of ["203", "302", "401"] as const) {
+describe("a refused token", () => {
+  const sealedRow = async (id: string) =>
+    (await admin.query("select sealed_token from connector_token where user_id = $1", [id]))
+      .rows[0] as unknown;
+  const html = { text: "<html>", contentType: "text/html" };
+  const plain = { text: "", contentType: "text/plain" };
+  const away = { location: "https://spsprod.example.invalid/_signin" };
+
+  it("stays, says so, and works on the next call, each way it can be refused", async () => {
+    for (const signIn of ["observed", "203", "302", "401"] as const) {
       const { browser, id } = await connectedPo();
       azure.signIn = signIn;
+      const scopes = azure.tokens[FAKE_TOKEN];
       delete azure.tokens[FAKE_TOKEN];
       const answer = await browser.go(`${API}/queries`);
       expect(answer.status).toBe(409);
-      expect(await codeOf(answer)).toBe("connector_reconnect");
-      expect(await tokenRows(id)).toBe(0);
-      expect((await browser.status()).connected).toBe(false);
-      azure.reset();
-      azure.projects = azure.projects.slice(0, 1);
+      expect(await codeOf(answer)).toBe("connector_token_refused");
+      expect(await tokenRows(id)).toBe(1);
+      expect((await browser.status()).connected).toBe(true);
+      if (scopes) azure.tokens[FAKE_TOKEN] = scopes;
+      expect((await browser.go(`${API}/queries`)).status).toBe(200);
     }
   });
 
+  it.each([
+    ["a 203 on the saved queries", [{ match: "/queries", status: 203, ...html }], "queries"],
+    ["a 302 on the saved queries", [{ match: "/queries", status: 302, ...away }], "queries"],
+    [
+      "a 302 on the item read inside a write-back",
+      [{ match: "/_apis/wit/workitems/1", method: "GET", status: 302, ...away }],
+      "write",
+    ],
+    [
+      "a 401 on page 2 of an import",
+      [{ match: "/workitemsbatch", status: 401, skip: 1, ...plain }],
+      "import",
+    ],
+    [
+      "a 401 on the PATCH and on the probe",
+      [
+        { match: "/_apis/wit/workitems/1", method: "PATCH", status: 401, ...plain },
+        { match: "/_apis/wit/fields/System.Title", status: 401, ...plain },
+      ],
+      "write",
+    ],
+  ] as const)("%s, once: the row stays, and the same token goes on", async (_, failures, call) => {
+    const po = await estimated();
+    const before = await sealedRow(po.id);
+    azure.items = fakeWorkItems(250);
+    const asked = {
+      queries: () => po.browser.go(`${API}/queries`),
+      import: () => po.browser.import(po.code, { wiql: WIQL }),
+      write: () => po.browser.writeBack(po.code, po.round),
+    }[call];
+    azure.fail = failures.map((failure) => ({ ...failure }));
+    const answer = await asked();
+    expect(answer.status).toBe(409);
+    expect(await codeOf(answer)).toBe("connector_token_refused");
+    expect(await tokenRows(po.id)).toBe(1);
+    expect(await sealedRow(po.id)).toEqual(before);
+    azure.fail = [];
+    expect((await asked()).status).toBe(200);
+    expect((await po.browser.status()).connected).toBe(true);
+  });
+
+  it("is replaced by a new paste, which keeps the project", async () => {
+    const { browser, id, code } = await connectedPo();
+    await browser.sit(code, "Pia");
+    delete azure.tokens[FAKE_TOKEN];
+    expect(await codeOf(await browser.go(`${API}/queries`))).toBe("connector_token_refused");
+    expect((await browser.connect(ORG, FAKE_SECOND_TOKEN)).status).toBe(204);
+    expect(await tokenRows(id)).toBe(1);
+    expect((await browser.status()).site?.id).toBe(`${ORG}/${PROJECT_AGILE}`);
+    await browser.import(code, { wiql: WIQL });
+    expect(azure.wiqlTokens).toEqual([FAKE_SECOND_TOKEN]);
+  });
+
+  it("is deleted by a disconnect", async () => {
+    const { browser, id } = await connectedPo();
+    delete azure.tokens[FAKE_TOKEN];
+    await browser.go(`${API}/queries`);
+    expect((await browser.send("DELETE", API)).status).toBe(204);
+    expect(await tokenRows(id)).toBe(0);
+  });
+
+  it("stays through a bad paste: a token that fails its check replaces nothing", async () => {
+    const { browser, id } = await connectedPo();
+    const before = await sealedRow(id);
+    expect(await codeOf(await browser.connect(ORG, "no-such-token"))).toBe("connector_bad_token");
+    expect(await sealedRow(id)).toEqual(before);
+  });
+
+  it("never reads as a fault of an app's scopes, however often it is refused", async () => {
+    const { browser } = await connectedPo();
+    delete azure.tokens[FAKE_TOKEN];
+    for (let n = 0; n < 3; n++) {
+      expect(await codeOf(await browser.go(`${API}/queries`))).toBe("connector_token_refused");
+    }
+  });
+});
+
+describe("a token's end", () => {
   it("keeps the row for what a token's end does not explain", async () => {
     const { browser, id } = await connectedPo();
     for (const [status, code] of [
@@ -614,12 +814,36 @@ describe("a token's end", () => {
     expect((await browser.go(API)).status).toBe(401);
   });
 
-  it("refuses a connection pressed once the deletion began", async () => {
+  it("refuses a connection whose check was under way when the deletion began", async () => {
     const { browser, id } = await account();
-    await createAccountDeletionStore(setup.database.db).begin(id, {});
-    const answer = await browser.connect();
-    expect(answer.status).toBeGreaterThanOrEqual(400);
-    expect(await tokenRows(id)).toBe(0);
+    let reached = () => {};
+    let release = () => {};
+    const inFlight = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const real = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      if (String(input).includes("dev.azure.com")) {
+        reached();
+        await held;
+      }
+      return real(input, init);
+    };
+    try {
+      const pressed = browser.connect();
+      await inFlight;
+      await createAccountDeletionStore(setup.database.db).begin(id, {});
+      release();
+      const answer = await pressed;
+      expect(answer.status).toBe(409);
+      expect(await codeOf(answer)).toBe("connector_not_connected");
+      expect(await tokenRows(id)).toBe(0);
+    } finally {
+      globalThis.fetch = real;
+    }
   });
 
   it("is named and nothing more in the export", async () => {
@@ -651,6 +875,15 @@ describe("the field", () => {
       ],
       guess: STORY_POINTS,
     });
+  });
+
+  it("answers half a surrogate pair as no such type, not as a failure of its own", async () => {
+    const { browser } = await connectedPo();
+    const logged = logs.lines.length;
+    const answer = await browser.send("PUT", `${API}/field`, { id: "A.B", type: "\ud800" });
+    expect(answer.status).toBe(404);
+    expect(await codeOf(answer)).toBe("connector_not_found");
+    expect(logs.lines.slice(logged).filter(({ level }) => Number(level) >= 50)).toEqual([]);
   });
 
   it("needs a type to list fields", async () => {
@@ -943,7 +1176,37 @@ describe("write-back", () => {
     expect((await browser.writeBack(code, round)).status).toBe(200);
   });
 
-  it("refuses a round with no final, one from no tracker, and one that is Jira's", async () => {
+  it("writes an item stored in another case of the organisation's name", async () => {
+    const { browser, code, round } = await estimated();
+    await setSourceSite(code, round, "FABRIKAM");
+    expect((await browser.writeBack(code, round)).status).toBe(200);
+    expect(azure.writes).toHaveLength(1);
+  });
+
+  it("writes for a connection stored in another case of the organisation's name", async () => {
+    const { browser, id, code, round } = await estimated();
+    await setup.database.connectorTokens.writeSettings(
+      id as AccountId,
+      "azure-devops",
+      STORED_IN_CASE,
+    );
+    expect((await browser.writeBack(code, round)).status).toBe(200);
+  });
+
+  it("refuses a round that is Jira's, and calls nothing", async () => {
+    const { browser, code, round } = await estimated();
+    const room = await loadedRoom(code);
+    await admin.query(
+      `update round_history set source = jsonb_set(source, '{system}', '"jira"')
+       where room_id = $1 and number = $2`,
+      [room.id, round],
+    );
+    const calls = azure.calls.length;
+    expect(await codeOf(await browser.writeBack(code, round))).toBe("connector_no_source");
+    expect(azure.calls).toHaveLength(calls);
+  });
+
+  it("refuses a round with no final, and one from no tracker", async () => {
     const { browser, code, seat } = await estimated();
     expect(await codeOf(await browser.writeBack(code, 99))).toBe("connector_no_final");
     const from = seat.received.length;
@@ -1010,15 +1273,14 @@ describe("write-back", () => {
     expect(await tokenRows(po.id)).toBe(1);
   });
 
-  it("a token that died during the round costs the round nothing, and asks to connect again", async () => {
+  it("a token refused during the round costs the round nothing, and stays", async () => {
     const { browser, id, code, round, seat } = await estimated();
     delete azure.tokens[FAKE_TOKEN];
     const answer = await browser.writeBack(code, round);
-    expect(await codeOf(answer)).toBe("connector_reconnect");
-    expect(await tokenRows(id)).toBe(0);
+    expect(await codeOf(answer)).toBe("connector_token_refused");
+    expect(await tokenRows(id)).toBe(1);
     await must(seat.cmd("startNext", { id: 2 }));
     azure.tokens[FAKE_TOKEN] = { organizations: [ORG], scopes: ["vso.work_write"] };
-    await browser.connect();
     expect((await browser.writeBack(code, round)).status).toBe(200);
   });
 
