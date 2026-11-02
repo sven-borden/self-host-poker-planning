@@ -59,6 +59,8 @@ const TABLES = [
 ];
 
 const logs = collectLogs("debug");
+// The sockets here seat one person in several rooms; the message limit is not what is tested.
+const UNLIMITED = { perSecond: 1e6, burst: 1e6 };
 let t: TestDatabase;
 let admin: ReturnType<typeof testClient>;
 let config: Config;
@@ -80,7 +82,16 @@ beforeAll(async () => {
   config = testConfig({ DATABASE_URL: t.url, TRUST_PROXY: "1", ...KEYS });
   setup = await setupServer(config, logs.logger);
   sync = setup.deps?.handlers as RoomSync;
-  server = createServer(config, { ...setup.deps, logger: logs.logger });
+  server = createServer(config, {
+    ...setup.deps,
+    logger: logs.logger,
+    realtimeLimits: {
+      messageLimit: UNLIMITED,
+      rosterLimit: UNLIMITED,
+      historyLimit: UNLIMITED,
+      queueLimit: UNLIMITED,
+    },
+  });
   await server.listen();
   const bound = server.httpServer.address();
   if (!bound || typeof bound === "string") throw new Error("not listening");
