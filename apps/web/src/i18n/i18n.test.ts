@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { ACK_ERROR_CODES, CONNECTOR_ERROR_CODES, PROTOCOL_ERROR_CODES } from "@pp/protocol";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ACCOUNT_COPY } from "../account/account-copy.ts";
@@ -191,7 +193,6 @@ describe("catalogs", () => {
       "decks.fib",
       "results.median",
       "deckField.rangeStart",
-      "final.short",
       "results.moreCards",
       // The timer (#27): units and a clock read the same in German.
       "timer.minutesSeconds",
@@ -215,6 +216,10 @@ describe("catalogs", () => {
       "connector.sprint",
       // Azure DevOps (#55): the same word in both.
       "connector.azure.organization",
+      // The copy review (#41): both are the German words, and "Timer" is what a team says.
+      "createRoom.optional",
+      "timer.button",
+      "timer.menu",
     ],
   };
 
@@ -255,6 +260,150 @@ describe("catalogs", () => {
       expect(closing, `de: ${key}: every „ closes with “`).toBe(opening);
       expect(text, `de: ${key}: “ before „`).not.toMatch(/^[^„]*“/);
     }
+  });
+});
+
+// The reader is vous and Sie, everywhere (OQ-2, ADR-012). Whole words only, and `\b` knows no
+// accents, so the edges are spelt out: "ta" must not match in "état", nor "dir" in "direkt". A
+// reader's verb has no pronoun to find, so the imperatives these catalogs would slip into are
+// listed too, at the start of a sentence and after "et", "und" and the like. Placeholders go
+// first: their names are code.
+//
+// What this holds, and no more: the lists below are words, not grammar. A new imperative that
+// is not listed gets through, so a review reads the screens too. Known false positives, where
+// the failure names the key and the key is right: German "bis sie ihre Verbindung verliert"
+// (they, its), "Versuche sind begrenzt." (a noun), French "Recharge en cours…" (a status, not
+// an order). Reword them or narrow the rule; do not allowlist.
+describe("tone", () => {
+  const wholeWord = (forms: string) =>
+    new RegExp(`(?<![\\p{L}\\p{N}])(?:${forms})(?![\\p{L}\\p{N}])`, "iu");
+  const atSentenceStart = (forms: string) =>
+    new RegExp(`(?:^|[.;:!?]\\s)(?:${forms})(?![\\p{L}\\p{N}])`, "u");
+  const prose = (catalog: unknown) =>
+    leaves(catalog).map(([key, value]) => [key, String(value).replace(/{{[^}]*}}/g, "")] as const);
+
+  const INFORMAL = {
+    fr: [
+      wholeWord("tu|te|ton|ta|tes|toi"),
+      // t’as, t’es, t’a retiré: elided "te" and "tu".
+      /(?<![\p{L}\p{N}])t’\p{L}/iu,
+      atSentenceStart(
+        [
+          "Choisis|Saisis|Clique|Réessaie|Vérifie|Recharge|Rejoins|Attends|Colle",
+          "Active|Ajoute|Autorise|Coche|Compare|Connecte|Continue|Crée|Déconnecte|Donne|Envoie",
+          "Essaie|Importe|Laisse|Lance|Modifie|Patiente|Prends|Quitte|Raccourcis|Reconnecte",
+          "Renvoie|Retire|Rouvre|Récupère|Réessaye|Révèle|Sélectionne|Supprime|Télécharge",
+          "Utilise|Écris|Garde|Partage",
+        ].join("|"),
+      ),
+      /(?:^|\s)(?:et|ou|puis) (?:réessaie|réessaye|recharge|vérifie|clique|colle|choisis|saisis|attends)(?![\p{L}\p{N}])/iu,
+    ],
+    de: [
+      wholeWord("du|dir|dich|dein\\p{L}*|euch|euer|eure\\p{L}*"),
+      /(?<![\p{L}\p{N}])ihr (?:könnt|seid|habt|müsst|dürft|wollt|sollt|werdet)(?![\p{L}\p{N}])/iu,
+      /(?<![\p{L}\p{N}])(?:könnt|seid|habt|müsst|dürft|wollt|sollt) ihr(?![\p{L}\p{N}])/iu,
+      atSentenceStart(
+        [
+          "Wähle|Gib|Prüfe|Lade|Melde|Versuche|Füge|Starte|Warte|Kopiere|Behalte",
+          "Bearbeite|Beschränke|Bespreche|Entferne|Erlaube|Erstelle|Gehe|Halte|Hole|Importiere",
+          "Kehre|Kürze|Lass|Mache|Mach|Markiere|Nimm|Schalte|Sende|Verbinde|Vergleiche",
+          "Verlasse|Verwende|Wechsle|Öffne|Wählt",
+        ].join("|"),
+      ),
+      // "und versuche es erneut", "Bitte wähle": the verb after a conjunction; a Sie would say "versuchen Sie".
+      /(?:^|\s)(?:und|oder|dann|bitte) (?:versuche|wähle|prüfe|lade|gib|halte|nimm|öffne)(?![\p{L}\p{N}])/iu,
+    ],
+  };
+
+  it.each(["fr", "de"] as const)("never speaks informally in %s", (language) => {
+    for (const [key, text] of prose(CATALOGS[language])) {
+      for (const informal of INFORMAL[language]) {
+        expect(text, `${language}: ${key}`).not.toMatch(informal);
+      }
+    }
+  });
+
+  it("capitalises the German Sie", () => {
+    // A small "sie" and "ihr" are right for they and it, as in "bis sie die Seite neu lädt". An
+    // order to the reader and the reader's own things are not. "ihr Name" is left out: "Nur ihr
+    // Name:" is the organisation's, "its name".
+    const order =
+      /(?:(?:^|[.;:!?]\s)\p{Lu}\p{Ll}+|(?:und|oder|dann|[Bb]itte) \p{Ll}+)en sie(?![\p{L}\p{N}])/u;
+    const yours =
+      /(?<![\p{L}\p{N}])ihr(?:e|en|em|er)? (?:[\p{L}-]+-)?(?:Konto|Team|Browser|Anmeldung|Verbindung|Karte|Karten|Stimme|Platz|Raum|Räume|Räumen|Daten|Organisation|Sitzung|Adresse|Avatar|Token)/u;
+    for (const [key, text] of prose(CATALOGS.de)) {
+      expect(text, `de: ${key}`).not.toMatch(order);
+      expect(text, `de: ${key}`).not.toMatch(yours);
+    }
+  });
+
+  it("knows a word from the letters inside another", () => {
+    expect("l’état du bouton").not.toMatch(INFORMAL.fr[0] as RegExp);
+    expect("Connecte-toi").toMatch(INFORMAL.fr[0] as RegExp);
+    expect("Direkt dieser Ton").not.toMatch(INFORMAL.de[0] as RegExp);
+    expect("Wähle deine Karte").toMatch(INFORMAL.de[0] as RegExp);
+  });
+
+  it("catches the informal lines it was written for", () => {
+    const caught = (language: "fr" | "de", text: string) =>
+      INFORMAL[language].some((rule) => rule.test(text));
+    for (const text of [
+      "Le product owner t’a retiré.",
+      "T’es connecté.",
+      "Rechargez la page et réessaie.",
+      "Lance le vote.",
+      "Garde cette page ouverte.",
+      "Partage le lien.",
+      "Sélectionne le lien.",
+    ]) {
+      expect(caught("fr", text), text).toBe(true);
+    }
+    for (const text of [
+      "Ihr könnt beitreten.",
+      "Wählt eine Karte.",
+      "Bitte wähle eine Karte.",
+      "Laden Sie die Seite neu und versuche es erneut.",
+      "Halte die Karte fest.",
+      "Entferne einige Karten.",
+      "Nimm Platz.",
+    ]) {
+      expect(caught("de", text), text).toBe(true);
+    }
+    for (const text of ["Decke die Karten auf.", "Stimme ab.", "Spiele eine Karte."]) {
+      expect(caught("de", text), `${text} is a noun or an adverb here`).toBe(false);
+    }
+    const order =
+      /(?:(?:^|[.;:!?]\s)\p{Lu}\p{Ll}+|(?:und|oder|dann|[Bb]itte) \p{Ll}+)en sie(?![\p{L}\p{N}])/u;
+    expect("Bitte prüfen sie den Link.").toMatch(order);
+    expect("Laden Sie neu und versuchen sie es erneut.").toMatch(order);
+    expect("Prüfen Sie den Link.").not.toMatch(order);
+  });
+});
+
+// Three rules of the glossary's typography section that nothing held (#41).
+describe("glossary rules", () => {
+  it.each(LANGUAGES)("puts no space before an ellipsis in %s", (language) => {
+    for (const [key, value] of leaves(CATALOGS[language])) {
+      expect(String(value), `${language}: ${key}`).not.toMatch(/\s…/);
+    }
+  });
+
+  it("gives every French _many form its de or d’", () => {
+    // `_many` is an exact million in French, so the number is followed by "de" or "d’" and
+    // then the noun. The one form with no noun counts votes: "3/7 ont voté".
+    const noNoun = new Set(["table.votedSoFar_many"]);
+    for (const [key, value] of leaves(CATALOGS.fr)) {
+      if (!key.endsWith("_many") || noNoun.has(key)) {
+        continue;
+      }
+      expect(String(value), `fr: ${key}`).toMatch(/\}\} (?:de |d’)/);
+    }
+  });
+
+  it("keeps the page's description in index.html equal to the English one", () => {
+    const html = readFileSync(join(import.meta.dirname, "..", "..", "index.html"), "utf8");
+    const content = /<meta name="description" content="([^"]*)"/.exec(html)?.[1];
+    expect(content).toBe(en.app.description);
   });
 });
 
@@ -389,6 +538,17 @@ describe("language choice", () => {
     expect(readSavedLanguage()).toBeNull();
     await chooseLanguage("de");
     expect(currentLanguage()).toBe("de");
+  });
+
+  it("gives the page's description to the language", async () => {
+    const meta = document.createElement("meta");
+    meta.name = "description";
+    document.head.append(meta);
+    await changeLanguage("de");
+    expect(meta.content).toBe(de.app.description);
+    await changeLanguage("en");
+    expect(meta.content).toBe(en.app.description);
+    meta.remove();
   });
 
   it("saves a choice, applies it to <html lang>, and starts in it next time", async () => {

@@ -980,7 +980,7 @@ describe("the timer (#27)", () => {
       { kind: "timer", who: "", name: "", timer: { what: "started", seconds: 60 } },
     ];
     expect(describeEvents(fixedT("fr"), events)).toBe("Minuteur lancé\u{202f}: 1 minute.");
-    expect(describeEvents(fixedT("de"), events)).toBe("Zeitlimit gestartet: 1 Minute.");
+    expect(describeEvents(fixedT("de"), events)).toBe("Timer gestartet: 1 Minute.");
     const up: LiveEvent[] = [{ kind: "timeUp", who: "", name: "" }];
     expect(describeEvents(fixedT("fr"), up)).toBe("Temps écoulé.");
     expect(describeEvents(fixedT("de"), up)).toBe("Die Zeit ist um.");

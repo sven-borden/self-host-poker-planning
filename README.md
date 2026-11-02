@@ -24,6 +24,7 @@ English, French and German.
 - [Open questions](docs/04-open-questions.md)
 - [Decisions (ADR)](docs/05-decisions.md)
 - [Self-hosting on Azure](docs/07-self-hosting-azure.md)
+- [Glossary (English, French, German)](docs/08-glossary.md)
 - [Status](docs/STATUS.md)
 
 ## Self-hosting

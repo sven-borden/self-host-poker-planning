@@ -134,7 +134,8 @@ moves on; the timer's and the automatic reveal are unchanged.
 
 **Decision.** Every user-facing string exists in `en`, `fr` and `de` from the first
 UI issue. react-i18next with typed keys; CI fails on a missing key; the server sends
-codes, never sentences. Tone per language decided in #41 (OQ-2).
+codes, never sentences. Tone per language decided in #41 (OQ-2): see the amendment of
+2026-11-02.
 
 **Consequences.** Every UI issue carries its French and German copy.
 **Alternatives.** English only, translation-ready (recommended in round 1); English and French.
@@ -152,6 +153,14 @@ v4 syntax (`{{x}}`, `{{x, number}}`, `_one`/`_other`/`_many` keys), so translati
 platforms (Weblate, Crowdin) read them and a switch back stays cheap. Numbers and dates
 follow the reader's region: the first `navigator.languages` tag in the UI language
 (`de-CH` writes 6.5 and 1’234), else the bare language (French and German write 5,5).
+
+**Amended 2026-11-02 (#41, OQ-2, Sven).** French says vous and German says Sie, everywhere,
+to everyone: a tool that strangers open from a link addresses them formally, and one register
+is one less thing to keep straight. The words each language uses are in
+`docs/08-glossary.md`. `i18n.test.ts` fails on the informal pronouns and on a list of
+imperatives (at a sentence start, or after "et", "und", "bitte") in a catalog, and on a German
+Sie written small in an order or before the reader's own things. The lists are words, not
+grammar: a verb that is not on them gets through, so a review reads the screens too.
 
 ## ADR-013: pnpm monorepo and the serial issue loop
 

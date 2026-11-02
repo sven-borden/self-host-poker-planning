@@ -224,7 +224,7 @@ describe("the room's sound", () => {
   });
 
   it.each([
-    ["fr", "Son : désactivé", "Jouer les effets sonores", "Jouer la musique de fond", "Marée"],
+    ["fr", "Son : désactivé", "Activer les effets sonores", "Activer la musique de fond", "Marée"],
     ["de", "Ton: aus", "Soundeffekte abspielen", "Hintergrundmusik abspielen", "Gezeiten"],
   ] as const)("speaks %s", async (language, name, enable, music, mood) => {
     await act(() => changeLanguage(language));
