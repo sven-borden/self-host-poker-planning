@@ -102,6 +102,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
   The deletion is repeatable and finishes from a sign-in, an `enter` or the sweep. Rooms pass
   on only to someone who may hold the role, else they stay with no keeper and follow
   `ROOM_TTL_DAYS`. Live at 439b4a3.
+- The Jira Cloud connector from #54 (ADR-030), merged and dark: import by JQL or sprint, the
+  final estimate written back. An estimate goes by itself only for a final the same tab
+  recorded. Never run against real Atlassian. Live at 2ea5945.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -112,8 +115,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- #54 (PR #114): review findings being fixed in `../pp-wt-54`. Its live check needs Sven's
-  site and keys.
+- #55: an implementer in `../pp-wt-55`, the Azure DevOps connector on #54's seam, by personal
+  access token. Its live check needs Sven's test organisation.
+- #54 is merged and stays open until the live check at Sven's Jira site.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
 - **Agents again, issue after issue, until the end of 2026-11-02** (Sven, 2026-11-01): the
   main session orchestrates and does not stop between issues (see `CLAUDE.md`).
@@ -121,7 +125,7 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 ## Next
 
 - W3 (#33–#41): all merged but #38 and #41, which need Sven's OQ-1 and OQ-2.
-- W6's #55 follows #54; its live check needs Sven's test organisation. W7 waits for his
+- W7 waits for his
   OQ-3 (#56).
 - The local reveal budget fails on clean `main` since 2026-11-02 (named reveal, 1 run of 4
   clean, worst 67 ms; #43 had 10 of 10). CI passes at the first try. Cause not looked for.
@@ -197,6 +201,13 @@ issues are merged.
     at `enter` is gone, so a network blip ends it.
   - Read the wording of "What stays" on `/account` in all three languages. Nobody has judged
     the last line under the room select by eye.
+- **#54: Jira.** After sign-in has keys: a Jira Cloud test site and an OAuth 2.0 (3LO) app, as
+  in the README's "Jira Cloud". Runtime only in Coolify: `JIRA_CLIENT_ID`, `JIRA_CLIENT_SECRET`,
+  `POKER_VAULT_KEY`. Turn on Atlassian's sharing and bring a second person, or only you can use
+  it. Tell me what the consent screen lists and whether the board list works with these scopes.
+  Your call there: keep the classic scopes or narrow them, as `write:jira-work` also allows
+  deleting issues. Expect a press, not a write, after a reload or in a second tab. Then #54 can
+  close.
 - **After #46**: install the app on a phone and check the icon, the name "Poker" and the bar
   colour, and on Android feel the reveal's beats. No real phone has run it. #46 closed with
   the icon judged by eye and Lighthouse's check replaced by Chromium's.
