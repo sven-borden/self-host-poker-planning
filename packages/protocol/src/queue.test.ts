@@ -133,10 +133,10 @@ describe("a round from a tracker (#54)", () => {
   it("tells the PO which tracker, and nobody else, and never where in it", () => {
     const state = imported();
     expect(state.round?.source).toEqual(SOURCE);
-    const own = toSnapshot(state, PO, META);
+    const own = toSnapshot(state, PO, META).room;
     expect(own.round?.system).toBe("jira");
-    expect(snapshotSchema.safeParse(own).success).toBe(true);
-    const other = toSnapshot(state, "user-1", META);
+    expect(snapshotSchema.safeParse(toSnapshot(state, PO, META)).success).toBe(true);
+    const other = toSnapshot(state, "user-1", META).room;
     expect(other.round).not.toHaveProperty("system");
     for (const snapshot of [own, other]) {
       expect(JSON.stringify(snapshot)).not.toMatch(/cloud-secret-site|issue-secret-id|source/);
@@ -144,7 +144,7 @@ describe("a round from a tracker (#54)", () => {
   });
 
   it("says nothing for a round that came from no tracker", () => {
-    expect(toSnapshot(fullTable(), PO, META).round).not.toHaveProperty("system");
+    expect(toSnapshot(fullTable(), PO, META).room.round).not.toHaveProperty("system");
   });
 });
 

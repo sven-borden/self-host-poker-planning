@@ -9,6 +9,7 @@ import type {
   Card,
   DeckSpec,
   Queue,
+  QueueSource,
   Results,
   RoomState,
   SpecialCard,
@@ -165,6 +166,8 @@ export const roundHistory = pgTable(
     votes: jsonb("votes").$type<HistoryVotes>().notNull(),
     stats: jsonb("stats").$type<Results>().notNull(),
     final: text("final"),
+    /** The tracker's item the round estimated (#54): what a write-back goes by, later too. */
+    source: jsonb("source").$type<QueueSource>(),
     startedAt: instant("started_at").notNull(),
     revealedAt: instant("revealed_at").notNull(),
     finishedAt: instant("finished_at").notNull(),
@@ -217,6 +220,12 @@ export const connectorToken = pgTable(
      * counter, so a row deleted and connected again is not a state a stale write can match.
      */
     version: uuid("version").notNull().defaultRandom(),
+    /**
+     * What the connection points at (#54, ADR-030): the site and the field the person chose. No
+     * secret, and apart from the sealed token, so a change of field moves no `version` and
+     * cannot lose a refresh under way. The connector reads it through its own schema.
+     */
+    settings: jsonb("settings").$type<unknown>(),
     createdAt: instant("created_at").notNull().defaultNow(),
     updatedAt: instant("updated_at").notNull().defaultNow(),
   },

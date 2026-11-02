@@ -4,7 +4,7 @@
  * server instances stay correct without a lock; the command runner (runner.ts) retries a
  * lost one.
  */
-import type { Queue, Restriction, RoomState, UserId } from "@pp/domain";
+import type { Queue, QueueSource, Restriction, RoomState, Subject, UserId } from "@pp/domain";
 import { and, desc, eq, inArray, lt, ne, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { guard } from "./errors.ts";
@@ -97,6 +97,8 @@ export interface RoomStore {
   loadRoom(code: string): Promise<StoredRoom | null>;
   /** The room's code, name and whether it has a password, without loading `live`. */
   loadRoomHeader(code: string): Promise<RoomHeader | null>;
+  /** The code of a room named by its id, for the server's own redirect (#54). */
+  roomCodeOf(id: string): Promise<string | null>;
   /**
    * Writes `next` when the room is still at `expectedVersion`, bumps the version and
    * `last_active_at`, and copies `next.ownerId` to `owner_user_id`. Resolves false when
@@ -164,6 +166,18 @@ export interface HistoryQuery {
 export interface HistoryStore {
   /** One page of the room's (by id) `round_history`, newest first. */
   loadHistory(roomId: string, query: HistoryQuery): Promise<HistoryPage>;
+  /**
+   * What a write-back needs of one round (#54). Every recorded final has a row from the moment
+   * it is recorded, in the commit that stores it, so the round on the table is read here too.
+   */
+  loadDecision(roomId: string, number: number): Promise<RoundDecision | null>;
+}
+
+/** The final of a round, where it came from and its key: nothing of the votes. */
+export interface RoundDecision {
+  final: string | null;
+  source: QueueSource | null;
+  subject: Subject;
 }
 
 const hasHash = sql<boolean>`${room.passwordHash} is not null`;
@@ -372,6 +386,7 @@ export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore 
             votes: roundHistory.votes,
             stats: roundHistory.stats,
             final: roundHistory.final,
+            source: roundHistory.source,
             startedAt: roundHistory.startedAt,
             revealedAt: roundHistory.revealedAt,
             finishedAt: roundHistory.finishedAt,
@@ -387,6 +402,25 @@ export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore 
           .orderBy(desc(roundHistory.number))
           .limit(limit + 1);
         return { rounds: rows.slice(0, limit), more: rows.length > limit };
+      }),
+
+    loadDecision: (roomId, number) =>
+      guard("load decision", async () => {
+        const rows = await db
+          .select({
+            final: roundHistory.final,
+            source: roundHistory.source,
+            subject: roundHistory.subject,
+          })
+          .from(roundHistory)
+          .where(and(eq(roundHistory.roomId, roomId), eq(roundHistory.number, number)));
+        return rows[0] ?? null;
+      }),
+
+    roomCodeOf: (id) =>
+      guard("load room code", async () => {
+        const rows = await db.select({ code: room.code }).from(room).where(eq(room.id, id));
+        return rows[0]?.code ?? null;
       }),
 
     hasAccess: (roomId, who) =>

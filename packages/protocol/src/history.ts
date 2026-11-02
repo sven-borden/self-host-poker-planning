@@ -90,6 +90,8 @@ export const historyRoundSchema = z.strictObject({
   number: roundNumberSchema,
   subject: historySubjectSchema,
   final: cardSchema.nullable(),
+  /** The tracker the round's item came from (#54), so the PO can write the final there. */
+  system: z.enum(["jira", "ado"]).optional(),
   stats: z.strictObject(resultsSchema.shape),
   startedAt: z.number(),
   revealedAt: z.number(),

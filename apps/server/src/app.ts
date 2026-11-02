@@ -6,10 +6,10 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { SIGN_IN_META } from "@pp/protocol";
+import { CONNECTOR_META, SIGN_IN_META } from "@pp/protocol";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { type Config, socialProviderIds } from "./config.ts";
+import { type Config, connectorNames, socialProviderIds } from "./config.ts";
 import { type Logger, REQUEST_FAILED } from "./logger.ts";
 import { observabilitySources, observabilityTags } from "./observability.ts";
 import { mergeCspSources, securityHeaders } from "./security-headers.ts";
@@ -159,6 +159,7 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
       ...(deps.websocketOnly ? [TRANSPORT_META] : []),
       ...observabilityTags(config),
       ...signInTags(config),
+      ...connectorTags(config),
     ];
     mountWebApp(app, deps.staticDir, tags);
   }
@@ -295,8 +296,18 @@ export function signInTags(config: Config): string[] {
 }
 
 /**
+ * What tells the web app which connectors this install has (#54): their names, never a key.
+ * With none there is no tag, and the page offers nothing.
+ */
+export function connectorTags(config: Config): string[] {
+  const names = connectorNames(config);
+  return names.length > 0 ? [`<meta name="${CONNECTOR_META}" content="${names.join(" ")}">`] : [];
+}
+
+/**
  * `index.html` with `tags` at the end of its head, read once: the file is immutable in the
- * image. `TRANSPORT_META` (#39), the opt-in services' tags (#40) and `signInTags` (#47); never
+ * image. `TRANSPORT_META` (#39), the opt-in services' tags (#40), `signInTags` (#47) and
+ * `connectorTags` (#54); never
  * inline script, which the CSP refuses. Served at `/index.html` too, which the allowlist would otherwise
  * serve from disk without them.
  */

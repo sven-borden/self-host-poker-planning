@@ -45,6 +45,9 @@ const SECRET_NAMES = [
   "vaultKey",
   "POKER_VAULT_KEY",
   "POKER_VAULT_OLD_KEYS",
+  // What a connector carries (#54): nothing logs these; this is for a mistake.
+  "jql",
+  "summary",
 ];
 
 /** Headers of a request or handshake logged whole, in either case, at three depths. */

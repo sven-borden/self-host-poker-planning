@@ -3,7 +3,7 @@
  * its pool, then Redis when `REDIS_URL` is set (#39, several instances), the room API
  * (#14) and the room sync (#15) on its runner, the retention job (#35), whose first run
  * comes a few minutes later, a guest's way to an account (#48), between identity and the
- * room sync, and "My rooms" (#49). Opens nothing at import time.
+ * room sync, "My rooms" (#49) and the trackers' connectors (#54). Opens nothing at import time.
  */
 import {
   cookieNaming,
@@ -12,7 +12,11 @@ import {
   sessionChecker,
   sessionMiddleware,
 } from "./auth.ts";
-import type { Config } from "./config.ts";
+import { type Config, connectorNames } from "./config.ts";
+import { createConnectorAccess } from "./connectors/access.ts";
+import { createJiraConnector } from "./connectors/jira.ts";
+import { createOAuthStateStore } from "./connectors/oauth-state.ts";
+import { registerConnectorApi } from "./connectors/routes.ts";
 import { type Database, setupDatabase } from "./database.ts";
 import { createGuestLinkStore } from "./db/guest-links.ts";
 import { createMyRoomsStore } from "./db/my-rooms.ts";
@@ -150,6 +154,23 @@ export async function setupServer(
           limiter,
           rules,
         });
+        // Dark without its keys, the vault and a way to sign in: nothing is registered.
+        if (config.jira && connectorNames(config).includes("jira")) {
+          const connector = createJiraConnector(config.jira);
+          const tokens = database.connectorTokens;
+          registerConnectorApi(app, {
+            auth,
+            connector,
+            access: createConnectorAccess(tokens, connector),
+            tokens,
+            states: createOAuthStateStore(db),
+            rooms: store,
+            history: store,
+            sync,
+            config,
+            limiter,
+          });
+        }
       },
       socketMiddleware: [sessionMiddleware(auth)],
       sessionCookie: cookieNaming(config.baseUrl).sessionCookie,

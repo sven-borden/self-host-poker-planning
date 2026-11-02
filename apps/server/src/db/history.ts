@@ -34,7 +34,15 @@ export type HistoryRow = typeof roundHistory.$inferInsert;
 /** A `round_history` row as the history panel reads it (#33): no id, room or deck. */
 export type StoredHistoryRound = Pick<
   typeof roundHistory.$inferSelect,
-  "number" | "subject" | "votes" | "stats" | "final" | "startedAt" | "revealedAt" | "finishedAt"
+  | "number"
+  | "subject"
+  | "votes"
+  | "stats"
+  | "final"
+  | "source"
+  | "startedAt"
+  | "revealedAt"
+  | "finishedAt"
 >;
 
 /**
@@ -48,6 +56,8 @@ export function historyView(row: StoredHistoryRound): HistoryRoundView {
     number: row.number,
     subject: row.subject,
     final: row.final,
+    // The tracker's name, which the page needs for "Write to Jira" (#54), and no more of it.
+    ...(row.source ? { system: row.source.system } : {}),
     stats: row.stats,
     startedAt: row.startedAt.getTime(),
     revealedAt: row.revealedAt.getTime(),
@@ -100,6 +110,7 @@ export function historyRow(roomId: string, ended: EndedRound): HistoryRow {
     votes: historyVotes(ended, stats.distribution),
     stats,
     final: round.final ?? null,
+    source: round.source ?? null,
     startedAt: new Date(round.startedAt),
     // The domain sets `revealedAt` on every reveal; the fallback is for typing only.
     revealedAt: new Date(round.revealedAt ?? round.startedAt),

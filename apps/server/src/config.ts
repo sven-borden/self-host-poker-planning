@@ -3,10 +3,11 @@
  * Nothing else reads `process.env`. A bad or missing variable throws `ConfigError`, whose
  * message names the variables and a fixed reason, never a value: `DATABASE_URL` and
  * `REDIS_URL` may hold a password, `BETTER_AUTH_SECRET` signs the sessions, the provider
- * secrets of `GOOGLE_CLIENT_SECRET` and `MICROSOFT_CLIENT_SECRET` open sign-in, and
- * `POKER_VAULT_KEY` and `POKER_VAULT_OLD_KEYS` open the connectors' tokens.
+ * secrets of `GOOGLE_CLIENT_SECRET` and `MICROSOFT_CLIENT_SECRET` open sign-in,
+ * `JIRA_CLIENT_SECRET` opens the Jira app, and `POKER_VAULT_KEY` and `POKER_VAULT_OLD_KEYS`
+ * open the connectors' tokens.
  */
-import { SIGN_IN_PROVIDERS, type SignInProvider } from "@pp/protocol";
+import { type ConnectorName, SIGN_IN_PROVIDERS, type SignInProvider } from "@pp/protocol";
 import { z } from "zod";
 import { type CspSources, parseCspSources } from "./security-headers.ts";
 import { isVaultKey, reusesSecret, Vault, vaultKeyId } from "./vault.ts";
@@ -82,6 +83,22 @@ export interface Config {
    * `POKER_VAULT_OLD_KEYS`. Unset (the default), the vault is off. Prints no key.
    */
   readonly vault: Vault | undefined;
+  /**
+   * The Jira Cloud app of this install (#54, ADR-030), from `JIRA_CLIENT_ID` and
+   * `JIRA_CLIENT_SECRET`. It works only with the vault too: see `connectorNames`.
+   */
+  readonly jira: OAuthClient | undefined;
+}
+
+/**
+ * The connectors this install has: a tracker's keys, the vault to hold a person's token, and a
+ * way to be an account at all. Without any of them no route and no button exists.
+ */
+export function connectorNames(
+  config: Pick<Config, "jira" | "vault" | "socialProviders">,
+): ConnectorName[] {
+  if (config.vault === undefined || socialProviderIds(config).length === 0) return [];
+  return config.jira === undefined ? [] : ["jira"];
 }
 
 /** The providers `config` has keys for, in the order the page shows them. */
@@ -116,6 +133,8 @@ const REASONS = {
   MICROSOFT_CLIENT_ID: "must be the application (client) id from the Microsoft Entra admin center",
   MICROSOFT_CLIENT_SECRET: "must be a client secret value from the Microsoft Entra admin center",
   MICROSOFT_TENANT_ID: "must be common, organizations, consumers or a tenant id (a GUID)",
+  JIRA_CLIENT_ID: "must be the client id from the Atlassian developer console",
+  JIRA_CLIENT_SECRET: "must be the secret from the Atlassian developer console",
   POKER_VAULT_KEY:
     "must be 32 random bytes in base64 on one line, with no line break or space, such as the output of openssl rand -base64 32, and must not be BETTER_AUTH_SECRET",
   POKER_VAULT_OLD_KEYS:
@@ -134,6 +153,8 @@ const PAIRED: Partial<Record<Variable, Variable>> = {
   GOOGLE_CLIENT_SECRET: "GOOGLE_CLIENT_ID",
   MICROSOFT_CLIENT_ID: "MICROSOFT_CLIENT_SECRET",
   MICROSOFT_CLIENT_SECRET: "MICROSOFT_CLIENT_ID",
+  JIRA_CLIENT_ID: "JIRA_CLIENT_SECRET",
+  JIRA_CLIENT_SECRET: "JIRA_CLIENT_ID",
   POKER_VAULT_KEY: "POKER_VAULT_OLD_KEYS",
 };
 
@@ -264,6 +285,8 @@ const schema = z.object({
     .string()
     .refine((v) => ["common", "organizations", "consumers"].includes(v) || GUID.test(v))
     .default("common"),
+  JIRA_CLIENT_ID: oauthKey.optional(),
+  JIRA_CLIENT_SECRET: oauthKey.optional(),
   POKER_VAULT_KEY: z.string().refine(isVaultKey).optional(),
   POKER_VAULT_OLD_KEYS: z
     .string()
@@ -367,6 +390,10 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
             })
           : undefined,
     }),
+    jira:
+      v.JIRA_CLIENT_ID && v.JIRA_CLIENT_SECRET
+        ? Object.freeze({ clientId: v.JIRA_CLIENT_ID, clientSecret: v.JIRA_CLIENT_SECRET })
+        : undefined,
     betterAuthSecret: v.BETTER_AUTH_SECRET,
     vault: v.POKER_VAULT_KEY ? new Vault(v.POKER_VAULT_KEY, v.POKER_VAULT_OLD_KEYS) : undefined,
   });
