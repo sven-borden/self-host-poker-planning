@@ -1677,7 +1677,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     if (command.type === "join" && socket.data.room !== room) return refuse("password_required");
     const run = () => runOnce(room, user.id, id, withAsciiDomains(command), guard);
     const ack = await acks.remember(user.id, ackKey(room.id, id), () =>
-      setsRule(command) ? countingRule(user.id, run) : run(),
+      setsRule(command) ? countingRule(room, user.id, run) : run(),
     );
     // The rule, or the grant, stopped the join when it ran (a kick, a new password, a new rule):
     // the socket leaves the room, and the person meets what is asked first.
@@ -1707,8 +1707,16 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     return ruled && sessionTooOld(startedAt, now()) ? "session_too_old" : null;
   }
 
-  /** A commit that sets a rule counts, and one that stored nothing gives its place back. */
-  async function countingRule(who: string, run: () => Promise<CmdAck>): Promise<CmdAck> {
+  /**
+   * A commit that sets a rule counts, and one that stored nothing gives its place back: a refusal,
+   * or the rule already there, whose version did not move. Someone else's commit meanwhile moves
+   * it too, and that counts: nothing here can give back a place a commit used.
+   */
+  async function countingRule(
+    room: RoomRef,
+    who: string,
+    run: () => Promise<CmdAck>,
+  ): Promise<CmdAck> {
     const slot = await limiter.reserve(
       `restriction|change|${who}`,
       options.ruleChangeLimit ?? RULE_CHANGE_LIMIT,

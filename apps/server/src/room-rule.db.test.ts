@@ -1508,6 +1508,29 @@ describe("how many times a rule can be set", () => {
     await must(owner.cmd("updateSettings", { patch: { restriction: null } }));
     expect((await loaded(room.code)).state.settings.restriction).toBeUndefined();
   });
+
+  it("the rule already there stores nothing, so it costs nothing", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const patch = { restriction: DOMAIN_RULE };
+    const first = await owner.cmd("updateSettings", { patch });
+    expect(first.ok).toBe(true);
+    for (let again = 0; again < RULE_CHANGE_LIMIT.max + 2; again += 1) {
+      await expect(owner.cmd("updateSettings", { patch })).resolves.toEqual(first);
+    }
+    for (let commit = 1; commit < RULE_CHANGE_LIMIT.max; commit += 1) {
+      await must(
+        owner.cmd("updateSettings", {
+          patch: { restriction: { domains: [`d${commit}.example`], tenants: [] } },
+        }),
+      );
+    }
+    await expect(owner.cmd("updateSettings", { patch })).resolves.toEqual({
+      ok: false,
+      code: "rate_limited",
+    });
+  });
 });
 
 describe("removing everyone who would not pass", () => {
