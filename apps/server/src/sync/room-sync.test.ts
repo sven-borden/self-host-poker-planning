@@ -13,6 +13,7 @@ import { play } from "../db/fixtures.ts";
 import type { StoredHistoryRound } from "../db/history.ts";
 import type { HistoryQuery, HistoryStore } from "../db/rooms.ts";
 import { createCommandRunner } from "../db/runner.ts";
+import { NO_RULES, type RoomRules } from "../room-rule.ts";
 import { createServer, type PokerServer } from "../server.ts";
 import { collectLogs, type LogCollector, testConfig } from "../test-support.ts";
 import {
@@ -64,6 +65,7 @@ interface StartOptions {
   beforeLoad?: (code: string) => Promise<void> | void;
   history?: Pick<HistoryStore, "loadHistory">;
   deadlineTimeouts?: boolean;
+  rules?: RoomRules;
 }
 
 const RULE = { domains: ["example.com"], tenants: [] };
@@ -124,6 +126,30 @@ function voting(): RoomState {
   s = play(s, "ua", { type: "startRound", subject: { kind: "none" } }, 3);
   return s;
 }
+
+describe("a hand-over", () => {
+  it("reads the person once, in a room with no rule as in any", async () => {
+    let reads = 0;
+    const rules: RoomRules = {
+      ...NO_RULES,
+      identitiesOf: async () => {
+        reads += 1;
+        return new Map();
+      },
+      candidateOf: async () => {
+        reads += 1;
+        return { identity: null, startedAt: null };
+      },
+    };
+    const { client } = await start(lobby(), { rules });
+    const ada = client("ua");
+    const bob = client("ub");
+    await ada.enter(CODE);
+    await bob.enter(CODE);
+    await expect(ada.cmd("transferOwner", { to: "ub" })).resolves.toMatchObject({ ok: true });
+    expect(reads).toBe(1);
+  });
+});
 
 describe("enter", () => {
   it("answers the viewer's snapshot, a stranger's too, and room_not_found for an unknown code", async () => {

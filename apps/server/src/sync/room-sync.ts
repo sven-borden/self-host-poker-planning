@@ -109,7 +109,9 @@ import type { Logger } from "../logger.ts";
 import { memoryRateLimit, type RateLimiter, type RateLimitRule } from "../rate-limit.ts";
 import type { RealtimeHandlers, RealtimeServer, RealtimeSocket } from "../realtime.ts";
 import {
+  mayHoldRole,
   NO_RULES,
+  type RoleCandidate,
   type RoomRules,
   identityOf as readIdentity,
   sessionTooOld,
@@ -993,7 +995,9 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   /**
    * Reads a visitor's grant and account again; they get no snapshot meanwhile. Refused (or
    * when either cannot be read) they hear `locked` and leave, as after a new password, and an
-   * `enter` in progress is refused; let in they get the newest state, judged on it.
+   * `enter` in progress is refused; let in they get the newest state, judged on it. A read a
+   * `blind` frame overtook starts again before anything can reach them, and only another such
+   * frame during that read makes a third, so the reads end when the room's versions do.
    */
   function recheck(id: string, socket: RealtimeSocket, viewer: string) {
     if (rechecking.has(socket)) return;
@@ -1710,8 +1714,9 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       options.ruleChangeLimit ?? RULE_CHANGE_LIMIT,
     );
     if (!slot.allowed) return refuse("rate_limited");
+    const before = newest.get(room.id) ?? 0;
     const ack = await run();
-    if (!ack.ok) slot.release();
+    if (!ack.ok || ack.version <= before) slot.release();
     return ack;
   }
 
@@ -1754,8 +1759,10 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
   /**
    * What `command` needs from the room's rule (#50), read now and judged in the run's step. A
    * person the rule refuses never becomes PO: the PO passes every rule, so the role would be a
-   * way around it. A rule is set by someone signed in, for a provider this install has. A seat
-   * of someone it refuses is not touched here.
+   * way around it, so the role asks what the door asks, a sign-in young enough included: a claim
+   * on the claimer's socket, a hand-over on the server's row, as the person named need not have a
+   * socket here. A rule is set by someone signed in, for a provider this install has. A seat of
+   * someone it refuses is not touched here.
    */
   async function guardOf(
     socket: RealtimeSocket,
@@ -1769,9 +1776,9 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
         return (state) => ruleRefusal(state, user.id, identity, startedAt);
       }
       case "claimOwner":
-        return ownerGuard(user.id, startedAt);
+        return ownerGuard(user.id, { identity: await identityOf(user.id), startedAt });
       case "transferOwner":
-        return ownerGuard(command.to);
+        return ownerGuard(command.to, await rules.candidateOf(command.to));
       case "updateSettings": {
         const rule = command.patch.restriction;
         if (!rule) return undefined;
@@ -1788,11 +1795,10 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     }
   }
 
-  async function ownerGuard(who: string, startedAt?: number): Promise<Guard> {
-    const identity = await identityOf(who);
-    return (state) =>
-      ruleRefusal(state, who, identity, startedAt) === null ? null : "owner_not_allowed";
-  }
+  const ownerGuard =
+    (who: string, candidate: RoleCandidate): Guard =>
+    (state) =>
+      mayHoldRole(state, who, candidate, rules.providers, now()) ? null : "owner_not_allowed";
 
   /**
    * One page of the entered room's history (#33), for someone in it: a voter, an observer

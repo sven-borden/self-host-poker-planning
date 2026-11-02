@@ -14,7 +14,7 @@
  * What an account proves was true at sign-in, and only a new sign-in asks the provider again. A
  * session slides, so someone who left would pass for as long as they visit: in a room with a rule
  * a session older than `RULE_SESSION_MAX_AGE_MS` must sign in again. Its PO is exempt, as from
- * every rule.
+ * every rule, which is why the role asks what the door asks (`mayHoldRole`).
  */
 import { domainToASCII, domainToUnicode } from "node:url";
 import {
@@ -23,14 +23,16 @@ import {
   cleanDomain,
   type Restriction,
   type RestrictionRefusal,
+  type RoomState,
   RULE_SESSION_MAX_AGE_DAYS,
   type RuleProviders,
   restrictionRefusal,
+  roomRefusal,
   type UserId,
 } from "@pp/domain";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, type SQL, sql } from "drizzle-orm";
 import type { Config } from "./config.ts";
-import { account, user } from "./db/auth-schema.ts";
+import { account, session, user } from "./db/auth-schema.ts";
 import { guard } from "./db/errors.ts";
 import type { Db } from "./db/rooms.ts";
 
@@ -38,12 +40,25 @@ export interface RoomRules {
   providers: RuleProviders;
   /** What each person proves; a guest, or a user who is gone, has no entry. */
   identitiesOf(users: readonly UserId[]): Promise<Map<UserId, AccessIdentity>>;
+  /** What one person proves and their newest live session, in one statement. */
+  candidateOf(who: UserId): Promise<RoleCandidate>;
+}
+
+/** What the role asks of someone (`mayHoldRole`). */
+export interface RoleCandidate {
+  identity: AccessIdentity | null;
+  /**
+   * When the session it goes by began: for someone named, the newest live one, and null when none
+   * is live. A socket of the tests' stand-in has none to say, which counts as not too old.
+   */
+  startedAt: number | null | undefined;
 }
 
 /** A room sync without a database: no provider, no identity, so a rule admits nobody. */
 export const NO_RULES: RoomRules = {
   providers: { google: false, microsoft: false },
   identitiesOf: async () => new Map(),
+  candidateOf: async () => ({ identity: null, startedAt: null }),
 };
 
 /** How long a sign-in counts in a room with a rule, by `session.created_at`. */
@@ -52,6 +67,24 @@ export const RULE_SESSION_MAX_AGE_MS = RULE_SESSION_MAX_AGE_DAYS * 24 * 60 * 60 
 /** Whether a session that started at `startedAt` (epoch ms) is too old for a room with a rule. */
 export const sessionTooOld = (startedAt: number | undefined, now: number): boolean =>
   startedAt !== undefined && now - startedAt > RULE_SESSION_MAX_AGE_MS;
+
+/**
+ * Whether `who` may hold the role of this room under its rule. The PO passes every rule and every
+ * age, so the role would be a way around them: it asks what the door asks, a sign-in young enough
+ * and a live one included. A room with no rule asks nothing. Every way to the role goes by this,
+ * and it says yes or no: the reason is not for whoever is asking about someone else.
+ */
+export function mayHoldRole(
+  state: RoomState,
+  who: UserId,
+  { identity, startedAt }: RoleCandidate,
+  providers: RuleProviders,
+  now: number,
+): boolean {
+  if (state.settings.restriction === undefined || who === state.ownerId) return true;
+  if (startedAt === null || sessionTooOld(startedAt, now)) return false;
+  return roomRefusal(state, who, identity, providers) === null;
+}
 
 export const identityOf = async (rules: RoomRules, who: UserId): Promise<AccessIdentity | null> =>
   (await rules.identitiesOf([who])).get(who) ?? null;
@@ -88,6 +121,45 @@ function verifiedDomain(address: string): string | null {
   return cleanDomain(asciiDomain(address.slice(address.lastIndexOf("@") + 1)));
 }
 
+/** What `identitiesIn` reads from `user` joined with `account`. */
+const IDENTITY = {
+  id: user.id,
+  isAnonymous: user.isAnonymous,
+  email: user.email,
+  emailVerified: user.emailVerified,
+  provider: account.providerId,
+  tenant: account.tenantId,
+};
+
+/** When `user`'s newest live session began, by the same check as a socket's (`sessionChecker`). */
+const NEWEST_SESSION = sql`(select max(${session.createdAt}) from ${session}
+  where ${session.userId} = ${user.id} and ${session.expiresAt} > now())`.mapWith(
+  session.createdAt,
+) as SQL<Date | null>;
+
+function identitiesIn(
+  rows: readonly {
+    id: UserId;
+    isAnonymous: boolean | null;
+    email: string;
+    emailVerified: boolean;
+    provider: string | null;
+    tenant: string | null;
+  }[],
+): Map<UserId, AccessIdentity> {
+  const identities = new Map<UserId, AccessIdentity>();
+  for (const row of rows) {
+    if (row.isAnonymous) continue;
+    const known = identities.get(row.id) ?? { domain: null, tenant: null };
+    if (row.provider === "google" && row.emailVerified) {
+      known.domain ??= verifiedDomain(row.email);
+    }
+    if (row.provider === "microsoft") known.tenant ??= row.tenant?.toLowerCase() ?? null;
+    identities.set(row.id, known);
+  }
+  return identities;
+}
+
 export function createRoomRules(db: Db, config: Pick<Config, "socialProviders">): RoomRules {
   return {
     providers: {
@@ -96,30 +168,26 @@ export function createRoomRules(db: Db, config: Pick<Config, "socialProviders">)
     },
     identitiesOf: (users) =>
       guard("load identities", async () => {
-        const identities = new Map<UserId, AccessIdentity>();
-        if (users.length === 0) return identities;
+        if (users.length === 0) return new Map();
         const rows = await db
-          .select({
-            id: user.id,
-            isAnonymous: user.isAnonymous,
-            email: user.email,
-            emailVerified: user.emailVerified,
-            provider: account.providerId,
-            tenant: account.tenantId,
-          })
+          .select(IDENTITY)
           .from(user)
           .leftJoin(account, eq(account.userId, user.id))
           .where(inArray(user.id, [...users]));
-        for (const row of rows) {
-          if (row.isAnonymous) continue;
-          const known = identities.get(row.id) ?? { domain: null, tenant: null };
-          if (row.provider === "google" && row.emailVerified) {
-            known.domain ??= verifiedDomain(row.email);
-          }
-          if (row.provider === "microsoft") known.tenant ??= row.tenant?.toLowerCase() ?? null;
-          identities.set(row.id, known);
-        }
-        return identities;
+        return identitiesIn(rows);
+      }),
+    // One statement: a hand-over, rule or no rule, costs the one read it always did.
+    candidateOf: (who) =>
+      guard("load a role candidate", async () => {
+        const rows = await db
+          .select({ ...IDENTITY, started: NEWEST_SESSION })
+          .from(user)
+          .leftJoin(account, eq(account.userId, user.id))
+          .where(eq(user.id, who));
+        return {
+          identity: identitiesIn(rows).get(who) ?? null,
+          startedAt: rows[0]?.started?.getTime() ?? null,
+        };
       }),
   };
 }

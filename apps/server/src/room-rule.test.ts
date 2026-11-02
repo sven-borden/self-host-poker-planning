@@ -1,6 +1,8 @@
+import { createRoom } from "@pp/domain";
 import { describe, expect, it } from "vitest";
 import {
   asciiDomain,
+  mayHoldRole,
   NO_RULES,
   RULE_SESSION_MAX_AGE_MS,
   refusalOf,
@@ -60,11 +62,39 @@ describe("sessionTooOld", () => {
   });
 });
 
+describe("mayHoldRole", () => {
+  const providers = { google: true, microsoft: false };
+  const open = createRoom({ ownerId: "po" });
+  const ruled = createRoom({ ownerId: "po" });
+  ruled.settings.restriction = { domains: ["example.com"], tenants: [] };
+  const passes = { domain: "example.com", tenant: null };
+  const now = 2 * RULE_SESSION_MAX_AGE_MS;
+
+  it("asks what the door asks: the account, then a session young enough and live", () => {
+    const hold = (identity: typeof passes | null, startedAt: number | null | undefined) =>
+      mayHoldRole(ruled, "a", { identity, startedAt }, providers, now);
+    expect(hold(passes, now)).toBe(true);
+    expect(hold(passes, now - RULE_SESSION_MAX_AGE_MS)).toBe(true);
+    expect(hold(passes, now - RULE_SESSION_MAX_AGE_MS - 1)).toBe(false);
+    expect(hold(passes, null)).toBe(false);
+    expect(hold(null, now)).toBe(false);
+    expect(hold({ domain: "elsewhere.example", tenant: null }, now)).toBe(false);
+    expect(hold(passes, undefined)).toBe(true);
+  });
+
+  it("asks nothing in a room with no rule, or of its PO", () => {
+    const nothing = { identity: null, startedAt: null };
+    expect(mayHoldRole(open, "a", nothing, providers, now)).toBe(true);
+    expect(mayHoldRole(ruled, "po", nothing, providers, now)).toBe(true);
+  });
+});
+
 describe("refusalOf", () => {
   const rule = { domains: ["example.com"], tenants: [] };
   const rules = {
     providers: { google: true, microsoft: false },
     identitiesOf: async () => new Map([["a", { domain: "example.com", tenant: null }]]),
+    candidateOf: NO_RULES.candidateOf,
   };
   const room = { restriction: rule, ownerId: "po" };
   const now = 2 * RULE_SESSION_MAX_AGE_MS;

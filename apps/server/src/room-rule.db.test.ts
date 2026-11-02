@@ -1432,10 +1432,63 @@ describe("a sign-in older than a rule asks for", () => {
       code: "owner_not_allowed",
     });
   });
+
+  it("is asked of a hand-over too: whom the door keeps out is not given the role", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po, DOMAIN_RULE);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    const id = await browser.signIn("google", person());
+    (await browser.sit(room.code, "Left the company")).close();
+    await ageSession(id, 31);
+    const door = refused("session_too_old", ["example.com"], false);
+    const notAllowed = { ok: false, code: "owner_not_allowed" };
+
+    expect(await browser.socket().enter(room.code)).toEqual(door);
+    expect((await loaded(room.code)).state.participants[id]?.name).toBe("Left the company");
+    await expect(owner.cmd("transferOwner", { to: id })).resolves.toEqual(notAllowed);
+    const { state } = await loaded(room.code);
+    expect(state.ownerId).toBe(po);
+    expect(state.settings.restriction).toEqual(DOMAIN_RULE);
+    expect(await browser.socket().enter(room.code)).toEqual(door);
+
+    // A young session that ended counts for nothing.
+    await admin.query(
+      `update session set created_at = now(), expires_at = now() - interval '1 minute'
+        where user_id = $1`,
+      [id],
+    );
+    await expect(owner.cmd("transferOwner", { to: id })).resolves.toEqual(notAllowed);
+    await admin.query(
+      `update session set expires_at = now() + interval '1 day' where user_id = $1`,
+      [id],
+    );
+    await must(owner.cmd("transferOwner", { to: id }));
+    expect((await loaded(room.code)).state.ownerId).toBe(id);
+  });
+
+  it("a hand-over needs a live session, and asks nothing in a room with no rule", async () => {
+    const { browser: poBrowser, id: po } = await signedInPo();
+    const room = await roomOf(po, DOMAIN_RULE);
+    const owner = await poBrowser.sit(room.code, "The PO");
+    const browser = new Browser();
+    const id = await browser.signIn("google", person());
+    (await browser.sit(room.code, "Signed out everywhere")).close();
+    await admin.query(`delete from session where user_id = $1`, [id]);
+    await expect(owner.cmd("transferOwner", { to: id })).resolves.toEqual({
+      ok: false,
+      code: "owner_not_allowed",
+    });
+    expect((await loaded(room.code)).state.ownerId).toBe(po);
+
+    await must(owner.cmd("updateSettings", { patch: { restriction: null } }));
+    await must(owner.cmd("transferOwner", { to: id }));
+    expect((await loaded(room.code)).state.ownerId).toBe(id);
+  });
 });
 
 describe("how many times a rule can be set", () => {
-  it("is limited per person, a refused commit costs nothing, and taking it off is free", async () => {
+  it("is limited per account, a refused commit costs nothing, and taking it off is free", async () => {
     const { browser: poBrowser, id: po } = await signedInPo();
     const room = await roomOf(po);
     const owner = await poBrowser.sit(room.code, "The PO");
