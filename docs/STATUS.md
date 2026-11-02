@@ -9,108 +9,14 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 - **https://poker.borden.ch is live** (#12, 2026-10-27). Every merge that changes the
   image deploys in about three minutes. After a merge, check that `/api/health`
   reports the merge commit. Docs-only pushes do not deploy.
-- `main` has the monorepo scaffold from #1: pnpm 12.15.0, Node 24, TypeScript 7,
-  Biome, Vitest, Vite and tsdown. `pnpm gate` is green.
-- CI from #2 runs on every pull request: `check` runs `pnpm gate`, `db-tests` runs
-  `pnpm test:db` against Postgres 17, and `web-e2e` (from #13) runs Playwright.
-- The web shell from #8: routes `/` and `/r/$code`, design tokens with light, dark and
-  system themes, shadcn/ui, Motion and fonts.
-- i18n from #9: our own typed `t()` (ADR-012 amended), en/fr/de with catalogs loaded
-  on demand, numbers in the reader's regional format, a switcher in the header, and
-  copy checks in the gate. The room route loads 168.5 kB of JS (after #22) against a
-  200 kB budget; see the budget watch in the build log.
-- The table from #13: a pure layout engine with a pixel geometry proof for 1 to 16
-  people, the seat and card components, and a `/dev/table` bench.
-- The server skeleton from #6: Hono and Socket.IO on one port, `/api/health`, the
-  built web app from an allowlist, a socket Origin check, logs without secrets,
-  graceful shutdown, and a `setup`/`dispose` hook for the database and auth.
-- The database from #7: Drizzle on `pg`, migrations at start under an advisory lock,
-  the room repository with compare-and-set, a per-room command runner, and history
-  rows (anonymous rounds store cards only).
-- The Docker image and compose file from #11: 219 MB, non-root, with a healthcheck.
-  `docker compose up` serves the app on port 3000, and a `docker` CI job tests the
-  image.
-- Identity from #10: Better Auth guest sessions (`__Host-` cookie on https), only
-  three auth endpoints exposed, display names with strict text rules, and sockets
-  refused without a session. `TRUST_PROXY` is a proxy count.
-- Rooms from #14: `POST /api/rooms` (58-bit codes, 20 per address per 10 minutes),
-  `GET /api/rooms/:code`, the create card and the room header with a copy link.
-- Realtime from #15: `enter` and `cmd` over Socket.IO with acks, per-viewer
-  snapshots, idempotent command ids, one message bucket and at most 8 sockets per
-  person, `room:<id>` channels, deadline timers, and a drain on shutdown. On the web:
-  `openRoom`, the room store and `sendCommand`. `PROTOCOL_VERSION` is 2.
-- Landing, join by code, not-found and error pages from #24. A link to another host
-  shows a warning instead of opening here, and the not-found page never shows the
-  code.
-- Joining from #16: the join screen, the room-full screen, seats in join order with
-  the viewer at the bottom, observers under the table, and rename, role switch and
-  leave. Commands are bound to the room they were sent from.
-- The live table from #17: presence through `apply` (15 s grace, 60 s after a
-  restart), voted badges and face-down cards, the PO crown, the viewer outline, colours
-  from ids, and a live region that never says a value. `PROTOCOL_VERSION` is 3.
-- Voting from #18: the hand with pick, change and take back, keyboard, the card's
-  flight (Web Animations API, ADR-008 amended), the PO's minimal "Start voting" and
-  "Next round" until #21, and `round_changed` so a vote never lands in the next round.
-  `PROTOCOL_VERSION` is 4.
-- The reveal from #19: the PO's button and `R` (scoped to the table and hand), the
-  automatic reveal exactly once, the staggered flip, the anonymous "Cards played" row,
-  and a "Not at the table" row that keeps departed voters' names.
-- Results from #20: the suggested card with the team's agreement, ties and the
-  Consensus pill in the centre, then Average, Median, Agreement, Spread, the
-  distribution columns and the lowest and highest voters under the table.
-- The next round from #21: the PO's subject field (none, a title or a link with Jira
-  and Azure DevOps keys), "Start voting" and "Next round", and the history row.
-- Phones from #22: the hand docks within thumb reach while voting when there is room,
-  a compact header, numbered namesakes ("Ana Lima (2)"), narrow long labels, safe
-  areas and a haptic tick.
-- The four-person e2e from #23 runs on every pull request: four browser contexts, one
-  of them a phone, five rounds (forced, last-vote, timer and anonymous reveals), the
-  results checked against hand-written sentences, and every frame scanned for leaks.
-  A failure keeps the trace and each person's frames, with room codes masked.
-- **W0 and W1 are complete.**
-- The room settings panel from #25: "Room settings" for the PO, read-only "Room rules"
-  for everyone else (a lazy sheet). The PO can change observers count, anonymous voting
-  (from the next round), reveal when everyone has voted and the PO votes too; the deck,
-  specials, timer, who can reveal and change after reveal are shown read-only until
-  their issue. Anonymous rounds carry an "Anonymous" chip. Later settings plug in
-  through the contract in the web README. The room route loads 171.0 kB.
-- The final estimate from #32: after a reveal the PO's decision bar (a picker with the
-  suggested card preselected, "Record 5", "Next round", "Vote again") sits under the
-  table and sticks to the bottom of the screen while out of view. Everyone sees the
-  final in the centre; the history row is written when it is set. "Vote again" keeps
-  the subject and clears the votes. The room route loads 171.2 kB.
-- Decks from #26, in the settings panel: presets, a custom deck (up to 20 cards of 4
-  characters, emoji allowed, errors explained), a range generator and the special
-  cards. A change during voting asks first, then restarts the round, timer included.
-  Labels never draw under 7 px; one that cannot fit is clipped with its full text in a
-  title. The room route loads 172.2 kB.
-- The timer from #27: a per-round length in the panel (off, 30 s, 60 s, 2 min, custom)
-  with "Reveal when the timer ends", and the PO's start, stop and +30 s by "Reveal
-  cards". A ring drains around the centre on the server's clock (`server-clock.ts`,
-  monotonic, re-synced after a sleep). The server reveals at the deadline, exactly once,
-  even after a restart; pages ping `timeUp` as a fallback. A deck restart restarts the
-  timer. The room route loads 172.9 kB.
-- PO powers from #30: in any seat's or observer's popover the PO can hand over the role
-  or remove someone, each asked first. Everyone else can claim the role once the PO has
-  left, or has been away for 120 s (`ownerClaimableAt`, on the server's clock). A
-  removed person is back on the join form at once, with a notice, and may join again.
-  The room route loads 173.3 kB.
-- Reveal modes from #28: "Who can reveal" in the panel (the PO, or anyone who votes;
-  never an observer), a voter's "Reveal cards" and `R`, the revealer named in the live
-  region, and a warning before turning auto-reveal on with everyone voted. A voter
-  reveals an anonymous round only once two cards are down (ADR-011 amended). The room
-  route loads 173.4 kB.
-- The room password from #31: argon2id (Node's built-in), access granted on the server
-  per session user (`room_access`; a kick or a change drops grants, checked inside the
-  join's commit), limits on wrong tries (10 per person, 25 per address, 50 per room per
-  10 minutes) behind a 300-check guard per address, the PO's row in the panel, a lock in
-  the header and a password field on the join screen. The room route loads 174.9 kB.
-- Changing a vote after the reveal from #29: the panel's switch (locked only from off to
-  on while anonymous voting is on), a playable hand after a named reveal for people who
-  voted (a first card after the reveal is refused), a "changed" mark, live results, and
-  the PO's bar noting a moved suggestion while the recorded final stays. The room route
-  loads 175.0 kB.
-- **W2 is complete** (2026-10-28).
+- **W0 to W2 are complete** (#1 to #32, to 2026-10-28; the build log has each). pnpm 12,
+  Node 24, TypeScript 7, Biome, Vitest, Vite and tsdown; `pnpm gate`. CI on every pull request:
+  `check`, `db-tests`, `web-e2e`, `docker`. Hono and Socket.IO on one port, Drizzle on `pg`
+  with compare-and-set, a 239 MB image. A guest session for everyone (`TRUST_PROXY` is a
+  proxy count), rooms of 58-bit codes, snapshots per viewer, en/fr/de with our own `t()`. The
+  round: votes, flight, reveal, results, the next round, the final estimate, phones, a
+  four-person e2e. The PO's room: settings, decks, timer, powers, reveal modes, a password,
+  changing a card after the reveal.
 - Round history from #33: "History" in the room header opens a lazy sheet of past
   rounds (subject, final, distribution, voting time, end time), each opening to its
   votes, names only for named rounds. A `history` socket request, for people in the
@@ -175,6 +81,10 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 - Sign-in with Google and Microsoft from #47 (ADR-023), merged and dark: no keys are set, so
   no route and no button exists. Implicit linking is off, provider tokens are never kept, a
   Microsoft person is `tid:oid`. The room route loads 181.6 kB. Live at f3c5955.
+- The backlog queue from #52 (ADR-024): the PO pastes keys, links or a table into a lazy
+  sheet, reorders it, and "Next item" starts the round; optional auto-advance with a 10 s
+  countdown. A snapshot carries only the next item. At most 500 items and 256 KB. The issue
+  stays open for real pastes. Live at a3ffb5a.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -185,8 +95,7 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- #52 (PR #108): in review, in `../pp-wt-52`. Its migration must be regenerated after #47's.
-- #48: an implementer in `../pp-wt-48`.
+- #48 (PR #109): reviewed and fixed, taking `main` in `../pp-wt-48`.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
 - **Agents again, issue after issue, until the end of 2026-11-02** (Sven, 2026-11-01): the
   main session orchestrates and does not stop between issues (see `CLAUDE.md`).
@@ -217,8 +126,6 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
     with no notice (accepted at #30's review).
   - The table's geometry is proven from 360 px; 320 px is checked for reflow only
     (#37).
-- **W2 runs without a new go** (Sven, 2026-10-26: "once wave 0 is done, start the
-  next one").
 
 ## Order
 
@@ -258,6 +165,8 @@ issues are merged.
   Suggested 5." names the last voter beside the group's suggestion (no card is paired
   with a name). Also the German count "0/7 haben abgestimmt" (was "haben bisher
   abgestimmt", shortened to fit 360 px), if another wording is wanted.
+- **#52**: paste one real list from Jira and one from Azure DevOps into the sheet, and tell
+  me what came out: the parser's fixtures are reconstructed. Then the issue can close.
 - **#47: do not set the Google or Microsoft keys until #48 has merged.** Before it, a guest
   who signs in loses their rooms for good. Then follow the list in PR #107, set both proxy
   steps first (above), run the live check, and close #47.
