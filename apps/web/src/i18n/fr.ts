@@ -722,7 +722,7 @@ export const fr: Catalog<"many"> = {
       "Quelqu’un d’autre a repris le rôle de product owner. Récupérez ce rôle dans la salle, et vous pourrez la supprimer.",
     signInAgain:
       "Certaines de vos salles demandent une connexion récente. Déconnectez-vous, puis reconnectez-vous pour les voir.",
-    lastActive: "Activité {{when}}",
+    lastActive: "Dernière activité {{when}}",
     rounds_one: "{{count, number}} tour",
     rounds_many: "{{count, number}} de tours",
     rounds_other: "{{count, number}} tours",

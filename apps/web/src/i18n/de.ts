@@ -182,7 +182,7 @@ export const de: Catalog = {
     timerRevealAtEnd: "Aufdecken, wenn der Timer abläuft",
     timerRevealAtEndHint: "Aus: Alle sehen, dass die Zeit um ist, und der Product Owner deckt auf.",
     whoCanReveal: "Wer aufdecken darf",
-    whoCanRevealHint: "Wer die Karten umdrehen darf. Beobachter nie.",
+    whoCanRevealHint: "Wer die Karten aufdecken darf. Beobachter nie.",
     revealByOwner: "Der Product Owner",
     revealByAnyone: "Alle, die abstimmen",
     anonymous: "Anonyme Abstimmung",
@@ -700,7 +700,7 @@ export const de: Catalog = {
       "Jemand anderes hat die Rolle des Product Owners übernommen. Holen Sie sich die Rolle im Raum zurück, dann können Sie ihn löschen.",
     signInAgain:
       "Einige Ihrer Räume verlangen eine aktuelle Anmeldung. Melden Sie sich ab und wieder an, um sie zu sehen.",
-    lastActive: "Aktiv {{when}}",
+    lastActive: "Zuletzt aktiv {{when}}",
     rounds_one: "{{count, number}} Runde",
     rounds_other: "{{count, number}} Runden",
     showMore: "Mehr Räume anzeigen",

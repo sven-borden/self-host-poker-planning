@@ -59,7 +59,8 @@ const en = {
     "What other people already hold: an export, a screenshot, what they remember. Those are theirs.",
   staysBackups:
     "Backups of this server keep your data until they expire. If one is ever restored, your account comes back with it, and you can delete it again.",
-  staysLogs: "Server logs hold ids, never your name or address, and age as logs do.",
+  staysLogs:
+    "Server logs hold ids, never your name or address, and are cleared on the server’s own schedule.",
 
   sharedTitle: "Rooms with other people in them",
   sharedIntro:
@@ -191,11 +192,11 @@ const fr: Copy & Partial<Record<`${FrenchMany}_many`, string>> = {
   staysBackups:
     "Les sauvegardes de ce serveur conservent vos données jusqu’à leur expiration. Si l’une d’elles est restaurée, votre compte revient avec elle, et vous pouvez le supprimer à nouveau.",
   staysLogs:
-    "Les journaux du serveur contiennent des identifiants, jamais votre nom ni votre adresse, et vieillissent comme tout journal.",
+    "Les journaux du serveur contiennent des identifiants, jamais votre nom ni votre adresse, et sont effacés au rythme propre au serveur.",
 
   sharedTitle: "Salles où d’autres personnes sont présentes",
   sharedIntro:
-    "Ces salles sont les vôtres, et d’autres personnes y ont une place. Choisissez qui reprend chacune\u{202f}: la salle et le droit de la supprimer vont à cette personne. Sans choix de votre part, elle revient à la personne qui l’anime en ce moment si elle est là\u{202f}; sinon à la personne présente qui y a sa place depuis le plus longtemps\u{202f}; sinon à celle qui y a sa place depuis le plus longtemps. Seule une personne admise par la règle d’une salle peut la reprendre. Une salle ne disparaît que si vous le demandez.",
+    "Ces salles sont les vôtres, et d’autres personnes y ont une place. Choisissez qui reprend chacune\u{202f}: la salle et le droit de la supprimer vont à cette personne. Sans choix de votre part, elle revient à la personne qui l’anime en ce moment si elle est là\u{202f}; sinon à la personne présente arrivée la première\u{202f}; sinon à la personne arrivée la première. Seule une personne admise par la règle d’une salle peut la reprendre. Une salle ne disparaît que si vous le demandez.",
   sharedGuest_one:
     "Une salle reprise par un invité reste tant qu’elle sert : après {{count, number}} jour sans activité, elle est supprimée.",
   sharedGuest_many:
@@ -206,9 +207,9 @@ const fr: Copy & Partial<Record<`${FrenchMany}_many`, string>> = {
   takerLabel: "Qui reprend {{name}}",
   takerNobody: "Personne ici",
   takerRunning: "{{name}} anime la salle en ce moment.",
-  takerHere: "{{name}} est là, et y a sa place depuis le plus longtemps.",
+  takerHere: "{{name}} est là, et a rejoint la salle avant les autres.",
   takerAway:
-    "Aucune personne pouvant la reprendre n’est là. {{name}} y a sa place depuis le plus longtemps.",
+    "Aucune personne pouvant la reprendre n’est là. {{name}} l’a rejointe avant les autres.",
   takerChosen: "{{name}} reprend cette salle et le droit de la supprimer.",
   takerNone: "Personne ici ne peut reprendre cette salle\u{202f}: elle reste sans propriétaire.",
   takerDelete: "Personne : supprimer cette salle",
@@ -305,7 +306,7 @@ const de: Copy = {
   staysBackups:
     "Sicherungen dieses Servers behalten Ihre Daten, bis sie ablaufen. Wird eine davon wiederhergestellt, kommt Ihr Konto mit ihr zurück, und Sie können es erneut löschen.",
   staysLogs:
-    "Server-Protokolle enthalten IDs, nie Ihren Namen oder Ihre Adresse, und altern wie alle Protokolle.",
+    "Server-Protokolle enthalten IDs, nie Ihren Namen oder Ihre Adresse, und werden nach dem eigenen Zeitplan des Servers gelöscht.",
 
   sharedTitle: "Räume mit anderen Personen",
   sharedIntro:
