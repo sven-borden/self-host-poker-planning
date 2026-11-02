@@ -6,11 +6,13 @@
  * property names are Better Auth's field names; the columns are snake_case.
  *
  * A guest is a `user` row with `is_anonymous = true`, a placeholder email and an empty
- * `name` until the person picks one. `account` and `verification` stay empty until W5
- * (Google, Microsoft). `session.ip_address` and `session.user_agent` exist because the
- * adapter writes them, but `auth.ts` always stores null there: no tracking by default.
+ * `name` until the person picks one. A person who signs in with Google or Microsoft (#47)
+ * has an `account` row, without the provider's tokens: `auth.ts` clears them before the
+ * write. `verification` holds a sign-in in progress. `session.ip_address` and
+ * `session.user_agent` exist because the adapter writes them, but `auth.ts` always stores
+ * null there: no tracking by default.
  */
-import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 const instant = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
 
@@ -18,7 +20,10 @@ export const user = pgTable("user", {
   id: text("id").primaryKey(),
   /** The display name; "" until the person picks one (#16). Cleaned by the domain's rules. */
   name: text("name").notNull(),
-  /** A placeholder for a guest (`…@anonymous…`), never shown and never mailed. */
+  /**
+   * A placeholder for a guest (`…@anonymous…`), never shown and never mailed. An account's
+   * real address: shown to its owner only, and in no room's snapshot.
+   */
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").notNull().default(false),
   image: text("image"),
@@ -58,8 +63,11 @@ export const account = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    /** Always null, like the id token and both expiries: `auth.ts` clears them. */
     accessToken: text("access_token"),
+    /** Always null: `auth.ts` clears it. */
     refreshToken: text("refresh_token"),
+    /** Always null: `auth.ts` clears it. */
     idToken: text("id_token"),
     accessTokenExpiresAt: instant("access_token_expires_at"),
     refreshTokenExpiresAt: instant("refresh_token_expires_at"),
@@ -67,8 +75,14 @@ export const account = pgTable(
     password: text("password"),
     createdAt: instant("created_at").notNull().defaultNow(),
     updatedAt: instant("updated_at").notNull().defaultNow(),
+    /** A Microsoft account's tenant (`tid`), for rooms limited to one (#50). */
+    tenantId: text("tenant_id"),
   },
-  (table) => [index("account_user_id_idx").on(table.userId)],
+  (table) => [
+    index("account_user_id_idx").on(table.userId),
+    // Every sign-in looks up by these two, and one person at a provider is one account.
+    uniqueIndex("account_provider_account_idx").on(table.providerId, table.accountId),
+  ],
 );
 
 export const verification = pgTable(

@@ -6,9 +6,10 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { SIGN_IN_META } from "@pp/protocol";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { Config } from "./config.ts";
+import { type Config, socialProviderIds } from "./config.ts";
 import { type Logger, REQUEST_FAILED } from "./logger.ts";
 import { observabilitySources, observabilityTags } from "./observability.ts";
 import { mergeCspSources, securityHeaders } from "./security-headers.ts";
@@ -154,7 +155,11 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
   app.all("/api/*", (c) => c.notFound());
 
   if (deps.staticDir && existsSync(join(deps.staticDir, "index.html"))) {
-    const tags = [...(deps.websocketOnly ? [TRANSPORT_META] : []), ...observabilityTags(config)];
+    const tags = [
+      ...(deps.websocketOnly ? [TRANSPORT_META] : []),
+      ...observabilityTags(config),
+      ...signInTags(config),
+    ];
     mountWebApp(app, deps.staticDir, tags);
   }
   return app;
@@ -281,9 +286,18 @@ function mountWebApp(app: Hono<AppEnv>, root: string, headTags: readonly string[
 export const TRANSPORT_META = '<meta name="pp-socket-transport" content="websocket">';
 
 /**
+ * What tells the web app which sign-ins this install has (#47): the providers' ids, never a
+ * key. With no provider there is no tag, and the page offers no sign-in.
+ */
+export function signInTags(config: Config): string[] {
+  const ids = socialProviderIds(config);
+  return ids.length > 0 ? [`<meta name="${SIGN_IN_META}" content="${ids.join(" ")}">`] : [];
+}
+
+/**
  * `index.html` with `tags` at the end of its head, read once: the file is immutable in the
- * image. `TRANSPORT_META` (#39) and the opt-in services' tags (#40); never inline script,
- * which the CSP refuses. Served at `/index.html` too, which the allowlist would otherwise
+ * image. `TRANSPORT_META` (#39), the opt-in services' tags (#40) and `signInTags` (#47); never
+ * inline script, which the CSP refuses. Served at `/index.html` too, which the allowlist would otherwise
  * serve from disk without them.
  */
 function indexWithHead(root: string, tags: string) {
