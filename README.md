@@ -149,8 +149,11 @@ Restart the server after changing them. Sign-in asks for a name and an email and
 the provider's tokens are not stored. Failed sign-ins are logged with a reason and no secret: on
 `invalid_code`, check the secret and the redirect URI.
 
-An email address never joins two sign-ins into one account: someone with the same address from
-another provider or a new id is refused and told so. Starting a sign-in is limited per client
+A guest who signs in keeps their rooms, PO role, votes, room passwords and history, and two
+browsers of one person become one seat. An email address never joins two sign-ins into one
+account: Google and Microsoft sign-ins of one address are two accounts, a Microsoft account never
+takes an address from its owner, and a new Google id on an address already in use is refused and
+told so. Starting a sign-in is limited per client
 address (30 a minute), so get the client address right first (see "Behind a reverse proxy").
 With two proxies that takes both steps: the second must trust the first, and then
 `TRUST_PROXY=2`. Until both are done, every visitor shares one limit of 30 a minute.

@@ -27,6 +27,11 @@ export interface RetentionOptions {
    */
   occupied?: () => readonly string[] | Promise<readonly string[]>;
   /**
+   * Runs before each purge (#48: moves nobody finished, after a process died, are finished
+   * here, a few minutes after every start). It never rejects.
+   */
+  beforePurge?: () => Promise<unknown>;
+  /**
    * The run's clock, epoch milliseconds, for tests. Left out (production), each run reads
    * Postgres's `now()`, the clock that writes `last_active_at`.
    */
@@ -55,6 +60,7 @@ export function startRetention(options: RetentionOptions): Retention {
     store,
     ttlDays,
     occupied = () => [],
+    beforePurge,
     now,
     random = Math.random,
     startDelayMs = RETENTION_START_DELAY_MS,
@@ -87,6 +93,7 @@ export function startRetention(options: RetentionOptions): Retention {
   async function purge(): Promise<RetentionRun> {
     const started = performance.now();
     const durationMs = () => Math.round(performance.now() - started);
+    if (beforePurge) await beforePurge();
     let inUse: readonly string[];
     try {
       // One instance answers at once, several after their answers: awaited either way.

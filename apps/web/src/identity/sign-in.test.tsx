@@ -2,7 +2,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useIdentityStore } from "../stores/identity-store.ts";
 import { fetchSession, IdentityError, signOut, startSignIn } from "./identity.ts";
-import { readSignInError, returnPath, signInProviders, takeSignInError } from "./sign-in.ts";
+import {
+  announceSignIn,
+  readSignInError,
+  returnPath,
+  SIGN_IN_CHANNEL,
+  signInProviders,
+  takeSignInError,
+} from "./sign-in.ts";
 import { SignInRow } from "./sign-in-row.tsx";
 
 function meta(content?: string) {
@@ -82,6 +89,12 @@ describe("a failed sign-in's code", () => {
     expect(takeSignInError()).toBeNull();
   });
 
+  it("gives the news that rooms are still moving like a failure's code (#48)", () => {
+    arrive("?sign_in_error=still_moving");
+    readSignInError();
+    expect(takeSignInError()).toBe("still_moving");
+  });
+
   it("is a plain failure when this version does not know it", () => {
     arrive("?sign_in_error=%3Cscript%3E");
     readSignInError();
@@ -93,6 +106,54 @@ describe("a failed sign-in's code", () => {
     readSignInError();
     expect(replace).not.toHaveBeenCalled();
     expect(takeSignInError()).toBeNull();
+  });
+});
+
+describe("the word to a guest's other tabs (#48)", () => {
+  /** What another tab hears from `announceSignIn`, after a sign-in that ended with `search`. */
+  async function comesBack(search: string) {
+    const heard: unknown[] = [];
+    const tab = new BroadcastChannel(SIGN_IN_CHANNEL);
+    tab.onmessage = (event) => heard.push(event.data);
+    vi.stubGlobal("location", { href: `http://localhost/r/AbCdEf2345${search}` });
+    vi.spyOn(window.history, "replaceState").mockImplementation(() => {});
+    readSignInError();
+    announceSignIn();
+    takeSignInError();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    tab.close();
+    return heard;
+  }
+
+  beforeEach(() => sessionStorage.clear());
+
+  async function leaveToSignIn() {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => answer({ url: "https://accounts.google.com/x" })),
+    );
+    await startSignIn("google");
+  }
+
+  it("goes out once from the tab that left to sign in, when it comes back", async () => {
+    await leaveToSignIn();
+    expect(await comesBack("")).toEqual([{ finished: true }]);
+    expect(await comesBack("")).toEqual([]);
+  });
+
+  it("goes out when rooms are still moving: that person is signed in", async () => {
+    await leaveToSignIn();
+    expect(await comesBack("?sign_in_error=still_moving")).toHaveLength(1);
+  });
+
+  it("stays in after a failure, which has no new cookie, and is not owed later", async () => {
+    await leaveToSignIn();
+    expect(await comesBack("?sign_in_error=cancelled")).toEqual([]);
+    expect(await comesBack("")).toEqual([]);
+  });
+
+  it("stays in for a page that never left", async () => {
+    expect(await comesBack("")).toEqual([]);
   });
 });
 

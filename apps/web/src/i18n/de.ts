@@ -600,6 +600,8 @@ export const de: Catalog = {
         "Zu viele Anmeldeversuche. Warten Sie eine Minute und versuchen Sie es dann erneut.",
       failed:
         "Die Anmeldung wurde nicht abgeschlossen. Versuchen Sie es erneut oder machen Sie ohne Konto weiter.",
+      stillMoving:
+        "Sie sind angemeldet. Einige Ihrer Räume werden noch in Ihr Konto übertragen. Öffnen Sie sie gleich noch einmal.",
     },
   },
   password: {

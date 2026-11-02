@@ -8,7 +8,8 @@
  *    Only `endCountdown` skips it: it says nobody is left for the round it would start.
  * 2. Run the command.
  * 3. On success, settle the round: drop the votes of people who are no longer voters
- *    (while Voting), then reveal when every eligible voter has voted.
+ *    (while Voting), then reveal when every eligible voter has voted. `moveGuest` only
+ *    drops: a sign-in is nothing anyone at the table did, so it reveals nothing itself.
  */
 import {
   canonicalDeck,
@@ -85,14 +86,15 @@ const OWNER_ONLY: ReadonlySet<CommandType> = new Set<CommandType>([
 
 /**
  * Commands a non-participant may send: entering, the timer ping, the server's own
- * presence updates (the actor is the server; `who` names the person), and the PO's
- * password (#31), which the PO may set from outside the room too.
+ * presence updates (the actor is the server; `who` names the person), the PO's password
+ * (#31), which the PO may set from outside the room too, and the server's `moveGuest`.
  */
 const OPEN: ReadonlySet<CommandType> = new Set<CommandType>([
   "join",
   "timeUp",
   "presence",
   "password",
+  "moveGuest",
   "endCountdown",
 ]);
 
@@ -101,7 +103,7 @@ export function apply(state: RoomState, command: Command, ctx: ApplyContext): Ap
   const resolved = leftAlone ? done(state) : resolveDeadline(state);
   const step = run(resolved.state, command, ctx);
   if ("error" in step) return { ok: false, error: step.error, ...resolved };
-  const settled = settle(step.state, ctx.now);
+  const settled = settle(step.state, ctx.now, command.type !== "moveGuest");
   const causes = [...resolved.causes, ...step.causes, ...settled.causes];
   // The round the deadline ended is the revealed one; the command can only abandon the next.
   const ended = resolved.ended ?? step.ended;
@@ -252,6 +254,8 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       return presence(state, command.who, command.connected, now);
     case "password":
       return password(state, command.on);
+    case "moveGuest":
+      return moveGuest(state, command.guest, command.account);
     default:
       return unknownCommand(command);
   }
@@ -374,6 +378,78 @@ function password(state: RoomState, on: unknown): Step {
   if (!had) return done(state);
   const { hasPassword: _, ...open } = state;
   return done(open, { type: "settingsUpdated", password: "removed" });
+}
+
+/**
+ * A guest signed in (#48, ADR-025): what the guest holds in this room becomes the account's.
+ * Nothing changes when the guest holds nothing here, so running it again is a no-op. No cause:
+ * nobody came or went, the same person sits in the same place under another id, and a sign-in
+ * is nothing the room is told about (the address, the provider and the tenant stay out of it).
+ *
+ * Alone in the room, the guest's seat, as it is, with its name, role, avatar, join time and
+ * presence, and the guest's vote become the account's. When the account sits here too, its seat
+ * stays with the name the room knows it by, and is as present as the more present of the two
+ * seats. It takes the guest's PO role, and when the guest's
+ * card is the one that stands while the round votes, it becomes a voter, or `settle` would drop
+ * that card. The account's card stands over the guest's, with one exception: after an anonymous
+ * reveal both stay. Taking a card off the table as a seat goes would tie that card to that seat,
+ * so the guest's stays as a departed voter's card does (`removeParticipant`), under the guest's
+ * id, which then names nobody.
+ */
+function moveGuest(state: RoomState, guest: UserId, account: UserId): Step {
+  if (guest === account) return done(state);
+  const round = state.round;
+  const guestVote = round ? ownVote(round, guest) : undefined;
+  const seat = participant(state, guest);
+  const movesOwner = state.ownerId === guest;
+  const votes = round && guestVote ? movedVotes(round, guest, account, guestVote) : round?.votes;
+  if (!seat && !movesOwner && votes === round?.votes) return done(state);
+  const next: RoomState = {
+    ...state,
+    ...(movesOwner && { ownerId: account }),
+    participants: movedSeat(state, guest, account),
+  };
+  return done(
+    round && votes && votes !== round.votes ? withRound(next, { ...round, votes }) : next,
+  );
+}
+
+/** The round's votes after the move; the same object when they stay as they are. */
+function movedVotes(
+  round: Round,
+  guest: UserId,
+  account: UserId,
+  vote: Vote,
+): Record<UserId, Vote> {
+  const rest = omit(round.votes, guest);
+  if (!ownVote(round, account)) return { ...rest, [account]: vote };
+  return round.anonymous && round.phase === "revealed" ? round.votes : rest;
+}
+
+function movedSeat(state: RoomState, guest: UserId, account: UserId): RoomState["participants"] {
+  const seat = participant(state, guest);
+  if (!seat) return state.participants;
+  const rest = omit(state.participants, guest);
+  const kept = participant(state, account);
+  if (!kept) return { ...rest, [account]: seat };
+  const round = state.round;
+  const guestCardStands =
+    round?.phase === "voting" && ownVote(round, guest) && !ownVote(round, account);
+  const merged = morePresent(kept, seat);
+  return { ...rest, [account]: guestCardStands ? { ...merged, role: "voter" } : merged };
+}
+
+/**
+ * `kept`, as present as the more present of the two seats. The person has one presence: the
+ * away a seat of theirs left behind a day ago says nothing about the seat they sit in now, and
+ * would let anyone claim a PO role the person never left, and shrink the eligible voters.
+ * Both away: the person was last here at the later of the two.
+ */
+function morePresent(kept: Participant, other: Participant): Participant {
+  const { awaySince: _, ...here } = kept;
+  const merged = { ...here, connected: kept.connected || other.connected };
+  if (kept.awaySince === undefined || other.awaySince === undefined) return merged;
+  return { ...merged, awaySince: Math.max(kept.awaySince, other.awaySince) };
 }
 
 // ---------------------------------------------------------------------------------- rounds
@@ -579,11 +655,15 @@ function updateSettings(state: RoomState, patch: unknown, now: number): Step {
  * voters (they left, were kicked, became observers, or are a PO who no longer votes),
  * each with a `voteRetracted` cause, then
  * reveal when `revealWhenAllVoted` is on and every eligible voter (a voter who is not
- * away) has voted. A leave, kick, role or settings change can complete a round too.
- * Revealed: a countdown to the next item stops once the queue is empty, the setting off or
- * the PO gone or away.
+ * away) has voted. A leave, kick, role or settings change can complete a round too;
+ * `reveals` false only drops. Revealed: a countdown to the next item stops once the queue is
+ * empty, the setting off or the PO gone or away.
  */
-function settle(state: RoomState, now: number): { state: RoomState; causes: Cause[] } {
+function settle(
+  state: RoomState,
+  now: number,
+  reveals = true,
+): { state: RoomState; causes: Cause[] } {
   const round = state.round;
   if (round?.advanceAt !== undefined && !canAdvance(state)) {
     return { state: withRound(state, withoutAdvance(round)), causes: [{ type: "advanceHeld" }] };
@@ -605,6 +685,7 @@ function settle(state: RoomState, now: number): { state: RoomState; causes: Caus
     (id) => isVoter(state, id) && isPresent(state.participants[id]),
   );
   const everyoneVoted =
+    reveals &&
     state.settings.revealWhenAllVoted &&
     eligible.length > 0 &&
     eligible.every((id) => ownVote(current, id));

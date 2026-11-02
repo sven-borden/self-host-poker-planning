@@ -1,27 +1,21 @@
 {
-  "id": "a4d510fd-d142-4546-b99c-629feb14467d",
+  "id": "8de19ca6-884c-49e4-90d1-44baed0f8dcb",
   "prevId": "d433a5f4-6521-40e3-aab4-6b17f254b9f8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.connector_token": {
-      "name": "connector_token",
+    "public.guest_link": {
+      "name": "guest_link",
       "schema": "",
       "columns": {
-        "user_id": {
-          "name": "user_id",
+        "guest_user_id": {
+          "name": "guest_user_id",
           "type": "text",
-          "primaryKey": false,
+          "primaryKey": true,
           "notNull": true
         },
-        "connector": {
-          "name": "connector",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sealed_token": {
-          "name": "sealed_token",
+        "account_user_id": {
+          "name": "account_user_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -32,33 +26,46 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "guest_link_account_user_id_idx": {
+          "name": "guest_link_account_user_id_idx",
+          "columns": [
+            {
+              "expression": "account_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
-        "connector_token_user_id_user_id_fk": {
-          "name": "connector_token_user_id_user_id_fk",
-          "tableFrom": "connector_token",
+        "guest_link_guest_user_id_user_id_fk": {
+          "name": "guest_link_guest_user_id_user_id_fk",
+          "tableFrom": "guest_link",
           "tableTo": "user",
-          "columnsFrom": ["user_id"],
+          "columnsFrom": ["guest_user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "guest_link_account_user_id_user_id_fk": {
+          "name": "guest_link_account_user_id_user_id_fk",
+          "tableFrom": "guest_link",
+          "tableTo": "user",
+          "columnsFrom": ["account_user_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "connector_token_user_id_connector_pk": {
-          "name": "connector_token_user_id_connector_pk",
-          "columns": ["user_id", "connector"]
-        }
-      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -174,6 +181,21 @@
           "isUnique": false,
           "concurrently": false,
           "method": "btree",
+          "with": {}
+        },
+        "room_people_idx": {
+          "name": "room_people_idx",
+          "columns": [
+            {
+              "expression": "((live -> 'participants') || coalesce(live #> '{round,votes}', '{}'::jsonb))",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
           "with": {}
         }
       },
@@ -344,7 +366,24 @@
           "notNull": true
         }
       },
-      "indexes": {},
+      "indexes": {
+        "round_history_votes_idx": {
+          "name": "round_history_votes_idx",
+          "columns": [
+            {
+              "expression": "votes",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "jsonb_path_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "round_history_room_id_room_id_fk": {
           "name": "round_history_room_id_room_id_fk",
@@ -454,6 +493,12 @@
         },
         "tenant_id": {
           "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claimed_email": {
+          "name": "claimed_email",
           "type": "text",
           "primaryKey": false,
           "notNull": false

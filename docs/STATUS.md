@@ -85,6 +85,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
   sheet, reorders it, and "Next item" starts the round; optional auto-advance with a 10 s
   countdown. A snapshot carries only the next item. At most 500 items and 256 KB. The issue
   stays open for real pastes. Live at a3ffb5a.
+- A guest who signs in keeps everything from #48 (ADR-025): seats, cards, the PO role,
+  password grants and named history move through `apply`, repeatably, with the guest removed
+  only after a complete pass. The room route loads 183.2 kB. Live at 5b0a93a.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -95,7 +98,8 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- #48 (PR #109): reviewed and fixed, taking `main` in `../pp-wt-48`.
+- #53 (PR #110): in review, in `../pp-wt-53`. Its migration must be regenerated after #48's.
+- #49: an implementer in `../pp-wt-49`.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
 - **Agents again, issue after issue, until the end of 2026-11-02** (Sven, 2026-11-01): the
   main session orchestrates and does not stop between issues (see `CLAUDE.md`).
@@ -103,7 +107,7 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 ## Next
 
 - W3 (#33–#41): all merged but #38 and #41, which need Sven's OQ-1 and OQ-2.
-- W5's #49 to #51 follow #48. W6's #53 to #55 follow. W7 waits for Sven's OQ-3 (#56).
+- W5's #50 and #51 follow #49. W6's #54 and #55 follow #53. W7 waits for Sven's OQ-3 (#56).
 - The local reveal budget fails on clean `main` since 2026-11-02 (named reveal, 1 run of 4
   clean, worst 67 ms; #43 had 10 of 10). CI passes at the first try. Cause not looked for.
 - Image size: 239 MB of 250 MB after #40 (236 MB before; architecture section 12 still
@@ -167,9 +171,8 @@ issues are merged.
   abgestimmt", shortened to fit 360 px), if another wording is wanted.
 - **#52**: paste one real list from Jira and one from Azure DevOps into the sheet, and tell
   me what came out: the parser's fixtures are reconstructed. Then the issue can close.
-- **#47: do not set the Google or Microsoft keys until #48 has merged.** Before it, a guest
-  who signs in loses their rooms for good. Then follow the list in PR #107, set both proxy
-  steps first (above), run the live check, and close #47.
+- **#47: sign-in is ready for your keys.** #48 is live, so it is safe now. Follow the list in
+  PR #107, do both proxy steps first (above), run the live check, then close #47.
 - **After #46**: install the app on a phone and check the icon, the name "Poker" and the bar
   colour, and on Android feel the reveal's beats. No real phone has run it. #46 closed with
   the icon judged by eye and Lighthouse's check replaced by Chromium's.

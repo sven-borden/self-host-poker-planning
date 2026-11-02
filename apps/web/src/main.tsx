@@ -11,7 +11,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./app.tsx";
 import { startLanguage } from "./i18n/i18n.ts";
 import { ensureIdentity } from "./identity/identity.ts";
-import { readSignInError } from "./identity/sign-in.ts";
+import { announceSignIn, readSignInError } from "./identity/sign-in.ts";
 import { startErrorReports } from "./observability/errors.ts";
 import { trackPageViews } from "./observability/page-views.ts";
 import { registerServiceWorker } from "./pwa/register.ts";
@@ -24,6 +24,8 @@ if (!container) {
 
 // Before anything reads the address: a failed sign-in's code is for the page alone (#47).
 readSignInError();
+// Before the session is read: a guest's other tabs hold the identity lock until they hear (#48).
+announceSignIn();
 
 // Sentry and Umami, each only when the server's page asks for it (#40): nothing by default.
 startErrorReports();

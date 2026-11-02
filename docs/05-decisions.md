@@ -617,7 +617,8 @@ Explicit linking stays for #48 (`linkSocial`, from inside a session). It has its
 identity whose provider is not in `trustedProviders` needs a verified address, so linking Microsoft
 will need that list, which does not reopen implicit linking. The cost of this rule is squatting: a
 Microsoft sign-in that claims an address first makes its real owner see `account_exists`. That is
-#48's, with the merge rules and OQ-6.
+#48's, with the merge rules and OQ-6. **Amended by ADR-025:** a Microsoft address no longer claims
+`user.email`, so that squatting is gone, and `linkSocial` stays closed.
 
 **The guest stays, and pays until #48.** Better Auth's anonymous plugin deletes the guest on a
 sign-in; `disableDeleteAnonymousUser` keeps the row, and `auth.ts` marks where `onLinkAccount` goes.
@@ -625,7 +626,8 @@ Until #48 the user id changes: the person returns to the room as somebody new, o
 with the provider's name, must type a room's password again, and is not its PO any more (the old
 seat goes away like any other, and the role can be claimed after 120 s). The old guest's rooms
 and history stay, under the old guest. Signing out starts a fresh guest by reloading the page,
-since the old session's socket cannot carry on; the page stays the same.
+since the old session's socket cannot carry on; the page stays the same. **Amended by ADR-025:**
+that was the state until #48; a guest who signs in now keeps everything.
 
 **No production keys before #48 has merged.** Before #48, a guest who signs in loses the only link
 between that guest and the account: what the callback knows is in a `verification` row it deletes,
@@ -820,6 +822,240 @@ suggests a CSV export, and copying from a sheet is a flow that parses), and for 
 Microsoft documents only an "HTML-formatted table", whose plain-text flavour, which a textarea
 gets, nobody here has seen. Sven pastes one real list from each tool into the box, and the
 samples are replaced with what comes out. `paste-queue.test.ts` says what each one rests on.
+
+## ADR-025: A guest who signs in keeps everything, and an unproved address locks nobody out (2026-11-02, #48)
+
+**Decision.** A sign-in from a guest moves everything the guest holds to the account: seats, PO
+roles, votes, grants and named history. Better Auth makes a new user and calls `onLinkAccount`,
+and `guest-link.ts` does the rest. The guest's row goes only after a complete move. This is what
+makes production keys safe to set (ADR-023).
+
+**What moves, keyed by the user id, the whole list.** In `room.live`: `ownerId`, the key of
+`participants` (name, role, avatar, join time, presence), the key of `round.votes` (a seated
+voter's, or a departed voter's kept card and name). `room.owner_user_id`, by the commit.
+`room_access.user_id`. `round_history.votes` for named rounds, each `who`. `user.avatar` and
+`user.name`, only where the account has none. Ends with the guest: `session.user_id`, and the
+`account` table has no row for a guest, and `connector_token` none either: `saveToken` refuses a
+guest (ADR-026), so that table needs no move. **Not moved, on purpose:** in-memory keys that run out on
+their own, namely the rate limits per user (`rename|user`, `avatar|user`, `password|user`,
+`password|change`), a person's socket count and message buckets, acknowledged command ids and
+presence timers. So a sign-in starts a person's count of wrong passwords afresh; the limits per
+address and per room still hold. Rows an unfinished sign-in holds in `verification` name the
+guest, and find it gone. Anonymous rounds store no person, so nothing of them moves, and a test
+compares them byte for byte. `room.queue` holds no user id (ADR-024: an item is an id, a key, a
+title, a link and a source), and neither do `round.stayed` and `round.advanceAt`.
+
+**A room changes through `apply`.** `moveGuest` is a server command in `packages/domain`, run by
+the room's runner with the compare-and-set, the way `presence` is, so the room's people get a
+normal snapshot and no vote is lost in a race. It carries no cause: nobody came or went, and a
+sign-in is nothing the table is told. `StepResult.quiet` leaves `last_active_at` alone and writes
+no history row, so a move fakes neither activity nor a round's end. The grant moves in the same
+commit (`AccessWrite.moveGrant`), so a kick lands on one id or the other, never between them.
+
+**Finding the guest's rooms.** Seats live in JSON. `room_people_idx` is a GIN index on the
+expression `ROOM_PEOPLE`: `participants` joined with `round.votes`, whose keys are user ids, read
+with `?`. With `room_owner_user_id_idx` it gives a plan of two index scans. `round_history_votes_idx`
+is a `jsonb_path_ops` index for `@>` on named rounds. On 20,000 rooms and rounds a test reads the
+plans and finds no sequential scan; the lookup took about a millisecond on 100,000 rooms with
+eight seats each. `room` updates are already not HOT, since every commit writes the indexed
+`last_active_at`, so the index costs them only its own entries, in GIN's pending list. Below a few
+thousand small rows Postgres may rightly prefer a scan. #49 and #51 can read through the same two
+indexes. The migration is additive and its indexes are not built `concurrently`, which drizzle's
+migrator cannot do inside its transaction: writes to those tables wait while they build, and fail
+nothing. What the indexes cost a large database is under *Accepted*.
+
+**All or nothing, and repeatable.** A transaction across rooms would hold a lock per room around
+the runner, so each room moves alone, and a row makes the whole repeatable. In order:
+1. `begin`: `guest_link (guest, account)` is written and the guest's sessions end, in one
+   transaction. This is the only step that can end the sign-in.
+2. The guest's sockets hear `signedIn` and close, on every instance.
+3. Each room that names the guest moves. A failure does not stop the others, and rooms moved stay
+   moved. The lookup runs again until a pass changes nothing, for a command that was in flight.
+4. After a pass with no failure, `complete`: the remaining grants, the named rounds, the avatar and
+   name, and the guest's row, in one transaction. The row's cascade takes the link. It locks the
+   rooms of the grants `for share` first, as `grantAccess` does, so a new password in progress
+   commits first and the grant it dropped is not copied.
+
+**Who the guest is.** The cookie on the callback says, and if it says nothing, the plugin looks in
+the OAuth state: `/sign-in/social` writes `serverContext.anonymousUserId` there, on the server, from
+the session that started the sign-in. That fallback is taken only when the cookie has no anonymous
+session; it finds a row only if the id is still a guest with a live session. It is bound as the
+sign-in is: the id comes from no request, it lives in the `verification` row of a random single-use
+`state`, and that state is honoured only with the signed state cookie of the browser that started
+it, so a callback another browser started moves nothing (a test holds that).
+
+**One user or none.** Better Auth writes a new user and its account row in one transaction
+(`transaction: true` on the adapter). Without it, a crash between them left a user with no account,
+and the next Microsoft sign-in met `account_exists`, which only SQL recovers. The hook runs after
+that commit: the link's foreign key needs the account's user to be there.
+
+**What fails how.**
+- *The link cannot be written:* a plain error reaches `finishSignIn`, which sends no cookie. The
+  person is still the guest, whole, on `/` with "Sign-in did not finish". The account row Better
+  Auth wrote stays, and trying again finds it. An `APIError` would keep the new session's cookie
+  on the answer: this is why none is thrown there.
+- *A room or the end of the move fails, or takes over 5 s:* the person is signed in and lands where
+  they were going, with a quiet toast (`still_moving`) that rooms are on their way. Every `enter`
+  of the account runs the move again first, and it joins a run in progress. If that fails too,
+  that one room shows them the join form or the password field, and joining is safe: the merge
+  rules take the guest's seat when the move lands.
+- *The process dies* after the row: the move runs again before every purge, so 3 to 5 minutes after
+  a start, then daily, and at the next `enter`.
+- *The process dies* between the provider's answer and the row: no cookie went out, the person is
+  still the guest, and trying again finds the account.
+- *The answer is lost after the row:* the guest's cookie has no session any more, and the browser
+  starts a new guest. Signing in again is the way back to the rooms, which are safely the account's.
+  This is the one path where a person has to do something, and it takes a crash in a moment.
+- *A link that cannot finish:* a room whose state the domain cannot read fails every run, and the
+  guest and its rooms stay out of the purge for as long as the link stands. Each run logs the room's
+  id and the error's code and class, never a value out of the room, and from a day on it logs at
+  `error`. **Nothing ends such a link by itself, on purpose.** Giving up would mean deleting a
+  person or leaving rooms under an id that is gone, on a guess, in the one path that deletes people;
+  and what it costs to wait is one guest row and rooms nobody can open anyway, while the person
+  signs in and uses everything else. It takes someone who can look: repair the room's `live`, or
+  delete that row, and the next `enter` or purge finishes the move (a test does the second).
+Each step changes nothing once done, so two instances or overlapping runs are harmless.
+
+**`disableDeleteAnonymousUser` stays on.** The plugin deletes the guest right after `onLinkAccount`
+whatever came of it, which would take the grants and the link row. `complete` deletes the guest.
+
+**The purge.** While a link row exists neither the guest nor a room it owns is purged, though the
+guest has no session left. Once moved, those rooms are a signed-in user's, and exempt (ADR-014),
+with `last_active_at` as it was.
+
+**The merge rules.** The account already exists; every guest room joins it. Where both sit in one
+room, one seat remains, the account's, with its name, avatar and join time: a sign-in does not
+rename anyone at a table. It takes the guest's PO role. If both voted, the account's card stands;
+if only one did, that card stands. History rows move, and the person is one person from then on.
+A merge does not reveal: `settle` only drops for `moveGuest`.
+
+Cases the rules did not name:
+- **An observing account, and the guest's is the card that stands** while the round votes: the
+  seat becomes a voter, or `settle` would drop the card. The seats counted stay the same; in a
+  room that counts observers they drop by one, as two counted seats became one, which is harmless.
+- **After an anonymous reveal, both cards stay**, though the rule says the account's stands. A
+  card that left the table with a seat would say whose it was, so the guest's stays as a departed
+  voter's card does (ADR-011, #19), under the guest's id, which then names nobody. In a named reveal
+  the guest's card does go, and the results follow.
+- **A round in `round_history` both of them played** keeps both entries, under the account: it is a
+  record, and its stats were counted from both. The two entries show under the names they had.
+- **A PO who does not vote.** A seat that becomes the PO of a room with `poVotes` off loses the card
+  it held, as any hand-over does, with a `voteRetracted`. This is the one case where a merge drops
+  the only card: the room's rule says that seat has none.
+- **The next command after a merge may reveal.** The move does not reveal, but when the seat that
+  went was the last one waited for, every eligible voter has now voted, and the next command by
+  anyone lets `settle` do what the room's rule says. The person's own return counts only if the
+  seat shows away, since `presence` runs only then. Holding it back would need a state of its own.
+- **Two seats, one presence.** The seat that stays is as present as the more present of the two:
+  connected if either is, away only if both are, then since the later of the two. An old away of
+  the account's seat says nothing about a person sitting there now: kept, it would let anyone
+  claim the guest's PO role at once, and take the seat out of the eligible voters.
+- **A deadline that has passed** reveals first, as before any command, exactly once. A countdown
+  that has run out starts the next item the same way. That commit is not quiet: the round it ended
+  gets its history row and `last_active_at`, and `complete` names the account in that row.
+- **A countdown to the next item (ADR-024).** A PO who signs in from the room leaves it for the
+  provider, and that close ends the countdown as a reload does: it costs a press of "Next item" and
+  no round. With another tab left in the room it runs on, and the PO can stop it there. When
+  `signedIn` closes the PO's last socket the same rule holds, with one correction: the account is
+  the same person, so a socket of the account in the room keeps the countdown, in the moment before
+  the role moves. Otherwise it ends and nothing starts. The move itself changes nothing about it:
+  the seat is as present as it was, and `stayed` travels on the round. After a move the question
+  is asked again of the account, since with several instances a move can land before the guest's
+  socket closes. If the move of that room fails while the account sits there, the countdown runs
+  on under the guest's seat, and the same person can stop it by hand once the seat has moved.
+- **A guest with a card and no seat** (left after a named reveal): the card, with its kept name,
+  becomes the account's, so the next history row names the account.
+- **A room the guest owns but left:** `ownerId` moves, and no seat appears.
+- **A role claimed while the person was at the provider.** After 120 s away anyone can claim the
+  PO role, and then the guest holds no role to move. A sign-in through MFA can take that long.
+- **Two sign-ins of one guest at once:** the first account wins the link. The second finds no
+  session for the guest and moves nothing. Both accounts stay usable, but the second browser ends
+  signed out: its stale cookie wipes the new one (see *Accepted*), and it signs in again from a
+  new guest. A test runs this over the whole flow.
+- **A guest's seat colour changes**, as colours come from ids. Nothing else about the seat does.
+- **`user.avatar` and `user.name`** come from the guest only when the account has none, such as
+  a provider's name `cleanName` refuses.
+
+**Live sockets.** Another tab of the guest hears `signedIn` before any room moves, and ignores its
+socket. Its cookie's session is gone, and the callback answers only when the rooms have moved, up
+to 5 s later. Reading `/get-session` in that gap makes a new guest, shows the join form and leaves
+a stray row, and that answer clears the cookie it finds: landing after the callback's, it would
+wipe the new one. So nothing reads it. The tab holds the `pp-identity` lock, which keeps every
+bootstrap of the browser waiting, new tabs too, and reloads when the page the sign-in came back to
+says it landed. That page knows by a note in `sessionStorage`, and says so on the `pp-sign-in`
+`BroadcastChannel`, before it reads the session itself. If no word comes, the tab reloads after
+10 s, above the callback's 5 s, and takes what the browser holds: the page may be closed, and a
+lost answer ends in a new guest as it does in the first tab. The wait outlives the room page: a tab
+that left the room is still the guest's. A word that overtakes `signedIn` counts for 3 s.
+
+So while rooms move, that tab shows no join form, however long they take. After the reload it is
+like any page: its `enter` waits up to 5 s more for a move in progress, and a room that failed
+twice shows the form there as anywhere (*What fails how*). A tab nobody warned can still ask in
+that gap: one with no socket that a person reloads, or one reconnecting as `signedIn` went out. It
+takes a person acting within those seconds, or a dropped connection, and comes to a stray guest row,
+which the purge takes, and at worst to a person signed out, who signs in again.
+
+A socket `dropGuest` misses keeps the guest's snapshots until it next asks for something. It cannot
+sit down: a `join` re-reads its session, past the 60 s cache of other commands, so no seat ever
+names a user that is gone. The presence timers need nothing: a guest's grace names the guest, and
+`markAway` finds nobody by that id, so it can never reach the account. A seat that moved showing
+connected starts the account's grace, or it would stay connected if the person never returned.
+Nothing about the account travels: the event has no payload.
+
+**A Microsoft address never claims `user.email`.** The squatting of #47's review: a Microsoft
+sign-in claims `owner@gmail.example` unverified, the real owner gets `account_exists` from Google,
+is told to sign in another way, cannot, and only SQL recovers it. So a Microsoft account stores
+`sha256(tid:oid)@microsoft.invalid`, under a reserved domain, which no provider can claim and no
+mail can reach, and the address its token claims goes in `account.claimed_email`, shown to its
+owner on the landing page and proof of nothing. `/get-session` gives the page the claim, never the
+stored value, and it is on the `account` row since the hook that keeps `tid` already reads the id
+token there; Better Auth skips `input: false` fields of a provider's profile. Checked against what
+follows: #49 reads ids and is untouched; #50 relies on `tenant_id`, and a domain check on
+`user.email` fails safe for a Microsoft account, which is what ADR-023 wants; #51 exports
+`claimed_email` with the account row and deletes it with it. Google and Microsoft sign-ins of one
+address are two users unless someone links them on purpose, and that is not built. `account_exists`
+remains for one case: a new Google `sub` on an address a Google user holds. A Microsoft account
+with no `email` claim can now sign in, as `oid` and `tid` are who it is. Production had no keys, so
+no row needed changing.
+
+**`linkSocial` stays unreachable,** and implicit linking stays off. Linking through the sign-in
+needs neither. It would have kept the guest's id, but it fails for an account another user owns,
+which is the second browser, the case that matters most here; it needs `allowDifferentEmails`,
+and a `trustedProviders` list for Microsoft. **OQ-6** is answered in `docs/04-open-questions.md`:
+no linking depends on `email_verified`.
+
+**Alternatives.** The plugin's own delete, with the move in the hook: a failure strands the person
+with rooms under a deleted id. A transaction over all rooms: lock order, and a long hold on live
+rooms. Writing `live` by SQL: a vote cast in that moment is lost, and nobody gets a snapshot. A
+side table of who is in which room: a second truth to keep, and a backfill. `user.claimed_email`:
+the profile cannot reach it. A placeholder only for unverified claims: Entra's claim proves nothing
+whatever it says (ADR-023). Keeping the seat colour with a stored seed: a field for a small thing.
+
+**Accepted, and not built.**
+- *A stale session cookie at the callback* wipes the new cookie, with no error. It takes a copied
+  cookie, or a session that ends while the person is at the provider. The person is signed out and
+  signs in again. Low impact.
+- *A Google account with `email_verified: false`* can still take `user.email`: Google is the one
+  provider whose address stands there, and no linking reads it. A later sign-in of that address
+  gets `account_exists`.
+- *A copied guest cookie, or a browser left open,* can move that guest's rooms and PO roles into
+  another account for good, with no prompt and no way back. A guest's cookie is the guest; there is
+  nothing else to ask.
+- *What the indexes cost a large database.* Measured on 100,000 rooms: 3 to 6 % fewer writes, WAL
+  per update doubled (4.8 to 9.6 kB), the worst write up from 14-76 ms to 215-296 ms under sustained
+  load, and an index of 78-86 MB on a 130 MB table. The migration took 6.7 s at that size, holding
+  SHARE on `room` and `round_history`, so votes wait for it rather than fail. A self-hoster with a
+  database that large should expect a first start some seconds longer with a room that pauses
+  XX- *Four points Sven was asked about were reviewed, and none needs fixing:* a merge can let the
+  room's rule reveal on the next command; a PO who does not vote loses a card, announced as a
+  hand-over is; a seat's colour changes; a sign-in resets the per-user count of wrong room passwords,
+  which is no bypass, since the per-address and per-room limits hold, and a fresh guest resets the
+  same count more cheaply.
+
+**For #49.** "My rooms" should call `settle`, or a person who enters no room waits for the next
+purge for a move that did not finish.
+
+**Not tested.** Real Google and Microsoft tokens (`docs/04-open-questions.md`).
 
 ## ADR-026: The connectors' tokens are sealed to their row, with keys from the environment (2026-11-02, #53)
 

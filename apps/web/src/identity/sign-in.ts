@@ -24,6 +24,42 @@ export function returnPath(): string {
   return window.location.pathname.replace(/\/+$/, "") || "/";
 }
 
+/** The channel on which the page a sign-in came back to tells this browser's other tabs (#48). */
+export const SIGN_IN_CHANNEL = "pp-sign-in";
+
+/** In `sessionStorage`, which a tab keeps across the provider's pages: this tab went to sign in. */
+const LEFT_TO_SIGN_IN = "pp-left-to-sign-in";
+
+/** Notes that this tab is leaving for a provider, for `announceSignIn` when it comes back. */
+export function noteLeavingToSignIn(): void {
+  try {
+    sessionStorage.setItem(LEFT_TO_SIGN_IN, "1");
+  } catch {
+    // Storage refused: the other tabs fall back on their timer (`SIGNED_IN_FALLBACK_MS`).
+  }
+}
+
+/**
+ * A tab that went to sign in has come back with the new cookie: the other tabs of a guest who
+ * signed in are waiting for this word (`sign-in-wait.ts`). After `readSignInError`, and before
+ * anything reads the session, since those tabs hold the identity lock. A sign-in that failed
+ * has no new cookie, and nobody waits for it; rooms still moving (`still_moving`) are no failure.
+ */
+export function announceSignIn(): void {
+  let left = false;
+  try {
+    left = sessionStorage.getItem(LEFT_TO_SIGN_IN) !== null;
+    sessionStorage.removeItem(LEFT_TO_SIGN_IN);
+  } catch {
+    return;
+  }
+  const failed = pendingError !== null && pendingError !== "still_moving";
+  if (!left || failed || typeof BroadcastChannel !== "function") return;
+  const channel = new BroadcastChannel(SIGN_IN_CHANNEL);
+  channel.postMessage({ finished: true });
+  channel.close();
+}
+
 let pendingError: SignInErrorCode | null = null;
 
 /**

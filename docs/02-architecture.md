@@ -199,13 +199,15 @@ Every `apply` runs three steps:
    `"timer"`, `revealedAt = deadlineAt`) when `timer.revealAtEnd`, otherwise clear the
    deadline, keep it as `timeUpAt` (#27) and emit `timeUp`. The deadline is cleared either way, so this happens once,
    whoever arrives first, and it stands even when the command is then refused.
-2. **Run the command.** Every command except `join`, `timeUp` and `presence` needs the
-   actor to be a participant (`not_participant`); PO-only commands answer `not_owner`.
+2. **Run the command.** Every command except `join`, `timeUp`, `presence`, `password` and
+   `moveGuest` needs the actor to be a participant (`not_participant`); PO-only commands answer
+   `not_owner`.
 3. **Settle** (on success, while Voting): drop the votes of people who are no longer
    voters, each with a `voteRetracted { who }` cause, then reveal (by `"everyoneVoted"`) when `revealWhenAllVoted` is on, the
    eligible voters are not empty and all of them have voted. Eligible: role `voter`, not
    away (`awaySince` unset), not the PO when `poVotes` is off. So a leave, kick, role
-   change, settings change or owner transfer can complete a round, not only a vote.
+   change, settings change or owner transfer can complete a round, not only a vote. The server's
+   `moveGuest` (#48) only drops: a sign-in is nothing anyone did, so it reveals nothing itself.
    `timeUp` succeeds as a no-op command, so it runs this settle step too: the server's
    own timeout settles the round like any other command.
 
@@ -463,6 +465,7 @@ and they are committed.
 | `room` | `id` uuid, `code` text unique, `name` text null, `owner_user_id` text (a copy of `live.ownerId`, written by every commit), `live` jsonb (`RoomState`: settings, people, the round), `queue` jsonb null (the backlog queue, #52: part of the state `apply` sees, split off in the store and written only by a commit that changed it, ADR-024), `version` int (starts at 1), `password_hash` text null (argon2id PHC string), `password_failures` int and `password_failures_since` null (the per-room count of wrong passwords, #31), `created_at`, `last_active_at` (indexed, for the retention purge); `owner_user_id` is indexed too |
 | `room_access` | `room_id` (cascade delete), `user_id` (cascade delete with the user), `granted_at`; primary key `(room_id, user_id)`, and an index on `user_id` for the cascade from a deleted user: who may enter a room with a password without typing it (#31) |
 | `round_history` | `id` identity, `room_id` (cascade delete), `number`, unique `(room_id, number)`, `subject` jsonb, `deck` jsonb (`{ spec, specials }`), `votes` jsonb, `stats` jsonb (`computeResults`), `final` text null, `started_at`, `revealed_at`, `finished_at` |
+| `guest_link` (#48) | `guest_user_id` primary key, `account_user_id` indexed (both cascade with the user), `created_at`: a guest moving to an account. Written before anything moves, gone with the guest; while it exists the move can run again and the purge leaves the guest and its rooms alone (section 7) |
 | Better Auth (#10) | `user` (with `is_anonymous`), `session`, `account`, `verification`, added by a later migration |
 | later | `backlog_item` (W6), `connector_token` (W6, encrypted), `brand` (W7) |
 
@@ -559,7 +562,8 @@ cascade, the password counters are columns of the row. Then orphan guests, also 
 anonymous users at least a day old (a sign-in writes the user before its session) with no
 session that has not expired and no room they own (`room_owner_user_id_idx`); their
 sessions, accounts and grants go by cascade (`room_access_user_id_idx`), as would a
-connector token (a guest holds none), and a signed-in user is never one. Last, the ended windows of wrong passwords (#31) of the rooms that
+connector token (a guest holds none), and a signed-in user is never one. A guest on its way to an account (`guest_link`, #48) is left alone, and so are
+the rooms it owns. Moves nobody finished run before each purge. Last, the ended windows of wrong passwords (#31) of the rooms that
 stay are cleared, without touching `last_active_at`, and so are the `verification` rows
 of sign-ins nobody finished. One `info` line per run: `rooms`,
 `history`, `guests`, `passwordWindows`, `verifications`, `interrupted`, `durationMs`; a failure logs its
@@ -684,7 +688,8 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   - **Callback**: `GET /api/auth/callback/google` or `/microsoft`, under `BASE_URL`; the
     worker leaves `/api` alone. It always ends in a 302 to the app, with
     `?sign_in_error=cancelled|account_exists|no_email|tenant_not_allowed|rate_limited|failed`
-    when it failed. The page takes that out of the address and says it once. One log line holds
+    when it failed, and `still_moving` when it worked with rooms left to move (#48). The page
+    takes that out of the address and says it once. One log line holds
     the code and a reason from a fixed list, never the query: `warn` for what a stranger's link
     or a person can cause, `error` when this server, its keys or a provider failed. Better Auth's
     own lines during a callback are `debug`, since anyone can send one.
@@ -699,16 +704,33 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   - **Linking**: none by address (`disableImplicitLinking`). A sign-in whose address already
     belongs to another identity is refused (`account_exists`), whichever provider it comes from
     and whatever it says of the address: that is an account takeover otherwise, and Entra's
-    claim proves nothing. The owner still signs in with their own identity. Explicit linking
-    (`linkSocial`) stays for #48, with OQ-6 and the merge rules.
+    claim proves nothing. The owner still signs in with their own identity. `linkSocial` stays
+    closed: a guest links through the sign-in, and nothing there reads `email_verified` (OQ-6).
+  - **A Microsoft address** (#48, ADR-025) never claims the unique `user.email`, or a claim nobody
+    proved would lock out the address's owner. It stores `sha256(tid:oid)@microsoft.invalid`, and
+    the claim sits in `account.claimed_email`, which `/get-session` gives its owner. A Google and
+    a Microsoft sign-in of one address are two users. `account_exists` now means a new Google `sub`
+    on an address a Google user holds.
   - **Tenant**: `MICROSOFT_TENANT_ID` picks Microsoft's URL, and `validateUserInfo` holds it: a
     GUID must equal the token's `tid`, `organizations` refuses the consumer tenant, `consumers`
     takes only it. It runs before any write, on a first sign-in, a link and each later sign-in,
     and a refusal comes back as `tenant_not_allowed`.
-  - **The guest**: `disableDeleteAnonymousUser` keeps the row; a sign-in makes a new user, and
-    until #48 the person returns to the room as somebody new. #48 moves what the guest owns in
-    `onLinkAccount` (room `owner_user_id`, `live.ownerId`, participants, history), or links with
-    `linkSocial`, then clear `is_anonymous`.
+  - **The guest** (#48, ADR-025, `guest-link.ts`): a sign-in makes a new user, or finds the one
+    that exists, and everything the guest holds moves to it: seats, PO roles, votes, grants, named
+    history. `onLinkAccount` writes `guest_link` and ends the guest's sessions in one transaction,
+    and a failure there ends the sign-in with no cookie, so the person stays the guest. Then the
+    guest's sockets hear `signedIn` and close, each room moves by the server's `moveGuest` through
+    its runner, keeping `last_active_at`, and last, in one transaction, the remaining grants, the
+    named rounds and the guest's row go. A room that fails does not stop the others. Everything
+    past the row runs again at the account's next `enter` and before every purge, and changes
+    nothing once done. The callback waits 5 s for it, then lets the person go on with a quiet
+    `still_moving`. Until the callback answers the browser holds a cookie with no session, so a tab
+    that heard `signedIn` holds the `pp-identity` lock, and no tab reads the session, until the
+    page the sign-in came back to says so on the `pp-sign-in` `BroadcastChannel`, or 10 s pass.
+    `disableDeleteAnonymousUser` stays on, as the plugin's delete would ignore how the move went.
+    A person's rooms are found by `room_people_idx`, a GIN index on seats and votes, and named
+    rounds by `round_history_votes_idx`. A user and its account row are written in one
+    transaction (`transaction: true`).
   - **No seam**: nothing configures a provider's address; tests replace `fetch` in their own
     process (`fake-oidc.ts`, not in the image).
   - **Sign-out**: `POST /api/auth/sign-out`, then a reload, which makes a new guest on the page.

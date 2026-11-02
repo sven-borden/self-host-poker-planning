@@ -140,6 +140,124 @@ test.describe("with provider keys", () => {
     await context.close();
   });
 
+  test("a guest PO signs in at the table: same seat, same card, no form, and no other tab left behind", async ({
+    browser,
+  }) => {
+    const { context, page } = await newPerson(browser);
+    const who = person("Grace Hopper");
+    await atProviders(context, who);
+    const code = await newRoom(page);
+    await page.getByRole("textbox", { name: "Your name" }).fill("Table Name");
+    await joinAs(page);
+    // A second person keeps the round open: alone, a card would reveal it.
+    const ben = await newPerson(browser);
+    await ben.page.goto(`${SIGN_IN_BASE}/r/${code}`);
+    await ben.page.getByRole("textbox", { name: "Your name" }).fill("Ben");
+    await joinAs(ben.page);
+    await page.getByRole("button", { name: "Start voting" }).click();
+    const card = page.getByRole("button", { name: "5", exact: true });
+    await card.click();
+    await expect(card).toHaveAttribute("aria-pressed", "true");
+
+    const other = await context.newPage();
+    await other.goto(`${SIGN_IN_BASE}/r/${code}`);
+    await expect(other.locator("[data-you-name] bdi")).toHaveText("Table Name");
+
+    await buttonOf(page, "Sign in with Microsoft").click();
+    await expect(page.locator("section[data-you] [data-account]")).toHaveText("Grace Hopper");
+    expect(page.url()).toBe(`${SIGN_IN_BASE}/r/${code}`);
+    await expect(page.locator("[data-you-name] bdi")).toHaveText("Table Name");
+    await expect(page.getByRole("button", { name: "Join the room" })).toHaveCount(0);
+    await expect(card).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "Reveal cards" }).first()).toBeEnabled();
+    await expectNoAddress(page, who, "Microsoft");
+
+    // The other tab of that guest hears of it, and comes back as the account, at the same seat.
+    await expect(other.locator("section[data-you] [data-account]")).toHaveText("Grace Hopper");
+    await expect(other.locator("[data-you-name] bdi")).toHaveText("Table Name");
+    await expect(other.getByRole("button", { name: "Join the room" })).toHaveCount(0);
+    await expect(other.getByRole("button", { name: "5", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // At the table the seat keeps the name it had, and the round stays open.
+    await expect(ben.page.getByText("Table Name").first()).toBeVisible();
+    await expect(ben.page.getByText("Grace Hopper")).toHaveCount(0);
+    await expect(ben.page.getByRole("button", { name: "Join the room" })).toHaveCount(0);
+    await context.close();
+    await ben.context.close();
+  });
+
+  test("another tab waits out a move of seconds, with no session read and no join form", async ({
+    browser,
+  }) => {
+    const { context, page } = await newPerson(browser);
+    const who = person("Slow Move");
+    await atProviders(context, who);
+    const code = await newRoom(page);
+    await page.getByRole("textbox", { name: "Your name" }).fill("Seat Name");
+    await joinAs(page);
+
+    const other = await context.newPage();
+    await other.goto(`${SIGN_IN_BASE}/r/${code}`);
+    await expect(other.locator("[data-you-name] bdi")).toHaveText("Seat Name");
+    const asked: string[] = [];
+    other.on("request", (request) => {
+      const { pathname } = new URL(request.url());
+      if (pathname.startsWith("/api/auth/")) asked.push(pathname);
+    });
+    // In a test no tab can tell a form that flashed from one that never came: the page keeps count.
+    await other.evaluate(() => {
+      const seen = { forms: 0 };
+      Object.assign(window, { seen });
+      new MutationObserver(() => {
+        const form = [...document.querySelectorAll("button")].some(
+          (button) => button.textContent === "Join the room",
+        );
+        if (form) seen.forms += 1;
+      }).observe(document.documentElement, { childList: true, subtree: true });
+    });
+
+    // The room's row stays locked for over 3 s, so the commit waits as on a slow database, and
+    // the callback answers that much after the other tab heard `signedIn`.
+    const holding = dbQuery(
+      `do $$ begin perform 1 from room where code = '${code}' for update;
+       perform pg_sleep(3.5); end $$`,
+      [],
+    );
+    await expect
+      .poll(async () => {
+        const rows = await dbQuery(
+          "select 1 from pg_stat_activity where query like 'do $$ begin perform 1 from room%' and state = 'active' and pid <> pg_backend_pid()",
+          [],
+        );
+        return rows.length;
+      })
+      .toBeGreaterThan(0);
+    const started = Date.now();
+    await buttonOf(page, "Sign in with Google").click();
+
+    await expect(other.getByText(/Reconnecting/).first()).toBeVisible();
+    // Past the old 2 s: still the guest's page, reading nothing.
+    await other.waitForTimeout(2_500);
+    expect(asked).toEqual([]);
+    expect(
+      await other.evaluate(() => (window as unknown as { seen: { forms: number } }).seen.forms),
+    ).toBe(0);
+
+    await expect(page.locator("section[data-you] [data-account]")).toHaveText("Slow Move");
+    expect(Date.now() - started).toBeGreaterThan(3_000);
+    await holding;
+
+    await expect(other.locator("section[data-you] [data-account]")).toHaveText("Slow Move");
+    await expect(other.locator("[data-you-name] bdi")).toHaveText("Seat Name");
+    await expect(other.getByRole("button", { name: "Join the room" })).toHaveCount(0);
+    // Back as the account: no new guest was made on the way.
+    expect(asked).not.toContain("/api/auth/sign-in/anonymous");
+    expect(asked.filter((path) => path === "/api/auth/get-session").length).toBeGreaterThan(0);
+    await context.close();
+  });
+
   test("the account row holds no provider token after a browser's sign-in", async ({ browser }) => {
     const { context, page } = await newPerson(browser);
     const who = person();

@@ -3,8 +3,10 @@ import { useIdentityStore } from "../stores/identity-store.ts";
 import {
   COOKIES_BLOCKED,
   ensureIdentity,
+  holdIdentity,
   IdentityError,
   RETRY_CAP_MS,
+  readSession,
   resetIdentityModule,
   retryDelay,
   setDisplayName,
@@ -52,6 +54,31 @@ afterEach(() => {
   vi.useRealTimers();
   resetIdentityModule();
   useIdentityStore.getState().reset();
+});
+
+describe("holdIdentity (#48)", () => {
+  it("keeps this tab's reads waiting, and holds the lock of this browser's", async () => {
+    const taken: string[] = [];
+    let held: Promise<unknown> = Promise.resolve();
+    const request = vi.fn((name: string, task: () => Promise<unknown>) => {
+      taken.push(name);
+      const run = held.then(task);
+      held = run;
+      return run;
+    });
+    vi.stubGlobal("navigator", { cookieEnabled: true, locks: { request } });
+    const calls = serve({ "/api/auth/get-session": () => json({ user: { id: "u1" } }) });
+
+    const release = holdIdentity();
+    const read = readSession();
+    await Promise.resolve();
+    expect(taken).toEqual(["pp-identity"]);
+    expect(calls).toEqual([]);
+
+    release();
+    await expect(read).resolves.toMatchObject({ userId: "u1" });
+    expect(calls).toHaveLength(1);
+  });
 });
 
 describe("ensureIdentity", () => {

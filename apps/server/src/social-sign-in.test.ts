@@ -13,9 +13,11 @@ import { loadConfig } from "./config.ts";
 import type { Db } from "./db/rooms.ts";
 import { createLogger } from "./logger.ts";
 import {
+  claimedAddress,
   idTokenClaims,
   isAlarming,
   isReturnPath,
+  microsoftAddress,
   microsoftIdentity,
   signInOutcome,
   signInRequest,
@@ -203,13 +205,37 @@ describe("a Microsoft sign-in", () => {
     );
     expect(identity?.data.oid).toBe(`${TENANT}:o`);
     expect(identity?.data.tid).toBe(TENANT);
-    expect(identity?.user).toEqual({ name: "Ada", email: "a@example.com", emailVerified: false });
-  });
-
-  it("never calls an address verified, nor does it make one up", () => {
-    expect(microsoftIdentity(token({ oid: "o", tid: TENANT }))?.user).toEqual({
+    expect(identity?.user).toEqual({
+      name: "Ada",
+      email: microsoftAddress(TENANT, "o"),
       emailVerified: false,
     });
+  });
+
+  it("never stores a claimed address as `user.email`, or calls it verified", () => {
+    const claimed = token({ oid: "o", tid: TENANT, email: "owner@example.com" });
+    expect(microsoftIdentity(claimed)?.user.email).not.toContain("owner");
+    expect(microsoftIdentity(token({ oid: "o", tid: TENANT }))?.user).toEqual({
+      email: microsoftAddress(TENANT, "o"),
+      emailVerified: false,
+    });
+  });
+
+  it("gives every tenant and object id an address of its own, under a reserved domain", () => {
+    const one = microsoftAddress(TENANT, "o");
+    expect(one).toMatch(/^[0-9a-f]{64}@microsoft\.invalid$/);
+    expect(microsoftAddress(TENANT, "o")).toBe(one);
+    expect(microsoftAddress(TENANT, "p")).not.toBe(one);
+    expect(microsoftAddress("other", "o")).not.toBe(one);
+  });
+
+  it("keeps a claimed address as it came, and nothing that is not one", () => {
+    expect(claimedAddress({ email: "a@example.com" })).toBe("a@example.com");
+    expect(claimedAddress({ email: "" })).toBeNull();
+    expect(claimedAddress({ email: 5 })).toBeNull();
+    expect(claimedAddress({ email: "x".repeat(321) })).toBeNull();
+    expect(claimedAddress({})).toBeNull();
+    expect(claimedAddress(null)).toBeNull();
   });
 
   it("is nobody without both ids, or without a token", () => {
