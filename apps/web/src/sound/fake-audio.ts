@@ -91,6 +91,11 @@ export class FakeAudioContext {
       for (const listener of this.listeners) listener();
     }
   }
+  /** What a phone call does to a running context: it stops, and no `ended` comes. */
+  async suspend() {
+    this.state = "suspended";
+    for (const listener of this.listeners) listener();
+  }
   async close() {
     this.closed = true;
     this.state = "closed";

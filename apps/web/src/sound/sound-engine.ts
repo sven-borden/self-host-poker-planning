@@ -69,11 +69,26 @@ export function subscribeSound(listener: () => void) {
 }
 
 /**
+ * Something wants the sound again: the context stays when the last loop has fallen away.
+ * No gesture is needed for that, as a remount or another tab can want it back.
+ */
+export function keep() {
+  releasing = false;
+}
+
+/** The context stopped or started. Stopped during a release, nothing is left to wait for. */
+const stateChanged = () => {
+  // A context that stopped plays nothing, so closing it is not heard, and it ends nothing.
+  if (releasing && !soundRunning()) shut();
+  else notify();
+};
+
+/**
  * Starts the sound: only ever from a gesture's handler, in its call stack, as Safari asks.
  * Escape is no gesture to a browser: such a key leaves the page as it was.
  */
 export function unlock() {
-  releasing = false;
+  keep();
   if (soundRunning() || typeof AudioContext === "undefined") return;
   if (navigator.userActivation?.hasBeenActive === false) return;
   if (context === null) {
@@ -81,7 +96,7 @@ export function unlock() {
     master = context.createGain();
     master.gain.value = level(volume);
     master.connect(context.destination);
-    context.addEventListener("statechange", notify);
+    context.addEventListener("statechange", stateChanged);
   }
   // Refused, or a phone call holds the audio: the next gesture asks again.
   context.resume().catch(() => {});
@@ -186,7 +201,7 @@ export function shut() {
   releasing = false;
   sounding.clear();
   falling.clear();
-  closing.removeEventListener("statechange", notify);
+  closing.removeEventListener("statechange", stateChanged);
   closing.close().catch(() => {});
   notify();
 }

@@ -5,6 +5,7 @@ import { prefersReducedMotion } from "../table/reveal-motion.ts";
 import { type Cue, soundCues, timerCues } from "./sound-cues.ts";
 import {
   hush,
+  keep,
   play,
   release,
   setVolume,
@@ -17,7 +18,7 @@ import {
  * What a browser counts as a gesture: a press of the mouse, a key, the end of a touch (a
  * touch's `pointerdown` does not count). All of them: the first one starts the sound.
  */
-const GESTURES = ["pointerdown", "pointerup", "keydown", "touchend"] as const;
+export const GESTURES = ["pointerdown", "pointerup", "keydown", "touchend"] as const;
 
 const heard = ({ sound, afterMs, detune }: Cue) => play(sound, afterMs, detune);
 
@@ -65,6 +66,7 @@ export function useAudioWhile(wanted: boolean, volume: number) {
 
   useEffect(() => {
     if (!wanted) return;
+    keep();
     for (const gesture of GESTURES) {
       window.addEventListener(gesture, unlock, { capture: true, passive: true });
     }

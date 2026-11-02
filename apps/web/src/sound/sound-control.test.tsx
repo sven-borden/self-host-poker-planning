@@ -9,7 +9,7 @@ import { RoomSoundButton } from "./sound-button.tsx";
 import SoundControl from "./sound-control.tsx";
 import { shut } from "./sound-engine.ts";
 import type { Mood } from "./sound-prefs.ts";
-import { reloadSoundPrefs, SOUND_STORAGE_KEY } from "./sound-prefs.ts";
+import { reloadSoundPrefs, SOUND_STORAGE_KEY, setSoundPrefs } from "./sound-prefs.ts";
 import { SOUNDS } from "./sound-recipes.ts";
 
 const renderLoop = vi.hoisted(() =>
@@ -376,6 +376,40 @@ describe("the room's sound", () => {
       expect(source()?.stop.mock.calls[0]).toHaveLength(1);
       source()?.onended?.();
       expect(audio.closed).toBe(true);
+    });
+
+    it("keeps the sound when it comes back during the fall, with no gesture", async () => {
+      musicOn();
+      room();
+      const first = render(<SoundControl />);
+      await gesture();
+      await playing();
+      const audio = audioContext();
+      const leaving = source();
+      first.unmount();
+      expect(leaving?.stop).toHaveBeenCalledTimes(1);
+
+      render(<SoundControl />);
+      await waitFor(() => expect(audio.sources).toHaveLength(2));
+      leaving?.onended?.();
+      expect(audio.closed).toBe(false);
+      expect(audio.sources[1]?.stop).not.toHaveBeenCalled();
+      expect(said()).toBe("Sound: on");
+    });
+
+    it("keeps the sound when another tab turns the music off and on", async () => {
+      musicOn();
+      room();
+      render(<SoundControl />);
+      await gesture();
+      await playing();
+      const audio = audioContext();
+      act(() => setSoundPrefs({ music: false }));
+      act(() => setSoundPrefs({ music: true }));
+      await waitFor(() => expect(audio.sources).toHaveLength(2));
+      source()?.onended?.();
+      expect(audio.closed).toBe(false);
+      expect(said()).toBe("Sound: on");
     });
 
     it("changes mood under the music, and remembers it", async () => {

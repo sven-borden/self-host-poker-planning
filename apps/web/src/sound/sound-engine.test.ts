@@ -3,6 +3,7 @@ import { audioContext, FakeAudioContext, fakeAudio } from "./fake-audio.ts";
 import {
   endLoop,
   hush,
+  keep,
   LOOP_FALL,
   play,
   preview,
@@ -260,6 +261,18 @@ describe("the sound engine", () => {
       expect(soundRunning()).toBe(true);
     });
 
+    it("stays when something wants it back without a gesture", async () => {
+      const audio = await running();
+      startLoop(buffer());
+      release();
+      keep();
+      startLoop(buffer());
+      audio.sources[0]?.onended?.();
+      expect(audio.closed).toBe(false);
+      expect(soundRunning()).toBe(true);
+      expect(audio.sources[1]?.stop).not.toHaveBeenCalled();
+    });
+
     it("shuts at once with no music to wait for", async () => {
       const audio = await running();
       release();
@@ -272,6 +285,24 @@ describe("the sound engine", () => {
       audio.state = "suspended";
       release();
       expect(audio.closed).toBe(true);
+    });
+
+    it("gives the device back when the context stops during the fall", async () => {
+      const audio = await running();
+      startLoop(buffer());
+      release();
+      expect(audio.closed).toBe(false);
+      await audio.suspend();
+      expect(audio.closed).toBe(true);
+      expect(soundRunning()).toBe(false);
+    });
+
+    it("waits out a context that stops while nothing is being released", async () => {
+      const audio = await running();
+      startLoop(buffer());
+      endLoop();
+      await audio.suspend();
+      expect(audio.closed).toBe(false);
     });
   });
 
