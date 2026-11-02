@@ -88,6 +88,8 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 - A guest who signs in keeps everything from #48 (ADR-025): seats, cards, the PO role,
   password grants and named history move through `apply`, repeatably, with the guest removed
   only after a complete pass. The room route loads 183.2 kB. Live at 5b0a93a.
+- The token vault from #53 (ADR-026), dark until a connector uses it: AES-256-GCM with
+  `POKER_VAULT_KEY`, a table of per-user tokens, rotation by `vault:rotate`. Live at 4c8db08.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -98,8 +100,8 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- #53 (PR #110): in review, in `../pp-wt-53`. Its migration must be regenerated after #48's.
 - #49: an implementer in `../pp-wt-49`.
+- #50: an implementer in `../pp-wt-50`.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
 - **Agents again, issue after issue, until the end of 2026-11-02** (Sven, 2026-11-01): the
   main session orchestrates and does not stop between issues (see `CLAUDE.md`).
@@ -107,7 +109,8 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 ## Next
 
 - W3 (#33–#41): all merged but #38 and #41, which need Sven's OQ-1 and OQ-2.
-- W5's #50 and #51 follow #49. W6's #54 and #55 follow #53. W7 waits for Sven's OQ-3 (#56).
+- W5's #51 follows #49. W6's #54 and #55 follow; their live checks need Sven's test sites.
+  W7 waits for his OQ-3 (#56).
 - The local reveal budget fails on clean `main` since 2026-11-02 (named reveal, 1 run of 4
   clean, worst 67 ms; #43 had 10 of 10). CI passes at the first try. Cause not looked for.
 - Image size: 239 MB of 250 MB after #40 (236 MB before; architecture section 12 still
