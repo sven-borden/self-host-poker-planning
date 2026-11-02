@@ -437,6 +437,9 @@ function PasteForm({
 
   async function add(event: FormEvent) {
     event.preventDefault();
+    // React carries a submit up the component tree, out of the sheet's portal: this form
+    // sits inside the subject field's, which would start a round.
+    event.stopPropagation();
     if (pending.current || !ready) return;
     setProblem(null);
     if (text.trim() === "") {

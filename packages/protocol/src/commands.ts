@@ -31,11 +31,6 @@ export const WIRE_LIMITS = {
   itemKey: 64,
   /** The domain caps a queue at 500 items, so a batch holds no more. */
   queueBatch: 500,
-  /**
-   * One socket message in bytes (architecture section 8): 500 ordinary queue items fit in
-   * one `queueAdd`, and the page splits a list that does not (#52, ADR-024).
-   */
-  messageBytes: 128 * 1024,
   /** An avatar id: the domain knows the 24 of them, each a short word. */
   avatar: 32,
   /** The domain caps a card label at 64 code units (4 characters). */

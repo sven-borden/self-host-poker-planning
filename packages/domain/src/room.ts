@@ -177,6 +177,11 @@ export const MAX_TITLE_LENGTH = 200;
 export const MAX_LINK_LENGTH = 2000;
 /** A queue holds at most this many items (#52). */
 export const MAX_QUEUE_ITEMS = 500;
+/**
+ * One socket message in bytes (architecture section 8): 500 ordinary queue items fit in
+ * one `queueAdd`, and the page splits a list that does not (#52, ADR-024).
+ */
+export const MAX_MESSAGE_BYTES = 128 * 1024;
 /** How long a recorded final stays on the table before the next item starts by itself. */
 export const AUTO_ADVANCE_MS = 10_000;
 /** A timer runs from this many seconds … */

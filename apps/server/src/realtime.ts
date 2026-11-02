@@ -18,7 +18,7 @@
  */
 import { randomBytes } from "node:crypto";
 import type { Server as HttpServer } from "node:http";
-import type { Command } from "@pp/domain";
+import { type Command, MAX_MESSAGE_BYTES } from "@pp/domain";
 import {
   type ClientToServerEvents,
   type CmdAck,
@@ -32,7 +32,6 @@ import {
   type QueueAck,
   type ServerToClientEvents,
   toDomainCommand,
-  WIRE_LIMITS,
 } from "@pp/protocol";
 import { type ExtendedError, Server, type ServerOptions, type Socket } from "socket.io";
 import type { SocketUser } from "./auth.ts";
@@ -238,7 +237,7 @@ const ROSTER_COMMANDS: ReadonlySet<Command["type"]> = new Set([
  * paste had to fit (#52, ADR-024); no other message comes near it, since the wire schemas
  * cap every string and list.
  */
-export const MAX_PAYLOAD_BYTES = WIRE_LIMITS.messageBytes;
+export const MAX_PAYLOAD_BYTES = MAX_MESSAGE_BYTES;
 
 export function createRealtime(httpServer: HttpServer, options: RealtimeOptions): RealtimeServer {
   const {

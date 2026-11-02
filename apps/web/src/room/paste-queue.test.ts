@@ -1,5 +1,10 @@
-import { MAX_LINK_LENGTH, MAX_QUEUE_ITEMS, MAX_TITLE_LENGTH, queueIdentity } from "@pp/domain";
-import { WIRE_LIMITS } from "@pp/protocol";
+import {
+  MAX_LINK_LENGTH,
+  MAX_MESSAGE_BYTES,
+  MAX_QUEUE_ITEMS,
+  MAX_TITLE_LENGTH,
+  queueIdentity,
+} from "@pp/domain";
 import { describe, expect, it } from "vitest";
 import { parsePaste, queueBatches, tableRows } from "./paste-queue.ts";
 
@@ -140,7 +145,14 @@ describe("tables without a known header", () => {
   });
 
   it("counts a row under a known header with nothing to use as refused", () => {
-    expect(parsePaste("Key\tSummary\tStatus\n\t\tTo Do").refused).toBe(1);
+    expect(parsePaste("Key\tSummary\tStatus\tOwner\n\t\tTo Do\tAna").refused).toBe(1);
+  });
+
+  it("reads a lone link under a known header as a line", () => {
+    expect(entries("Key\tSummary\nAB-1\tFix\nhttps://j.co/browse/AB-2")).toEqual([
+      { key: "AB-1", title: "Fix" },
+      { url: "https://j.co/browse/AB-2", key: "AB-2" },
+    ]);
   });
 });
 
@@ -347,7 +359,7 @@ describe("queueBatches", () => {
     expect(batches.flat()).toEqual(items);
     for (const batch of batches) {
       expect(new TextEncoder().encode(JSON.stringify(batch)).length).toBeLessThan(
-        WIRE_LIMITS.messageBytes,
+        MAX_MESSAGE_BYTES,
       );
     }
   });

@@ -4,11 +4,11 @@ import {
   cleanSubject,
   JIRA_KEY,
   keyLabel,
+  MAX_MESSAGE_BYTES,
   MAX_TITLE_LENGTH,
   type QueueEntry,
   queueIdentity,
 } from "@pp/domain";
-import { WIRE_LIMITS } from "@pp/protocol";
 
 // A paste into the queue (#52, ADR-024): pure, in the page, no network. The text becomes
 // items and is forgotten: nothing reads a pasted link, and the raw text goes nowhere. The
@@ -20,7 +20,7 @@ import { WIRE_LIMITS } from "@pp/protocol";
 // of one cell, and all text without a tab, is read line by line.
 
 /** The page sends a list in batches of at most this much JSON, under the socket's cap. */
-const BATCH_BYTES = WIRE_LIMITS.messageBytes - 2048;
+const BATCH_BYTES = MAX_MESSAGE_BYTES - 2048;
 
 /** A key ends where no word goes on; then what parts it from a title: "ABC-1: Login". */
 const AFTER_KEY = "(?![\\p{L}\\p{N}_-])[\\s:\\u2013\\u2014-]*(.*)$";
@@ -212,9 +212,9 @@ function readTable(text: string): Found[] {
   // A first row of words over rows that hold keys is a header, whatever it calls its columns.
   const skip = columns !== null || (first.length > 1 && !marked(first) && marked(rows[1] ?? []));
   return rows.slice(skip ? 1 : 0).map((row) => {
-    if (columns !== null) return rowByColumns(row, columns);
     const cells = row.filter((cell) => cell !== "");
-    return cells.length === 1 ? readLine(String(cells[0])) : rowByLooks(row);
+    if (cells.length === 1) return readLine(String(cells[0]));
+    return columns !== null ? rowByColumns(row, columns) : rowByLooks(row);
   });
 }
 

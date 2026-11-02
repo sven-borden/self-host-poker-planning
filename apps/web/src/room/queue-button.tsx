@@ -59,6 +59,7 @@ export function RoomQueueButton({ count }: { count: number }) {
             <span aria-hidden data-queue-count className="font-mono text-xs tabular-nums">
               {count}
             </span>
+            {/* The space keeps the name and the count apart in the button's name. */}{" "}
             <span className="sr-only">{t("queue.count", { count })}</span>
           </>
         ) : null}
