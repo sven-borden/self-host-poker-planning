@@ -188,6 +188,76 @@ test.describe("with provider keys", () => {
     await ben.context.close();
   });
 
+  test("another tab waits out a move of seconds, with no session read and no join form", async ({
+    browser,
+  }) => {
+    const { context, page } = await newPerson(browser);
+    const who = person("Slow Move");
+    await atProviders(context, who);
+    const code = await newRoom(page);
+    await page.getByRole("textbox", { name: "Your name" }).fill("Seat Name");
+    await joinAs(page);
+
+    const other = await context.newPage();
+    await other.goto(`${SIGN_IN_BASE}/r/${code}`);
+    await expect(other.locator("[data-you-name] bdi")).toHaveText("Seat Name");
+    const asked: string[] = [];
+    other.on("request", (request) => {
+      const { pathname } = new URL(request.url());
+      if (pathname.startsWith("/api/auth/")) asked.push(pathname);
+    });
+    // In a test no tab can tell a form that flashed from one that never came: the page keeps count.
+    await other.evaluate(() => {
+      const seen = { forms: 0 };
+      Object.assign(window, { seen });
+      new MutationObserver(() => {
+        const form = [...document.querySelectorAll("button")].some(
+          (button) => button.textContent === "Join the room",
+        );
+        if (form) seen.forms += 1;
+      }).observe(document.documentElement, { childList: true, subtree: true });
+    });
+
+    // The room's row stays locked for over 3 s, so the commit waits as on a slow database, and
+    // the callback answers that much after the other tab heard `signedIn`.
+    const holding = dbQuery(
+      `do $$ begin perform 1 from room where code = '${code}' for update;
+       perform pg_sleep(3.5); end $$`,
+      [],
+    );
+    await expect
+      .poll(async () => {
+        const rows = await dbQuery(
+          "select 1 from pg_stat_activity where query like 'do $$ begin perform 1 from room%' and state = 'active' and pid <> pg_backend_pid()",
+          [],
+        );
+        return rows.length;
+      })
+      .toBeGreaterThan(0);
+    const started = Date.now();
+    await buttonOf(page, "Sign in with Google").click();
+
+    await expect(other.getByText(/Reconnecting/).first()).toBeVisible();
+    // Past the old 2 s: still the guest's page, reading nothing.
+    await other.waitForTimeout(2_500);
+    expect(asked).toEqual([]);
+    expect(
+      await other.evaluate(() => (window as unknown as { seen: { forms: number } }).seen.forms),
+    ).toBe(0);
+
+    await expect(page.locator("section[data-you] [data-account]")).toHaveText("Slow Move");
+    expect(Date.now() - started).toBeGreaterThan(3_000);
+    await holding;
+
+    await expect(other.locator("section[data-you] [data-account]")).toHaveText("Slow Move");
+    await expect(other.locator("[data-you-name] bdi")).toHaveText("Seat Name");
+    await expect(other.getByRole("button", { name: "Join the room" })).toHaveCount(0);
+    // Back as the account: no new guest was made on the way.
+    expect(asked).not.toContain("/api/auth/sign-in/anonymous");
+    expect(asked.filter((path) => path === "/api/auth/get-session").length).toBeGreaterThan(0);
+    await context.close();
+  });
+
   test("the account row holds no provider token after a browser's sign-in", async ({ browser }) => {
     const { context, page } = await newPerson(browser);
     const who = person();

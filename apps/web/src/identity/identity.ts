@@ -1,7 +1,7 @@
 import { type AvatarId, isAvatarId } from "@pp/domain";
 import { isSignInProvider, type SignInProvider } from "@pp/protocol";
 import { useIdentityStore } from "../stores/identity-store.ts";
-import { returnPath } from "./sign-in.ts";
+import { noteLeavingToSignIn, returnPath } from "./sign-in.ts";
 
 // The identity bootstrap (#10): a few typed fetch calls to the server's Better Auth
 // endpoints instead of `better-auth/client`, which would add about 12 kB gzipped to the
@@ -154,14 +154,41 @@ async function bootstrap(): Promise<Identity> {
   throw new IdentityError(COOKIES_BLOCKED);
 }
 
+/** Set while this tab keeps every session read waiting (`holdIdentity`). */
+let held: Promise<void> | undefined;
+
 /**
  * Runs `task` while holding this origin's identity lock, so two tabs opened together
  * create one guest, not two (the second finds the first one's session). Without the Web
  * Locks API it runs at once: `bootstrap` still recovers from the server's `not_allowed`.
  */
-function withIdentityLock<T>(task: () => Promise<T>): Promise<T> {
+async function withIdentityLock<T>(task: () => Promise<T>): Promise<T> {
+  await held;
   const locks = globalThis.navigator?.locks;
   return locks?.request ? locks.request("pp-identity", task) : task();
+}
+
+/** `fetchSession` under the identity lock, for a tab that only wants to know. */
+export function readSession(): Promise<Identity | null> {
+  return withIdentityLock(fetchSession);
+}
+
+/**
+ * Keeps every session read of this browser waiting until the returned function is called, or
+ * this page goes: the cookie it holds is on its way out (#48, `sign-in-wait.ts`), and reading it
+ * now would make a new guest. Without the Web Locks API, of this tab alone.
+ */
+export function holdIdentity(): () => void {
+  let release = () => {};
+  held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const until = held;
+  void globalThis.navigator?.locks?.request?.("pp-identity", () => until);
+  return () => {
+    held = undefined;
+    release();
+  };
 }
 
 /** Backoff of the retries: 1 s doubling up to 30 s, with jitter; see `retryDelay`. */
@@ -292,6 +319,7 @@ export async function startSignIn(
   if (!response.ok) throw await failure(response);
   const json = (await body(response)) as { url?: unknown } | undefined;
   if (typeof json?.url !== "string") throw new IdentityError("internal");
+  noteLeavingToSignIn();
   return json.url;
 }
 
@@ -305,4 +333,5 @@ export async function signOut(): Promise<void> {
 export function resetIdentityModule(): void {
   cookiesBlocked = false;
   pending = undefined;
+  held = undefined;
 }

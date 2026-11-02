@@ -10,6 +10,7 @@ import {
   type WireCommandInput,
 } from "@pp/protocol";
 import { ensureIdentity, retryDelay, UNAUTHENTICATED } from "../identity/identity.ts";
+import { listenForSignIn, reloadOnceSignedIn } from "../identity/sign-in-wait.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { localNow, noteRoundTrip, sampleServerClock } from "./server-clock.ts";
 import {
@@ -36,9 +37,9 @@ import {
 // locked out of that room enter again: the grant is the session user's, so they pass too.
 //
 // A guest who signs in (#48) comes back as a new page. Another tab of that guest hears
-// `signedIn`, and reloads into the account after a moment: the server closed its socket, its
-// identity and its snapshot are the guest's, and the provider's callback may not have delivered
-// the new cookie yet. Reloading before it did would start a new guest.
+// `signedIn`, and reloads into the account once the new cookie is here (`sign-in-wait.ts`): the
+// server closed its socket, its identity and its snapshot are the guest's, and the provider's
+// callback answers only when the rooms have moved. Reloading before that would start a new guest.
 //
 // Messages are checked by shape (`isSnapshot`, `isEnterAck`, `isCmdAck`), not with the
 // protocol's zod schemas: zod would add about 27 kB gzipped to the room route (200 kB
@@ -53,9 +54,6 @@ export const ACK_TIMEOUT_MS = 10_000;
 export const LIVE_WAIT_MS = 15_000;
 /** Sends of one command (same id) at most: after a lost ack, and after `busy`. */
 export const MAX_SENDS = 4;
-
-/** How long a tab waits for the sign-in's cookie before it reloads (#48). */
-export const SIGNED_IN_RELOAD_MS = 2_000;
 
 /** The channel on which a tab tells the others of this browser that it got in (#31). */
 export const ACCESS_CHANNEL = "pp-room-access";
@@ -114,7 +112,6 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
   /** Set once the server said `signedIn` (#48): the page reloads, and nothing here matters. */
   let signedIn = false;
   let retry: ReturnType<typeof setTimeout> | undefined;
-  let reloading: ReturnType<typeof setTimeout> | undefined;
   /**
    * Why the room last asked for its password: "changed" stays "changed" through a
    * reconnect, whose fresh page state no longer holds the snapshot that said so.
@@ -143,7 +140,7 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
   };
 
   const onEnter = (ack: EnterAck) => {
-    if (stopped) return;
+    if (stopped || signedIn) return;
     if (ack.ok) {
       attempt = 0;
       reauthenticated = false;
@@ -244,7 +241,7 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
     if (stopped || signedIn) return;
     signedIn = true;
     store().setStatus("reconnecting");
-    reloading = setTimeout(reload, SIGNED_IN_RELOAD_MS);
+    reloadOnceSignedIn(reload);
   };
 
   socket.on("connect", onConnect);
@@ -252,6 +249,7 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
   socket.on("kicked", onKicked);
   socket.on("locked", onLocked);
   socket.on("signedIn", onSignedIn);
+  listenForSignIn();
   if (others) {
     others.onmessage = (event: MessageEvent<unknown>) => {
       const said = event.data as { code?: unknown } | null;
@@ -289,7 +287,6 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
     if (stopped) return;
     stopped = true;
     clearTimeout(retry);
-    clearTimeout(reloading);
     stopConnecting();
     stopTracking();
     socket.off("connect", onConnect);
