@@ -142,6 +142,10 @@ describe("the sheet", () => {
 describe("moving", () => {
   it("moves an item at once, sends it, says it, and keeps the focus on the button", async () => {
     const dialog = await open();
+    // The read 150 ms after the change finds what the server holds, not the old order, which
+    // would move the row and lose its focus under the assertions.
+    const moved = [ITEMS[1], ITEMS[0], ITEMS[2]] as QueueItemView[];
+    mocks.requestQueue.mockResolvedValue({ ok: true, rev: 2, items: moved });
     const down = within(dialog).getByRole("button", { name: "Move PAY-1 down" });
     down.focus();
     fireEvent.click(down);
@@ -194,6 +198,7 @@ describe("moving", () => {
 describe("removing", () => {
   it("removes an item and moves the focus to its neighbour", async () => {
     const dialog = await open();
+    mocks.requestQueue.mockResolvedValue({ ok: true, rev: 2, items: ITEMS.slice(1) });
     fireEvent.click(within(dialog).getByRole("button", { name: "Remove PAY-1" }));
     expect(titles(dialog)).toEqual(["2", "3"]);
     expect(mocks.send).toHaveBeenCalledWith({ type: "queueRemove", payload: { id: 1 } });
@@ -272,7 +277,39 @@ describe("pasting", () => {
     expect(dialog.querySelector("[data-queue-report]")?.textContent).toBe("Paste a list first.");
   });
 
-  it("keeps the text when the send is refused", async () => {
+  it("keeps the lines that did not go in, and says so", async () => {
+    const dialog = await open();
+    await paste(dialog, "PAY-9\nbell\u{0007}");
+    const box = within(dialog).getByRole("textbox", { name: "Paste your tickets" });
+    expect((box as HTMLTextAreaElement).value).toBe("bell\u{0007}");
+    expect(dialog.querySelector("[data-queue-report]")?.textContent).toBe(
+      "1 item added. 1 line could not be read. Those lines stay in the box.",
+    );
+  });
+
+  it("stops where a long list was refused, says how far it went, and takes the rest later", async () => {
+    const dialog = await open();
+    const list = Array.from({ length: 240 }, (_, n) => `AB-${n + 1} ${"a title ".repeat(10)}`);
+    mocks.send.mockResolvedValueOnce({ ok: true, version: 9 });
+    mocks.send.mockResolvedValue({ ok: false, code: "rate_limited" });
+    await paste(dialog, list.join("\n"));
+    expect(mocks.send).toHaveBeenCalledTimes(2);
+    const first = mocks.send.mock.calls[0]?.[0].payload.items.length as number;
+    expect(dialog.querySelector("[data-queue-report]")?.textContent).toBe(
+      `${first} items went in before this stopped. The rest is still in the box: add it again, and nothing goes in twice.`,
+    );
+    expect(within(dialog).getByRole("alert")).toBeTruthy();
+    const box = within(dialog).getByRole("textbox", { name: "Paste your tickets" });
+    expect((box as HTMLTextAreaElement).value.split("\n")).toHaveLength(list.length - first);
+    mocks.send.mockReset();
+    mocks.send.mockResolvedValue({ ok: true, version: 10 });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add to the queue" }));
+    await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe(""));
+    const rest = mocks.send.mock.calls.flatMap(([command]) => command.payload.items);
+    expect(rest).toHaveLength(list.length - first);
+  });
+
+  it("keeps the whole text when the first send is refused", async () => {
     mocks.send.mockResolvedValue({ ok: false, code: "queue_full" });
     const dialog = await open();
     const box = within(dialog).getByRole("textbox", { name: "Paste your tickets" });
@@ -288,13 +325,16 @@ describe("pasteReport", () => {
   it("says every count that is not zero", () => {
     const report = pasteReport(t, {
       items: [{ key: "A-1" }],
+      sources: ["A-1"],
+      header: null,
+      left: ["x", "y", "z", "w"],
       duplicates: 2,
       refused: 1,
       shortened: 1,
       overflow: 3,
     });
     expect(report).toBe(
-      `1 item added. 2 duplicates dropped. 1 title was cut to fit. 1 line could not be read. 3 items did not fit: a queue holds ${MAX_QUEUE_ITEMS}.`,
+      `1 item added. 2 duplicates dropped. 1 title was cut to fit. 1 line could not be read. 3 items did not fit: a queue holds ${MAX_QUEUE_ITEMS} at most, fewer when they are long. Those lines stay in the box.`,
     );
   });
 });

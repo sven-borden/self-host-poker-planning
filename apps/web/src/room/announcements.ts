@@ -498,6 +498,14 @@ export function mergeEvents(pending: readonly LiveEvent[], events: readonly Live
       merged.push({ ...event, timer: mergedTimer(earlier?.timer, event.timer) });
       continue;
     }
+    if (event.kind === "queue" && event.queue) {
+      // A long paste comes in several commands: the room hears them as one, with their sum.
+      const earlier = merged.find((e) => e.kind === "queue");
+      merged = merged.filter((e) => e !== earlier);
+      const added = event.queue.added + (earlier?.queue?.added ?? 0);
+      merged.push({ ...event, queue: { ...event.queue, added } });
+      continue;
+    }
     if (event.kind === "changed") {
       // Changed twice in one batch: said once, with the last card. A result said with the
       // first change still holds unless the second moved it again.

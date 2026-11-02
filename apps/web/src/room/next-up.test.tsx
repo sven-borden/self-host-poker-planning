@@ -37,6 +37,22 @@ function roomOf(fields: { advanceAt?: number; you?: string; queue?: RoomView["qu
   } as unknown as RoomView;
 }
 
+function Table({ room }: { room: RoomView }) {
+  return (
+    <>
+      <div data-hand>
+        <button type="button" tabIndex={0}>
+          A card
+        </button>
+      </div>
+      <button type="button" data-record-final>
+        Record
+      </button>
+      <NextUp room={room} onFailure={() => {}} />
+    </>
+  );
+}
+
 beforeAll(() => changeLanguage("en"));
 
 beforeEach(() => {
@@ -70,7 +86,7 @@ describe("NextUp", () => {
     const { rerender } = render(
       <NextUp room={roomOf({ advanceAt: T0 + 7500, you: "ana" })} onFailure={() => {}} />,
     );
-    expect(line()?.textContent).toBe("Next: AB-1, in 8 s");
+    expect(line()?.textContent).toBe("Next: AB-1, in 8\u{A0}s");
     expect(screen.queryByRole("button")).toBeNull();
     rerender(<NextUp room={roomOf({ advanceAt: T0 + 7500 })} onFailure={() => {}} />);
     expect(screen.getByRole("button", { name: "Stay on this round" })).toBeTruthy();
@@ -85,6 +101,33 @@ describe("NextUp", () => {
     await waitFor(() => expect(onFailure).toHaveBeenCalledWith(null));
     fireEvent.click(screen.getByRole("button", { name: "Stay on this round" }));
     await waitFor(() => expect(onFailure).toHaveBeenCalledWith("not_owner"));
+  });
+});
+
+describe("the focus on Stay, when the button leaves", () => {
+  const focusOnStay = () => screen.getByRole("button", { name: "Stay on this round" }).focus();
+
+  it("goes to the hand when the countdown started the next item", async () => {
+    const { rerender } = render(<Table room={roomOf({ advanceAt: T0 + 5000 })} />);
+    focusOnStay();
+    const voting = { ...roomOf({}), round: { phase: "voting" } } as unknown as RoomView;
+    rerender(<Table room={voting} />);
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("A card"));
+  });
+
+  it("goes back to the decision when the room stays", async () => {
+    const { rerender } = render(<Table room={roomOf({ advanceAt: T0 + 5000 })} />);
+    focusOnStay();
+    rerender(<Table room={roomOf({})} />);
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("Record"));
+  });
+
+  it("stays out of the way of a focus that is elsewhere", async () => {
+    const { rerender } = render(<Table room={roomOf({ advanceAt: T0 + 5000 })} />);
+    screen.getByRole("button", { name: "A card" }).focus();
+    rerender(<Table room={roomOf({})} />);
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(document.activeElement?.textContent).toBe("A card");
   });
 });
 

@@ -571,6 +571,13 @@ describe("settings (#25)", () => {
 
 describe("the queue (#52)", () => {
   const added = { type: "queueChanged", added: 12 } as const;
+  it("says a paste of several commands once, with their sum", () => {
+    const room = roomOf("ana", queue);
+    const first = liveEvents(room, [added], null);
+    const batch = mergeEvents(first, liveEvents(room, [{ type: "queueChanged", added: 7 }], null));
+    expect(said(batch)).toBe("19 items added to the queue. Next: #12345.");
+  });
+
   const roomOf = (you: string, queue?: RoomView["queue"]) =>
     ({
       you,

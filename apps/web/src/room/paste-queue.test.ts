@@ -1,29 +1,33 @@
 import {
   MAX_LINK_LENGTH,
   MAX_MESSAGE_BYTES,
+  MAX_QUEUE_BYTES,
   MAX_QUEUE_ITEMS,
   MAX_TITLE_LENGTH,
+  queueBytes,
   queueIdentity,
 } from "@pp/domain";
 import { describe, expect, it } from "vitest";
-import { parsePaste, queueBatches, tableRows } from "./paste-queue.ts";
+import { parsePaste, pasteLeft, queueBatches, tableRows } from "./paste-queue.ts";
 
-// The samples below are RECONSTRUCTED from each product's documented columns and copy
-// behaviour, not copied from a live board (nobody here has a Jira). Tabs and line breaks
-// are written out so that an editor cannot change them.
+// The samples below are RECONSTRUCTED, not copied from a live board or a real clipboard: nobody
+// here has a Jira or an Azure DevOps, and the issue's first acceptance criterion waits for real
+// ones. Tabs and line breaks are written out so that an editor cannot change them. What each
+// sample rests on, and what it does not:
 //
-// - JIRA_SERVER: the issue navigator's list view (Jira Data Center's documented default
-//   columns T, Key, Summary, Assignee, Reporter, P, Status, Resolution, Created, Updated),
-//   selected in a browser and copied: the type and priority columns are icons, so their
-//   cells paste empty. Support article "Searching for issues", column configuration.
-// - JIRA_CLOUD: Jira Cloud's list view, columns Type, Key, Summary, Status, Assignee.
-// - JIRA_GERMAN: JIRA_SERVER's list in a German Jira: the same columns under other names.
-// - ADO_QUERY: Azure Boards' query results, "Copy to clipboard", documented in "Copy or
-//   clone work items": a header row, tabs, the default columns ID, Work Item Type, Title,
-//   Assigned To, State, Tags.
-// - ADO_QUOTED: the same with a title of two lines: a cell with a line break comes in
-//   quotes, as spreadsheets and browsers write it (RFC 4180's rule, with tabs).
-// - ADO_BACKLOG: Azure Boards' backlog copy, with the order and points columns first.
+// - JIRA_SERVER: the columns are Jira Data Center's documented defaults for the issue navigator's
+//   list view (T, Key, Summary, Assignee, Reporter, P, Status, Resolution, Created, Updated).
+//   That a browser's copy of it gives tabs, and empty cells for the icon columns, is assumed.
+// - JIRA_CLOUD: no copy from Jira. Atlassian's JSDCLOUD-18884 says the bulk copy action is gone
+//   from the unified List view and suggests a CSV export: this is such an export opened in a
+//   sheet and copied from there, with its columns assumed.
+// - JIRA_GERMAN: JIRA_SERVER under column names assumed for a German Jira.
+// - ADO_QUERY: a guess. Microsoft's "Copy or clone work items" says only "HTML-formatted table"
+//   ("Copy as HTML"), and a textarea gets the plain-text flavour, which nobody here has seen. The
+//   header row, the tabs and the columns are all assumed.
+// - ADO_QUOTED: ADO_QUERY with a title of two lines, quoted by RFC 4180's rule with tabs, as
+//   spreadsheets write it. Whether a browser or Azure DevOps ever writes quoted cells is unverified.
+// - ADO_BACKLOG: a guess at a backlog's copy, with the order and points columns first.
 const JIRA_SERVER = [
   "T\tKey\tSummary\tAssignee\tReporter\tP\tStatus\tResolution\tCreated\tUpdated",
   "\tPAY-482\tCheckout fails on expired card\tAna Lima\tBen Roth\t\tTo Do\tUnresolved\t12/Oct/26\t14/Oct/26",
@@ -62,7 +66,7 @@ const ADO_BACKLOG = [
 
 const entries = (text: string) => parsePaste(text).items;
 
-describe("real list samples", () => {
+describe("reconstructed list samples", () => {
   it("reads Jira's issue navigator, on a server and in the cloud", () => {
     const server = parsePaste(JIRA_SERVER);
     expect(server.items).toEqual([
@@ -148,6 +152,47 @@ describe("tables without a known header", () => {
     expect(parsePaste("Key\tSummary\tStatus\tOwner\n\t\tTo Do\tAna").refused).toBe(1);
   });
 
+  it("takes the longest text after the key, not the type beside it", () => {
+    expect(entries("1234\tUser Story\tExport the sprint as CSV\tNew")).toEqual([
+      { key: "1234", title: "Export the sprint as CSV" },
+    ]);
+    expect(entries("1234\tUser Story\tExport it\tAna Lima <ana@example.com>\tNew")).toEqual([
+      { key: "1234", title: "User Story" },
+    ]);
+  });
+
+  it("falls back on a row's looks for each column its header does not name", () => {
+    expect(entries("Vorgang\tZusammenfassung\nPAY-1\tFix it")).toEqual([
+      { key: "PAY-1", title: "Fix it" },
+    ]);
+    expect(entries("Type\tWork item\tSummary\nStory\tPAY-2\tFix it")).toEqual([
+      { key: "PAY-2", title: "Fix it" },
+    ]);
+    expect(entries("Key\tBeschreibung\nPAY-3\tFix it")).toEqual([
+      { key: "PAY-3", title: "Fix it" },
+    ]);
+    expect(entries("Ticket\tZusammenfassung\nhttps://j.co/browse/PAY-4\tFix it")).toEqual([
+      { key: "PAY-4", title: "Fix it", url: "https://j.co/browse/PAY-4" },
+    ]);
+  });
+
+  it("finds a header under a line or two of the page", () => {
+    expect(entries("My open tickets\n\nKey\tSummary\tStatus\nPAY-1\tFix it\tOpen")).toEqual([
+      { key: "PAY-1", title: "Fix it" },
+    ]);
+    expect(entries("Showing 1-2\nTicket\tName\nPAY-1\tFix it")).toEqual([
+      { key: "PAY-1", title: "Fix it" },
+    ]);
+  });
+
+  it("takes no header from under a row that holds a key", () => {
+    expect(entries("PAY-1\tFix\nKey\tSummary\nPAY-2\tThis")).toContainEqual({
+      key: "PAY-2",
+      title: "This",
+    });
+    expect(entries("PAY-1\tFix\nKey\tSummary\nPAY-2\tThis")).toHaveLength(3);
+  });
+
   it("reads a lone link under a known header as a line", () => {
     expect(entries("Key\tSummary\nAB-1\tFix\nhttps://j.co/browse/AB-2")).toEqual([
       { key: "AB-1", title: "Fix" },
@@ -214,6 +259,71 @@ describe("one item per line", () => {
     expect(entries("https://example.com/page")).toEqual([{ url: "https://example.com/page" }]);
   });
 
+  it("splits a line of nothing but keys or links, and counts each", () => {
+    expect(entries("ABC-15, ABC-16")).toEqual([{ key: "ABC-15" }, { key: "ABC-16" }]);
+    expect(entries("ABC-18 ABC-19;ABC-20")).toEqual([
+      { key: "ABC-18" },
+      { key: "ABC-19" },
+      { key: "ABC-20" },
+    ]);
+    expect(entries("#12, AB#13")).toEqual([{ key: "12" }, { key: "13" }]);
+    expect(entries("https://j.co/browse/AB-1, https://j.co/browse/AB-2")).toEqual([
+      { url: "https://j.co/browse/AB-1", key: "AB-1" },
+      { url: "https://j.co/browse/AB-2", key: "AB-2" },
+    ]);
+    expect(parsePaste("ABC-15, ABC-16, ABC-15").duplicates).toBe(1);
+  });
+
+  it("keeps a link's key under a comma at its end", () => {
+    expect(entries("https://j.co/browse/AB-1,")).toEqual([
+      { url: "https://j.co/browse/AB-1", key: "AB-1" },
+    ]);
+  });
+
+  it("reads bullets, brackets and angle brackets", () => {
+    expect(entries("- AB-1 Fix\n* AB-2\n\u{2022} AB-3: Fix\n1. AB-4\n- [ ] AB-5 Fix")).toEqual([
+      { key: "AB-1", title: "Fix" },
+      { key: "AB-2" },
+      { key: "AB-3", title: "Fix" },
+      { key: "AB-4" },
+      { key: "AB-5", title: "Fix" },
+    ]);
+    expect(entries("- Fix the login")).toEqual([{ title: "Fix the login" }]);
+    expect(entries("[AB-1] Fix\n[AB-2] fix it too\n[not a key] Fix")).toEqual([
+      { key: "AB-1", title: "Fix" },
+      { key: "AB-2", title: "fix it too" },
+      { title: "[not a key] Fix" },
+    ]);
+    expect(entries("<https://j.co/browse/AB-3>\n<https://j.co/browse/AB-4> Fix")).toEqual([
+      { url: "https://j.co/browse/AB-3", key: "AB-3" },
+      { url: "https://j.co/browse/AB-4", key: "AB-4", title: "Fix" },
+    ]);
+  });
+
+  it("reads a Jira service desk's queue link", () => {
+    const url = "https://acme.atlassian.net/jira/servicedesk/projects/HELP/queues/custom/1/HELP-12";
+    expect(entries(url)).toEqual([{ url, key: "HELP-12" }]);
+  });
+
+  it("takes a key before lower-case words for a sentence: nothing is dropped as a duplicate", () => {
+    const result = parsePaste(
+      "UTF-8 support\nUTF-8 bug\nISO-8601 dates\nISO-8601 parsing\nABC-123 Title",
+    );
+    expect(result.duplicates).toBe(0);
+    expect(result.items).toEqual([
+      { title: "UTF-8 support" },
+      { title: "UTF-8 bug" },
+      { title: "ISO-8601 dates" },
+      { title: "ISO-8601 parsing" },
+      { key: "ABC-123", title: "Title" },
+    ]);
+    expect(entries("ABC-1: fix it\nABC-2 - fix it\nABC-3")).toEqual([
+      { key: "ABC-1", title: "fix it" },
+      { key: "ABC-2", title: "fix it" },
+      { key: "ABC-3" },
+    ]);
+  });
+
   it("makes a title of anything else: a person gets a queue, not an error", () => {
     expect(entries("Fix the login\nweb-2 migration\nA-1 is not a key")).toEqual([
       { title: "Fix the login" },
@@ -241,11 +351,45 @@ describe("one item per line", () => {
     ]);
     expect(parsePaste("\n \n")).toEqual({
       items: [],
+      sources: [],
+      header: null,
+      left: [],
       duplicates: 0,
       refused: 0,
       shortened: 0,
       overflow: 0,
     });
+  });
+});
+
+describe("raw CSV", () => {
+  it("is a table, with a known header or rows of keys", () => {
+    expect(entries('Key,Summary,Status\nPAY-1,"Fix, then test",Open\nPAY-2,Ship it,Done')).toEqual([
+      { key: "PAY-1", title: "Fix, then test" },
+      { key: "PAY-2", title: "Ship it" },
+    ]);
+    expect(entries("Schlüssel;Zusammenfassung\nPAY-1;Beheben")).toEqual([
+      { key: "PAY-1", title: "Beheben" },
+    ]);
+    expect(entries("PAY-1,Fix it,Open\nPAY-2,Ship it,Done")).toEqual([
+      { key: "PAY-1", title: "Fix it" },
+      { key: "PAY-2", title: "Ship it" },
+    ]);
+  });
+
+  it("leaves titles with commas alone, and a number after one", () => {
+    expect(entries("Fix the login, then test\nShip it, finally")).toEqual([
+      { title: "Fix the login, then test" },
+      { title: "Ship it, finally" },
+    ]);
+    expect(entries("Upgrade to v2, 3")).toEqual([{ title: "Upgrade to v2, 3" }]);
+  });
+
+  it("reads a key and words after a comma on a line of its own", () => {
+    expect(entries("PAY-1, Fix it\nPAY-2")).toEqual([
+      { key: "PAY-1", title: "Fix it" },
+      { key: "PAY-2" },
+    ]);
   });
 });
 
@@ -265,7 +409,7 @@ describe("what the rules refuse", () => {
   });
 
   it("leaves room for a key without a link, which shares the title", () => {
-    const result = parsePaste(`AB-1 ${"x".repeat(MAX_TITLE_LENGTH)}`);
+    const result = parsePaste(`AB-1 ${"X".repeat(MAX_TITLE_LENGTH)}`);
     expect(result.items).toHaveLength(1);
     expect(result.items[0]?.title).toHaveLength(MAX_TITLE_LENGTH - "AB-1 ".length);
   });
@@ -307,6 +451,31 @@ describe("duplicates and the limit", () => {
     expect(result.items).toHaveLength(2);
     expect(result).toMatchObject({ overflow: 1, duplicates: 1 });
   });
+
+  it("takes what fits the queue's bytes too", () => {
+    const line = (n: number) => `T${n} ${"\u{754C}".repeat(150)}`;
+    const text = Array.from({ length: 10 }, (_, n) => line(n)).join("\n");
+    const room = MAX_QUEUE_BYTES - 5 * queueBytes([{ title: line(0), id: 1 }]);
+    const result = parsePaste(text, { bytes: room });
+    expect(result.items.length).toBeLessThan(10);
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.overflow).toBe(10 - result.items.length);
+    expect(queueBytes(result.items) + room).toBeLessThanOrEqual(MAX_QUEUE_BYTES);
+  });
+
+  it("keeps the lines that did not go in, under a table's header", () => {
+    const lines = parsePaste("AB-1\nbell\u{0007}\nAB-2\nAB-3", { room: 2 });
+    expect(pasteLeft(lines)).toBe("bell\u{0007}\nAB-3");
+    const table = parsePaste('Key\tSummary\nAB-1\tFix\nAB-2\t"One\ntwo"', { room: 1 });
+    expect(pasteLeft(table)).toBe('Key\tSummary\nAB-2\t"One\ntwo"');
+    expect(parsePaste(pasteLeft(table)).items).toEqual([{ key: "AB-2", title: "One two" }]);
+    expect(pasteLeft(parsePaste("AB-1\nAB-1"))).toBe("");
+  });
+
+  it("keeps what a failed send left, in order", () => {
+    const result = parsePaste("AB-1\nAB-2\nbell\u{0007}\nAB-3");
+    expect(pasteLeft(result, 1)).toBe("AB-2\nAB-3\nbell\u{0007}");
+  });
 });
 
 describe("speed", () => {
@@ -340,14 +509,40 @@ describe("speed", () => {
 });
 
 describe("queueBatches", () => {
-  it("is one batch for a list that fits a socket message, even a full queue", () => {
-    const items = Array.from({ length: MAX_QUEUE_ITEMS }, (_, n) => ({
+  const ordinary = (count: number) =>
+    Array.from({ length: count }, (_, n) => ({
       key: `PAY-${n + 1}`,
-      title: "A ticket title of a fair length, about as long as most of them are",
+      title: `Ticket number ${n + 1} with a title of a fair length, as most of them are`,
       url: `https://acme.atlassian.net/browse/PAY-${n + 1}`,
     }));
-    expect(queueBatches(items)).toHaveLength(1);
+  const command = (items: unknown) =>
+    new TextEncoder().encode(
+      `42123${JSON.stringify(["cmd", { id: "x".repeat(64), type: "queueAdd", payload: { items } }])}`,
+    ).length;
+
+  it("takes two commands for 200 ordinary tickets and six for 500", () => {
+    expect(queueBatches(ordinary(200))).toHaveLength(2);
+    expect(queueBatches(ordinary(MAX_QUEUE_ITEMS))).toHaveLength(6);
+    expect(queueBatches(ordinary(MAX_QUEUE_ITEMS)).flat()).toEqual(ordinary(MAX_QUEUE_ITEMS));
+    for (const batch of queueBatches(ordinary(MAX_QUEUE_ITEMS))) {
+      expect(command(batch)).toBeLessThan(MAX_MESSAGE_BYTES);
+    }
     expect(queueBatches([])).toEqual([]);
+  });
+
+  it("is one command for a short list", () => {
+    expect(queueBatches(ordinary(30))).toHaveLength(1);
+  });
+
+  it("fits the largest item the rules allow in a message", () => {
+    const item = (key: string) => ({
+      key,
+      title: "\u{1F600}".repeat(MAX_TITLE_LENGTH),
+      url: `https://e.co/${"\u{754C}".repeat(1980)}`,
+    });
+    const batches = queueBatches(["PAY-1", "PAY-2", "PAY-3"].map(item));
+    expect(batches.flat()).toHaveLength(3);
+    for (const batch of batches) expect(command(batch)).toBeLessThan(MAX_MESSAGE_BYTES);
   });
 
   it("splits a list of very long links so each batch fits, keeping its order", () => {
@@ -358,9 +553,7 @@ describe("queueBatches", () => {
     expect(batches.length).toBeGreaterThan(1);
     expect(batches.flat()).toEqual(items);
     for (const batch of batches) {
-      expect(new TextEncoder().encode(JSON.stringify(batch)).length).toBeLessThan(
-        MAX_MESSAGE_BYTES,
-      );
+      expect(command(batch)).toBeLessThan(MAX_MESSAGE_BYTES);
     }
   });
 });

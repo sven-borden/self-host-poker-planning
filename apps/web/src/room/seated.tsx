@@ -129,11 +129,7 @@ export function Seated({ room, me, focusOnMount, onFocused, onLeaving }: SeatedP
   const hand = handView(shown, me);
   /** A refused start or reveal; a new round or phase clears it. */
   const [centreFailure, setCentreFailure] = useState<string | null>(null);
-  const next = useNextRound(
-    setCentreFailure,
-    room.queue?.next.id ?? null,
-    room.round?.number ?? 0,
-  );
+  const next = useNextRound(setCentreFailure, room.queue?.next.id ?? null, room.round?.number ?? 0);
   const roundKey = keyOf(room.round);
   const [seen, setSeen] = useState({ key: roundKey, liveReveal: false });
   if (seen.key !== roundKey) {

@@ -63,6 +63,7 @@ interface StartOptions {
   /** Runs before every load of a room (enter, the runner, a reload): may wait or throw. */
   beforeLoad?: (code: string) => Promise<void> | void;
   history?: Pick<HistoryStore, "loadHistory">;
+  deadlineTimeouts?: boolean;
 }
 
 async function start(
@@ -342,26 +343,138 @@ describe("the deadline", () => {
     expect(sync.deadlines.armed(idOf(store))).toBeUndefined();
   });
 
-  it("starts the next queue item at the countdown's end with no client action, once (#52)", async () => {
+  /** A revealed round with a recorded final and a countdown, Ada (ua) the PO. */
+  function counting(advanceAt: number): RoomState {
     const state = play(voting(), "ub", { type: "castVote", card: "5" }, 4);
     const revealed = play(state, "ua", { type: "reveal" }, 5);
     const round = revealed.round;
     if (!round) throw new Error("no round");
-    const { client, store, sync } = await start({
+    return {
       ...revealed,
-      round: { ...round, final: "5", advanceAt: Date.now() + 200 },
+      round: { ...round, final: "5", advanceAt },
       settings: { ...revealed.settings, autoAdvance: true },
       queue: { items: [{ id: 1, title: "Next up" }], lastId: 1, rev: 1 },
-    });
+    };
+  }
+
+  /** Moves the stored deadline: a server's start takes its own time, so it counts from here. */
+  function deadlineIn(store: MemoryRoomStore, ms: number) {
+    const round = store.rooms.get(CODE)?.state.round;
+    if (!round) throw new Error("no round");
+    round.advanceAt = Date.now() + ms;
+  }
+
+  const roundOf = (store: MemoryRoomStore) => store.rooms.get(CODE)?.state.round;
+
+  it("starts the next queue item at the countdown's end with no client action, once (#52)", async () => {
+    const { client, store, sync } = await start(counting(Date.now() + 60_000));
+    deadlineIn(store, 200);
     const ada = client("ua");
     await ada.enter(CODE);
     expect(sync.deadlines.armed(idOf(store))).toBeDefined();
     const seen = await ada.waitFor((s) => s.room.round?.phase === "voting", 3000);
     expect(seen.snapshot.room.round?.subject).toEqual({ kind: "title", text: "Next up" });
-    expect(seen.snapshot.room.round?.number).toBe((round.number ?? 0) + 1);
+    expect(seen.snapshot.room.round?.number).toBe(2);
     expect(seen.snapshot.room.queue).toBeUndefined();
     expect(store.commits).toBe(1);
     expect(sync.deadlines.armed(idOf(store))).toBeUndefined();
+  });
+
+  describe("a start pressed as the countdown ends (#52)", () => {
+    const subject = { kind: "title", text: "Typed" };
+
+    it("is refused when it lands first, and the item starts", async () => {
+      const { client, store } = await start(counting(Date.now() - 1), { deadlineTimeouts: false });
+      const ada = client("ua");
+      await ada.enter(CODE);
+      expect(await ada.cmd("startRound", { subject, round: 1 })).toEqual({
+        ok: false,
+        code: "round_changed",
+      });
+      expect(roundOf(store)?.number).toBe(2);
+      expect(roundOf(store)?.subject).toEqual({ kind: "title", text: "Next up" });
+      await ada.waitFor((s) => s.room.round?.number === 2);
+    });
+
+    it("is refused when the server's timeout landed first", async () => {
+      const { client, store } = await start(counting(Date.now() + 60_000));
+      deadlineIn(store, 30);
+      const ada = client("ua");
+      await ada.enter(CODE);
+      await ada.waitFor((s) => s.room.round?.number === 2);
+      expect(await ada.cmd("startRound", { subject, round: 1 })).toEqual({
+        ok: false,
+        code: "round_changed",
+      });
+      expect(roundOf(store)?.subject).toEqual({ kind: "title", text: "Next up" });
+    });
+  });
+
+  describe("a countdown without its PO (#52)", () => {
+    const left = (store: MemoryRoomStore) =>
+      vi.waitFor(() => expect(roundOf(store)?.advanceAt).toBeUndefined());
+
+    it("ends when the PO's last socket leaves, and nothing starts", async () => {
+      const { client, store, sync } = await start(counting(Date.now() + 60_000));
+      const ada = client("ua");
+      const bob = client("ub");
+      await ada.enter(CODE);
+      await bob.enter(CODE);
+      ada.close();
+      const seen = await bob.waitFor((s) => s.causes.some((c) => c.type === "advanceHeld"));
+      expect(seen.snapshot.room.round).toMatchObject({ phase: "revealed", number: 1 });
+      expect(seen.snapshot.room.round).not.toHaveProperty("advanceAt");
+      expect(seen.snapshot.room.queue?.count).toBe(1);
+      expect(sync.deadlines.armed(idOf(store))).toBeUndefined();
+    });
+
+    it("stands while another tab of the PO's is open", async () => {
+      const { client, store } = await start(counting(Date.now() + 60_000));
+      const tab = client("ua");
+      const other = client("ua");
+      await tab.enter(CODE);
+      await other.enter(CODE);
+      tab.close();
+      await sleep(100);
+      expect(roundOf(store)?.advanceAt).toBeDefined();
+    });
+
+    it("stands when a voter leaves", async () => {
+      const { client, store } = await start(counting(Date.now() + 60_000));
+      const ada = client("ua");
+      const bob = client("ub");
+      await ada.enter(CODE);
+      await bob.enter(CODE);
+      bob.close();
+      await sleep(100);
+      expect(roundOf(store)?.advanceAt).toBeDefined();
+    });
+
+    it("ends with the room's last socket, so no later enter starts the item", async () => {
+      const { client, store, sync } = await start(counting(Date.now() + 60_000));
+      const ada = client("ua");
+      await ada.enter(CODE);
+      ada.close();
+      await left(store);
+      // Days later, as far as the deadline goes, for a visitor on the join form.
+      const visitor = client("uz");
+      const entered = await visitor.enter(CODE);
+      expect(entered.ok && entered.snapshot.room.round?.phase).toBe("revealed");
+      expect(sync.deadlines.armed(idOf(store))).toBeUndefined();
+      await sleep(50);
+      expect(roundOf(store)).toMatchObject({ phase: "revealed", number: 1 });
+    });
+
+    it("leaves it stored through a shutdown: everyone comes back", async () => {
+      const { client, store, sync } = await start(counting(Date.now() + 60_000));
+      const ada = client("ua");
+      await ada.enter(CODE);
+      const socket = { data: { room: undefined } } as Parameters<RoomSync["disconnect"]>[0];
+      sync.disconnect(socket, true);
+      ada.close();
+      await sleep(100);
+      expect(roundOf(store)?.advanceAt).toBeDefined();
+    });
   });
 
   it("follows a timer started, then forgets it when the room's last socket leaves", async () => {

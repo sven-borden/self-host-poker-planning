@@ -3,7 +3,7 @@
  * drives the real server (Postgres, the real handshake, real guests) over real sockets
  * with random and malformed messages: wrong types, huge strings, deep objects, prototype
  * keys, unknown commands and events, binary frames, extra arguments, frames over the
- * 128 KB cap and frames Socket.IO cannot decode. Two attackers sit in the room (the PO and
+ * 16 KB cap and frames Socket.IO cannot decode. Two attackers sit in the room (the PO and
  * a voter, so their commands reach `apply`), next to two honest people.
  *
  * Every message that asks for an answer gets an ack with `ok` or an error code (never
@@ -19,14 +19,18 @@ import {
   type Command,
   cardLength,
   cleanName,
+  cleanQueueItem,
   createRoom,
   deckCards,
   MAX_LINK_LENGTH,
   MAX_MEMBERS,
+  MAX_QUEUE_BYTES,
+  MAX_QUEUE_ITEMS,
   MAX_TIMER_SECONDS,
   MAX_TITLE_LENGTH,
   MIN_TIMER_SECONDS,
   PRESET_DECK_IDS,
+  queueBytes,
   ROLES,
   type RoomState,
   SPECIAL_CARDS,
@@ -70,7 +74,12 @@ async function startInstance(
     ...setup.deps,
     logger,
     ...(!limited && {
-      realtimeLimits: { messageLimit: UNLIMITED, rosterLimit: UNLIMITED, historyLimit: UNLIMITED },
+      realtimeLimits: {
+        messageLimit: UNLIMITED,
+        rosterLimit: UNLIMITED,
+        historyLimit: UNLIMITED,
+        queueLimit: UNLIMITED,
+      },
     }),
   });
   const { port } = await server.listen();
@@ -216,6 +225,30 @@ function invariantProblems(state: RoomState): string[] {
     ) {
       problems.push("link");
     }
+    if (round.advanceAt !== undefined) {
+      const owner = state.participants[state.ownerId];
+      if (round.phase !== "revealed") problems.push("a countdown while voting");
+      if (!settings.autoAdvance) problems.push("a countdown with the setting off");
+      if (!state.queue?.items.length) problems.push("a countdown with an empty queue");
+      if (owner === undefined || owner.awaySince !== undefined) {
+        problems.push("a countdown without its PO");
+      }
+      if (round.stayed) problems.push("a countdown on a round the PO stayed on");
+    }
+  }
+  const queue = state.queue;
+  if (queue) {
+    if (queue.items.length > MAX_QUEUE_ITEMS) problems.push(`${queue.items.length} queue items`);
+    if (queueBytes(queue.items) > MAX_QUEUE_BYTES) problems.push("queue bytes");
+    const ids = queue.items.map((item) => item.id);
+    if (new Set(ids).size !== ids.length) problems.push("a queue id twice");
+    if (ids.some((id) => id < 1 || id > queue.lastId)) problems.push("a queue id out of range");
+    for (const { id, ...entry } of queue.items) {
+      const clean = cleanQueueItem(entry);
+      const same =
+        clean?.key === entry.key && clean?.title === entry.title && clean?.url === entry.url;
+      if (!same) problems.push(`queue item ${id} not clean`);
+    }
   }
   return problems;
 }
@@ -228,8 +261,10 @@ type Message =
   | { kind: "ack"; event: "cmd" | "enter" | "history" | "queue"; args: unknown[] }
   /** Sent without a callback, or to an event the server does not know: dropped. */
   | { kind: "drop"; event: string; args: unknown[] }
-  /** Over the 128 KB cap: the server closes the connection. */
+  /** Over the 16 KB cap: the server closes the connection. */
   | { kind: "oversize" }
+  /** With binary in it, which the protocol has none of: the server closes the connection. */
+  | { kind: "binary"; args: unknown[] }
   /** A frame Socket.IO cannot decode. */
   | { kind: "frame"; data: string };
 
@@ -251,7 +286,6 @@ const junk = fc
     maxDepth: 3,
     maxKeys: 5,
     withNullPrototype: true,
-    withTypedArray: true,
     withSparseArray: true,
   })
   .filter(encodable);
@@ -272,10 +306,13 @@ const text = (maxLength: number) =>
     ),
   );
 
-/** A long string that still fits a frame: one unit repeated up to about 14 KB. */
+/** A long string that still fits a frame: one unit repeated up to just under the cap. */
 const huge = fc
-  .tuple(fc.constantFrom("x", "é", "\u{1F600}", "‮", "́"), fc.integer({ min: 500, max: 3_400 }))
-  .map(([unit, times]) => unit.repeat(times));
+  .tuple(
+    fc.constantFrom("x", "é", "\u{1F600}", "‮", "́"),
+    fc.integer({ min: 2_000, max: MAX_PAYLOAD_BYTES - 512 }),
+  )
+  .map(([unit, bytes]) => unit.repeat(Math.floor(bytes / Buffer.byteLength(unit))));
 
 const deep = fc.integer({ min: 50, max: 2_500 }).map((depth) => {
   let value: unknown = "bottom";
@@ -330,6 +367,7 @@ const patch = fc.record(
     allowChangeAfterReveal: fc.boolean(),
     poVotes: fc.boolean(),
     observersCount: fc.boolean(),
+    autoAdvance: fc.boolean(),
   },
   { requiredKeys: [] },
 );
@@ -353,7 +391,10 @@ function commandArb(ids: () => string[]) {
     }),
     fc.record({ type: fc.constant("setRole"), payload: fc.record({ role }) }),
     fc.record({ type: fc.constant("kick"), payload: fc.record({ who }) }),
-    fc.record({ type: fc.constant("startRound"), payload: fc.record({ subject }) }),
+    fc.record({
+      type: fc.constant("startRound"),
+      payload: fc.record({ subject, round: fc.oneof(fc.constant(0), roundNumber) }),
+    }),
     fc.record({
       type: fc.constant("queueAdd"),
       payload: fc.record({
@@ -401,7 +442,14 @@ function commandArb(ids: () => string[]) {
     fc.record({ type: fc.constant("claimOwner") }),
     // The server's own commands and names that are no command at all.
     fc.record({
-      type: fc.constantFrom("presence", "password", "timeUp ", "__proto__", "constructor"),
+      type: fc.constantFrom(
+        "presence",
+        "password",
+        "endCountdown",
+        "timeUp ",
+        "__proto__",
+        "constructor",
+      ),
       payload: junk,
     }),
   );
@@ -455,7 +503,7 @@ function messageArb(code: () => string, ids: () => string[]): fc.Arbitrary<Messa
           base.id = noise;
           break;
         case "huge field":
-          // One field, so the frame stays under the 128 KB cap.
+          // One field, so the frame stays under the 16 KB cap.
           base.payload = { ...payload, [Object.keys(payload)[0] ?? "name"]: long };
           break;
         case "deep payload":
@@ -463,7 +511,7 @@ function messageArb(code: () => string, ids: () => string[]): fc.Arbitrary<Messa
           break;
         case "binary payload":
           base.payload = Buffer.from(JSON.stringify(payload));
-          break;
+          return { kind: "binary", args: [base] };
       }
       return { kind: "ack", event: "cmd", args: [base] };
     });
@@ -669,6 +717,12 @@ describe("fuzzed socket messages (AC 2)", () => {
       case "drop":
         (socket as unknown as Loose).emit(message.event, ...message.args);
         return;
+      case "binary": {
+        const gone = disconnected(socket, ACK_MS);
+        (socket as unknown as Loose).emit("cmd", ...message.args);
+        expect(await gone, "a binary packet closes the connection").toBe(true);
+        return;
+      }
       case "oversize": {
         const gone = disconnected(socket, ACK_MS);
         socket.emit("cmd", {

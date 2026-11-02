@@ -723,7 +723,7 @@ export const fr: Catalog<"many"> = {
     colEnded: "Fin",
   },
   queue: {
-    open: "File",
+    open: "File d’attente",
     count_one: "{{count, number}} ticket",
     count_many: "{{count, number}} de tickets",
     count_other: "{{count, number}} tickets",
@@ -747,11 +747,18 @@ export const fr: Catalog<"many"> = {
     shortened_many: "{{count, number}} de titres ont été raccourcis.",
     shortened_other: "{{count, number}} titres ont été raccourcis.",
     overflow_one:
-      "{{count, number}} ticket n’a pas trouvé place : une file en contient {{max, number}}.",
+      "{{count, number}} ticket n’a pas trouvé place : une file en contient {{max, number}} au plus, moins s’ils sont longs.",
     overflow_many:
-      "{{count, number}} de tickets n’ont pas trouvé place : une file en contient {{max, number}}.",
+      "{{count, number}} de tickets n’ont pas trouvé place : une file en contient {{max, number}} au plus, moins s’ils sont longs.",
     overflow_other:
-      "{{count, number}} tickets n’ont pas trouvé place : une file en contient {{max, number}}.",
+      "{{count, number}} tickets n’ont pas trouvé place : une file en contient {{max, number}} au plus, moins s’ils sont longs.",
+    kept: "Ces lignes restent dans la zone.",
+    partial_one:
+      "{{count, number}} ticket est entré avant l’arrêt. Le reste est encore dans la zone : ajoutez-le de nouveau, rien n’entrera deux fois.",
+    partial_many:
+      "{{count, number}} de tickets sont entrés avant l’arrêt. Le reste est encore dans la zone : ajoutez-le de nouveau, rien n’entrera deux fois.",
+    partial_other:
+      "{{count, number}} tickets sont entrés avant l’arrêt. Le reste est encore dans la zone : ajoutez-le de nouveau, rien n’entrera deux fois.",
     empty: "La file est encore vide.",
     loading: "Chargement de la file…",
     failed: "La file n’a pas pu être chargée.",
@@ -772,7 +779,7 @@ export const fr: Catalog<"many"> = {
     cleared: "La file est vide.",
     nextItem: "Ticket suivant",
     next: "Ensuite : {{item}}",
-    nextIn: "Ensuite : {{item}}, dans {{seconds, number}} s",
+    nextIn: "Ensuite : {{item}}, dans {{seconds, number}} s",
     stay: "Rester sur ce tour",
     subjectHint:
       "Vide, le ticket suivant démarre : {{item}}. Un sujet saisi passe d’abord et la file attend.",
@@ -819,7 +826,8 @@ export const fr: Catalog<"many"> = {
     bad_settings: "Ces réglages ne sont pas valides. Vérifiez-les et réessayez.",
     bad_queue_item:
       "L’un de ces tickets ne peut pas entrer dans la file. Vérifiez-le et réessayez.",
-    queue_full: "La file est pleine : elle contient {{max, number}} tickets.",
+    queue_full:
+      "La file est pleine : elle contient {{max, number}} tickets au plus, moins s’ils sont longs.",
     unknown_item: "Ce ticket n’est plus dans la file.",
     deck_empty: "Un jeu doit contenir au moins une carte.",
     deck_too_many_cards:

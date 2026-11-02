@@ -137,10 +137,13 @@ export type Round = {
   final?: Card;
   /**
    * When the next queue item starts by itself (#52, ADR-024): set by a recorded final in a
-   * room with `autoAdvance` and a queue. Revealed only. A deadline like `deadlineAt`: the
-   * first command, ping or server timeout after it starts the round, exactly once.
+   * room with `autoAdvance`, a queue and its PO present. Revealed only. A deadline like
+   * `deadlineAt`: the first command, ping or server timeout after it starts the round,
+   * exactly once.
    */
   advanceAt?: number;
+  /** The PO chose to stay on this round: a changed final starts no countdown (#52). */
+  stayed?: true;
 };
 
 export type RoomState = {
@@ -177,11 +180,19 @@ export const MAX_TITLE_LENGTH = 200;
 export const MAX_LINK_LENGTH = 2000;
 /** A queue holds at most this many items (#52). */
 export const MAX_QUEUE_ITEMS = 500;
+/** A queue holds at most this much JSON (#52, ADR-024): 500 ordinary tickets take a third. */
+export const MAX_QUEUE_BYTES = 256 * 1024;
 /**
- * One socket message in bytes (architecture section 8): 500 ordinary queue items fit in
- * one `queueAdd`, and the page splits a list that does not (#52, ADR-024).
+ * A queue item's title in UTF-8 bytes: 200 characters of four bytes each, so a title of
+ * real words always fits. Without it a title of joined characters holds 11 KB, which a
+ * snapshot would carry while it is the next item.
  */
-export const MAX_MESSAGE_BYTES = 128 * 1024;
+export const MAX_ITEM_TITLE_BYTES = 800;
+/**
+ * One socket message in bytes (architecture section 8), which the page's list has to fit
+ * too: it sends a long paste in several `queueAdd` (#52, ADR-024).
+ */
+export const MAX_MESSAGE_BYTES = 16 * 1024;
 /** How long a recorded final stays on the table before the next item starts by itself. */
 export const AUTO_ADVANCE_MS = 10_000;
 /** A timer runs from this many seconds … */

@@ -49,10 +49,14 @@ const URL_PARTS = /^https?:\/\/([^/?#]+)([^?#]*)(?:\?([^#]*))?/i;
  */
 export const JIRA_KEY = "[A-Z][A-Z0-9_]{1,31}-[1-9][0-9]{0,9}";
 /**
- * `…/browse/ABC-123`, or Jira Cloud's `…/projects/ABC/issues/ABC-123`, at the end of the
- * path; a context path such as `/jira` may precede it.
+ * `…/browse/ABC-123`, Jira Cloud's `…/projects/ABC/issues/ABC-123`, or a service desk's
+ * `…/projects/ABC/queues/custom/1/ABC-123`, at the end of the path; a context path such as
+ * `/jira` may precede it.
  */
-const JIRA_PATH = new RegExp(`/(?:browse|projects/[^/]+/issues)/(${JIRA_KEY})/?$`, "i");
+const JIRA_PATH = new RegExp(
+  `/(?:browse|projects/[^/]+/(?:issues|queues(?:/[^/]+){0,3}))/(${JIRA_KEY})/?$`,
+  "i",
+);
 /** `selectedIssue=ABC-123` in the query, as a Jira board or backlog links an issue. */
 const JIRA_SELECTED = new RegExp(`(?:^|&)selectedIssue=(${JIRA_KEY})(?:&|$)`, "i");
 /** An Azure DevOps work item id: a positive number of at most 10 digits. */
@@ -70,7 +74,8 @@ const ADO_HOST = /^(?:dev\.azure\.com|[a-z0-9][a-z0-9-]*\.visualstudio\.com)$/i;
 
 /**
  * The issue a link points at, for its chip; else `null`. A Jira key ("ABC-123", from
- * `/browse/ABC-123`, `/projects/ABC/issues/ABC-123` or `selectedIssue=ABC-123`), on any
+ * `/browse/ABC-123`, `/projects/ABC/issues/ABC-123`, a service desk's queue, or
+ * `selectedIssue=ABC-123`), on any
  * host since Jira is often self-hosted, in capitals. An Azure DevOps work item id
  * ("12345") from `…/_workitems/edit/12345` on any host (Azure DevOps Server is
  * self-hosted too), or from `workitem=12345` on `dev.azure.com` or `*.visualstudio.com`.

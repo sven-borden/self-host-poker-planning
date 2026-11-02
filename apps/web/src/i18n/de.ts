@@ -728,9 +728,14 @@ export const de: Catalog = {
     shortened_one: "{{count, number}} Titel wurde gekürzt.",
     shortened_other: "{{count, number}} Titel wurden gekürzt.",
     overflow_one:
-      "{{count, number}} Eintrag passte nicht mehr: Eine Warteschlange fasst {{max, number}}.",
+      "{{count, number}} Eintrag passte nicht mehr: Eine Warteschlange fasst höchstens {{max, number}}, bei langen Einträgen weniger.",
     overflow_other:
-      "{{count, number}} Einträge passten nicht mehr: Eine Warteschlange fasst {{max, number}}.",
+      "{{count, number}} Einträge passten nicht mehr: Eine Warteschlange fasst höchstens {{max, number}}, bei langen Einträgen weniger.",
+    kept: "Diese Zeilen bleiben im Feld.",
+    partial_one:
+      "{{count, number}} Eintrag wurde aufgenommen, bevor der Vorgang abbrach. Der Rest steht noch im Feld: Fügen Sie ihn erneut hinzu, nichts kommt doppelt hinein.",
+    partial_other:
+      "{{count, number}} Einträge wurden aufgenommen, bevor der Vorgang abbrach. Der Rest steht noch im Feld: Fügen Sie ihn erneut hinzu, nichts kommt doppelt hinein.",
     empty: "Die Warteschlange ist noch leer.",
     loading: "Warteschlange wird geladen …",
     failed: "Die Warteschlange konnte nicht geladen werden.",
@@ -751,7 +756,7 @@ export const de: Catalog = {
     cleared: "Die Warteschlange ist leer.",
     nextItem: "Nächster Eintrag",
     next: "Als Nächstes: {{item}}",
-    nextIn: "Als Nächstes: {{item}}, in {{seconds, number}} s",
+    nextIn: "Als Nächstes: {{item}}, in {{seconds, number}} s",
     stay: "Bei dieser Runde bleiben",
     subjectHint:
       "Leer startet der nächste Eintrag: {{item}}. Ein eingegebenes Thema geht vor, und die Warteschlange wartet.",
@@ -800,7 +805,8 @@ export const de: Catalog = {
     bad_settings: "Diese Einstellungen sind ungültig. Prüfen Sie sie und versuchen Sie es erneut.",
     bad_queue_item:
       "Einer dieser Einträge kann nicht in die Warteschlange. Prüfen Sie ihn und versuchen Sie es erneut.",
-    queue_full: "Die Warteschlange ist voll: Sie fasst {{max, number}} Einträge.",
+    queue_full:
+      "Die Warteschlange ist voll: Sie fasst höchstens {{max, number}} Einträge, bei langen weniger.",
     unknown_item: "Dieser Eintrag ist nicht mehr in der Warteschlange.",
     deck_empty: "Ein Kartensatz braucht mindestens eine Karte.",
     deck_too_many_cards:

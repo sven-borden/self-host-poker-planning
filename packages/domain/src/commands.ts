@@ -37,7 +37,7 @@ export type Command =
   | { type: "queueClear" }
   /** "Next item": a round on this item, which leaves the queue. */
   | { type: "startNext"; id: number }
-  /** The PO stays on this round: the countdown to the next item stops. */
+  /** The PO stays on this round: the countdown stops, and a changed final starts no other. */
   | { type: "holdAdvance" }
   | { type: "castVote"; card: Card; round?: number; restart?: number }
   | { type: "retractVote"; round?: number; restart?: number }
@@ -52,7 +52,9 @@ export type Command =
   | { type: "transferOwner"; to: UserId }
   | { type: "claimOwner" }
   | { type: "presence"; who: UserId; connected: boolean }
-  | { type: "password"; on: boolean };
+  | { type: "password"; on: boolean }
+  /** The PO's last socket left during a countdown, or the room's: it ends, and nothing starts. */
+  | { type: "endCountdown" };
 
 export type CommandType = Command["type"];
 
@@ -60,10 +62,11 @@ export type CommandType = Command["type"];
  * Commands only the server sends: `presence` (#17), after a person's last socket left
  * and the grace period passed, or when they come back; `password` (#31), when the PO
  * sets, changes or removes the room's password over HTTP (the password itself never
- * enters a command). The wire protocol has no schema for them, so a client that sends
- * one gets `bad_payload` before `apply` runs.
+ * enters a command); `endCountdown` (#52), when the PO or the whole room left during a
+ * countdown. The wire protocol has no schema for them, so a client that sends one gets
+ * `bad_payload` before `apply` runs.
  */
-export type ServerCommandType = "presence" | "password";
+export type ServerCommandType = "presence" | "password" | "endCountdown";
 /** What a client may send: every command except the server's own. */
 export type ClientCommand = Exclude<Command, { type: ServerCommandType }>;
 export type ClientCommandType = ClientCommand["type"];
@@ -105,7 +108,7 @@ export type Cause =
   | { type: "queueChanged"; added?: number }
   /** The next item starts by itself at the round's `advanceAt` (#52). */
   | { type: "advanceArmed" }
-  /** It will not: the PO stayed, or the queue or the setting no longer allows it. */
+  /** It will not: the PO stayed or left, or the queue or the setting no longer allows it. */
   | { type: "advanceHeld" };
 
 /**

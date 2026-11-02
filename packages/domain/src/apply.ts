@@ -5,6 +5,7 @@
  * Every call runs three steps:
  * 1. Resolve an elapsed deadline (lazy timer): reveal or announce `timeUp`, or start the
  *    next queue item, exactly once. This stands even when the command is then refused.
+ *    Only `endCountdown` skips it: it says nobody is left for the round it would start.
  * 2. Run the command.
  * 3. On success, settle the round: drop the votes of people who are no longer voters
  *    (while Voting), then reveal when every eligible voter has voted.
@@ -92,10 +93,12 @@ const OPEN: ReadonlySet<CommandType> = new Set<CommandType>([
   "timeUp",
   "presence",
   "password",
+  "endCountdown",
 ]);
 
 export function apply(state: RoomState, command: Command, ctx: ApplyContext): ApplyResult {
-  const resolved = resolveDeadline(state);
+  const leftAlone = isRecord(command) && command.type === "endCountdown";
+  const resolved = leftAlone ? done(state) : resolveDeadline(state);
   const step = run(resolved.state, command, ctx);
   if ("error" in step) return { ok: false, error: step.error, ...resolved };
   const settled = settle(step.state, ctx.now);
@@ -169,6 +172,13 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       return item ? startItem(state, item, now) : refuse("unknown_item");
     }
     case "holdAdvance": {
+      const round = state.round;
+      if (round?.advanceAt === undefined) return done(state);
+      return done(withRound(state, { ...withoutAdvance(round), stayed: true }), {
+        type: "advanceHeld",
+      });
+    }
+    case "endCountdown": {
       const round = state.round;
       if (round?.advanceAt === undefined) return done(state);
       return done(withRound(state, withoutAdvance(round)), { type: "advanceHeld" });
@@ -415,20 +425,27 @@ function changeQueue(state: RoomState, queue: Queue | ErrorCode | undefined): St
   );
 }
 
-/** Whether a recorded final may lead to the next item by itself (#52). */
+/**
+ * Whether the room may move on to the next item by itself (#52): the setting is on, an item
+ * waits, and the PO is here to stop it.
+ */
 function canAdvance(state: RoomState): boolean {
-  return state.settings.autoAdvance === true && (state.queue?.items.length ?? 0) > 0;
+  return (
+    state.settings.autoAdvance === true &&
+    (state.queue?.items.length ?? 0) > 0 &&
+    isPresent(participant(state, state.ownerId))
+  );
 }
 
 /**
  * The countdown after a recorded final has run out: the next item starts. Its start is
  * `now`, not the deadline: the team's time on it runs from when it shows. `settle` keeps
- * the queue from being empty here, as long as the state came from `apply`.
+ * the countdown from outliving what allows it, as long as the state came from `apply`.
  */
 function resolveAdvance(state: RoomState, round: Round, now: number): Done {
   if (round.advanceAt === undefined || round.advanceAt > now) return { state, causes: [] };
   const item = state.queue?.items[0];
-  if (item) return startItem(state, item, now);
+  if (item && canAdvance(state)) return startItem(state, item, now);
   return { state: withRound(state, withoutAdvance(round)), causes: [{ type: "advanceHeld" }] };
 }
 
@@ -500,7 +517,8 @@ function setFinal(state: RoomState, card: unknown, now: number): Step {
   if (round.final === card) return done(state);
   const recorded = { ...withoutAdvance(round), final: card };
   // Another final restarts the countdown: the PO is still deciding, and the team reading.
-  return canAdvance(state)
+  // After "Stay on this round" none starts: that holds for the whole round.
+  return canAdvance(state) && round.stayed !== true
     ? done(
         withRound(state, { ...recorded, advanceAt: now + AUTO_ADVANCE_MS }),
         { type: "finalSet", card },
@@ -562,7 +580,8 @@ function updateSettings(state: RoomState, patch: unknown, now: number): Step {
  * each with a `voteRetracted` cause, then
  * reveal when `revealWhenAllVoted` is on and every eligible voter (a voter who is not
  * away) has voted. A leave, kick, role or settings change can complete a round too.
- * Revealed: a countdown to the next item stops once the queue is empty or the setting off.
+ * Revealed: a countdown to the next item stops once the queue is empty, the setting off or
+ * the PO gone or away.
  */
 function settle(state: RoomState, now: number): { state: RoomState; causes: Cause[] } {
   const round = state.round;

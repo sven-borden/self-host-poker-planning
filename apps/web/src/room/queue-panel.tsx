@@ -1,4 +1,4 @@
-import { MAX_QUEUE_ITEMS, queueIdentity } from "@pp/domain";
+import { MAX_QUEUE_ITEMS, queueBytes, queueIdentity } from "@pp/domain";
 import type { CmdAck, QueueItemView } from "@pp/protocol";
 import { ArrowDownIcon, ArrowUpIcon, GripVerticalIcon, XIcon } from "lucide-react";
 import {
@@ -30,7 +30,7 @@ import { cn } from "../lib/utils.ts";
 import { commandSender, requestQueue } from "../realtime/room-connection.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { failureMessage } from "./failure.ts";
-import { type PasteResult, parsePaste, queueBatches } from "./paste-queue.ts";
+import { type PasteResult, parsePaste, pasteLeft, queueBatches } from "./paste-queue.ts";
 import { itemName, keyLabel, safeHref, shortUrl } from "./subject.ts";
 
 /** A phone: the `phone:` variant in styles.css. The panel is a bottom sheet there. */
@@ -124,6 +124,7 @@ export function pasteReport(t: TFunction, result: PasteResult): string {
   if (result.overflow > 0) {
     parts.push(t("queue.overflow", { count: result.overflow, max: MAX_QUEUE_ITEMS }));
   }
+  if (result.left.length > 0) parts.push(t("queue.kept"));
   return parts.join(" ");
 }
 
@@ -421,9 +422,12 @@ function PanelLive() {
 }
 
 /**
- * The paste box. The press parses here, in the page, and only the items leave; the text
- * is cleared once they are in, and kept when a send fails, so nothing has to be pasted
- * twice. A list that fits one socket message is one command, whatever its length.
+ * The paste box. The press parses here, in the page, and only the items leave. What went
+ * in leaves the box; lines that did not (refused, past the limit) stay, so the PO can see
+ * them. A long list goes in several commands, each of which stands alone. One refused in
+ * between stops there: the sheet says how many went in, and the rest stays in the box. A
+ * second press adds it, and nothing goes in twice: the domain drops what it holds, even when
+ * a lost answer hid a command that landed.
  */
 function PasteForm({
   items,
@@ -456,19 +460,26 @@ function PasteForm({
     const result = parsePaste(text, {
       known: items.map(queueIdentity),
       room: MAX_QUEUE_ITEMS - items.length,
+      bytes: queueBytes(items),
     });
     pending.current = true;
     setBusy(true);
     setReport(null);
+    let sent = 0;
     try {
       for (const batch of queueBatches(result.items)) {
         const ack = await commandSender()({ type: "queueAdd", payload: { items: batch } });
         if (!ack.ok) {
           setProblem(ack.code);
+          if (sent === 0) return;
+          setText(pasteLeft(result, sent));
+          setReport(t("queue.partial", { count: sent }));
+          onAdded();
           return;
         }
+        sent += batch.length;
       }
-      setText("");
+      setText(pasteLeft(result));
       setReport(pasteReport(t, result));
       onAdded();
     } finally {

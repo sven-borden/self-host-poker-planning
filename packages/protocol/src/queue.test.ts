@@ -4,6 +4,7 @@ import {
   createRoom,
   MAX_QUEUE_ITEMS,
   type QueueEntry,
+  queueBytes,
   type RoomState,
 } from "@pp/domain";
 import { describe, expect, it } from "vitest";
@@ -68,6 +69,20 @@ describe("a snapshot's queue (ADR-024)", () => {
       id: 1,
       url: "https://example.com/x",
     });
+  });
+
+  it("stays small in the worst case the rules allow", () => {
+    const base = fullTable();
+    const snapshot = (item: QueueEntry) =>
+      queueBytes([toSnapshot(step(base, { type: "queueAdd", items: [item] }), PO, META)]);
+    const without = queueBytes([toSnapshot(base, PO, META)]);
+    const title = `${"\u{1100}".repeat(266)}${'"'.repeat(1)}`;
+    const link = `https://example.com/${"\u{754C}".repeat(1980)}`;
+    expect(snapshot({ title }) - without).toBeLessThan(900);
+    expect(snapshot({ url: link }) - without).toBeLessThan(300);
+    const next = toSnapshot(step(base, { type: "queueAdd", items: [{ url: link }] }), PO, META);
+    expect(next.room.queue?.next.url?.startsWith("https://example.com/")).toBe(true);
+    expect(snapshotSchema.safeParse(next).success).toBe(true);
   });
 
   it("gives everyone the same, the PO included", () => {

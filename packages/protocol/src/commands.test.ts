@@ -184,6 +184,7 @@ describe("wire commands", () => {
       { id: "1", type: "startRound", payload: { round: -1, subject: { kind: "none" } } },
     ],
     ["an unknown type", { id: "1", type: "dropTable" }],
+    ["the server's own end of a countdown", { id: "1", type: "endCountdown" }],
     [
       "the server's own presence update",
       { id: "1", type: "presence", payload: { who: "a", connected: false } },

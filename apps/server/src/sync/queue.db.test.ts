@@ -1,8 +1,8 @@
 /**
  * The queue (#52) against Postgres with real guests and the real handshake: who may read the
- * list, a paste as one command on one socket message, what a snapshot carries on the raw
- * frames, a full queue through the compare-and-set while a room votes, a redeploy, the
- * PO's hand-over, the history of a round started from the queue, and the room's end.
+ * list, a long paste in several commands, what a snapshot carries on the raw frames, a full
+ * queue through the compare-and-set while a room votes, a redeploy, the PO's hand-over, the
+ * history of a round started from the queue, and the room's end.
  */
 import {
   apply,
@@ -48,7 +48,12 @@ async function start(): Promise<Instance> {
   const server = createServer(config, {
     ...setup.deps,
     logger: logs.logger,
-    realtimeLimits: { messageLimit: UNLIMITED, rosterLimit: UNLIMITED, historyLimit: UNLIMITED },
+    realtimeLimits: {
+      messageLimit: UNLIMITED,
+      rosterLimit: UNLIMITED,
+      historyLimit: UNLIMITED,
+      queueLimit: UNLIMITED,
+    },
   });
   const { port } = await server.listen();
   return { ...setup, server, base: `http://localhost:${port}` };
@@ -102,6 +107,16 @@ const ticket = (n: number): QueueEntry => ({
 });
 
 const tickets = (count: number) => Array.from({ length: count }, (_, n) => ticket(n + 1));
+
+/** A long list as a page sends it: commands that each fit a socket message. */
+async function paste(po: TestClient, items: QueueEntry[]) {
+  const size = 75;
+  for (let at = 0; at < items.length; at += size) {
+    const batch = items.slice(at, at + size);
+    expect(new TextEncoder().encode(JSON.stringify(batch)).length).toBeLessThan(MAX_PAYLOAD_BYTES);
+    expect((await po.cmd("queueAdd", { items: batch })).ok).toBe(true);
+  }
+}
 
 /** The raw `queue` request, its answer checked against the strict schema. */
 async function readQueue(c: TestClient) {
@@ -165,27 +180,37 @@ describe("the list", () => {
 });
 
 describe("a paste", () => {
-  it("is one command on one message, even 500 ordinary tickets", async () => {
+  it("comes in commands under the cap, even 500 ordinary tickets", async () => {
     const code = await room();
     const po = client(ada);
     const voter = client(bob);
     await po.enter(code);
     await voter.enter(code);
-    const items = tickets(MAX_QUEUE_ITEMS);
-    expect(new TextEncoder().encode(JSON.stringify(items)).length).toBeLessThan(MAX_PAYLOAD_BYTES);
-    const ack = await po.cmd("queueAdd", { items });
-    expect(ack).toMatchObject({ ok: true });
-    const { snapshot } = await voter.waitFor((s) => s.room.queue !== undefined);
-    expect(snapshot.room.queue).toEqual({
-      count: MAX_QUEUE_ITEMS,
-      rev: 1,
-      next: { id: 1, key: "PAY-1" },
-    });
-    expect(snapshot.causes).toEqual([{ type: "queueChanged", added: MAX_QUEUE_ITEMS }]);
+    await paste(po, tickets(MAX_QUEUE_ITEMS));
+    const { snapshot } = await voter.waitFor((s) => s.room.queue?.count === MAX_QUEUE_ITEMS);
+    expect(snapshot.room.queue?.next).toEqual({ id: 1, key: "PAY-1" });
+    expect(snapshot.causes).toEqual([{ type: "queueChanged", added: 50 }]);
     expect(await po.cmd("queueAdd", { items: [{ title: "One too many" }] })).toEqual({
       ok: false,
       code: "queue_full",
     });
+  });
+
+  it("goes in once, however often a batch is sent again", async () => {
+    const code = await room();
+    const po = client(ada);
+    const voter = client(bob);
+    await po.enter(code);
+    await voter.enter(code);
+    await paste(po, tickets(150));
+    await voter.waitFor((s) => s.room.queue?.count === 150);
+    const stored = (await storedRoom(code))?.queue;
+    // The first batch's answer was lost, and the page sends it again: nothing changes.
+    expect((await po.cmd("queueAdd", { items: tickets(75) })).ok).toBe(true);
+    expect((await storedRoom(code))?.queue).toEqual(stored);
+    const added = await po.cmd("queueAdd", { items: tickets(160) });
+    expect(added.ok).toBe(true);
+    expect((await storedRoom(code))?.queue.items).toHaveLength(160);
   });
 
   it("is refused whole for one bad link, and nothing is stored", async () => {
@@ -233,20 +258,47 @@ describe("the frames", () => {
   });
 });
 
+/** Counts every UPDATE of `room` that names the `queue` column in its SET list. */
+async function countQueueWrites() {
+  const sql = sqlClient(t.url);
+  try {
+    await sql.query(`
+      create table if not exists queue_writes (at timestamptz default now());
+      create or replace function note_queue_write() returns trigger language plpgsql as
+        $$ begin insert into queue_writes default values; return new; end $$;
+      drop trigger if exists note_queue_write on room;
+      create trigger note_queue_write before update of queue on room
+        for each row execute function note_queue_write();
+      truncate queue_writes;`);
+  } finally {
+    await sql.end();
+  }
+  return async () => {
+    const reader = sqlClient(t.url);
+    try {
+      const { rows } = await reader.query("select count(*)::int as n from queue_writes");
+      return rows[0].n as number;
+    } finally {
+      await reader.end();
+    }
+  };
+}
+
 describe("a full queue through the compare-and-set", () => {
-  it("leaves `live` its old size and survives a round of votes unchanged", async () => {
+  it("leaves `live` its old size, and a vote writes no part of the column", async () => {
     const code = await room();
     const po = client(ada);
     const voter = client(bob);
     await po.enter(code);
     await voter.enter(code);
     const small = (await storedRoom(code))?.live_bytes;
-    await po.cmd("queueAdd", { items: tickets(MAX_QUEUE_ITEMS) });
+    await paste(po, tickets(MAX_QUEUE_ITEMS));
     const stored = await storedRoom(code);
     expect(stored?.live).not.toHaveProperty("queue");
     expect(stored?.live_bytes).toBe(small);
     expect(stored?.queue.items).toHaveLength(MAX_QUEUE_ITEMS);
 
+    const writes = await countQueueWrites();
     await po.cmd("startRound", { subject: { kind: "none" } });
     const acks = await Promise.all([
       po.cmd("castVote", { card: "5", round: 1 }),
@@ -256,6 +308,10 @@ describe("a full queue through the compare-and-set", () => {
     const after = await storedRoom(code);
     expect(after?.queue).toEqual(stored?.queue);
     expect(after?.live.round.phase).toBe("revealed");
+    expect(await writes()).toBe(0);
+    // The trigger does see a write: a move is one.
+    expect((await po.cmd("queueMove", { id: 500, to: 0 })).ok).toBe(true);
+    expect(await writes()).toBe(1);
   });
 });
 
@@ -301,20 +357,61 @@ describe("a redeploy", () => {
   });
 });
 
+describe("a countdown through a redeploy", () => {
+  it("resolves for the people who come back, once", async () => {
+    let s = createRoom({ ownerId: ada.id });
+    s = step(s, ada.id, { type: "join", name: "Ada", role: "voter" });
+    s = step(s, bob.id, { type: "join", name: "Bob", role: "voter" });
+    s = step(s, ada.id, { type: "updateSettings", patch: { autoAdvance: true } });
+    s = step(s, ada.id, { type: "queueAdd", items: tickets(2) });
+    s = step(s, ada.id, { type: "startNext", id: 1 });
+    s = step(s, ada.id, { type: "reveal" });
+    s = step(s, ada.id, { type: "setFinal", card: "5" });
+    const code = roomCode();
+    await instance.database.store.insertRoom({ code, name: null, state: s });
+    const po = client(ada);
+    const voter = client(bob);
+    await po.enter(code);
+    await voter.enter(code);
+    await instance.server.close();
+    await instance.dispose?.();
+    // The shutdown closed every socket, and that ended nothing.
+    const stored = await storedRoom(code);
+    expect(stored?.live.round.advanceAt).toBeDefined();
+    const sql = sqlClient(t.url);
+    try {
+      const past = String(Date.now() - 1000);
+      await sql.query(
+        "update room set live = jsonb_set(live, '{round,advanceAt}', $1) where code = $2",
+        [past, code],
+      );
+    } finally {
+      await sql.end();
+    }
+    instance = await start();
+    const back = client(bob);
+    await back.enter(code);
+    const { snapshot } = await back.waitFor((v) => v.room.round?.phase === "voting");
+    expect(snapshot.room.round).toMatchObject({ number: 2, subject: { key: "PAY-2" } });
+    const page = await back.history();
+    expect(page.ok && page.rounds[0]?.number).toBe(1);
+  });
+});
+
 describe("the room's end", () => {
-  it("takes the queue with it: it is a column of the room's row", async () => {
+  it("takes the queue with it: the purge leaves no row to hold it", async () => {
     const code = await room();
     const po = client(ada);
     await po.enter(code);
     await po.cmd("queueAdd", { items: tickets(2) });
-    const sql = sqlClient(t.url);
-    try {
-      await sql.query("delete from room where code = $1", [code]);
-      const { rows } = await sql.query("select count(*)::int as n from room where queue is null");
-      expect(typeof rows[0].n).toBe("number");
-    } finally {
-      await sql.end();
-    }
+    expect((await storedRoom(code))?.queue.items).toHaveLength(2);
+    po.close();
+    const purged = await instance.database.retention.purge({
+      now: new Date(Date.now() + 2 * 86_400_000),
+      ttlDays: 1,
+    });
+    expect(purged?.rooms).toBeGreaterThan(0);
+    expect(await storedRoom(code)).toBeUndefined();
     expect(await instance.database.store.loadRoom(code)).toBeNull();
   });
 });

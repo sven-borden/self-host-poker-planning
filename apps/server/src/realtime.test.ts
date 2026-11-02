@@ -17,7 +17,7 @@ import {
   type SocketMiddleware,
 } from "./realtime.ts";
 import { createServer, type PokerServer, type ServerDeps } from "./server.ts";
-import { HISTORY_LIMIT, ROSTER_LIMIT } from "./sync/token-bucket.ts";
+import { HISTORY_LIMIT, QUEUE_WRITE_LIMIT, ROSTER_LIMIT } from "./sync/token-bucket.ts";
 import { collectLogs, type LogCollector, testConfig } from "./test-support.ts";
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -294,6 +294,19 @@ describe("Socket.IO", () => {
     raw(socket).emit("enter", { code: "x".repeat(MAX_PAYLOAD_BYTES), protocol: PROTOCOL_VERSION });
     expect(await closed).toBe("transport close");
   });
+
+  it("holds the payload cap at 16 KB, whoever sends", () => {
+    expect(MAX_PAYLOAD_BYTES).toBe(16 * 1024);
+  });
+
+  it("closes a connection that sends a binary packet: the protocol has none", async () => {
+    const { client } = await start();
+    const socket = client();
+    await connected(socket);
+    const closed = new Promise<string>((resolve) => socket.once("disconnect", resolve));
+    raw(socket).emit("enter", { code: Buffer.from("x"), protocol: PROTOCOL_VERSION });
+    expect(await closed).toBe("transport close");
+  });
 });
 
 /** Every handshake is the same person, as many tabs of one session would be. */
@@ -373,6 +386,27 @@ describe("limits per person", () => {
       ok: true,
       version: 1,
     });
+  });
+
+  it(`limits changes to the queue to a burst of ${QUEUE_WRITE_LIMIT.burst}, not the rest`, async () => {
+    const { client } = await start({
+      socketMiddleware: [samePerson],
+      realtimeLimits: { messageLimit: { perSecond: 1e6, burst: 1e6 } },
+      handlers: {
+        enter: () => ({ ok: false, code: "room_not_found" }),
+        cmd: () => ({ ok: true, version: 1 }),
+      },
+    });
+    const socket = client();
+    await connected(socket);
+    const acks = [];
+    for (let n = 0; n <= QUEUE_WRITE_LIMIT.burst; n++) {
+      const command = { id: `q${n}`, type: "queueMove", payload: { id: 1, to: 0 } };
+      acks.push(cmdAckSchema.parse(await raw(socket).emitWithAck("cmd", command)));
+    }
+    expect(acks.slice(0, QUEUE_WRITE_LIMIT.burst).every((ack) => ack.ok)).toBe(true);
+    expect(acks.at(-1)).toEqual({ ok: false, code: "rate_limited" });
+    expect(await raw(socket).emitWithAck("cmd", CMD)).toEqual({ ok: true, version: 1 });
   });
 
   it(`limits history requests to a burst of ${HISTORY_LIMIT.burst}`, async () => {

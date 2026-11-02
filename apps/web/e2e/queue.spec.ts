@@ -176,8 +176,8 @@ test("auto-advance counts down for everyone, the PO can stay, and the next item 
     await ben.page.goto(page.url());
     await join(ben.page, "Ben");
     await openQueue(page);
-    await paste(page, "AB-1\nAB-2");
-    await expect(rows(page)).toHaveCount(2);
+    await paste(page, "AB-1\nAB-2\nAB-3");
+    await expect(rows(page)).toHaveCount(3);
     await closeQueue(page);
     await page.getByRole("button", { name: "Room settings" }).click();
     await page.getByRole("switch", { name: "Start the next item by itself" }).click();
@@ -202,14 +202,50 @@ test("auto-advance counts down for everyone, the PO can stay, and the next item 
       "The room stays on this round.",
     );
 
-    // A new final starts it again, and at its end the round starts, with no press.
+    // Staying holds for the round: a changed final starts nothing.
     await page.locator("[data-final-card='8'] input").check();
     await page.getByRole("button", { name: "Record 8" }).click();
-    await expect(nextUp(ben.page)).toContainText("in");
-    await expect(subjectLine(ben.page)).toContainText("AB-2", { timeout: 14_000 });
+    await expect(page.getByRole("button", { name: "Recorded" })).toBeVisible();
+    await expect(nextUp(ben.page)).toHaveText("Next: AB-2");
+
+    // The next round's final counts down, and at its end the round starts, with no press.
+    await page.getByRole("button", { name: "Next item" }).click();
+    await expect(subjectLine(ben.page)).toContainText("AB-2");
+    await voteAll(page, ben.page);
+    await page.getByRole("button", { name: "Record 5" }).click();
+    await expect(nextUp(ben.page)).toContainText(/in \d+/);
+    await expect(subjectLine(ben.page)).toContainText("AB-3", { timeout: 14_000 });
     await expect(page.locator("[data-queue-count]")).toHaveCount(0);
     await expect(page.locator("[data-centre-status='voting']")).toBeVisible();
     await expect(handCard(ben.page, "5")).toBeEnabled();
+  } finally {
+    await ben.context.close();
+  }
+});
+
+test("a list too long for one message goes in, and the room hears its sum", async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(60_000);
+  await createRoom(page);
+  await join(page, "Ana");
+  const ben = await newPerson(browser);
+  try {
+    await ben.page.goto(page.url());
+    await join(ben.page, "Ben");
+    await openQueue(page);
+    const list = Array.from(
+      { length: 300 },
+      (_, n) =>
+        `PAY-${n + 1}\thttps://acme.atlassian.net/browse/PAY-${n + 1}\tA ticket of a fair length, number ${n + 1}`,
+    );
+    await paste(page, list.join("\n"));
+    await expect(sheet(page).locator("[data-queue-report]")).toHaveText("300 items added.");
+    await expect(rows(page)).toHaveCount(300);
+    await expect(ben.page.locator("[data-table-live]")).toContainText(
+      "300 items added to the queue.",
+    );
   } finally {
     await ben.context.close();
   }

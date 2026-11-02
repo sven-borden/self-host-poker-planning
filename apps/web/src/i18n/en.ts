@@ -61,7 +61,8 @@ const errors = {
   busy: "The room was busy for a moment. Try again.",
   internal: "Something went wrong on the server. Try again in a moment.",
   bad_queue_item: "One of these items cannot go in the queue. Check it and try again.",
-  queue_full: "The queue is full: it holds {{max, number}} items.",
+  queue_full:
+    "The queue is full: it holds {{max, number}} items at most, fewer when they are long.",
   unknown_item: "That item is no longer in the queue.",
   /** Any code this version does not know yet. */
   unknown: "Something went wrong. Try again, or reload the page.",
@@ -762,8 +763,15 @@ export const en = {
     refused_other: "{{count, number}} lines could not be read.",
     shortened_one: "{{count, number}} title was cut to fit.",
     shortened_other: "{{count, number}} titles were cut to fit.",
-    overflow_one: "{{count, number}} item did not fit: a queue holds {{max, number}}.",
-    overflow_other: "{{count, number}} items did not fit: a queue holds {{max, number}}.",
+    overflow_one:
+      "{{count, number}} item did not fit: a queue holds {{max, number}} at most, fewer when they are long.",
+    overflow_other:
+      "{{count, number}} items did not fit: a queue holds {{max, number}} at most, fewer when they are long.",
+    kept: "Those lines stay in the box.",
+    partial_one:
+      "{{count, number}} item went in before this stopped. The rest is still in the box: add it again, and nothing goes in twice.",
+    partial_other:
+      "{{count, number}} items went in before this stopped. The rest is still in the box: add it again, and nothing goes in twice.",
     empty: "Nothing in the queue yet.",
     loading: "Loading the queue…",
     failed: "The queue could not be loaded.",
@@ -783,7 +791,7 @@ export const en = {
     cleared: "The queue is empty.",
     nextItem: "Next item",
     next: "Next: {{item}}",
-    nextIn: "Next: {{item}}, in {{seconds, number}} s",
+    nextIn: "Next: {{item}}, in {{seconds, number}} s",
     stay: "Stay on this round",
     subjectHint:
       "Empty, the next item starts: {{item}}. A subject you type goes first and the queue waits.",

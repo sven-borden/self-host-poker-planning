@@ -201,10 +201,13 @@ function settingsView(s: RoomSettings, hasPassword: boolean): RoomSettingsView {
   };
 }
 
+/** As much of a next item's link as its name needs: the page shows 40 characters of it. */
+const NEXT_LINK_LENGTH = 64;
+
 /**
  * How many items wait and the next one, named by one thing: its key, else its title, else
- * its link. This is all of a queue that rides in a snapshot (ADR-024): nothing for an
- * empty queue, so a room without one sends what it always sent.
+ * the start of its link. This is all of a queue that rides in a snapshot (ADR-024): nothing
+ * for an empty queue, so a room without one sends what it always sent.
  */
 function queueSummary(queue: Queue | undefined): { queue?: QueueSummary } {
   const item = queue?.items[0];
@@ -216,7 +219,7 @@ function queueSummary(queue: Queue | undefined): { queue?: QueueSummary } {
       : title !== undefined
         ? { title }
         : url !== undefined
-          ? { url }
+          ? { url: Array.from(url).slice(0, NEXT_LINK_LENGTH).join("") }
           : {};
   return { queue: { count: queue.items.length, rev: queue.rev, next: { id, ...name } } };
 }

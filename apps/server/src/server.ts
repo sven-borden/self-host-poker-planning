@@ -30,7 +30,10 @@ export interface ServerDeps extends AppDeps {
    */
   sessionCookie?: string;
   /** The socket limits per person, for tests only (the fuzz test raises them). */
-  realtimeLimits?: Pick<RealtimeOptions, "messageLimit" | "rosterLimit" | "historyLimit">;
+  realtimeLimits?: Pick<
+    RealtimeOptions,
+    "messageLimit" | "rosterLimit" | "historyLimit" | "queueLimit"
+  >;
   /** Several instances (#39, `scale-out.ts`): the Redis adapter, WebSocket only. */
   realtimeCluster?: Pick<RealtimeOptions, "adapter" | "transports">;
 }

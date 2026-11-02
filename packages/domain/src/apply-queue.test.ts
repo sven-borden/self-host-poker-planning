@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { apply } from "./apply.ts";
-import { cleanQueueItem, itemSubject, queueIdentity } from "./apply-queue.ts";
+import { cleanQueueItem, itemSubject, queueBytes, queueIdentity } from "./apply-queue.ts";
 import type { Command } from "./commands.ts";
 import {
   AUTO_ADVANCE_MS,
   createRoom,
+  MAX_ITEM_TITLE_BYTES,
   MAX_LINK_LENGTH,
+  MAX_QUEUE_BYTES,
   MAX_QUEUE_ITEMS,
   MAX_TITLE_LENGTH,
+  type Participant,
   type RoomState,
 } from "./room.ts";
 
@@ -88,6 +91,22 @@ describe("cleanQueueItem", () => {
       { key: "ABC-1", title: "x".repeat(MAX_TITLE_LENGTH) },
     ];
     for (const raw of refused) expect(cleanQueueItem(raw), JSON.stringify(raw)).toBeNull();
+  });
+});
+
+describe("a title's bytes", () => {
+  it("leaves room for 200 characters of any real text", () => {
+    for (const unit of ["a", "\u{00E9}", "\u{754C}", "\u{1F600}"]) {
+      const title = unit.repeat(MAX_TITLE_LENGTH);
+      expect(cleanQueueItem({ title })).toEqual({ title });
+    }
+  });
+
+  it("refuses one grapheme of thousands of bytes", () => {
+    const jamo = "\u{1100}".repeat(3200);
+    expect(cleanQueueItem({ title: jamo })).toBeNull();
+    const fits = "\u{1100}".repeat(Math.floor(MAX_ITEM_TITLE_BYTES / 3));
+    expect(cleanQueueItem({ title: fits })).toEqual({ title: fits });
   });
 });
 
@@ -193,6 +212,31 @@ describe("the queue's commands", () => {
     const full = must(state, { type: "queueAdd", items: many(1000, 1) }).state;
     expect(full.queue?.items).toHaveLength(MAX_QUEUE_ITEMS);
     expect(refusal(full, { type: "queueAdd", items: many(2000, 1) })).toBe("queue_full");
+  });
+
+  it("refuse a batch past the queue's bytes, whole, though it has room in items", () => {
+    const wide = (from: number, count: number) =>
+      Array.from({ length: count }, (_, n) => ({
+        title: `${from + n} ${"\u{754C}".repeat(190)}`,
+      }));
+    let state = room();
+    let next = 0;
+    for (; next < MAX_QUEUE_ITEMS; next += 10) {
+      const result = apply(
+        state,
+        { type: "queueAdd", items: wide(next, 10) },
+        { actor: PO, now: T0 },
+      );
+      if (!result.ok) {
+        expect(result.error).toBe("queue_full");
+        break;
+      }
+      state = result.state;
+    }
+    const items = state.queue?.items ?? [];
+    expect(items.length).toBeLessThan(MAX_QUEUE_ITEMS);
+    expect(queueBytes(items)).toBeLessThanOrEqual(MAX_QUEUE_BYTES);
+    expect(queueBytes(items)).toBeGreaterThan(MAX_QUEUE_BYTES - 10 * 700);
   });
 
   it("move an item to a place, past the end to the end", () => {
@@ -306,6 +350,74 @@ describe("auto-advance", () => {
     const again = finalized(first, "8", T0 + 4000).state;
     expect(again.round?.advanceAt).toBe(T0 + 4000 + AUTO_ADVANCE_MS);
     expect(finalized(again, "8", T0 + 5000).state).toBe(again);
+  });
+
+  it("holds a stay for the round: a changed final starts no countdown", () => {
+    const state = finalized(revealed(queued(auto(room()), "a", "b"))).state;
+    const held = must(state, { type: "holdAdvance" }).state;
+    const changed = finalized(held, "8", T0 + 4000);
+    expect(changed.state.round?.final).toBe("8");
+    expect(changed.state.round?.advanceAt).toBeUndefined();
+    expect(changed.causes).toEqual([{ type: "finalSet", card: "8" }]);
+    // The next round is a new one: its final counts down again.
+    const next = must(changed.state, { type: "startNext", id: 1 }, PO, T0 + 5000).state;
+    const again = finalized(must(next, { type: "reveal" }).state, "5", T0 + 6000);
+    expect(again.state.round?.advanceAt).toBe(T0 + 6000 + AUTO_ADVANCE_MS);
+  });
+
+  it("does not hold for the round when the queue ended it", () => {
+    const state = finalized(revealed(queued(auto(room()), "a"))).state;
+    const emptied = must(state, { type: "queueRemove", id: 1 }).state;
+    const refilled = queued(emptied, "b");
+    expect(finalized(refilled, "8", T0 + 4000).state.round?.advanceAt).toBe(
+      T0 + 4000 + AUTO_ADVANCE_MS,
+    );
+  });
+
+  it("ends when the PO leaves, and nothing starts", () => {
+    const state = finalized(revealed(queued(auto(room()), "a"))).state;
+    const left = must(state, { type: "leave" });
+    expect(left.state.round?.advanceAt).toBeUndefined();
+    expect(left.causes).toEqual([{ type: "left", who: PO }, { type: "advanceHeld" }]);
+    const later = must(left.state, { type: "timeUp" }, ":server", T0 + AUTO_ADVANCE_MS);
+    expect(later.state).toBe(left.state);
+    expect(titles(later.state)).toEqual(["a"]);
+  });
+
+  it("ends when the PO goes away, and goes on when a voter does", () => {
+    const state = finalized(revealed(queued(auto(room()), "a"))).state;
+    const away = { type: "presence", connected: false } as const;
+    const gone = must(state, { ...away, who: PO }, ":server", T0 + 1);
+    expect(gone.state.round?.advanceAt).toBeUndefined();
+    expect(gone.causes).toEqual([{ type: "away", who: PO }, { type: "advanceHeld" }]);
+    const voter = must(state, { ...away, who: ANA }, ":server", T0 + 1);
+    expect(voter.state.round?.advanceAt).toBe(T0 + AUTO_ADVANCE_MS);
+  });
+
+  it("starts nothing at the deadline on a stored state whose PO is away", () => {
+    const state = finalized(revealed(queued(auto(room()), "a"))).state;
+    const po = { ...(state.participants[PO] as Participant), awaySince: T0 };
+    const stored = { ...state, participants: { ...state.participants, [PO]: po } };
+    const result = must(stored, { type: "timeUp" }, ":server", T0 + AUTO_ADVANCE_MS);
+    expect(result.state.round?.number).toBe(1);
+    expect(result.state.round?.advanceAt).toBeUndefined();
+    expect(titles(result.state)).toEqual(["a"]);
+  });
+
+  it("is ended by the server when nobody is left, even past its deadline", () => {
+    const state = finalized(revealed(queued(auto(room()), "a"))).state;
+    const late = T0 + 100 * AUTO_ADVANCE_MS;
+    const ended = must(state, { type: "endCountdown" }, ":server", late);
+    expect(ended.state.round?.number).toBe(1);
+    expect(ended.state.round?.advanceAt).toBeUndefined();
+    expect(ended.causes).toEqual([{ type: "advanceHeld" }]);
+    expect(titles(ended.state)).toEqual(["a"]);
+    // No later enter or ping can resolve it.
+    expect(must(ended.state, { type: "timeUp" }, ":server", late + 1).state).toBe(ended.state);
+    // Nothing to end: nothing changes.
+    expect(must(ended.state, { type: "endCountdown" }, ":server", late + 2).state).toBe(
+      ended.state,
+    );
   });
 
   it("starts the next item at the deadline, exactly once, whoever acts first", () => {
