@@ -15,6 +15,7 @@ import {
   canonicalDeck,
   canonicalSettings,
   cleanName,
+  cleanRoomName,
   isRecord,
   isTimerSeconds,
   patchSettings,
@@ -82,12 +83,14 @@ const OWNER_ONLY: ReadonlySet<CommandType> = new Set<CommandType>([
   "queueClear",
   "startNext",
   "holdAdvance",
+  "renameRoom",
 ]);
 
 /**
  * Commands a non-participant may send: entering, the timer ping, the server's own
  * presence updates (the actor is the server; `who` names the person), the PO's password
- * (#31), which the PO may set from outside the room too, and the server's `moveGuest`.
+ * (#31) and the room's name (#49), which the PO may set from outside the room too, and the
+ * server's `moveGuest`.
  */
 const OPEN: ReadonlySet<CommandType> = new Set<CommandType>([
   "join",
@@ -96,6 +99,7 @@ const OPEN: ReadonlySet<CommandType> = new Set<CommandType>([
   "password",
   "moveGuest",
   "endCountdown",
+  "renameRoom",
 ]);
 
 export function apply(state: RoomState, command: Command, ctx: ApplyContext): ApplyResult {
@@ -256,6 +260,8 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       return password(state, command.on);
     case "moveGuest":
       return moveGuest(state, command.guest, command.account);
+    case "renameRoom":
+      return renameRoom(state, command.name);
     default:
       return unknownCommand(command);
   }
@@ -295,6 +301,14 @@ function join(
     { ...state, participants: { ...state.participants, [actor]: person } },
     { type: "joined", who: actor },
   );
+}
+
+/** The rules of a room's name are those of creating one (`cleanRoomName`), blank refused. */
+function renameRoom(state: RoomState, rawName: unknown): Step {
+  const name = cleanRoomName(rawName);
+  if (name === null) return refuse("bad_room_name");
+  if (state.name === name) return done(state);
+  return done({ ...state, name }, { type: "roomRenamed" });
 }
 
 function rename(state: RoomState, actor: UserId, rawName: unknown): Step {

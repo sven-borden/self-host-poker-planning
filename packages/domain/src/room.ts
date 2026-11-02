@@ -160,6 +160,12 @@ export type RoomState = {
    */
   hasPassword?: true;
   /**
+   * The room's name (#49). Part of the state `apply` works on, stored in its own column
+   * (`room.name`), which a room's header reads without loading the state. Absent: a room
+   * created without one.
+   */
+  name?: string;
+  /**
    * The backlog queue (#52). Part of the state `apply` works on, stored in its own column
    * (`room.queue`), so a vote never rewrites it. Absent: no queue yet.
    */

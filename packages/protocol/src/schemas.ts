@@ -184,6 +184,7 @@ export const causeSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("queueChanged"), added: z.number().int().optional() }),
   z.object({ type: z.literal("advanceArmed") }),
   z.object({ type: z.literal("advanceHeld") }),
+  z.object({ type: z.literal("roomRenamed") }),
 ]);
 
 /**
@@ -205,6 +206,8 @@ export const queueSummarySchema = z.object({
 
 export const roomViewSchema = z.object({
   code: z.string().min(1).max(WIRE_LIMITS.roomCode),
+  /** The room's name (#49), when it has one: the header's word until the first snapshot. */
+  name: z.string().max(WIRE_LIMITS.name).optional(),
   ownerId: userIdSchema,
   /**
    * From when (epoch ms, the server's clock) anyone else may claim the PO role (#30): set

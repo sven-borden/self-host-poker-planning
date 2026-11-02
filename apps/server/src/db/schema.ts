@@ -42,12 +42,13 @@ export const ROOM_PEOPLE = sql`((live -> 'participants') || coalesce(live #> '{r
 /**
  * One row per room. `live` is the room's whole state (settings, people, the round) and
  * the single source of truth for it; every change goes through `apply` and a
- * compare-and-set on `version`. `name`, `password_hash` and the timestamps live beside
- * it because no command changes them through `apply`, and the hash must never reach a
- * snapshot. `owner_user_id` copies `live.ownerId` on every commit, for queries such as
- * "my rooms" (W5). `queue` is the one part of the state outside `live` (#52, ADR-024): a
- * full queue is hundreds of kB at worst, and a commit that leaves it alone does not write
- * it, so a vote stays the small write it always was.
+ * compare-and-set on `version`. `password_hash` and the timestamps live beside it because
+ * no command changes them through `apply`, and the hash must never reach a snapshot.
+ * `owner_user_id` copies `live.ownerId` on every commit, for queries such as "my rooms"
+ * (W5). `queue` is a part of the state outside `live` (#52, ADR-024): a full queue is
+ * hundreds of kB at worst, and a commit that leaves it alone does not write it, so a vote
+ * stays the small write it always was. `name` is the other (#49, ADR-027): `apply` changes
+ * it (`renameRoom`), and a room's header reads it without loading the state.
  */
 export const room = pgTable(
   "room",
@@ -56,7 +57,7 @@ export const room = pgTable(
     code: text("code").notNull().unique(),
     name: text("name"),
     ownerUserId: text("owner_user_id").notNull(),
-    live: jsonb("live").$type<Omit<RoomState, "queue">>().notNull(),
+    live: jsonb("live").$type<Omit<RoomState, "queue" | "name">>().notNull(),
     queue: jsonb("queue").$type<Queue>(),
     version: integer("version").notNull(),
     passwordHash: text("password_hash"),

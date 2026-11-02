@@ -12,8 +12,8 @@ export const PROTOCOL_ERROR_CODES = [
   "protocol_mismatch",
   "room_not_found",
   /**
-   * `POST /api/rooms`: the room name is blank, too long or holds hidden characters. HTTP
-   * only, never in a socket ack, so adding it changed no socket message.
+   * `POST /api/rooms` and renaming a room (#49): the room name is blank, too long or holds
+   * hidden characters. HTTP only, never in a socket ack, so adding it changed no socket message.
    */
   "bad_room_name",
   /**

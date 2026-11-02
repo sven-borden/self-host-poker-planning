@@ -14,8 +14,8 @@ import { room, roomAccess, roundHistory } from "./schema.ts";
 export type Db = NodePgDatabase;
 
 /**
- * A room as loaded: `state` is `live` with the `queue` column in it, `version` the value
- * the next commit must expect.
+ * A room as loaded: `state` is `live` with the `queue` and `name` columns in it, `version`
+ * the value the next commit must expect.
  */
 export interface StoredRoom {
   id: string;
@@ -162,12 +162,13 @@ export interface HistoryStore {
 
 const hasHash = sql<boolean>`${room.passwordHash} is not null`;
 
-/** A room's state, its queue apart: they live in two columns. */
-function withoutQueue({ queue, ...live }: RoomState): {
-  live: Omit<RoomState, "queue">;
+/** A room's state, its queue and name apart: each has a column of its own. */
+function inColumns({ queue, name, ...live }: RoomState): {
+  live: Omit<RoomState, "queue" | "name">;
   queue: Queue | null;
+  name: string | undefined;
 } {
-  return { live, queue: queue ?? null };
+  return { live, queue: queue ?? null, name };
 }
 
 /** Thrown inside a commit's transaction to roll it back: the grant it needs is gone. */
@@ -228,7 +229,8 @@ export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore 
             code,
             name,
             ownerUserId: state.ownerId,
-            ...withoutQueue(state),
+            live: inColumns(state).live,
+            queue: inColumns(state).queue,
             version: FIRST_VERSION,
             passwordHash,
           })
@@ -247,13 +249,21 @@ export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore 
             version: room.version,
             live: room.live,
             queue: room.queue,
+            name: room.name,
           })
           .from(room)
           .where(eq(room.code, code));
         const row = rows[0];
         if (!row) return null;
-        const { live, queue, ...stored } = row;
-        return { ...stored, state: queue === null ? live : { ...live, queue } };
+        const { live, queue, name, ...stored } = row;
+        return {
+          ...stored,
+          state: {
+            ...live,
+            ...(queue !== null && { queue }),
+            ...(name !== null && { name }),
+          },
+        };
       }),
 
     loadRoomHeader: (code) =>
@@ -267,13 +277,15 @@ export function createRoomStore(db: Db): RoomStore & AccessStore & HistoryStore 
 
     commitRoom: (id, expectedVersion, next, ended, access, queueChanged = true, keepActivity) =>
       guard("commit room", async () => {
-        const { live, queue } = withoutQueue(next);
+        const { live, queue, name } = inColumns(next);
         const write = async (tx: Db) => {
           const rows = await tx
             .update(room)
             .set({
               live,
               ...(queueChanged ? { queue } : {}),
+              // A room's name only ever goes from one name to another (`renameRoom`).
+              ...(name === undefined ? {} : { name }),
               ownerUserId: next.ownerId,
               version: sql`${room.version} + 1`,
               ...(!keepActivity && { lastActiveAt: sql`now()` }),

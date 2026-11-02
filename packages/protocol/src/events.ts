@@ -47,6 +47,11 @@ export interface ServerToClientEvents {
    * and the page reloads into the account. An older client ignores it and stays offline.
    */
   signedIn: () => void;
+  /**
+   * The room's owner deleted it (#49, ADR-027): the server closes the socket next, and the page
+   * shows what an unknown room shows. An older client ignores it and shows the connection lost.
+   */
+  deleted: () => void;
 }
 
 export type ParsedEnter =
