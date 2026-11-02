@@ -126,6 +126,22 @@ function parsed(csv: string, delimiter: string): string[][] {
 }
 
 describe("the CSV", () => {
+  it("keeps the link of a queue item with a title, and the formula guard", () => {
+    const url = "https://acme.atlassian.net/browse/PAY-1";
+    const rows = parsed(
+      toCsv(
+        [
+          round(1, { kind: "link", url, key: "PAY-1", title: "Fix it" }, "3"),
+          round(2, { kind: "link", url, key: "PAY-1", title: "=cmd()" }, "3"),
+        ],
+        context("en"),
+      ),
+      ",",
+    );
+    expect(rows[1]?.[1]).toBe(`Fix it ${url}`);
+    expect(rows[2]?.[1]).toBe(`'=cmd() ${url}`);
+  });
+
   it("starts with a byte order mark and ends every record with CRLF", () => {
     const csv = toCsv(ROUNDS, context("en"));
     expect(csv.charCodeAt(0)).toBe(0xfeff);

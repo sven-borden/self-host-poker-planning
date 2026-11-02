@@ -200,6 +200,9 @@ export const de: Catalog = {
     changeAfterRevealLocked: "Anonyme Runden halten ihre Stimmen beim Aufdecken fest.",
     allowed: "Erlaubt",
     notAllowed: "Nicht erlaubt",
+    autoAdvance: "Nächsten Eintrag von selbst starten",
+    autoAdvanceHint:
+      "{{seconds, number}} Sekunden nach einer erfassten Schätzung startet der nächste Eintrag der Warteschlange. Alle sehen den Countdown, und der Product Owner kann bei der Runde bleiben.",
     poVotes: "Der Product Owner stimmt mit ab",
     poVotesHint: "Aus: Der Product Owner leitet die Sitzung ohne Karten.",
     observersCount: "Beobachter belegen einen der {{max, number}} Plätze",
@@ -490,6 +493,16 @@ export const de: Catalog = {
     anonymousOff: "Ab Runde {{round, number}} wird wieder mit Namen abgestimmt.",
     autoRevealOn: "Die Karten werden jetzt aufgedeckt, sobald alle abgestimmt haben.",
     autoRevealOff: "Die Karten warten jetzt auf das Aufdecken, auch wenn alle abgestimmt haben.",
+    autoAdvanceOn: "Der nächste Eintrag startet jetzt von selbst nach einer erfassten Schätzung.",
+    autoAdvanceOff: "Der nächste Eintrag startet nicht mehr von selbst.",
+    queueAdded_one:
+      "{{count, number}} Eintrag zur Warteschlange hinzugefügt. Als Nächstes: {{item}}.",
+    queueAdded_other:
+      "{{count, number}} Einträge zur Warteschlange hinzugefügt. Als Nächstes: {{item}}.",
+    queueAddedPlain_one: "{{count, number}} Eintrag zur Warteschlange hinzugefügt.",
+    queueAddedPlain_other: "{{count, number}} Einträge zur Warteschlange hinzugefügt.",
+    advanceSoon: "Als Nächstes, in {{seconds, number}} Sekunden: {{item}}.",
+    advanceHeld: "Der Raum bleibt bei dieser Runde.",
     poVotesOn: "Der Product Owner stimmt jetzt mit ab.",
     poVotesOff: "Der Product Owner stimmt nicht mehr mit ab.",
     observersCountOn: "Beobachter belegen jetzt einen der {{max, number}} Plätze.",
@@ -695,6 +708,59 @@ export const de: Catalog = {
     colSeconds: "Abstimmungsdauer (s)",
     colEnded: "Ende",
   },
+  queue: {
+    open: "Warteschlange",
+    count_one: "{{count, number}} Eintrag",
+    count_other: "{{count, number}} Einträge",
+    lede: "Was das Team als Nächstes schätzt, der Reihe nach. Nur Sie sehen diese Liste; der Raum sieht, was als Nächstes kommt.",
+    pasteLabel: "Tickets einfügen",
+    pasteHint:
+      "Eins pro Zeile: Schlüssel, Links oder eine aus Jira oder Azure DevOps kopierte Tabelle. Jede andere Zeile wird ein Titel. Kein Link wird geöffnet.",
+    add: "Zur Warteschlange hinzufügen",
+    nothingPasted: "Fügen Sie zuerst eine Liste ein.",
+    added_one: "{{count, number}} Eintrag hinzugefügt.",
+    added_other: "{{count, number}} Einträge hinzugefügt.",
+    addedNone: "Nichts Neues hinzuzufügen.",
+    duplicates_one: "{{count, number}} Duplikat entfernt.",
+    duplicates_other: "{{count, number}} Duplikate entfernt.",
+    refused_one: "{{count, number}} Zeile konnte nicht gelesen werden.",
+    refused_other: "{{count, number}} Zeilen konnten nicht gelesen werden.",
+    shortened_one: "{{count, number}} Titel wurde gekürzt.",
+    shortened_other: "{{count, number}} Titel wurden gekürzt.",
+    overflow_one:
+      "{{count, number}} Eintrag passte nicht mehr: Eine Warteschlange fasst höchstens {{max, number}}, bei langen Einträgen weniger.",
+    overflow_other:
+      "{{count, number}} Einträge passten nicht mehr: Eine Warteschlange fasst höchstens {{max, number}}, bei langen Einträgen weniger.",
+    kept: "Diese Zeilen bleiben im Feld.",
+    partial_one:
+      "{{count, number}} Eintrag wurde aufgenommen, bevor der Vorgang abbrach. Der Rest steht noch im Feld: Fügen Sie ihn erneut hinzu, nichts kommt doppelt hinein.",
+    partial_other:
+      "{{count, number}} Einträge wurden aufgenommen, bevor der Vorgang abbrach. Der Rest steht noch im Feld: Fügen Sie ihn erneut hinzu, nichts kommt doppelt hinein.",
+    empty: "Die Warteschlange ist noch leer.",
+    loading: "Warteschlange wird geladen …",
+    failed: "Die Warteschlange konnte nicht geladen werden.",
+    retry: "Erneut versuchen",
+    loadFailed:
+      "Die Warteschlange konnte nicht geöffnet werden. Laden Sie die Seite neu und versuchen Sie es erneut.",
+    list: "Einträge der Warteschlange",
+    moveUp: "{{item}} nach oben",
+    moveDown: "{{item}} nach unten",
+    remove: "{{item}} entfernen",
+    moved: "{{item}} ist jetzt Nummer {{place, number}} von {{total, number}}.",
+    removed: "{{item}} entfernt.",
+    clear: "Warteschlange leeren",
+    clearAsk_one: "{{count, number}} Eintrag entfernen?",
+    clearAsk_other: "Alle {{count, number}} Einträge entfernen?",
+    clearYes: "Alle entfernen",
+    clearNo: "Behalten",
+    cleared: "Die Warteschlange ist leer.",
+    nextItem: "Nächster Eintrag",
+    next: "Als Nächstes: {{item}}",
+    nextIn: "Als Nächstes: {{item}}, in {{seconds, number}} s",
+    stay: "Bei dieser Runde bleiben",
+    subjectHint:
+      "Leer startet der nächste Eintrag: {{item}}. Ein eingegebenes Thema geht vor, und die Warteschlange wartet.",
+  },
   common: {
     network:
       "Der Server ist nicht erreichbar. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
@@ -737,6 +803,11 @@ export const de: Catalog = {
     owner_present:
       "Der Product Owner ist noch da. Nach zwei Minuten Abwesenheit können Sie übernehmen.",
     bad_settings: "Diese Einstellungen sind ungültig. Prüfen Sie sie und versuchen Sie es erneut.",
+    bad_queue_item:
+      "Einer dieser Einträge kann nicht in die Warteschlange. Prüfen Sie ihn und versuchen Sie es erneut.",
+    queue_full:
+      "Die Warteschlange ist voll: Sie fasst höchstens {{max, number}} Einträge, bei langen weniger.",
+    unknown_item: "Dieser Eintrag ist nicht mehr in der Warteschlange.",
     deck_empty: "Ein Kartensatz braucht mindestens eine Karte.",
     deck_too_many_cards:
       "Ein Kartensatz hat höchstens {{max, number}} Karten. Entfernen Sie einige und versuchen Sie es erneut.",

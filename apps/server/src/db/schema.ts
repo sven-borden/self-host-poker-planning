@@ -5,7 +5,16 @@
  * nullable or has a default, nothing is renamed or dropped while an older instance may
  * still run.
  */
-import type { Card, DeckSpec, Results, RoomState, SpecialCard, Subject, UserId } from "@pp/domain";
+import type {
+  Card,
+  DeckSpec,
+  Queue,
+  Results,
+  RoomState,
+  SpecialCard,
+  Subject,
+  UserId,
+} from "@pp/domain";
 import {
   bigint,
   index,
@@ -28,7 +37,9 @@ const instant = (name: string) => timestamp(name, { withTimezone: true, mode: "d
  * compare-and-set on `version`. `name`, `password_hash` and the timestamps live beside
  * it because no command changes them through `apply`, and the hash must never reach a
  * snapshot. `owner_user_id` copies `live.ownerId` on every commit, for queries such as
- * "my rooms" (W5).
+ * "my rooms" (W5). `queue` is the one part of the state outside `live` (#52, ADR-024): a
+ * full queue is hundreds of kB at worst, and a commit that leaves it alone does not write
+ * it, so a vote stays the small write it always was.
  */
 export const room = pgTable(
   "room",
@@ -37,7 +48,8 @@ export const room = pgTable(
     code: text("code").notNull().unique(),
     name: text("name"),
     ownerUserId: text("owner_user_id").notNull(),
-    live: jsonb("live").$type<RoomState>().notNull(),
+    live: jsonb("live").$type<Omit<RoomState, "queue">>().notNull(),
+    queue: jsonb("queue").$type<Queue>(),
     version: integer("version").notNull(),
     passwordHash: text("password_hash"),
     /**

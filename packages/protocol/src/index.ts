@@ -41,6 +41,16 @@ export {
 } from "./history.ts";
 export { projectCauses, type SnapshotMeta, toSnapshot } from "./project.ts";
 export {
+  type ParsedQueueRequest,
+  parseQueueRequest,
+  type QueueAck,
+  type QueueItemView,
+  queueAckSchema,
+  queueItemViewSchema,
+  queueList,
+  queueRequestSchema,
+} from "./queue.ts";
+export {
   type AnonymousRoundView,
   ackErrorCodeSchema,
   anonymousRoundViewSchema,
@@ -56,6 +66,8 @@ export {
   namedRoundViewSchema,
   type ParticipantView,
   participantViewSchema,
+  type QueueSummary,
+  queueSummarySchema,
   type ResultsView,
   type RoomSettingsView,
   type RoomView,

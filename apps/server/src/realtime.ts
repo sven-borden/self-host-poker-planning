@@ -6,8 +6,8 @@
  * handlers (`sync/room-sync.ts` in the running server). Every message first takes a token
  * from its sender's bucket (`SOCKET_MESSAGE_LIMIT`, one bucket per person shared by all
  * their sockets): past it, the answer is `rate_limited` and the socket stays open. Roster
- * commands (`ROSTER_LIMIT`) and history requests (`HISTORY_LIMIT`) take a token from a
- * tighter bucket of the person's too. One
+ * commands (`ROSTER_LIMIT`), changes to the queue (`QUEUE_WRITE_LIMIT`) and history requests
+ * (`HISTORY_LIMIT`) take a token from a tighter bucket of the person's too. One
  * person holds at most `MAX_SOCKETS_PER_USER` sockets; the next handshake is refused with
  * `rate_limited`. `drainRealtime` stops taking messages and waits for the answers owed.
  *
@@ -18,7 +18,7 @@
  */
 import { randomBytes } from "node:crypto";
 import type { Server as HttpServer } from "node:http";
-import type { Command } from "@pp/domain";
+import { type Command, MAX_MESSAGE_BYTES } from "@pp/domain";
 import {
   type ClientToServerEvents,
   type CmdAck,
@@ -28,15 +28,19 @@ import {
   type HistoryRequest,
   parseEnter,
   parseHistoryRequest,
+  parseQueueRequest,
+  type QueueAck,
   type ServerToClientEvents,
   toDomainCommand,
 } from "@pp/protocol";
 import { type ExtendedError, Server, type ServerOptions, type Socket } from "socket.io";
+import { Decoder, Encoder } from "socket.io-parser";
 import type { SocketUser } from "./auth.ts";
 import type { Logger } from "./logger.ts";
 import {
   createTokenBucket,
   HISTORY_LIMIT,
+  QUEUE_WRITE_LIMIT,
   ROSTER_LIMIT,
   SOCKET_MESSAGE_LIMIT,
   type TokenBucket,
@@ -106,10 +110,15 @@ export interface RealtimeHandlers {
   cmd(socket: RealtimeSocket, id: string, command: Command): CmdAck | Promise<CmdAck>;
   /** One page of the entered room's history (#33); left out, every request is refused. */
   history?(socket: RealtimeSocket, request: HistoryRequest): HistoryAck | Promise<HistoryAck>;
+  /** The entered room's queue (#52), for its PO; left out, every request is refused. */
+  queue?(socket: RealtimeSocket): QueueAck | Promise<QueueAck>;
   /** Called once with the Socket.IO server, before any connection (for broadcasts). */
   attach?(io: RealtimeServer): void;
-  /** Called after a socket closed; it has already left its Socket.IO rooms. */
-  disconnect?(socket: RealtimeSocket): void;
+  /**
+   * Called after a socket closed; it has already left its Socket.IO rooms. `shuttingDown`:
+   * the server closed it on its way down, and the client will be back.
+   */
+  disconnect?(socket: RealtimeSocket, shuttingDown: boolean): void;
 }
 
 export const noRoomHandlers: RealtimeHandlers = {
@@ -130,12 +139,14 @@ export interface RealtimeOptions {
   handlers?: RealtimeHandlers;
   /** Run in order on every handshake after the connection id is set (#10: session). */
   middleware?: readonly SocketMiddleware[];
-  /** Messages (`enter`, `cmd`, `history`) per person; `SOCKET_MESSAGE_LIMIT` by default. */
+  /** Messages (`enter`, `cmd`, `history`, `queue`) per person; `SOCKET_MESSAGE_LIMIT` by default. */
   messageLimit?: TokenBucketOptions;
   /** Roster commands per person; `ROSTER_LIMIT` by default. */
   rosterLimit?: TokenBucketOptions;
-  /** History requests per person; `HISTORY_LIMIT` by default. */
+  /** History and queue requests per person; `HISTORY_LIMIT` by default. */
   historyLimit?: TokenBucketOptions;
+  /** Changes to the queue per person; `QUEUE_WRITE_LIMIT` by default. */
+  queueLimit?: TokenBucketOptions;
   /** Sockets one person may hold at once; `MAX_SOCKETS_PER_USER` by default. */
   maxSocketsPerUser?: number;
   /** Added to every HTTP answer of Socket.IO's own (polling, the upgrade): the app's (#36). */
@@ -184,6 +195,7 @@ interface Holder {
   bucket: TokenBucket;
   roster: TokenBucket;
   history: TokenBucket;
+  queue: TokenBucket;
   /** Set while the person holds no socket: forgets the holder once the bucket refilled. */
   idle?: ReturnType<typeof setTimeout> | undefined;
 }
@@ -228,8 +240,32 @@ const ROSTER_COMMANDS: ReadonlySet<Command["type"]> = new Set([
   "setRole",
 ]);
 
-/** Payload cap per message, both transports (architecture section 8). */
-export const MAX_PAYLOAD_BYTES = 16 * 1024;
+/** The commands that change the queue, each a write of its column (`QUEUE_WRITE_LIMIT`). */
+const QUEUE_COMMANDS: ReadonlySet<Command["type"]> = new Set([
+  "queueAdd",
+  "queueMove",
+  "queueRemove",
+  "queueClear",
+]);
+
+/**
+ * Payload cap per message, both transports (architecture section 8). It holds for every
+ * frame, before the session is checked: a long paste comes in several commands instead
+ * (#52, ADR-024). The domain holds the number, since the page must fit under it.
+ */
+export const MAX_PAYLOAD_BYTES = MAX_MESSAGE_BYTES;
+
+/**
+ * Socket.IO's own parser, with no binary packets: the protocol has none, and a binary
+ * packet's first half would wait for its attachments with no timeout. One closes the
+ * connection, as a frame that does not parse does.
+ */
+class TextOnlyDecoder extends Decoder {
+  constructor() {
+    super({ maxAttachments: 0 });
+  }
+}
+const TEXT_ONLY_PARSER = { Encoder, Decoder: TextOnlyDecoder };
 
 export function createRealtime(httpServer: HttpServer, options: RealtimeOptions): RealtimeServer {
   const {
@@ -240,6 +276,7 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     messageLimit = SOCKET_MESSAGE_LIMIT,
     rosterLimit = ROSTER_LIMIT,
     historyLimit = HISTORY_LIMIT,
+    queueLimit = QUEUE_WRITE_LIMIT,
     maxSocketsPerUser = MAX_SOCKETS_PER_USER,
     responseHeaders = {},
     sessionCookie,
@@ -250,6 +287,7 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     ...(adapter && { adapter }),
     ...(transports && { transports }),
     maxHttpBufferSize: MAX_PAYLOAD_BYTES,
+    parser: TEXT_ONLY_PARSER,
     serveClient: false,
     connectTimeout: CONNECT_TIMEOUT_MS,
     // Engine.IO calls this for a new connection only, before the upgrade or the session.
@@ -284,13 +322,16 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
   const holderKey = (socket: RealtimeSocket) => socket.data.user?.id ?? `socket ${socket.id}`;
   const refillMs =
     Math.max(
-      ...[messageLimit, rosterLimit, historyLimit].map((limit) => limit.burst / limit.perSecond),
+      ...[messageLimit, rosterLimit, historyLimit, queueLimit].map(
+        (limit) => limit.burst / limit.perSecond,
+      ),
     ) * 1000;
   const newHolder = (): Holder => ({
     sockets: new Set(),
     bucket: createTokenBucket(messageLimit),
     roster: createTokenBucket(rosterLimit),
     history: createTokenBucket(historyLimit),
+    queue: createTokenBucket(queueLimit),
   });
   const release = (key: string, id: string) => {
     const holder = holders.get(key);
@@ -341,9 +382,9 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     socket.on("disconnect", (reason) => {
       log.info({ reason }, "socket disconnected");
       release(key, socket.id);
-      handlers.disconnect?.(socket);
+      handlers.disconnect?.(socket, !drain.accepting);
     });
-    const { bucket, roster, history } = holders.get(key) ?? newHolder();
+    const { bucket, roster, history, queue } = holders.get(key) ?? newHolder();
     const limited = { ok: false, code: "rate_limited" } as const;
 
     onRaw(socket, log, drain, "enter", async (payload) => {
@@ -356,6 +397,7 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
       const parsed = toDomainCommand(payload);
       if (!parsed.ok) return { ok: false, code: parsed.code };
       if (ROSTER_COMMANDS.has(parsed.command.type) && !roster.take()) return limited;
+      if (QUEUE_COMMANDS.has(parsed.command.type) && !queue.take()) return limited;
       return handlers.cmd(socket, parsed.id, parsed.command);
     });
     onRaw(socket, log, drain, "history", async (payload) => {
@@ -366,6 +408,13 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
       return handlers.history
         ? handlers.history(socket, parsed.request)
         : { ok: false, code: "room_not_found" };
+    });
+    onRaw(socket, log, drain, "queue", async (payload) => {
+      if (!bucket.take()) return limited;
+      const parsed = parseQueueRequest(payload);
+      if (!parsed.ok) return { ok: false, code: parsed.code };
+      if (!history.take()) return limited;
+      return handlers.queue ? handlers.queue(socket) : { ok: false, code: "room_not_found" };
     });
   });
 
@@ -420,11 +469,11 @@ function closeOnRefusal(fn: SocketMiddleware): SocketMiddleware {
  * message is tracked until its answer is sent; while the server drains, a new one is
  * dropped unanswered.
  */
-function onRaw<A extends EnterAck | CmdAck | HistoryAck>(
+function onRaw<A extends EnterAck | CmdAck | HistoryAck | QueueAck>(
   socket: RealtimeSocket,
   log: Logger,
   drain: Drain,
-  event: "enter" | "cmd" | "history",
+  event: "enter" | "cmd" | "history" | "queue",
   handle: (payload: unknown) => Promise<A>,
 ): void {
   const untyped = socket as unknown as {

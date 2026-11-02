@@ -5,6 +5,7 @@ import {
   type HistoryAck,
   type HistoryRequest,
   PROTOCOL_VERSION,
+  type QueueAck,
   type ServerToClientEvents,
   type Snapshot,
   type WireCommandInput,
@@ -421,6 +422,34 @@ export async function requestHistory(request: HistoryRequest = {}): Promise<Hist
   return { ok: false, code: "offline" };
 }
 
+/** The answer to `requestQueue`: the server's, or `offline`. */
+export type QueueResult = QueueAck | { ok: false; code: "offline" };
+
+/**
+ * Asks the open room for its whole queue (#52), for its PO: waits, resends and paces as
+ * `requestHistory` does, since it spends the same bucket and changes nothing.
+ */
+export async function requestQueue(): Promise<QueueResult> {
+  const target = active;
+  for (let send = 0; target && send < MAX_SENDS; send++) {
+    const room = await whenLive(target);
+    if (!room) break;
+    let raw: unknown;
+    try {
+      raw = await room.socket.timeout(ACK_TIMEOUT_MS).emitWithAck("queue", {});
+    } catch {
+      continue;
+    }
+    const ack: QueueAck = isQueueAck(raw) ? raw : { ok: false, code: "bad_payload" };
+    if (!ack.ok && ack.code === "rate_limited" && send < MAX_SENDS - 1) {
+      await sleep(HISTORY_RETRY_MS * (send + 1));
+      continue;
+    }
+    return ack;
+  }
+  return { ok: false, code: "offline" };
+}
+
 /**
  * `target` once it is live; null on `error`, once `target` is no longer the open room,
  * after the wait, or once `signal` aborts.
@@ -511,6 +540,17 @@ const isHistoryRound = (value: unknown) =>
   (value.votes.kind === "named"
     ? Array.isArray(value.votes.votes)
     : value.votes.kind === "anonymous" && Array.isArray(value.votes.cards));
+
+/** The queue's list, as far as the panel reads it. */
+export function isQueueAck(value: unknown): value is QueueAck {
+  if (!isObject(value)) return false;
+  if (value.ok !== true) return isRefusal(value);
+  return (
+    Number.isSafeInteger(value.rev) &&
+    Array.isArray(value.items) &&
+    value.items.every((item) => isObject(item) && Number.isSafeInteger(item.id))
+  );
+}
 
 export function isHistoryAck(value: unknown): value is HistoryAck {
   if (!isObject(value)) return false;

@@ -3,8 +3,9 @@
  * it never mutates its input and returns the input object itself when nothing changed.
  *
  * Every call runs three steps:
- * 1. Resolve an elapsed deadline (lazy timer): reveal or announce `timeUp`, exactly once.
- *    This stands even when the command is then refused.
+ * 1. Resolve an elapsed deadline (lazy timer): reveal or announce `timeUp`, or start the
+ *    next queue item, exactly once. This stands even when the command is then refused.
+ *    Only `endCountdown` skips it: it says nobody is left for the round it would start.
  * 2. Run the command.
  * 3. On success, settle the round: drop the votes of people who are no longer voters
  *    (while Voting), then reveal when every eligible voter has voted.
@@ -18,6 +19,13 @@ import {
   patchSettings,
   sameJson,
 } from "./apply-input.ts";
+import {
+  addToQueue,
+  clearQueue,
+  itemSubject,
+  moveInQueue,
+  removeFromQueue,
+} from "./apply-queue.ts";
 import { cleanSubject } from "./apply-subject.ts";
 import { isAvatarId } from "./avatars.ts";
 import type {
@@ -30,11 +38,14 @@ import type {
 } from "./commands.ts";
 import { baseCards, deckCards } from "./decks.ts";
 import {
+  AUTO_ADVANCE_MS,
   MAX_MEMBERS,
   MAX_PARTICIPANTS,
   MIN_ANONYMOUS_REVEAL_CARDS,
   OWNER_CLAIM_AFTER_MS,
   type Participant,
+  type Queue,
+  type QueueItem,
   ROLES,
   type Role,
   type RoomSettings,
@@ -64,6 +75,12 @@ const OWNER_ONLY: ReadonlySet<CommandType> = new Set<CommandType>([
   "updateSettings",
   "transferOwner",
   "password",
+  "queueAdd",
+  "queueMove",
+  "queueRemove",
+  "queueClear",
+  "startNext",
+  "holdAdvance",
 ]);
 
 /**
@@ -76,22 +93,25 @@ const OPEN: ReadonlySet<CommandType> = new Set<CommandType>([
   "timeUp",
   "presence",
   "password",
+  "endCountdown",
 ]);
 
 export function apply(state: RoomState, command: Command, ctx: ApplyContext): ApplyResult {
-  const resolved = resolveDeadline(state);
+  const leftAlone = isRecord(command) && command.type === "endCountdown";
+  const resolved = leftAlone ? done(state) : resolveDeadline(state);
   const step = run(resolved.state, command, ctx);
-  if ("error" in step) {
-    return { ok: false, error: step.error, state: resolved.state, causes: resolved.causes };
-  }
+  if ("error" in step) return { ok: false, error: step.error, ...resolved };
   const settled = settle(step.state, ctx.now);
   const causes = [...resolved.causes, ...step.causes, ...settled.causes];
-  return step.ended
-    ? { ok: true, state: settled.state, causes, ended: step.ended }
+  // The round the deadline ended is the revealed one; the command can only abandon the next.
+  const ended = resolved.ended ?? step.ended;
+  return ended
+    ? { ok: true, state: settled.state, causes, ended }
     : { ok: true, state: settled.state, causes };
 
-  function resolveDeadline(s: RoomState): { state: RoomState; causes: Cause[] } {
+  function resolveDeadline(s: RoomState): Done {
     const round = s.round;
+    if (round?.phase === "revealed") return resolveAdvance(s, round, ctx.now);
     if (round?.phase !== "voting" || round.deadlineAt === undefined || round.deadlineAt > ctx.now) {
       return { state: s, causes: [] };
     }
@@ -131,8 +151,37 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       if (!participant(state, command.who)) return refuse("unknown_participant");
       return done(removeParticipant(state, command.who), { type: "kicked", who: command.who });
     case "startRound": {
+      // Pressed for a round that is gone: a countdown started the next item under the press.
+      if (command.round !== undefined && command.round !== (state.round?.number ?? 0)) {
+        return refuse("round_changed");
+      }
       const subject = cleanSubject(command.subject);
       return subject ? startRound(state, subject, now) : refuse("bad_subject");
+    }
+    case "queueAdd":
+      return changeQueue(state, addToQueue(state.queue, command.items));
+    case "queueMove":
+      return changeQueue(state, moveInQueue(state.queue, command.id, command.to));
+    case "queueRemove":
+      return changeQueue(state, removeFromQueue(state.queue, command.id));
+    case "queueClear":
+      return changeQueue(state, clearQueue(state.queue));
+    case "startNext": {
+      if (state.round?.phase === "voting") return refuse("not_revealed");
+      const item = state.queue?.items.find(({ id }) => id === command.id);
+      return item ? startItem(state, item, now) : refuse("unknown_item");
+    }
+    case "holdAdvance": {
+      const round = state.round;
+      if (round?.advanceAt === undefined) return done(state);
+      return done(withRound(state, { ...withoutAdvance(round), stayed: true }), {
+        type: "advanceHeld",
+      });
+    }
+    case "endCountdown": {
+      const round = state.round;
+      if (round?.advanceAt === undefined) return done(state);
+      return done(withRound(state, withoutAdvance(round)), { type: "advanceHeld" });
     }
     case "castVote":
       return castVote(state, actor, command.card, command);
@@ -158,7 +207,7 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
       });
     }
     case "setFinal":
-      return setFinal(state, command.card);
+      return setFinal(state, command.card, now);
     case "revote":
       if (state.round?.phase !== "revealed") return refuse("not_revealed");
       return startRound(state, state.round.subject, now, true);
@@ -334,7 +383,7 @@ function password(state: RoomState, on: unknown): Step {
  * round it replaces (as the deadline left it) is reported as `ended`. A re-vote (#32)
  * says so in its cause, so the room hears "a new vote on the same subject".
  */
-function startRound(state: RoomState, subject: Subject, now: number, revote = false): Step {
+function startRound(state: RoomState, subject: Subject, now: number, revote = false): Done {
   const { settings } = state;
   const number = (state.round?.number ?? 0) + 1;
   const round: Round = {
@@ -357,6 +406,47 @@ function startRound(state: RoomState, subject: Subject, now: number, revote = fa
   );
   if (state.round) step.ended = state.round;
   return step;
+}
+
+/** A round on a queue item, which leaves the queue. */
+function startItem(state: RoomState, item: QueueItem, now: number): Done {
+  const queue = removeFromQueue(state.queue, item.id) as Queue;
+  return startRound({ ...state, queue }, itemSubject(item), now);
+}
+
+/** What a queue command came to: refused, nothing to do, or a new queue. */
+function changeQueue(state: RoomState, queue: Queue | ErrorCode | undefined): Step {
+  if (typeof queue === "string") return refuse(queue);
+  if (queue === undefined || queue.rev === (state.queue?.rev ?? 0)) return done(state);
+  const added = queue.items.length - (state.queue?.items.length ?? 0);
+  return done(
+    { ...state, queue },
+    added > 0 ? { type: "queueChanged", added } : { type: "queueChanged" },
+  );
+}
+
+/**
+ * Whether the room may move on to the next item by itself (#52): the setting is on, an item
+ * waits, and the PO is here to stop it.
+ */
+function canAdvance(state: RoomState): boolean {
+  return (
+    state.settings.autoAdvance === true &&
+    (state.queue?.items.length ?? 0) > 0 &&
+    isPresent(participant(state, state.ownerId))
+  );
+}
+
+/**
+ * The countdown after a recorded final has run out: the next item starts. Its start is
+ * `now`, not the deadline: the team's time on it runs from when it shows. `settle` keeps
+ * the countdown from outliving what allows it, as long as the state came from `apply`.
+ */
+function resolveAdvance(state: RoomState, round: Round, now: number): Done {
+  if (round.advanceAt === undefined || round.advanceAt > now) return { state, causes: [] };
+  const item = state.queue?.items[0];
+  if (item && canAdvance(state)) return startItem(state, item, now);
+  return { state: withRound(state, withoutAdvance(round)), causes: [{ type: "advanceHeld" }] };
 }
 
 /**
@@ -420,12 +510,21 @@ function otherRound(round: Round, { round: number, restart }: MadeFor): boolean 
   );
 }
 
-function setFinal(state: RoomState, card: unknown): Step {
+function setFinal(state: RoomState, card: unknown, now: number): Step {
   const round = state.round;
   if (round?.phase !== "revealed") return refuse("not_revealed");
   if (typeof card !== "string" || !baseCards(round.deck).includes(card)) return refuse("bad_card");
   if (round.final === card) return done(state);
-  return done(withRound(state, { ...round, final: card }), { type: "finalSet", card });
+  const recorded = { ...withoutAdvance(round), final: card };
+  // Another final restarts the countdown: the PO is still deciding, and the team reading.
+  // After "Stay on this round" none starts: that holds for the whole round.
+  return canAdvance(state) && round.stayed !== true
+    ? done(
+        withRound(state, { ...recorded, advanceAt: now + AUTO_ADVANCE_MS }),
+        { type: "finalSet", card },
+        { type: "advanceArmed" },
+      )
+    : done(withRound(state, recorded), { type: "finalSet", card });
 }
 
 function updateSettings(state: RoomState, patch: unknown, now: number): Step {
@@ -481,9 +580,14 @@ function updateSettings(state: RoomState, patch: unknown, now: number): Step {
  * each with a `voteRetracted` cause, then
  * reveal when `revealWhenAllVoted` is on and every eligible voter (a voter who is not
  * away) has voted. A leave, kick, role or settings change can complete a round too.
+ * Revealed: a countdown to the next item stops once the queue is empty, the setting off or
+ * the PO gone or away.
  */
 function settle(state: RoomState, now: number): { state: RoomState; causes: Cause[] } {
   const round = state.round;
+  if (round?.advanceAt !== undefined && !canAdvance(state)) {
+    return { state: withRound(state, withoutAdvance(round)), causes: [{ type: "advanceHeld" }] };
+  }
   if (round?.phase !== "voting") return { state, causes: [] };
   const pruned = Object.keys(round.votes).filter((id) => !isVoter(state, id));
   const current =
@@ -585,6 +689,13 @@ function withoutTimer(round: Round): Round {
   delete next.deadlineAt;
   delete next.timerStartedAt;
   delete next.timeUpAt;
+  return next;
+}
+
+/** The round without a countdown to the next item. */
+function withoutAdvance(round: Round): Round {
+  const next = { ...round };
+  delete next.advanceAt;
   return next;
 }
 

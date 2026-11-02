@@ -52,7 +52,12 @@ const textSchema = z.string().max(WIRE_LIMITS.subject);
 const historySubjectSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("none") }),
   z.strictObject({ kind: z.literal("title"), text: textSchema }),
-  z.strictObject({ kind: z.literal("link"), url: textSchema, key: textSchema.optional() }),
+  z.strictObject({
+    kind: z.literal("link"),
+    url: textSchema,
+    key: textSchema.optional(),
+    title: textSchema.optional(),
+  }),
 ]);
 
 /**

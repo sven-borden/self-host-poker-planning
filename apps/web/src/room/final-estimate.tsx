@@ -1,5 +1,12 @@
 import { CheckIcon } from "lucide-react";
-import { type FocusEvent, type KeyboardEvent, useId, useRef, useState } from "react";
+import {
+  type FocusEvent,
+  type KeyboardEvent,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
 import { cn } from "../lib/utils.ts";
@@ -87,6 +94,24 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
   const bar = useRef<HTMLDivElement>(null);
   const actions = useRef<HTMLDivElement>(null);
   const docked = useDecisionDock(bar, actions);
+  // The server may start the next item under the PO's focus (#52): it goes to the hand, as
+  // after "Next round". A layout cleanup runs while the bar is still in the document.
+  useLayoutEffect(() => {
+    const element = bar.current;
+    return () => {
+      if (element?.contains(document.activeElement)) {
+        focusSoon("[data-hand] [tabindex='0']", "[data-centre-status='voting']");
+      }
+    };
+  }, []);
+  /**
+   * A refusal, unless the bar left while the command was out: a countdown started the next
+   * item under the press (#52). The answer follows that snapshot, and a line would stay
+   * under the new round, about nothing.
+   */
+  const report = (code: string) => {
+    if (bar.current !== null) onFailure(code);
+  };
   /** A round is on its way: nothing may start another, or record on the old one. */
   const starting = next.busy || revoting;
 
@@ -99,7 +124,7 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
     try {
       const ack = await commandSender()({ type: "setFinal", payload: { card: selected } });
       if (ack.ok) setPicked(null);
-      else onFailure(ack.code);
+      else report(ack.code);
     } finally {
       pending.current.record = false;
       setRecording(false);
@@ -115,7 +140,7 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
       const ack = await commandSender()({ type: "revote" });
       // The bar leaves with the revealed round: the focus goes to the hand, as after "Next round".
       if (ack.ok) focusSoon("[data-hand] [tabindex='0']", "[data-centre-status='voting']");
-      else onFailure(ack.code);
+      else report(ack.code);
     } finally {
       pending.current.revote = false;
       setRevoting(false);
@@ -250,7 +275,7 @@ export function Decision({ round, next, onFailure }: DecisionProps) {
           }}
           className={ACTION}
         >
-          {t("round.next")}
+          {next.fromQueue ? t("queue.nextItem") : t("round.next")}
         </Button>
         <Button
           data-revote

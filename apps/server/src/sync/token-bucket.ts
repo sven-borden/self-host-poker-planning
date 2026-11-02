@@ -27,6 +27,13 @@ export const ROSTER_LIMIT = { perSecond: 10 / 60, burst: 10 } as const;
  */
 export const HISTORY_LIMIT = { perSecond: 2, burst: 10 } as const;
 
+/**
+ * Changes to the queue per person (#52), on top of the message limit: 2 a second, bursts of
+ * 30. Each one may rewrite a column of 256 KB. A paste takes at most about 20 commands, and
+ * a PO moves a row a few places at a time.
+ */
+export const QUEUE_WRITE_LIMIT = { perSecond: 2, burst: 30 } as const;
+
 export interface TokenBucket {
   /** Takes one token: false when the bucket is empty. */
   take(): boolean;

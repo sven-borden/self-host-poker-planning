@@ -109,6 +109,7 @@ type RoomSettings = {
   allowChangeAfterReveal: boolean;                   // default false; named rounds only
   poVotes: boolean;                                  // default true
   observersCount: boolean;                           // default true
+  autoAdvance: boolean;                              // default false (#52, ADR-024)
 };
 
 type Participant = {
@@ -123,7 +124,9 @@ type Participant = {
 type Round = {
   number: number;
   subject: { kind: "none" } | { kind: "title"; text: string }      // title: 1–200 characters
-         | { kind: "link"; url: string; key?: string };  // http(s), ≤ 2000; key: "ABC-123" or ADO id, server-detected
+         | { kind: "link"; url: string; key?: string; title?: string };
+                                    // http(s), ≤ 2000; key: "ABC-123" or ADO id, server-detected;
+                                    //   title: from a queue item only (#52)
   phase: "voting" | "revealed";
   deck: RoomSettings["deck"];       // captured at the round's start: votes are checked
   specials: RoomSettings["specials"]; //   against deckCards(deck, specials)
@@ -139,13 +142,24 @@ type Round = {
   timeUpAt?: number;                // a deadline that passed without a reveal (#27): "Time is
                                     //   up" until the reveal or a new timer
   final?: Card;
+  advanceAt?: number;               // revealed: when the next queue item starts by itself (#52)
 };
+
+type QueueItem = {                  // at least one of key, title, url, each under a subject's rules
+  id: number;                       // the room's own number, never reused
+  key?: string;                     // a Jira key or an Azure DevOps id
+  title?: string;
+  url?: string;
+  source?: { system: "jira" | "ado"; id: string }; // reserved for #54 and #55, written by nothing
+};
+type Queue = { items: QueueItem[]; lastId: number; rev: number };
 
 type RoomState = {
   ownerId: UserId;                  // the PO
   settings: RoomSettings;
   participants: Record<UserId, Participant>;
   round: Round | null;              // null = lobby
+  queue?: Queue;                    // at most 500 items; stored in its own column (section 6)
 };
 ```
 
@@ -212,12 +226,17 @@ client that sends one gets `bad_payload`; the server's timers send it (section 9
 | `setAvatar {avatar}` | self | an id on the domain's list, or `null` for the initials (`bad_avatar`); no change without a cause; the `avatarChanged` cause says nothing to the live region (#42) |
 | `setRole {role}` | self | voter → observer drops the vote while Voting; observer → voter checks capacity when observers do not count |
 | `kick {who}` | PO | `cannot_kick_self`, `unknown_participant`; the vote as for `leave` |
-| `startRound {subject}` | PO | any phase; from Voting it abandons the round (the web offers it only in the lobby and after a reveal, #21); number + 1; captures deck, specials, anonymity; starts `timer.seconds` (`bad_subject`). A link's `key` is read here (`cleanSubject` → `linkKey`, in `apply-subject.ts`, so by the server; a client's own is dropped): a Jira key (`[A-Z][A-Z0-9_]{1,31}-[1-9][0-9]{0,9}`, read in any case, stored in capitals) from a path ending in `/browse/KEY` or Jira Cloud's `/projects/{project}/issues/KEY`, or a query's `selectedIssue=KEY`, on any host; an Azure DevOps work item id from a path ending in `/_workitems/edit/{id}` after one to three segments, on any host (Azure DevOps Server is self-hosted), or a query's `workitem={id}` on `dev.azure.com` and `*.visualstudio.com`, stored as the digits |
+| `startRound {subject, round}` | PO | `round`: the number on the table when the PO pressed, 0 in the lobby, else `round_changed`, so a press never replaces a round a countdown just started (#52); any phase; from Voting it abandons the round (the web offers it only in the lobby and after a reveal, #21); number + 1; captures deck, specials, anonymity; starts `timer.seconds` (`bad_subject`). A link's `key` is read here (`cleanSubject` → `linkKey`, in `apply-subject.ts`, so by the server; a client's own is dropped): a Jira key (`[A-Z][A-Z0-9_]{1,31}-[1-9][0-9]{0,9}`, read in any case, stored in capitals) from a path ending in `/browse/KEY` or Jira Cloud's `/projects/{project}/issues/KEY`, or a query's `selectedIssue=KEY`, on any host; an Azure DevOps work item id from a path ending in `/_workitems/edit/{id}` after one to three segments, on any host (Azure DevOps Server is self-hosted), or a query's `workitem={id}` on `dev.azure.com` and `*.visualstudio.com`, stored as the digits |
 | `castVote {card, round, restart?}` | voter | `no_round`; `round_changed` when `round` (the number of the round the press was made for) is not the current round's, or `restart`, when given, not its `restarts` (#26: a deck change restarts the round under the same number; the wire takes a vote without it, from a tab older than #26), so a vote in flight when the next round starts or the round restarts never lands in it; `not_voter` (observers; the PO when `poVotes` is off), `bad_card` (not in the round's cards); in Revealed only in a named round with `allowChangeAfterReveal`, and only from someone who already has a vote in that round (a change, marked `changedAfterReveal`); a first card after the reveal is refused (`round_revealed`), from a voter who had not voted, an observer turned voter or someone who joined after the reveal: the setting changes a vote, never adds one, since a card played after seeing everyone's is anchored on them (#29); an anonymous round locks its votes at reveal, whatever the setting, decided by the round's own `anonymous` flag (`round_revealed`), because the people who could still change shrink as voters leave and a change would then point at someone; the `voteCast` cause always carries `who` |
 | `retractVote {round, restart?}` | self | `round_changed` as for `castVote`; Voting only (`not_voting`), also while `allowChangeAfterReveal` is on: after the reveal a voter changes, never withdraws, which would drop them from the results (#29); no-op without a vote |
 | `reveal` | PO (whether or not they vote), or, if `whoCanReveal = "anyone"`, every voter (`isVoter`); observers never (`not_allowed`, #28) | Voting only (`not_voting`); zero votes allowed; stops the timer; the cause `revealed { by: "manual", who }` names the revealer |
 | `setFinal {card}` | PO | Revealed only (`not_revealed`); a non-special card of the round (`bad_card`) |
 | `revote` | PO | Revealed only; a new round with the same subject; its `roundStarted` cause carries `revote: true` (#32) |
+| `queueAdd {items}` | PO | one batch of a paste, 1 to 500 items: all clean or none (`bad_queue_item`), duplicates dropped, all fit or none, by count and by bytes (`queue_full`) |
+| `queueMove {id, to}` | PO | to place `to`, past the end to the end (`unknown_item`) |
+| `queueRemove {id}`, `queueClear` | PO | |
+| `startNext {id}` | PO | a round on the item, which leaves the queue; not while Voting (`not_revealed`), `unknown_item` |
+| `holdAdvance` | PO | the countdown to the next item stops, and a changed final starts no other in this round |
 | `startTimer {seconds}` | PO | Voting only; integer 5–3600 (`bad_seconds`); restarts a running timer; no change when the deadline stays the same; sets `timerStartedAt` and clears `timeUpAt` (#27), as `startRound` does with the room's timer |
 | `stopTimer` | PO | no-op without a timer; clears the deadline and `timerStartedAt` |
 | `extendTimer {seconds}` | PO | running timer only (`no_timer`); 5–3600 |
@@ -248,7 +267,8 @@ sends it. So every tab open across that deploy kept its room instead of reloadin
 |---|---|---|---|
 | `enter` | client → server | `{ code, protocol }`: subscribe to a room's snapshots | `{ ok: true, snapshot }` or `{ ok: false, code }` |
 | `cmd` | client → server | `{ id, type, payload }`: one domain command | `{ ok: true, version }` or `{ ok: false, code }` |
-| `snapshot` | server → client | the viewer's projection | none |
+| `queue` | client → server | `{}`: the entered room's whole queue, for its PO (#52) | `{ ok: true, rev, items }` or `{ ok: false, code }`; shares `history`'s bucket |
+| `snapshot` | server → client | the viewer's projection, with `room.queue` (`{ count, rev, next }`) when items wait, never the list (ADR-024) | none |
 | `kicked` | server → client | none; the server disconnects the socket next (the web app connects again and shows the join form, #30) | none |
 
 - **Commands**: one zod schema per domain command, a discriminated union on `type`;
@@ -440,7 +460,7 @@ and they are committed.
 
 | Table | Content |
 |---|---|
-| `room` | `id` uuid, `code` text unique, `name` text null, `owner_user_id` text (a copy of `live.ownerId`, written by every commit), `live` jsonb (`RoomState`: settings, people, the round), `version` int (starts at 1), `password_hash` text null (argon2id PHC string), `password_failures` int and `password_failures_since` null (the per-room count of wrong passwords, #31), `created_at`, `last_active_at` (indexed, for the retention purge); `owner_user_id` is indexed too |
+| `room` | `id` uuid, `code` text unique, `name` text null, `owner_user_id` text (a copy of `live.ownerId`, written by every commit), `live` jsonb (`RoomState`: settings, people, the round), `queue` jsonb null (the backlog queue, #52: part of the state `apply` sees, split off in the store and written only by a commit that changed it, ADR-024), `version` int (starts at 1), `password_hash` text null (argon2id PHC string), `password_failures` int and `password_failures_since` null (the per-room count of wrong passwords, #31), `created_at`, `last_active_at` (indexed, for the retention purge); `owner_user_id` is indexed too |
 | `room_access` | `room_id` (cascade delete), `user_id` (cascade delete with the user), `granted_at`; primary key `(room_id, user_id)`, and an index on `user_id` for the cascade from a deleted user: who may enter a room with a password without typing it (#31) |
 | `round_history` | `id` identity, `room_id` (cascade delete), `number`, unique `(room_id, number)`, `subject` jsonb, `deck` jsonb (`{ spec, specials }`), `votes` jsonb, `stats` jsonb (`computeResults`), `final` text null, `started_at`, `revealed_at`, `finished_at` |
 | Better Auth (#10) | `user` (with `is_anonymous`), `session`, `account`, `verification`, added by a later migration |
@@ -760,9 +780,9 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
     "wrong room password"); never the password, the hash, the code or the address.
 - Input limits, enforced on the server: names 32 characters, room names 60, round
   titles 200 and links 2000, custom decks of 20 cards of 4 characters, timers of 5 to
-  3600 seconds, passwords 6 to 128, payloads 16 KB (HTTP bodies and socket messages
-  alike: Socket.IO's `maxHttpBufferSize` is the same 16 KB, and a bigger message closes
-  the connection). The domain judges the exact rules and answers their codes (`bad_name`,
+  3600 seconds, passwords 6 to 128, HTTP bodies 16 KB, socket messages 16 KB (Socket.IO's
+  `maxHttpBufferSize`, and a bigger message closes the connection; a long paste comes in several
+  commands, ADR-024), no binary packets (`maxAttachments: 0`, which closes it too). The domain judges the exact rules and answers their codes (`bad_name`,
   `bad_subject`, `bad_seconds` …); before it, every inbound schema is strict and caps
   each string, array and number well above the domain's limit (`WIRE_LIMITS` in
   `@pp/protocol`: a name 1024 code units, a subject 4096, a card 128, a deck 64 cards,
@@ -815,12 +835,16 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   | Wrong passwords (database, every instance) | brute force | room | 50 in 10 min |
   | Password changes (`PUT`, `DELETE`) | hashing on demand | person (PO) | 30 in 10 min |
   | argon2 runs at once | memory (19 MiB each) | instance | 2, 32 waiting at most 2 s, then 503 `busy` |
-  | Socket messages (`enter`, `cmd`, `history`) | the server's work | person, all sockets | 10 a second, bursts of 20 |
+  | Socket messages (`enter`, `cmd`, `history`, `queue`) | the server's work | person, all sockets | 10 a second, bursts of 20 |
   | Roster commands (`join`, `leave`, `rename`, `setAvatar`, `setRole`) | broadcast and announcement floods | person | 10 a minute, bursts of 10 |
-  | History requests | database reads | person | 2 a second, bursts of 10 (the web's `historyPace`, #34, sends at most 8 at once, then 2 a second) |
+  | Queue writes (`queueAdd`, `queueMove`, `queueRemove`, `queueClear`) | a column of up to 256 KB rewritten | person | 2 a second, bursts of 30 |
+  | History and queue requests | database reads | person | 2 a second, bursts of 10 (the web's `historyPace`, #34, sends at most 8 at once, then 2 a second) |
   | Sockets | multiplying the buckets | person | 8 at once |
   | Connections before a socket | memory | connection | none without the session cookie; closed at a refusal, or after 5 s without a socket |
-  | Payload | memory, parsing | request or message | 16 KB (identity routes 4 KB) |
+  | Payload | memory, parsing | socket message | 16 KB, every frame, before the session is checked; no binary. 100 connections with no room and no session hold 15 MiB at this cap, 134 MiB at 128 KB (#52, ADR-024). The token bucket runs after the frame is decoded, so it does not bound the parsing |
+  | Payload | memory, parsing | HTTP request | 16 KB (identity routes 4 KB) |
+  | Queue | the room's stored state, the PO's list | room | 500 items and 256 KB of JSON (262,144 bytes), `queue_full` past either; one batch holds no more, and each item's key, title and link pass the subject's rules |
+  | Queue item's title | a snapshot, which carries the next item's | item | 800 bytes on top of the 200 characters: at most 1,053 bytes more in a snapshot, 205 for a bare link, of which it carries 64 characters |
   | People in a room | the table | room | 16 counted, 32 at most |
 
   Not limited per address: socket handshakes (a request without the session cookie is
@@ -875,6 +899,10 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   `target="_blank"` and only `http(s)` schemes: the web makes an `<a>` only of a link
   the domain's `cleanSubject` accepts (no other scheme, no credentials), so even an odd
   stored subject never becomes a `javascript:` link (#21).
+- Queue (#52, ADR-024): the list goes only to the room's PO, checked on a fresh load at every
+  `queue` request; everyone else sees the count and the next item, as public as the subject
+  it will be. No log line holds a title or a link. A pasted link is never fetched: the
+  page parses the paste, and no request leaves for it, ever.
 - History (#33): a room's finished rounds go only to someone in it (a voter, an
   observer or the PO), checked on a fresh load at every `history` request (section 5).
   Holding the code, or a password grant without joining, is not enough. No row carries a
@@ -886,6 +914,14 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
 
 ## 9. Timers and presence
 
+- Auto-advance (#52, ADR-024): `advanceAt` on a revealed round, set by a recorded final in a
+  room with the setting on and a queue. It runs as the timer does: the same per-room timeout
+  (`armDeadline`), the same `timeUp` ping from a page, or any command, starts the next item,
+  exactly once; a refused command leaves that standing, and `ended` still reports the round. It
+  needs the PO: a `leave` or an away ends it in the domain, and because the away's grace is longer
+  than the countdown, the server sends its own `endCountdown` when the PO's last socket closes, or
+  the room's, so no later `enter` finds a deadline. That command resolves nothing first. The
+  sockets a shutdown closes send none: the deadline stays stored and resolves when people return.
 - Timer: `deadlineAt` in the round. Snapshots carry `serverNow`; clients compute their
   clock offset and count down locally. The server also sets a timeout for the room's
   deadline (one per room per instance with sockets in it, section 5); whichever fires
