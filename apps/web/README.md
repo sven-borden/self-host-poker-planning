@@ -484,7 +484,10 @@ server sends and never decides the outcome of a round.
   `parseRule` checks each entry with the domain's `cleanDomain` and `cleanTenant` and names the
   first it refuses; an international name goes to `xn--` by `new URL`, and anything holding `@`,
   `/` and the like does not, which would take the host out of it. `fetchRoomRestriction` reads the
-  count and the PO's own account over HTTP when the rule or the people change, never in a snapshot.
+  count and the PO's own account over HTTP when the rule or the people change, never in a snapshot,
+  and never while a change is `pending`: the row shows a change as it is pressed, and a read then
+  would answer for the room before it, with nothing to ask again. `removeRoomOutsiders` asks the
+  server to take the seats the rule refuses, and the count is read again after.
   **The refused side**: an `enter` answered with one of the rule's codes (`isRestrictionRefusal`)
   puts the store in `restricted` (`restrict(refusal)`, the snapshot dropped, the socket kept, so a
   `signedIn` still reaches it), and `RoomView` shows `RoomRestricted` (`room/room-restricted.tsx`,

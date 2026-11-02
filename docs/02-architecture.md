@@ -709,7 +709,8 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
     in no snapshot), `emailVerified` (always false for Microsoft), the provider's name through
     `cleanName` (`""` when refused), no image; `account` with the provider's id for the person,
     which for Microsoft is `tid:oid` as Microsoft scopes `oid` to a tenant, and Microsoft's `tid`
-    in `tenant_id` (#50). The access, refresh and id tokens are cleared by a hook before the
+    in `tenant_id` (#50), and Google's `hd` in `hosted_domain`, which nothing reads yet (ADR-028).
+    The access, refresh and id tokens are cleared by a hook before the
     write; a later sign-in writes nothing. Asked for: `openid profile email`, no
     `offline_access`, no Graph. `/api/auth/get-session` adds `user.provider` for an account, so a
     room can name it instead of the address.
@@ -886,18 +887,27 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
     a domain, whatever it claims. `room-rule.ts` reads both fresh from `user` and `account`, as
     `AccessIdentity`, and the domain's `roomRefusal` judges it. Domains match exactly, lower-cased,
     in their `xn--` form: no subdomains, no wildcard. A tenant is a GUID, never the consumer one.
+    A stored rule is read as strictly as a typed one, and a malformed one refuses everyone but the
+    PO. A session older than 30 days by `session.created_at` is refused too (`session_too_old`), its
+    PO aside: only a new sign-in asks the provider again.
   - **Who passes**: its PO, always. A seat does not pass: someone seated before the rule stays while
-    the socket does, and meets it at the next `enter`, the seat and its vote left stored. Nobody is
-    kicked. After `leave`, or when the rule changes, a socket without a seat is read again and
-    hears `locked` if refused. Nobody it refuses becomes PO: `transferOwner` and `claimOwner` answer
-    `owner_not_allowed`.
+    the socket does, and at the next `enter` is refused and loses the seat, through `apply`. The
+    rule kicks nobody; the PO's "Remove everyone who would not pass" does, one `kick` each. Nobody it
+    refuses becomes PO: `transferOwner` and `claimOwner` answer `owner_not_allowed`.
+  - **The one invariant**: `broadcast` is the only place a room's frames leave, and no socket with
+    no seat and no PO role gets one unless it was judged against the gate in that frame's state
+    (`admitted` keeps it; `gateOf` is the rule and whether there is a password). One that was not
+    is read again and hears `locked` if refused. A rule's change and a `left` are read at once, on
+    every instance, from the cause. With Redis each instance holds this for its own sockets, on
+    the state it loaded; a lost signal is met by the next version, read `blind`.
   - **Where it runs**: `enter` reads the identity and judges it on the state it sends. A `join`, a
     hand-over and a claim are judged in the run's step, on the state the compare-and-set commits
     over. `POST /api/rooms/:code/access` and `GET /api/rooms/:code` check it too. It comes before
     the password in all of them, so someone refused learns nothing of the password: no hash, no
     try, no grant, the same bytes for a right and a wrong one. `GET` answers them `{ code, name:
     null, hasPassword: false }`, and reads a session for a room with a rule only.
-  - **Refusals**: `sign_in_required`, `account_not_allowed`, `restriction_unavailable`. The `enter`
+  - **Refusals**: `sign_in_required`, `account_not_allowed`, `session_too_old`,
+    `restriction_unavailable`. The `enter`
     ack carries `requirement: { domains, organisation }`: the domains by name, which anyone holding
     the link may read, and a word for a tenant. No snapshot goes to a socket that has not passed
     (`isGated`).
@@ -906,7 +916,12 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
     still shows, to take it off. With no provider and no rule the row does not appear.
   - **The PO's count**: `GET /api/rooms/:code/restriction`, the PO alone, answers `{ outsiders, own
     }`: how many here the stored rule would refuse, and the PO's own account, for the question
-    before a rule they do not meet. Never who, never why.
+    before a rule they do not meet. Never who, never why. `POST .../remove-outsiders` takes those
+    seats and answers how many.
+  - **"My rooms"**: a room that would refuse the person is off the list. A keeper it refuses keeps a
+    blank row and may delete the room without the role, which can no longer come back to them; the
+    account is read once per list, however many rules it holds. `leave` over HTTP goes through
+    `publish`, so it is read like any other.
   - **In a snapshot**: `settings.restriction` is `{ domains, organisation }` for those let in, plus
     `tenants` for the PO. No address, provider or tenant of any person enters the state.
 - Input limits, enforced on the server: names 32 characters, room names 60, round
@@ -968,6 +983,8 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   | Wrong passwords (database, every instance) | brute force | room | 50 in 10 min |
   | Password changes (`PUT`, `DELETE`) | hashing on demand | person (PO) | 30 in 10 min |
   | The rule's count (`GET /api/rooms/:code/restriction`) | reading seats' accounts, testing guesses | person (PO) | 60 in 10 min |
+  | Commits that set a rule (`updateSettings` with a rule) | testing guesses: up to 40 entries each, read back by the count and a refused hand-over | person, each instance | 5 an hour, so 200 entries; a commit that stored nothing does not count, and taking a rule off is free. No preview |
+  | Removing those who would not pass (`POST .../remove-outsiders`) | a kick per seat | person (PO) | 10 in 10 min |
   | "My rooms" reads (`GET /api/my-rooms`) | a query per page | person | 60 a minute |
   | "My rooms" changes (rename, delete, leave) | broadcasts and deletes in a loop | person | 30 a minute |
   | argon2 runs at once | memory (19 MiB each) | instance | 2, 32 waiting at most 2 s, then 503 `busy` |

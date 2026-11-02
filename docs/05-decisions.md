@@ -1267,7 +1267,8 @@ the right do:
 | A guest signs in (`moveGuest`, ADR-025) | moves if the guest held it | moves if the guest held it, on its own |
 | Kick, leave, rename | stays | stays |
 
-A delete needs the person to be the PO **and** the keeper, in the statement. Rename stays with the
+A delete needs the person to be the PO **and** the keeper, in the statement (ADR-028 adds one case:
+a keeper the room's rule refuses, who can no longer get the role back). Rename stays with the
 PO: it can be undone, and a meeting that goes on may want it. The field is server-held. No command
 sets it, the strict wire schemas refuse it, `updateSettings` cannot reach it, and `toSnapshot` picks
 its fields, so no frame carries it, which a test asserts; the list says `keeper` to that person alone.
@@ -1409,9 +1410,14 @@ tenant's admin set, which is the takeover #47's review found. So:
   nobody should set `contoso.com` for a Microsoft shop and lock everyone out unwarned.
 
 **Google, as it answers.** The rule reads the address Google vouched for and nothing more, so a
-Gmail address is a Gmail address and `gmail.com` in a rule admits all of Gmail. `hd` is not kept.
-It would tell a Workspace account from a personal Google account opened on a company address, which
-keeps `email_verified` after its owner leaves the company. That is under *Accepted*.
+Gmail address is a Gmail address and `gmail.com` in a rule admits all of Gmail. A verified address
+proves that someone could once receive mail there, a shared inbox included, and the panel's hint
+says so. `hd` would tell a Workspace account from a personal Google account opened on a company
+address, which keeps `email_verified` after its owner leaves. The rule does not read it, as
+requiring it would refuse real people on domains Google does not host. It is stored all the same
+(`account.hosted_domain`, `0010`, PO's decision), as `tid` was before anything read it: a token is
+not kept, and an account that exists today could never hand it over later, while production has no
+keys and the column is free. Written at the account's creation, and a later sign-in writes nothing.
 
 **Domains match exactly.** Lower-cased, whole: `example.com` admits neither `notexample.com` nor
 `example.com.evil.net`, and not `mail.example.com` either. No subdomains and no wildcard: a rule says
@@ -1419,13 +1425,26 @@ what the PO typed, each one is a line away, and a suffix match is how the two re
 An international name is stored in its `xn--` form, made by the platform's IDNA (`domainToASCII` on
 the server, `new URL` in the panel): the domain package has no `URL`, and accepts ASCII alone. The
 ASCII form is what the join screen shows too: it cannot be spoofed by a look-alike letter, at the
-price of reading badly. ASCII input is never run through a URL parser, which would quietly turn
-`a@b.com/x` into `b.com`: it meets `cleanDomain`, which refuses a wildcard, an `@`, a scheme, a
-path, a port, an IP address, a trailing dot and a bare top-level name.
+price of reading badly. Both are URL parsers, which answer the host of whatever they are given:
+`bücher.example/x` reads as `bücher.example`, and an address `a@example.com/ü` as `example.com`. So
+nothing with a character no host holds (`/ \\ @ : ? # % [ ]`) reaches one, and on the server what
+IDNA gives back must be what went in, or a soft hyphen or a full stop of another script would be
+quietly mapped: the entry stays as typed, and `cleanDomain` refuses it, as it takes ASCII alone. Plain
+ASCII never meets a parser, which would turn `a@b.com/x` into `b.com`: `cleanDomain` refuses a
+wildcard, an `@`, a scheme, a path, a port, an IP address, a trailing dot and a bare top-level name.
+The same goes for the address a rule compares.
 
 **Limits.** 20 entries in each list, each a domain of 253 characters at most or a GUID: in the
 domain (`bad_restriction`), and in the protocol's strict schema at 64 entries of 1024 characters.
 A rule with no entry is no rule: the page removes it with `null`.
+
+**A stored rule is read as strictly as a typed one.** Only `apply` writes it, so a malformed one
+takes hand-written SQL. But a rule is what keeps a room shut, and two such rules opened it: a JSON
+`null` read as no rule, so the header showed the name, and `domains` as a string matched by substring.
+So `requirementOf` reads the rule through `cleanRestriction`, and one that does not read as a rule
+meets nobody's account: `restriction_unavailable`, for everyone but the PO, whose row shows an empty
+rule to take off. `ROOM_RULE` keeps a JSON null from reading as SQL null where the state is not
+loaded, and a change of another setting carries a malformed rule along instead of dropping it.
 
 **The rule comes before the password, everywhere.** At `enter`, at `join` and at `POST
 /api/rooms/:code/access`. Someone the rule refuses gets the rule's code whatever they typed: no
@@ -1470,43 +1489,105 @@ needs neither, so a rule can always come off.
 **A person the rule refuses never becomes PO.** The PO passes every rule, so the role would be a
 way around it: anyone seated before a rule could claim it once the PO is away, then enter for ever
 and remove the rule. So `transferOwner` and `claimOwner` answer `owner_not_allowed` for someone
-it refuses, seated or not. That costs a sliver of privacy: a PO who tries to hand the role over
-learns that this one person would not pass, though not why. The PO will see the same when that
-person next reloads, and the rule's integrity is worth more.
+it refuses, seated or not, and a claim on a sign-in too old for the rule is refused the same way.
+That costs a sliver of privacy, and it stays (PO's decision): a refused hand-over is one bit, about a
+person the PO names, for each rule tried: that they would not pass, not why. The PO will see the same
+when that person next reloads, and the rule's integrity is worth more.
 
 **People already seated stay, and a reload is the end of that.** A rule applies to entering and
-joining from then on. Nobody is kicked: the socket stays and keeps playing, seat and vote. Their
-next `enter`, from a reload or a dropped connection, is refused, and the seat and its vote stay
-where they are, stored, to go away after the grace like anyone's. This is the choice between that
-and a seat that survives until its owner leaves, and the refusal wins, for three reasons. A rule is
-a promise that internal tickets stay internal, and a seat that outlives it would keep seeing them
-for as long as a browser keeps reconnecting, which is days. The seat would become a way around the
-rule. And nothing is lost by the refusal: a guest who signs in with a passing account finds the
-seat again, and a PO can remove the seat. The cost is that a blip of the network ends it for
-someone mid-round, which is why the PO reads it first: "They stay until they reload the page or
-leave." After `leave`, a socket has no seat to stay by, so it is read again like any visitor.
+joining from then on. Nobody is kicked by the rule itself: the socket stays and keeps playing, seat
+and vote. Their next `enter`, from a reload or a dropped connection, is refused, and **the seat goes
+there and then, through `apply`, as `leave` takes it** (PO's decision): a seat that can never come
+back helps nobody, and stored, it would stay shown, its card would count at the reveal, the panel
+would count it as here, and its owner would have no way to give it up. Judged again in the run's
+step, so a rule taken off meanwhile spares it. This is the choice between that and a seat that
+survives until its owner leaves, and the refusal wins, for three reasons. A rule is a promise that
+internal tickets stay internal, and a seat that outlives it would keep seeing them for as long as a
+browser keeps reconnecting, which is days. The seat would become a way around the rule. And a
+dropped connection ending a stay fails closed, which is the side to fail on (PO's decision). The
+cost is that a blip of the network ends it for someone mid-round, who must sit down again with an
+account that passes, which is why the PO reads it first: "They stay until they reload the page, lose
+their connection or leave." A seat whose owner never comes back holds no socket and stays until the
+PO removes it, as any away seat does.
 
-**The PO sees a count, not a list.** `GET /api/rooms/:code/restriction`, the PO alone, answers how
-many people here the stored rule would refuse, and what the PO's own account proves. Not in the
-snapshot, which would read every seat's account on every vote. It counts the stored rule only, so
-that testing a guess about someone costs a commit, which the room hears, and is held by 60 reads
-in 10 minutes. It cannot be made nothing: a PO who sets `gmail.com` and reads the count learns
-something about the two people in a room of two. No address, provider or tenant ever comes back.
+**The PO sees a count, not a list, and can act on it.** `GET /api/rooms/:code/restriction`, the PO
+alone, answers how many people here the stored rule would refuse, and what the PO's own account
+proves. Not in the snapshot, which would read every seat's account on every vote. A count nobody can
+act on is no use, so beside it stands one action, "Remove everyone who would not pass", which asks
+first (PO's decision). `POST /api/rooms/:code/restriction/remove-outsiders` reads who is here and what
+they prove afresh, and runs one `kick` through `apply` per person, each judged again in its step, so
+a rule taken off spares them; it answers how many went, 10 presses in 10 minutes. The page names
+nobody. The table shows who has gone, as with any kick, and that is the price of a list being acted
+on. Anyone removed hears the removal, and is refused at the door if they come back.
 
-**Visitors.** A socket on the join form holds snapshots, which name people. When a rule changes,
-`settingsUpdated` carries `restriction: true`, on the cause, so it reaches other instances by the
-same signal as a lockout. Before the broadcast, each visitor without a seat is marked and read
-again, gets nothing meanwhile, and hears `locked` if refused; the page enters again and shows the
-refusal. A lost signal is met by the same read before the next version goes out (`blind`).
+**What a rule tells the PO, and what caps it.** A commit does not test one guess: a rule holds up to
+40 entries, each a guess about everyone seated, read back by the count and by a refused hand-over. A
+list of 20 domains and the bisection that follows found a person's employer in 2 commits in the
+review. So committing a rule is limited: **5 commits an hour per person** (`RULE_CHANGE_LIMIT`, on
+each instance), so 200 entries an hour and at most 5 answers about one person. A commit that stored
+nothing gives its place back, a resend is not counted twice, and taking a rule off is free, as it
+tests nothing and a rule can always come off. It cannot be made nothing: a short list of candidates
+needs few commits, and a PO who sets `gmail.com` and reads the count learns something about the two
+people in a room of two. The count reads the stored rule only (60 reads in 10 minutes), and there is
+no preview of a candidate rule (PO's decision): a preview would test guesses with no commit, which
+nobody hears. No address, provider or tenant ever comes back.
+
+**One invariant, at the only place frames leave.** A socket on the join form holds snapshots, which
+name people, and a seat is what lets someone stay past a rule. So everything about who may keep
+receiving comes down to one line in `broadcast`: `admitted` keeps the gate a socket was judged
+against (`gateOf`: the rule and whether there is a password), and **no frame reaches a socket with no
+seat and no PO role unless that judgement is of the gate in the frame's state.** One that is not is
+read again (`recheck`), gets nothing meanwhile, and hears `locked` if refused; the page enters again
+and shows the refusal. A seat or the role holds no judgement at all (`UNJUDGED`), so the first frame
+after they go finds it out of date. That one line closes what a list of causes kept missing: a second
+tab of someone who leaves, an HTTP `leave`, an `enter` that raced a rule, a commit whose reply was
+lost, a PO with no seat who loses the role to a claim. An `enter` judges its last load, reading then
+whatever an earlier load gave it no reason to read, and a refused one keeps no pass. Nobody waits for
+the next change to hear it: a rule's change (`settingsUpdated` with `restriction: true`, on the cause)
+and a `left` are read as they are published, and an `enter` that finds a newer gate than it loaded is
+read at once.
+
+**With several instances.** Each instance sends its own sockets their frames, and the invariant runs
+on each, on the state it loaded: nothing about a socket crosses Redis. The instance that commits
+tells the others the causes, and each reads its own visitors, or the tabs of whoever left, when the
+signal comes. A signal that is lost is met at the next version, which goes out `blind`, reading every
+visitor; until then that instance sends nothing, so nothing leaks. A seat refused at `enter` on one
+instance is a `leave` every instance hears.
 
 **Sign-in, checked against #48.** A refused guest has no seat, signs in from the screen, comes
 back as the account, and is judged afresh. A guest seated before the rule moves as ever: `moveGuest`
 is the server's and takes no gate, and that is right, since the seat is theirs. It also opens
 nothing: a seat lets nobody past the rule, so an account that does not pass finds its seat moved
-and itself refused, and the panel's count now counts it. A grant moves too, and passes nothing.
-Someone who signs out mid-room is a guest on the reload and is refused, and the account's seat
-waits for them. A socket opened before a rule keeps what it had while it stays seated; a `join`,
-a hand-over, a claim and a `leave` are each read fresh, and the session is read on every `join`.
+and loses it at the door. A guest who reloads first loses the seat as a guest, and a sign-in then
+finds none. A grant moves too, and passes nothing. Someone who signs out mid-room is a guest on the
+reload and is refused, and the account's seat waits for them, as nothing refused the account. A socket
+opened before a rule keeps what it had while it stays seated; a `join`, a hand-over and a claim are
+each read fresh, and the session is read on every `join`.
+
+**A sign-in is good for 30 days in a room with a rule.** What an account proves was true at sign-in.
+A session slides, a day at a time, so someone who left a company would pass for ever by visiting
+every 90 days. Only a new sign-in asks the provider whether the person is still there. So in a room
+with a rule, a session older than `RULE_SESSION_MAX_AGE_DAYS` (30) by `session.created_at`, which
+never moves, is refused with `session_too_old` at every door the rule has: `enter`, `join`, a claim,
+`/access`, the header, and a visitor read again. The screen says why, and the way is "Sign out", then
+sign in. The seat stays: a new sign-in brings the person back to it, unlike a refusal of the account,
+which goes first and takes the seat. The PO is exempt, as from every rule. A socket already seated
+stays while it stays, like any seat; this is a door. The list hides these rooms until then, and says
+so.
+
+**"My rooms" (#49, ADR-027).** A list that named a room would undo the header's `name: null`. A row
+brings the room's rule, and the person's account is read once for the page, so a list costs one
+query more however many rules it holds. A room that would refuse them is off the list: the seat goes
+when they next enter, and `POST /api/my-rooms/:id/leave` still gives it up. **A keeper the rule refuses
+keeps the right to delete the room** (PO's decision), which is ADR-027's row of the table with the
+role taken out: the room stays on their list, blank (no name, no rounds, no activity), and they
+may delete it with no role. The role cannot come back to them, as a claim and a hand-over are both
+refused, so a right that needed it would be a right they can never use, and the room is theirs.
+It also answers the case ADR-027 could not: a stranger who claims a room and sets a rule that
+shuts its owner out. The price is that a keeper who is out of a team can destroy what the team uses,
+which cannot be undone, and only that keeper: nobody else gains it, a keeper the rule passes takes the
+role back as before, and the statement holds only while the rule that refused them stands
+(`deleteKept`). A rename stays the PO's, and the PO always passes.
 
 **A provider that goes away fails closed.** With no provider, as production is until Sven adds
 keys, nobody could ever pass, so the row does not appear. A rule set before keys were removed is
@@ -1523,18 +1604,19 @@ socket's message budget like any other, and its answer turns on the caller's own
 it tells nobody who has an account or which addresses exist. Exports and history do not read the
 rule; retention keeps or deletes it with the room's `live`.
 
-**Protocol 6.** The refused `enter`'s `requirement`, the patch, the view and five ack codes. Each
+**Protocol 6.** The refused `enter`'s `requirement`, the patch, the view and six ack codes. Each
 alone is the kind of change that kept the version before, but a tab from before this has no screen
 for these refusals and would strand on the generic error, so it is told to reload.
 
 **Accepted.**
 - A personal Google account opened on a company address, and a Google account whose owner has
   since left, keep `email_verified`. Requiring `hd` would close the first and refuse real people on
-  domains Google does not host; it needs a column, so it stays an option for Sven (see the PR).
-- A provider's word is read at sign-in. A session lives `ROOM_TTL_DAYS`, and `user.email` is not
-  updated on a later sign-in, so someone removed from a tenant or a domain passes until the session
-  ends. A room is not a company's identity system.
-- `outsiders` can be read as a test of a guess, as said above.
+  domains Google does not host; the column is there for the day it is wanted.
+- A provider's word is read at sign-in, and `user.email` is not updated on a later one. So someone
+  removed from a tenant or a domain passes for up to 30 days in a room with a rule, and a socket that
+  stays seated for longer. A room is not a company's identity system.
+- `outsiders` can be read as a test of a guess, and a refused hand-over as one bit, as said above.
+- A keeper the rule refuses can destroy a room others use, as said above.
 - A second tab left open after a sign-out keeps the snapshots until its next command finds the
   session gone, as in any room: its seat is still there.
 - An international domain reads as `xn--…` on the join screen.
@@ -1545,7 +1627,7 @@ off the command pipeline, and #25's contract gives the panel its rollback for fr
 met by a Microsoft claim for verified tenants: Entra offers no proof of the kind Google's flag
 gives, and the tenant rule says the thing directly. Subdomain matching: see above. Auto-kicking
 those who do not pass: a table that empties itself mid-round is worse than a screen, and the PO
-holds "Remove from the room" for anyone it should not wait for. A per-seat mark for the PO: a count at most. Checking the identity in the commit's
+holds "Remove everyone who would not pass" for when it should not wait. A per-seat mark for the PO: a count at most. Checking the identity in the commit's
 transaction, as `requireGrant` does: an account does not change under a command, and the state
 does, which the step already sees.
 

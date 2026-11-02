@@ -756,18 +756,28 @@ ADR-028 says why. Two faces, and neither shows anyone else's account.
   "Your Microsoft account belongs to another organisation."; and for a Microsoft sign-in on a domain
   rule, "A Microsoft sign-in never counts for an email domain, because it does not prove the
   address." with the way out: a Google account, or asking the PO to add the organisation. Signing
-  out reloads this screen with its buttons. Domains read in their ASCII form, `xn--` included.
+  out reloads this screen with its buttons. Domains read in their ASCII form, `xn--` included,
+  joined by "or", as any one of them will do; a long one breaks rather than widen the page at 320 px.
+- **A sign-in too old for the room** reads how old, why it matters and what to do: "Your sign-in is
+  more than 30 days old. This room asks for a recent one, as signing in again is how your provider
+  confirms you are still there. Sign out, then sign in."
 - **A rule nobody can meet here** says so and offers no button: "This server no longer offers the
   sign-in this room asks for, so nobody can join for now."
 - **The PO, in "Room settings".** "Who can join", across the row, above the password, in People.
   "Email domains" and "Microsoft tenant ids", a monospaced list each, one entry a line, each list
   only where this install has its provider, then "Save the rule" and, with a rule, "Remove the
-  rule", which does not ask first. The hints carry the two traps: an exact match, and a Microsoft
-  sign-in never counting for a domain. A malformed entry is named under the lists. "1 person here
-  would not pass. They stay until they reload the page or leave.": a count, with no name and no
-  reason. A rule the PO does not meet asks first, in the row: "Save it anyway" or "Cancel". A guest
+  rule", which does not ask first. The hints carry the traps: an exact match, what a verified address
+  does and does not prove, and a Microsoft sign-in never counting for a domain. A malformed entry
+  is named under the lists. "1 person here would not pass. They stay until they reload the page, lose
+  their connection or leave.": a count, with no name and no reason. Beside it, "Remove everyone who
+  would not pass", which asks first, in the row, "1 person leaves the room now, and can only come back
+  with an account that passes.", with "Remove them" or "Cancel"; the focus then goes to "Save the
+  rule", as the count goes. A rule the PO does not meet asks first, in the row: "Save it anyway" or "Cancel". A guest
   PO reads "Sign in to limit this room to certain accounts."; no provider, no row at all, unless a
   rule stands, when the row names what is gone and can take it off.
+- **"My rooms".** A room that would refuse this account is off the list. One that is theirs stays,
+  saying only "Your room, closed to this account", no activity and no rounds, why, and "Delete". A
+  line above the list says when a recent sign-in would bring rooms back.
 - **Everyone else**, in "Room rules": "Anyone with the link" or "Limited", and under it the domains
   and "your organisation". A change is said once in the live region: "The product owner changed
   who can join this room."
