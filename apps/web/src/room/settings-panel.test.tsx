@@ -91,7 +91,8 @@ describe("the settings panel", () => {
     expect(dialog.querySelector("[data-settings-panel]")?.getAttribute("data-settings-panel")).toBe(
       "rules",
     );
-    expect(Object.fromEntries(SETTING_KEYS.map((key) => [key, shownValue(dialog, key)]))).toEqual({
+    const shown = SETTING_KEYS.filter((key) => key !== "restriction");
+    expect(Object.fromEntries(shown.map((key) => [key, shownValue(dialog, key)]))).toEqual({
       deck: "Fibonacci",
       specials: "? and ☕",
       timer: "Off",

@@ -210,6 +210,11 @@ export const de: Catalog = {
       "Aus: Beobachter können auch einem vollen Raum beitreten, bis zu {{total, number}} Personen insgesamt.",
     observersCountRefused:
       "Mit den Beobachtern sind mehr als {{max, number}} Personen hier. Beobachter zählen wieder, sobald es {{max, number}} oder weniger sind.",
+    restriction: "Wer beitreten kann",
+    restrictionHint:
+      "Beschränken Sie diesen Raum auf bestimmte Konten. Wer den Link hat, sieht die erlaubten Domains und kann so das richtige Konto wählen.",
+    restrictionAnyone: "Alle mit dem Link",
+    restrictionLimited: "Beschränkt",
   },
   deckField: {
     inUse: "Aktiv",
@@ -495,6 +500,7 @@ export const de: Catalog = {
     autoRevealOff: "Die Karten warten jetzt auf das Aufdecken, auch wenn alle abgestimmt haben.",
     autoAdvanceOn: "Der nächste Eintrag startet jetzt von selbst nach einer erfassten Schätzung.",
     autoAdvanceOff: "Der nächste Eintrag startet nicht mehr von selbst.",
+    restrictionChanged: "Der Product Owner hat geändert, wer diesem Raum beitreten kann.",
     queueAdded_one:
       "{{count, number}} Eintrag zur Warteschlange hinzugefügt. Als Nächstes: {{item}}.",
     queueAdded_other:
@@ -603,6 +609,51 @@ export const de: Catalog = {
       stillMoving:
         "Sie sind angemeldet. Einige Ihrer Räume werden noch in Ihr Konto übertragen. Öffnen Sie sie gleich noch einmal.",
     },
+  },
+  restriction: {
+    title: "Dieser Raum ist bestimmten Konten vorbehalten",
+    needsDomains: "Melden Sie sich zum Beitreten mit einem Google-Konto auf {{domains}} an.",
+    needsOrganisation:
+      "Melden Sie sich zum Beitreten mit einem Microsoft-Konto Ihrer Organisation an.",
+    needsBoth:
+      "Melden Sie sich zum Beitreten mit einem Google-Konto auf {{domains}} oder einem Microsoft-Konto Ihrer Organisation an.",
+    guest: "Gäste können diesem Raum nicht beitreten. Melden Sie sich an, um fortzufahren.",
+    otherDomain:
+      "Ihr Google-Konto liegt nicht auf einer dieser Domains, oder Google hat seine Adresse nicht bestätigt. Melden Sie sich ab, um ein anderes Konto zu verwenden.",
+    otherOrganisation:
+      "Ihr Microsoft-Konto gehört zu einer anderen Organisation. Melden Sie sich ab, um ein anderes Konto zu verwenden.",
+    microsoftDomain:
+      "Eine Microsoft-Anmeldung zählt nie für eine E-Mail-Domain, weil sie die Adresse nicht belegt. Melden Sie sich ab, um ein Google-Konto zu verwenden, oder bitten Sie den Product Owner, Ihre Organisation hinzuzufügen.",
+    needsMicrosoft:
+      "Dieser Raum nimmt Microsoft-Konten Ihrer Organisation an. Melden Sie sich ab, um eines zu verwenden.",
+    otherAccount:
+      "Mit diesem Konto können Sie diesem Raum nicht beitreten. Melden Sie sich ab, um ein anderes zu verwenden.",
+    unavailable:
+      "Dieser Server bietet die Anmeldung, die dieser Raum verlangt, nicht mehr an. Darum kann vorerst niemand beitreten. Bitten Sie den Product Owner, die Regel des Raums zu ändern.",
+    yourOrganisation: "Ihre Organisation",
+    signInFirst: "Melden Sie sich an, um diesen Raum auf bestimmte Konten zu beschränken.",
+    domainsLabel: "E-Mail-Domains",
+    domainsHint:
+      "Eine pro Zeile, exakt: example.com lässt mail.example.com nicht zu. Es zählt nur ein Google-Konto, dessen Adresse Google bestätigt hat.",
+    tenantsLabel: "Microsoft-Mandanten-IDs",
+    tenantsHint:
+      "Eine pro Zeile. Wer sich mit Microsoft anmeldet, kommt über die Mandanten-ID der Organisation herein, nie über die Adresse: Eine Domain oben lässt diese Personen nicht zu.",
+    googleGone:
+      "Dieser Server bietet keine Google-Anmeldung mehr an: Über eine Domain kommt niemand herein.",
+    microsoftGone:
+      "Dieser Server bietet keine Microsoft-Anmeldung mehr an: Über einen Mandanten kommt niemand herein.",
+    badDomain: "Das ist keine Domain: {{entry}}",
+    badTenant: "Das ist keine Mandanten-ID einer Organisation: {{entry}}",
+    tooMany: "Jede Liste fasst höchstens {{max, number}} Einträge.",
+    outsiders_one:
+      "{{count, number}} Person hier würde nicht zugelassen. Sie bleibt, bis sie die Seite neu lädt oder geht.",
+    outsiders_other:
+      "{{count, number}} Personen hier würden nicht zugelassen. Sie bleiben, bis sie die Seite neu laden oder gehen.",
+    askFirst:
+      "Sie erfüllen diese Regel selbst nicht. Sie bleiben, solange Sie Product Owner sind, könnten aber nach einer Übergabe der Rolle nicht zurückkommen.",
+    askConfirm: "Trotzdem speichern",
+    save: "Regel speichern",
+    remove: "Regel entfernen",
   },
   password: {
     label: "Passwort",
@@ -810,6 +861,15 @@ export const de: Catalog = {
     queue_full:
       "Die Warteschlange ist voll: Sie fasst höchstens {{max, number}} Einträge, bei langen weniger.",
     unknown_item: "Dieser Eintrag ist nicht mehr in der Warteschlange.",
+    bad_restriction:
+      "Einer dieser Einträge ist weder eine Domain noch eine Mandanten-ID, oder es sind zu viele. Prüfen Sie sie und versuchen Sie es erneut.",
+    owner_not_allowed:
+      "Nur wer die Anmelderegel dieses Raums erfüllt, kann sein Product Owner werden.",
+    sign_in_required:
+      "Dieser Raum ist bestimmten Konten vorbehalten. Melden Sie sich an, um fortzufahren.",
+    account_not_allowed: "Mit diesem Konto können Sie diesem Raum nicht beitreten.",
+    restriction_unavailable:
+      "Dieser Server bietet diese Anmeldung nicht mehr an, darum kann niemand diese Regel erfüllen.",
     deck_empty: "Ein Kartensatz braucht mindestens eine Karte.",
     deck_too_many_cards:
       "Ein Kartensatz hat höchstens {{max, number}} Karten. Entfernen Sie einige und versuchen Sie es erneut.",

@@ -41,6 +41,7 @@ export const SETTING_KEYS = [
   "autoAdvance",
   "poVotes",
   "observersCount",
+  "restriction",
 ] as const satisfies readonly (keyof RoomSettingsView)[];
 
 export type SettingKey = (typeof SETTING_KEYS)[number];

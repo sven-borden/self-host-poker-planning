@@ -210,6 +210,11 @@ export const fr: Catalog<"many"> = {
       "Désactivé, les observateurs peuvent rejoindre une salle complète, jusqu’à {{total, number}} personnes en tout.",
     observersCountRefused:
       "Plus de {{max, number}} personnes sont là en comptant les observateurs. Ils pourront de nouveau compter quand il y en aura {{max, number}} ou moins.",
+    restriction: "Qui peut rejoindre",
+    restrictionHint:
+      "Réservez cette salle à certains comptes. Toute personne qui a le lien voit les domaines autorisés, pour choisir le bon compte.",
+    restrictionAnyone: "Toute personne ayant le lien",
+    restrictionLimited: "Limité",
   },
   deckField: {
     inUse: "Utilisé",
@@ -509,6 +514,7 @@ export const fr: Catalog<"many"> = {
     autoAdvanceOn:
       "Le ticket suivant démarre désormais tout seul après une estimation enregistrée.",
     autoAdvanceOff: "Le ticket suivant ne démarre plus tout seul.",
+    restrictionChanged: "Le product owner a changé qui peut rejoindre cette salle.",
     queueAdded_one: "{{count, number}} ticket ajouté à la file. Ensuite : {{item}}.",
     queueAdded_many: "{{count, number}} de tickets ajoutés à la file. Ensuite : {{item}}.",
     queueAdded_other: "{{count, number}} tickets ajoutés à la file. Ensuite : {{item}}.",
@@ -616,6 +622,53 @@ export const fr: Catalog<"many"> = {
       stillMoving:
         "Votre compte est connecté. Certaines de vos salles sont encore en cours de transfert : rouvrez-les dans un instant.",
     },
+  },
+  restriction: {
+    title: "Cette salle est réservée à certains comptes",
+    needsDomains: "Pour la rejoindre, connectez-vous avec un compte Google sur {{domains}}.",
+    needsOrganisation:
+      "Pour la rejoindre, connectez-vous avec un compte Microsoft de votre organisation.",
+    needsBoth:
+      "Pour la rejoindre, connectez-vous avec un compte Google sur {{domains}}, ou un compte Microsoft de votre organisation.",
+    guest: "Les invités ne peuvent pas rejoindre cette salle. Connectez-vous pour continuer.",
+    otherDomain:
+      "Votre compte Google n’est pas sur l’un de ces domaines, ou Google n’a pas vérifié son adresse. Déconnectez-vous pour utiliser un autre compte.",
+    otherOrganisation:
+      "Votre compte Microsoft appartient à une autre organisation. Déconnectez-vous pour utiliser un autre compte.",
+    microsoftDomain:
+      "Une connexion Microsoft ne compte jamais pour un domaine de messagerie, car elle ne prouve pas l’adresse. Déconnectez-vous pour utiliser un compte Google, ou demandez au product owner d’ajouter votre organisation.",
+    needsMicrosoft:
+      "Cette salle accepte les comptes Microsoft de votre organisation. Déconnectez-vous pour en utiliser un.",
+    otherAccount:
+      "Ce compte ne peut pas rejoindre cette salle. Déconnectez-vous pour en utiliser un autre.",
+    unavailable:
+      "Ce serveur ne propose plus la connexion demandée par cette salle : personne ne peut la rejoindre pour l’instant. Demandez au product owner de changer la règle.",
+    yourOrganisation: "votre organisation",
+    signInFirst: "Connectez-vous pour réserver cette salle à certains comptes.",
+    domainsLabel: "Domaines de messagerie",
+    domainsHint:
+      "Un par ligne, à l’identique : example.com n’admet pas mail.example.com. Seul compte un compte Google dont Google a vérifié l’adresse.",
+    tenantsLabel: "Identifiants de tenant Microsoft",
+    tenantsHint:
+      "Un par ligne. Les personnes connectées avec Microsoft passent par l’identifiant de tenant de leur organisation, jamais par leur adresse : un domaine ci-dessus ne les admet pas.",
+    googleGone:
+      "Ce serveur ne propose plus la connexion Google : personne ne peut passer par un domaine.",
+    microsoftGone:
+      "Ce serveur ne propose plus la connexion Microsoft : personne ne peut passer par un tenant.",
+    badDomain: "Ce n’est pas un domaine : {{entry}}",
+    badTenant: "Ce n’est pas l’identifiant de tenant d’une organisation : {{entry}}",
+    tooMany: "Chaque liste contient {{max, number}} entrées au plus.",
+    outsiders_one:
+      "{{count, number}} personne ici ne passerait pas. Elle reste jusqu’à ce qu’elle recharge la page ou s’en aille.",
+    outsiders_many:
+      "{{count, number}} de personnes ici ne passeraient pas. Elles restent jusqu’à ce qu’elles rechargent la page ou s’en aillent.",
+    outsiders_other:
+      "{{count, number}} personnes ici ne passeraient pas. Elles restent jusqu’à ce qu’elles rechargent la page ou s’en aillent.",
+    askFirst:
+      "Vous ne respectez pas vous-même cette règle. Vous restez tant que vous êtes le product owner, mais vous ne pourriez pas revenir après avoir passé le rôle.",
+    askConfirm: "Enregistrer quand même",
+    save: "Enregistrer la règle",
+    remove: "Retirer la règle",
   },
   password: {
     label: "Mot de passe",
@@ -831,6 +884,14 @@ export const fr: Catalog<"many"> = {
     queue_full:
       "La file est pleine : elle contient {{max, number}} tickets au plus, moins s’ils sont longs.",
     unknown_item: "Ce ticket n’est plus dans la file.",
+    bad_restriction:
+      "L’une de ces entrées n’est ni un domaine ni un identifiant de tenant, ou il y en a trop. Vérifiez-les et réessayez.",
+    owner_not_allowed:
+      "Seule une personne qui respecte la règle de connexion de cette salle peut en devenir le product owner.",
+    sign_in_required: "Cette salle est réservée à certains comptes. Connectez-vous pour continuer.",
+    account_not_allowed: "Ce compte ne peut pas rejoindre cette salle.",
+    restriction_unavailable:
+      "Ce serveur ne propose plus cette connexion, personne ne peut donc satisfaire cette règle.",
     deck_empty: "Un jeu doit contenir au moins une carte.",
     deck_too_many_cards:
       "Un jeu contient au plus {{max, number}} cartes. Retirez-en quelques-unes et réessayez.",

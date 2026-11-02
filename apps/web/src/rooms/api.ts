@@ -1,4 +1,4 @@
-import type { PresetDeckId } from "@pp/domain";
+import type { AccessIdentity, PresetDeckId } from "@pp/domain";
 import { ensureIdentity, UNAUTHENTICATED } from "../identity/identity.ts";
 
 // The room API over HTTP (#14): create a room, read a room's header (code and name). The
@@ -102,6 +102,25 @@ export async function fetchRoomHeader(code: string): Promise<RoomHeader> {
     code: found,
     name: typeof name === "string" ? name : null,
     hasPassword: field(body, "hasPassword") === true,
+  };
+}
+
+/** What the PO's panel reads about the room's rule (#50). */
+export interface RoomRestrictionInfo {
+  /** How many people here the stored rule would refuse: never who, never why. */
+  readonly outsiders: number;
+  /** What the PO's own account proves; null for a guest. */
+  readonly own: AccessIdentity | null;
+}
+
+/** The PO's read of the room's rule (#50), or a `RoomApiError`. */
+export async function fetchRoomRestriction(code: string): Promise<RoomRestrictionInfo> {
+  const body = await call(`/api/rooms/${encodeURIComponent(code)}/restriction`);
+  const outsiders = field(body, "outsiders");
+  const own = field(body, "own");
+  return {
+    outsiders: Number.isSafeInteger(outsiders) ? (outsiders as number) : 0,
+    own: typeof own === "object" ? (own as AccessIdentity | null) : null,
   };
 }
 

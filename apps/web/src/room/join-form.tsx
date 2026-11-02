@@ -28,7 +28,7 @@ import { cn } from "../lib/utils.ts";
 import { announceRoomAccess, commandSender, enterRoomAgain } from "../realtime/room-connection.ts";
 import { enterRoomPassword, RoomApiError } from "../rooms/api.ts";
 import { useIdentityStore } from "../stores/identity-store.ts";
-import type { LockReason } from "../stores/room-store.ts";
+import { isRestrictionRefusal, type LockReason } from "../stores/room-store.ts";
 import { codeOf, failureMessage } from "./failure.ts";
 import { loadJoinPassword } from "./load-join-password.ts";
 import { saveAvatar } from "./save-avatar.ts";
@@ -183,8 +183,8 @@ export function JoinForm({
       // Joined, or another tab of this browser joined first: the snapshot holds `you`.
       if (ack.ok || ack.code === "already_joined") return;
       onJoining(false);
-      if (ack.code === "password_required") {
-        // The PO set a password since this page entered: the form asks for it.
+      if (ack.code === "password_required" || isRestrictionRefusal(ack.code)) {
+        // The PO set a password or a rule since this page entered: the room asks for it.
         await enterRoomAgain();
       } else if (ack.code === "room_full" && (observersCount || role === "observer")) {
         onFull();
@@ -208,7 +208,10 @@ export function JoinForm({
       await enterRoomPassword(code, secret);
     } catch (error) {
       const failed = error instanceof RoomApiError ? error.code : codeOf(error);
-      if (failed === "wrong_password") {
+      if (isRestrictionRefusal(failed)) {
+        // The room's rule goes first: the page shows what it asks.
+        await enterRoomAgain();
+      } else if (failed === "wrong_password") {
         show({ message: errorMessage(t, failed), field: "password" });
       } else if (failed === "busy") {
         // Many people checked a password at once: this one waited its turn, then gave up.
