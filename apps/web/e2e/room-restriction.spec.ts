@@ -18,9 +18,11 @@ interface Person {
 }
 
 let people = 0;
-function person(name: string, email: string, tenant = "tenant-e2e"): Person {
+/** Someone at `domain`, with an address of their own: a retry or a second run meets no other. */
+function person(name: string, domain: string, tenant = "tenant-e2e"): Person {
   people += 1;
-  return { id: `${Date.now()}-${people}`, email, name, tenant, emailVerified: true };
+  const id = `${Date.now()}-${people}`;
+  return { id, email: `person-${id}@${domain}`, name, tenant, emailVerified: true };
 }
 
 const PROVIDER = /^https:\/\/(accounts\.google\.com|login\.microsoftonline\.com)\//;
@@ -69,7 +71,7 @@ test("a guest is asked to sign in, a wrong account is told why, and the right on
   browser,
 }) => {
   const po = await newPerson(browser);
-  const owner = person("Pia Product", "pia@example.com");
+  const owner = person("Pia Product", "example.com");
   const url = await poAtTheTable(po.page, po.context, owner);
   const dialog = await setRule(po.page, "example.com");
   await expect(dialog.getByRole("button", { name: "Remove the rule" })).toBeVisible();
@@ -89,7 +91,7 @@ test("a guest is asked to sign in, a wrong account is told why, and the right on
   ).toEqual([]);
 
   // A wrong account: told which rule failed, and how to try another.
-  await signsInAs(guest.context, person("Otto Other", "otto@elsewhere.example"));
+  await signsInAs(guest.context, person("Otto Other", "elsewhere.example"));
   await signIn(guest.page, "Google");
   await expect(guest.page.locator('[data-room-restricted="account_not_allowed"]')).toContainText(
     "not on one of these domains",
@@ -97,7 +99,7 @@ test("a guest is asked to sign in, a wrong account is told why, and the right on
   expect(guest.page.url()).toBe(url);
 
   // Sign-out then sign-in, with the room as the way back.
-  await signsInAs(guest.context, person("Cleo Colleague", "cleo@example.com"));
+  await signsInAs(guest.context, person("Cleo Colleague", "example.com"));
   await guest.page.getByRole("button", { name: "Sign out" }).click();
   await expect(guest.page.locator('[data-room-restricted="sign_in_required"]')).toBeVisible();
   await signIn(guest.page, "Google");
@@ -116,7 +118,7 @@ test("someone seated stays until they reload, the PO sees a count, and the PO st
   browser,
 }) => {
   const po = await newPerson(browser);
-  const url = await poAtTheTable(po.page, po.context, person("Pia Product", "pia@example.org"));
+  const url = await poAtTheTable(po.page, po.context, person("Pia Product", "example.org"));
 
   const seated = await newPerson(browser);
   await seated.page.goto(url);
