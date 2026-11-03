@@ -1,4 +1,12 @@
-import { type Browser, expect, type Locator, type Page, test } from "./fixtures.ts";
+import {
+  type Browser,
+  type BrowserContext,
+  expect,
+  type Locator,
+  type Page,
+  type Request,
+  test,
+} from "./fixtures.ts";
 import { createRoom, join, newPerson, phone, SHOTS, shoot } from "./support.ts";
 
 // The room password (#31) in real browsers, against the real server and Postgres: the PO
@@ -296,20 +304,81 @@ test("one tab gets in with the password: the other tabs of that browser enter to
   await createRoom(page);
   await join(page, "Ana");
   await setPassword(page, "two tabs here");
-  const eve = await person(browser, page.url());
+  const eve = await newPerson(browser);
+  // Seen once locally: both tabs stayed on "Connecting to the room…". On a failure the test
+  // attaches what each tab's identity bootstrap was doing, so the next one explains itself.
+  const auth = watchAuth(eve.context);
+  const tabs = [eve.page];
   try {
+    await eve.page.goto(page.url());
     const second = await eve.context.newPage();
+    tabs.push(second);
     await second.goto(page.url());
     await expect(passwordField(second)).toBeVisible();
     await expect(passwordField(eve.page)).toBeVisible();
     await joinWithPassword(eve.page, "Eve", "two tabs here");
     // The other tab was told: it entered again, and now sees Eve at the table.
     await expect(passwordField(second)).toHaveCount(0);
-    await expect(seated(second)).toBeVisible();
+    await expect(seated(second)).toBeVisible();  } catch (error) {
+    await attachIdentityTrace(tabs, auth);
+    throw error;
   } finally {
     await eve.context.close();
   }
 });
+
+/** Every `/api/auth/*` request of `context`, with when it was sent and when it ended. */
+function watchAuth(context: BrowserContext) {
+  const started = Date.now();
+  const lines: string[] = [];
+  const note = (what: string, request: Request) => {
+    const { pathname } = new URL(request.url());
+    if (!pathname.startsWith("/api/auth/")) return;
+    let tab = -1;
+    try {
+      tab = context.pages().indexOf(request.frame().page());
+    } catch {
+      // A request without a frame (none expected here) is logged as tab -1.
+    }
+    lines.push(`${Date.now() - started} ms tab ${tab} ${what} ${request.method()} ${pathname}`);
+  };
+  context.on("request", (request) => note("request", request));
+  context.on("requestfinished", (request) => note("finished", request));
+  context.on("requestfailed", (request) =>
+    note(`failed (${request.failure()?.errorText ?? "?"})`, request),
+  );
+  return lines;
+}
+
+/**
+ * What each tab's identity bootstrap holds: the Web Locks (it runs under `pp-identity`), the
+ * page's text (the identity store is not reachable from outside the bundle; what it shows is),
+ * and the auth requests in order.
+ */
+async function attachIdentityTrace(tabs: Page[], auth: string[]) {
+  const states = await Promise.all(
+    tabs.map((tab, i) =>
+      tab
+        .evaluate(async () => {
+          const { held = [], pending = [] } = await navigator.locks.query();
+          const locks = (list: LockInfo[]) => list.map((l) => `${l.name} ${l.mode}`).join(", ");
+          const main = document.querySelector("main") ?? document.body;
+          return [
+            `${document.readyState}; locks held [${locks(held)}], pending [${locks(pending)}]`,
+            `  shows: ${(main.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 160)}`,
+          ];
+        })
+        .then((lines) => [`tab ${i}: ${lines.join("\n")}`])
+        .catch((error: unknown) => [`tab ${i}: not readable (${error})`]),
+    ),
+  );
+  await test.info().attach("identity-trace", {
+    // Plain text, so the list reporter prints it in the run's log as well (its first few hundred
+    // characters: the whole of it is in the HTML report and the result's attachments).
+    contentType: "text/plain",
+    body: ["auth requests:", ...auth.map((line) => `  ${line}`), ...states.flat()].join("\n"),
+  });
+}
 
 test("the header keeps the room's code whole and the lock in sight from 320 to 390 px, in English, French and German", async ({
   page,
