@@ -54,7 +54,7 @@ export function createSocket<ServerToClient extends EventsMap, ClientToServer ex
  * Handshake refusals that pass on their own (the database is back, the limiter's window
  * ends): `connectWhenIdentified` connects again after a backoff, so the status stays
  * `reconnecting`. Socket.IO itself never retries a refusal from a server middleware.
- * `rate_limited` also comes as Engine.IO's 403 before any socket, when one address opened
+ * `rate_limited` also comes as Engine.IO's 403 before any socket, when one session opened
  * too many connections (U2, the server's `HANDSHAKE_LIMIT`).
  */
 export const RETRIED_REFUSALS: ReadonlySet<string> = new Set(["internal", "rate_limited"]);
@@ -212,7 +212,7 @@ export function trackConnection<ServerToClient extends EventsMap, ClientToServer
   // forced (`io server disconnect`): then `active` is false and the status is final.
   const onDisconnect = () => onStatus(socket.active ? "reconnecting" : "offline");
   // A refusal `connectWhenIdentified` retries is not final either, a middleware's or Engine.IO's
-  // 403 (too many handshakes from one address, U2).
+  // 403 (too many handshakes from one session, U2).
   const onConnectError = (error: Error) =>
     onStatus(socket.active || RETRIED_REFUSALS.has(refusalOf(error)) ? "reconnecting" : "offline");
   const onReconnectAttempt = () => onStatus("reconnecting");

@@ -83,7 +83,7 @@ describe("createSocket", () => {
     fire(socket, "connect_error", new Error("internal"));
     fire(socket, "connect_error", new Error("rate_limited"));
     fire(socket, "connect_error", new Error("unauthenticated"));
-    // Too many handshakes from one address (U2): Engine.IO's 403, before any socket.
+    // Too many handshakes from one session (U2): Engine.IO's 403, before any socket.
     fire(socket, "connect_error", engineRefusal(403, '{"code":4,"message":"rate_limited"}'));
     expect(statuses).toEqual(["reconnecting", "reconnecting", "offline", "reconnecting"]);
     stop();
@@ -215,7 +215,7 @@ describe("connectWhenIdentified", () => {
       expect(delay).toHaveBeenLastCalledWith(2, 7);
       await vi.advanceTimersByTimeAsync(4000);
       expect(connect).toHaveBeenCalledTimes(4);
-      // Too many handshakes from one address (U2): Engine.IO's 403 is retried the same way.
+      // Too many handshakes from one session (U2): Engine.IO's 403 is retried the same way.
       fire(socket, "connect_error", engineRefusal(403, '{"code":4,"message":"rate_limited"}'));
       expect(delay).toHaveBeenLastCalledWith(3, undefined);
       await vi.advanceTimersByTimeAsync(8000);

@@ -469,7 +469,7 @@ nothing about Redis is loaded or opened.
   `curl -sI https://your-host/` that each header appears once.
 - **Limits**: room creation, sign-in, header reads and password checks are limited per
   client address, wrong passwords also per person and room, socket messages per
-  person, and socket connections per address, roomy enough for a redeploy's reconnects
+  person, and socket connections per session, roomy enough for a redeploy's reconnects
   (the full table is in
   [architecture, section 8](docs/02-architecture.md#8-rooms-access-and-security)). Set
   `TRUST_PROXY` to the number of proxies in front: too low, and every visitor shares one
