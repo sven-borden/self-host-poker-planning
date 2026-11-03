@@ -6,6 +6,7 @@ import {
   connectorGaps,
   connectorNames,
   loadConfig,
+  redisOnlyGaps,
   socialProviderIds,
 } from "./config.ts";
 import { SECRET, VALID_ENV } from "./test-support.ts";
@@ -226,6 +227,19 @@ describe("loadConfig", () => {
     expect(names({ ...on, ...vault })).toEqual([]);
     expect(names(on)).toEqual([]);
     expect(connectorGaps(loadConfig({ ...VALID_ENV, ...on, ...vault }))).toEqual([]);
+  });
+
+  it("names the scale-out settings that change nothing without REDIS_URL (U4)", () => {
+    const gaps = (env: Record<string, string>) =>
+      redisOnlyGaps(loadConfig({ ...VALID_ENV, ...env }));
+    const redis = { REDIS_URL: "redis://redis:6379" };
+    expect(gaps({})).toEqual([]);
+    expect(gaps({ REDIS_KEY_PREFIX: "pp", STICKY_SESSIONS: "false" })).toEqual([]);
+    expect(gaps({ REDIS_KEY_PREFIX: "team_b", STICKY_SESSIONS: "1" })).toEqual([
+      "REDIS_KEY_PREFIX",
+      "STICKY_SESSIONS",
+    ]);
+    expect(gaps({ ...redis, REDIS_KEY_PREFIX: "team_b", STICKY_SESSIONS: "true" })).toEqual([]);
   });
 
   it.each(["true", "ON", "On", "1", "yes", "off", " on", ""])(

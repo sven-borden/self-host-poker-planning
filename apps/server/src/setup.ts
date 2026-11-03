@@ -15,7 +15,13 @@ import {
   sessionChecker,
   sessionMiddleware,
 } from "./auth.ts";
-import { azureDevOpsGaps, type Config, connectorGaps, connectorNames } from "./config.ts";
+import {
+  azureDevOpsGaps,
+  type Config,
+  connectorGaps,
+  connectorNames,
+  redisOnlyGaps,
+} from "./config.ts";
 import { createConnectorAccess } from "./connectors/access.ts";
 import { createAzureConnector } from "./connectors/azure-devops.ts";
 import { createJiraConnector } from "./connectors/jira.ts";
@@ -78,6 +84,11 @@ export async function setupServer(
   const azureMissing = azureDevOpsGaps(config);
   if (azureMissing.length > 0) {
     logger.warn({ missing: azureMissing }, "azure devops connector off: variables missing");
+  }
+  // So are scale-out settings without the Redis they belong to.
+  const redisOnly = redisOnlyGaps(config);
+  if (redisOnly.length > 0) {
+    logger.warn({ unused: redisOnly }, "scale-out settings ignored: REDIS_URL is not set");
   }
   const opened = await setupDatabase(config, logger, signal);
   const { database } = opened;

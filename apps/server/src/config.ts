@@ -141,6 +141,20 @@ export const azureDevOpsGaps = (
   config: Pick<Config, "azureDevOps" | "vault" | "socialProviders">,
 ): readonly string[] => (config.azureDevOps ? accountGaps(config) : []);
 
+/**
+ * The scale-out variables set although `REDIS_URL` is not, so they change nothing (U4): a
+ * prefix other than the default, sticky sessions on. Names only, never a value.
+ */
+export const redisOnlyGaps = (
+  config: Pick<Config, "redisUrl" | "redisKeyPrefix" | "stickySessions">,
+): readonly string[] =>
+  config.redisUrl !== undefined
+    ? []
+    : [
+        ...(config.redisKeyPrefix === "pp" ? [] : ["REDIS_KEY_PREFIX"]),
+        ...(config.stickySessions ? ["STICKY_SESSIONS"] : []),
+      ];
+
 /** The providers `config` has keys for, in the order the page shows them. */
 export function socialProviderIds(config: Pick<Config, "socialProviders">): SignInProvider[] {
   return SIGN_IN_PROVIDERS.filter((id) => config.socialProviders[id] !== undefined);
