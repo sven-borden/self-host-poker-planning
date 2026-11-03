@@ -874,11 +874,7 @@ describe("the deck (#26)", () => {
       client(cy),
     ];
     const [first, second, third] = codes;
-    await Promise.all([
-      enterAll(first, a1, c1),
-      enterAll(second, a2, c2),
-      enterAll(third, a3, c3),
-    ]);
+    await Promise.all([enterAll(first, a1, c1), enterAll(second, a2, c2), enterAll(third, a3, c3)]);
     const tshirt = { deck: { kind: "preset", id: "tshirt" } };
     const before = Date.now();
     expect((await a1.cmd("updateSettings", { patch: tshirt })).ok).toBe(true);
