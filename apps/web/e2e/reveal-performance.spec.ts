@@ -18,15 +18,19 @@ import { createRoom, type Guest, guestsJoin, handCard, join, phone, sameUser } f
 // The sound is on (#44), the page's first tap starting it: the worst case has sixteen flicks
 // and a chord to lay out as well.
 
-/** DevTools' "Mid-tier mobile" CPU, on the desktop that `REFERENCE_MS` was measured on. */
+/**
+ * A mid-range phone is four times slower than the desktop that `REFERENCE_MS` was measured on
+ * (DevTools' "Mid-tier mobile", taken at its word).
+ */
 const MID_RANGE_RATE = 4;
 /**
  * What `measure` takes on that desktop unthrottled: Sven's, in Edge 156, in this spec's page (a
- * Pixel 7 at a table of sixteen), as the spec logs it. The median of 33 readings in 17 runs on
- * 2026-11-03: 2.4 ms (2.4 to 2.9, and 3.9 to 5.1 while another worktree's tests ran). #43's
- * reading, 3.2 ms, was a single best of ten.
+ * Pixel 7 at a table of sixteen), as the spec logs it, with the benchmark isolated from the
+ * app's CSS. The median of 16 readings in 8 runs on 2026-11-04: 1.8 ms (1.7 to 2.0). Before the
+ * isolation, in the app's styles, it read 2.4 ms (2026-11-03);
+ * #43's 3.2 ms was a single best of ten.
  */
-const REFERENCE_MS = 2.4;
+const REFERENCE_MS = 1.8;
 /** The mid-range phone: what `measure` takes there, which the throttle is set to match. */
 const PHONE_MS = MID_RANGE_RATE * REFERENCE_MS;
 /** Close enough to the phone to stop calibrating. */
@@ -43,20 +47,34 @@ interface Task {
   duration: number;
 }
 
-/** How fast this machine draws, in ms: the best of ten rounds of building and laying out. */
+/**
+ * How fast this machine draws, in ms: the best of ten rounds of building and laying out. The
+ * rows sit in a shadow root, behind a host reset with `all: initial`, styled by a sheet of their
+ * own in system fonts: none of the app's rules or fonts reach them. A change that slows all style
+ * or layout in the app (a costly global selector, a heavier font) must slow the reveal and fail
+ * it, not slow the benchmark too and so lower the rate to make up for it. Styles go through the
+ * CSSOM and `adoptedStyleSheets`, which the Content Security Policy allows.
+ */
 const benchmark = (page: Page) =>
   page.evaluate(() => {
+    const host = document.createElement("div");
+    host.style.cssText = "all:initial;position:fixed;left:-10000px;width:300px;visibility:hidden";
+    const root = host.attachShadow({ mode: "open" });
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(".b{font:16px/1.5 system-ui,sans-serif}.r{display:flex;gap:8px}");
+    root.adoptedStyleSheets = [sheet];
     const box = document.createElement("div");
-    box.style.cssText = "position:fixed;left:-10000px;width:300px;visibility:hidden";
-    document.body.append(box);
+    box.className = "b";
+    root.append(box);
+    document.body.append(host);
     let best = Number.POSITIVE_INFINITY;
     for (let round = 0; round < 10; round += 1) {
       const start = performance.now();
-      box.innerHTML = '<div class="flex gap-2"><span>5</span><b>voted</b></div>'.repeat(200);
+      box.innerHTML = '<div class="r"><span>5</span><b>voted</b></div>'.repeat(200);
       void box.offsetHeight;
       best = Math.min(best, performance.now() - start);
     }
-    box.remove();
+    host.remove();
     return best;
   });
 
@@ -101,28 +119,51 @@ const throttle = (cdp: CDPSession, rate: number) =>
 const between = (rate: number) => Math.min(MID_RANGE_RATE, Math.max(1, rate));
 
 /**
+ * Below this rate a step's slope is mostly noise: `took − speed` is a few tenths of a ms over a
+ * small `rate − 1`. Such a step corrects the rate by ratio instead.
+ */
+const SLOPE_FROM_RATE = 1.5;
+
+const nearPhone = (took: number) => Math.abs(took - PHONE_MS) <= PHONE_MS * PHONE_TOLERANCE;
+
+/**
  * Sets the throttle so that `measure` takes `PHONE_MS`, never above 4x, and leaves it on. The
  * first guess takes the throttle at its word, from the unthrottled `speed`. Then each benchmark
  * under it gives the time one step of rate adds (`speed + slope × (rate − 1)`: on Windows the
  * slope held at about twice `speed` from 2x to 4x, where an exact throttle has `speed`), and the
- * median slope sets the next rate, three times at most. Returns the rate and each step, for the log.
+ * median slope sets the next rate, three times at most. A rate the loop ends on without having
+ * measured it is measured once more, so `reached` is always what the reveal runs at. Returns the
+ * rate, that reading and each step, for the log.
  */
 async function calibrate(page: Page, cdp: CDPSession, speed: number) {
   let rate = between((MID_RANGE_RATE * REFERENCE_MS) / speed);
   const steps: string[] = [];
   const slopes: number[] = [];
   // A machine as slow as the phone gets no throttle, and has nothing to calibrate.
+  let reached = speed;
+  let measured = rate === 1;
   for (let step = 0; step < 3 && rate > 1; step += 1) {
     await throttle(cdp, rate);
     const took = await measure(page);
     steps.push(`${rate.toFixed(1)}x ${took.toFixed(1)} ms`);
-    slopes.push(Math.max(0.01, (took - speed) / (rate - 1)));
-    const next = between(1 + (PHONE_MS - speed) / median(slopes));
-    if (Math.abs(took - PHONE_MS) <= PHONE_MS * PHONE_TOLERANCE && step > 0) break;
+    reached = took;
+    measured = true;
+    if (rate >= SLOPE_FROM_RATE) slopes.push(Math.max(0.01, (took - speed) / (rate - 1)));
+    if (nearPhone(took) && step > 0) break;
+    const next = between(
+      slopes.length > 0 ? 1 + (PHONE_MS - speed) / median(slopes) : (rate * PHONE_MS) / took,
+    );
+    // Capped at 4x and already measured there: nothing left to correct.
+    if (next === rate) break;
     rate = next;
+    measured = false;
   }
   await throttle(cdp, rate);
-  return { rate, steps };
+  if (!measured) {
+    reached = await measure(page);
+    steps.push(`${rate.toFixed(1)}x ${reached.toFixed(1)} ms`);
+  }
+  return { rate, reached, steps };
 }
 
 const NAMES = "Ben Cleo Dan Eve Finn Gia Hugo Iris Jon Kim Leo Mia Noa Omar Pia".split(" ");
@@ -166,7 +207,15 @@ for (const anonymous of [false, true]) {
       if (!card) throw new Error("no card to play");
       const speed = await measure(page);
       const cdp = await device.context.newCDPSession(page);
-      const { rate, steps } = await calibrate(page, cdp, speed);
+      const { rate, reached, steps } = await calibrate(page, cdp, speed);
+      // In CI the test never claims a phone it did not run: a throttle that stayed under 4x
+      // and still left the benchmark well below the phone's tested a faster phone.
+      if (process.env.CI && rate < MID_RANGE_RATE) {
+        expect(
+          reached,
+          `calibrated to ${rate.toFixed(1)}x (${steps.join(", ")}), short of the phone's ${PHONE_MS.toFixed(1)} ms`,
+        ).toBeGreaterThanOrEqual(PHONE_MS * (1 - PHONE_TOLERANCE));
+      }
       const from = await page.evaluate(() => performance.now());
       await page.touchscreen.tap(card.x + card.width / 2, card.y + card.height / 2);
       await page.waitForTimeout(SETTLED_MS);
