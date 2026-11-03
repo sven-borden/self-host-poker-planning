@@ -1093,6 +1093,7 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
     "reconnecting" meanwhile. Nothing is lost: the room is in Postgres, and the client sends
     its commands again once it is back.
   - An office behind one NAT, several rooms of 16 reconnecting together: a few dozen.
+
   A loop gets 600, then 10 lookups a second, and holds at most about 650 connections without a
   socket. A constant, not a setting: a deployment too big for it behind one address needs
   `TRUST_PROXY` set right, which every other per-address limit needs too. A refusal logs one
