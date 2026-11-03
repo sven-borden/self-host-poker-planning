@@ -112,6 +112,9 @@ test.describe("with provider keys", () => {
     await page.goto(ACCOUNT);
     await expect(page.locator("[data-account-room]")).toHaveCount(1);
     await expect(page.getByLabel("Who takes Handed Over")).toHaveValue("");
+    const guestMade = page.waitForResponse(
+      (response) => response.url().endsWith("/api/auth/sign-in/anonymous") && response.ok(),
+    );
     await confirmDeletion(page);
     await expect(page.getByRole("heading", { name: "Your account is deleted" })).toBeFocused();
     await expect(page.getByText(/This browser is a new guest/)).toBeVisible();
@@ -119,6 +122,8 @@ test.describe("with provider keys", () => {
     await expect(other.page.getByRole("list", { name: "People at the table" })).not.toContainText(
       "Ada",
     );
+    // The page makes the new guest after it has shown the ending: read the session once it has.
+    await guestMade;
     const session = await (await page.request.get(`${SIGN_IN_BASE}/api/auth/get-session`)).json();
     expect((session as { user: { isAnonymous: boolean } }).user.isAnonymous).toBe(true);
     await context.close();
