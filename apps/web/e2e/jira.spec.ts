@@ -188,9 +188,11 @@ test("a write that fails keeps the round, shows beside it and can be tried again
   const before = (await fakeState()).writes.length;
   await failed.getByRole("button", { name: "Try again" }).click();
   await expect(failed).toHaveCount(0);
-  // The line goes as the retry starts; the stand-in records the write when it lands.
-  await expect.poll(async () => (await fakeState()).writes.length).toBe(before + 1);
+  // The line goes as the retry starts. The server answers the page only after the stand-in has
+  // recorded the write, so once the page says it is in, the stand-in holds every write it got.
+  await expect(page.locator("[data-write-line=written]")).toHaveText("ABC-1: 8 is in Jira.");
   const state = await fakeState();
+  expect(state.writes).toHaveLength(before + 1);
   expect(state.writes.at(-1)).toMatchObject({
     issue: "10001",
     body: { fields: { customfield_10016: 8 } },
