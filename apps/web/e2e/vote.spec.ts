@@ -5,7 +5,6 @@ import {
   join,
   newGuest,
   newPerson,
-  ownAddress,
   recordFrames,
   SHOTS,
   sameUser,
@@ -29,10 +28,6 @@ test.beforeAll(() => {
     throw new Error("CI must run the vote tests: set DATABASE_URL");
   }
 });
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
-});
-
 const hand = (page: Page) => page.getByRole("toolbar", { name: "Your cards" });
 const handCard = (page: Page, label: string) =>
   hand(page).getByRole("button", { name: label, exact: true });

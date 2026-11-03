@@ -7,7 +7,6 @@ import {
   newGuest,
   newPerson,
   observerRow,
-  ownAddress,
   phone,
   sameUser,
   seats,
@@ -33,10 +32,6 @@ test.beforeAll(() => {
     throw new Error("CI must run the PO's powers: set DATABASE_URL");
   }
 });
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
-});
-
 const live = (page: Page) => page.locator("[data-table-live]");
 const popover = (page: Page) => page.getByRole("dialog");
 /** A person's button, on a seat or in the observers' row, by the name it starts with. */

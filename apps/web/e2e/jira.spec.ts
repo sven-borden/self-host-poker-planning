@@ -109,8 +109,7 @@ async function estimateNext(page: Page, start: string, card: string) {
   await page.locator("[data-record-final]").click();
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
+test.beforeEach(async () => {
   await control({ sites: [ACME], issues: ISSUES });
 });
 

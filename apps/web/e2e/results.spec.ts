@@ -8,7 +8,6 @@ import {
   join,
   newGuest,
   newPerson,
-  ownAddress,
   recordAnimations,
   recordFrames,
   SHOTS,
@@ -35,10 +34,6 @@ test.beforeAll(() => {
     throw new Error("CI must run the results tests: set DATABASE_URL");
   }
 });
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
-});
-
 const hand = (page: Page) => page.getByRole("toolbar", { name: "Your cards" });
 const handCard = (page: Page, label: string) =>
   hand(page).getByRole("button", { name: label, exact: true });

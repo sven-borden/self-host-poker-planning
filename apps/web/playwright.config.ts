@@ -33,9 +33,10 @@ const env = {
   BASE_URL: `http://localhost:${PORT}`,
   BETTER_AUTH_SECRET: "e2e-fake-secret-not-used-anywhere-else-0123456789",
   STATIC_DIR: fileURLToPath(new URL("./dist", import.meta.url)),
-  // The header a test sends is the client address: e2e/join.spec.ts gives each person
-  // their own, to stay under the per-address room-creation and sign-in limits. A page
-  // sends none, so the socket's address counts.
+  // The header a test sends is the client address: each test's default context gets its own
+  // (e2e/fixtures.ts), and `newPerson` one per person (e2e/support.ts), to stay under the
+  // per-address room-creation and sign-in limits. A context made without one counts as the
+  // socket's address, which every such context in the run shares.
   TRUST_PROXY: "1",
   LOG_LEVEL: "warn",
 };

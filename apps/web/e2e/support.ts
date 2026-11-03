@@ -42,7 +42,8 @@ let addresses = 0;
  * A client address of its own, as an X-Forwarded-For header: the e2e server trusts one
  * proxy (playwright.config.ts), so each person here counts alone against the server's
  * per-address limits (20 rooms in 10 minutes, 60 sign-ins a minute), which the whole
- * suite from one machine would otherwise share.
+ * suite from one machine would otherwise share. The default context gets one per test
+ * (e2e/fixtures.ts); a context a test makes itself takes one here (`newPerson`, `phone`).
  */
 export function ownAddress(): Record<string, string> {
   const n = ++addresses;

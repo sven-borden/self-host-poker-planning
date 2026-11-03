@@ -1,7 +1,7 @@
 import { scan } from "./a11y.ts";
 import { type BrowserContext, expect, type Page, test } from "./fixtures.ts";
 import { AZURE_FAKE_ORIGIN, SIGN_IN_BASE, SIGN_IN_FAKE_ORIGIN } from "./signed-in.ts";
-import { handCard, newPerson, ownAddress, ROOM_PATH, recordFrames } from "./support.ts";
+import { handCard, newPerson, ROOM_PATH, recordFrames } from "./support.ts";
 
 // The Azure DevOps connector (#55, ADR-031) through the page, against the real server, under the
 // production headers. The server runs `https://dev.azure.com/…` and a stand-in answers in its
@@ -118,8 +118,7 @@ async function estimateNext(page: Page, start: string, card: string) {
   await page.locator("[data-record-final]").click();
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
+test.beforeEach(async () => {
   await control({
     reset: true,
     tokens: { [TOKEN]: { organizations: ["fabrikam"], scopes: ["vso.work_write"] } },

@@ -1,10 +1,16 @@
 import { type BrowserContext, test as base, type Page } from "@playwright/test";
+import { ownAddress } from "./support.ts";
 
 // Every spec imports `test` from here (#36): it fails a test when any page it opened, in
 // the default context or in one the test made itself, broke the Content Security Policy
 // or the Permissions-Policy, or threw an uncaught error. The server serves the built app
 // with its production headers (playwright.config.ts), so a policy that breaks the page
 // fails here, not on poker.borden.ch.
+//
+// It also gives the default context (the `page` and `context` fixtures) a client address of its
+// own per test, as `newPerson` does for the contexts a test makes: the server's per-address
+// limits (20 rooms in 10 minutes, 60 sign-ins a minute) then count each test alone, and a fast
+// run on one machine cannot spend them for the whole suite.
 
 export * from "@playwright/test";
 
@@ -32,6 +38,9 @@ export interface SecurityGuardOptions {
 }
 
 export const test = base.extend<SecurityGuardOptions & { policyProblems: string[] }>({
+  extraHTTPHeaders: async ({ extraHTTPHeaders }, use) => {
+    await use({ ...extraHTTPHeaders, ...ownAddress() });
+  },
   policyViolationsExpected: [false, { option: true }],
   /** What the guard saw so far: a test that expects a violation reads it here. */
   policyProblems: [

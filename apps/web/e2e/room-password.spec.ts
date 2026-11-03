@@ -1,5 +1,5 @@
 import { type Browser, expect, type Locator, type Page, test } from "./fixtures.ts";
-import { createRoom, join, newPerson, ownAddress, phone, SHOTS, shoot } from "./support.ts";
+import { createRoom, join, newPerson, phone, SHOTS, shoot } from "./support.ts";
 
 // The room password (#31) in real browsers, against the real server and Postgres: the PO
 // sets it and someone already in the room stays; a newcomer types a wrong one, then the
@@ -16,10 +16,6 @@ test.skip(
 test.beforeAll(() => {
   if (!process.env.DATABASE_URL) throw new Error("CI must run the room password: set DATABASE_URL");
 });
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
-});
-
 const live = (page: Page) => page.locator("[data-table-live]");
 const lock = (page: Page) => page.getByRole("img", { name: "This room has a password." });
 const passwordField = (page: Page) => page.getByLabel("Password", { exact: true });

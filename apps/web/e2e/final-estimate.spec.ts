@@ -9,7 +9,6 @@ import {
   historyOf,
   join,
   newPerson,
-  ownAddress,
   type Phone,
   packetsIn,
   phone,
@@ -42,10 +41,6 @@ test.beforeAll(() => {
     throw new Error("CI must run the final estimate tests: set DATABASE_URL");
   }
 });
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
-});
-
 const JIRA = "https://acme.atlassian.net/browse/PAY-482";
 
 const tableLive = (page: Page) => page.locator("[data-table-live]");
