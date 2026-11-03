@@ -97,11 +97,23 @@ function parseAck(value: string): CmdAck | undefined {
   }
 }
 
-/** `promise`, or a rejection once `ms` passed without an answer. */
+/**
+ * `promise`, or a rejection (`Error("timeout")`) once `ms` passed without an answer. The
+ * rejection waits one more turn of the event loop (`setImmediate`, after the poll phase): when
+ * this process's own loop was blocked past `ms` (a long GC, a heavy request), Node runs the
+ * timers before it reads the sockets, so a reply already waiting in the socket would otherwise
+ * lose to the timer although the other side answered in time.
+ */
 export function within<T>(promise: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let immediate: ReturnType<typeof setImmediate> | undefined;
   const timedOut = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("timeout")), ms);
+    timer = setTimeout(() => {
+      immediate = setImmediate(() => reject(new Error("timeout")));
+    }, ms);
   });
-  return Promise.race([promise, timedOut]).finally(() => clearTimeout(timer));
+  return Promise.race([promise, timedOut]).finally(() => {
+    clearTimeout(timer);
+    if (immediate) clearImmediate(immediate);
+  });
 }

@@ -1,3 +1,4 @@
+import net from "node:net";
 import { describe, expect, it } from "vitest";
 import {
   ACK_CLAIM_MS,
@@ -91,5 +92,45 @@ describe("redisAcks (#39)", () => {
     };
     await expect(redisAcks(hung, "pp", 20).claim("k")).rejects.toThrow("timeout");
     await expect(within(Promise.resolve(3), 20)).resolves.toBe(3);
+  });
+
+  it("takes an answer that came while this process's own loop was blocked past the timeout", async () => {
+    // The other side answered in time, but this loop was busy: when it wakes, Node runs the
+    // timers before it reads the socket, so the timeout must wait for the read.
+    let received: () => void = () => {};
+    const server = net.createServer((socket) => {
+      socket.on("error", () => {});
+      socket.on("data", () => {
+        socket.write("pong");
+        received();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as net.AddressInfo;
+    const client = net.connect(port, "127.0.0.1");
+    client.on("error", () => {});
+    await new Promise<void>((resolve) => client.once("connect", resolve));
+    try {
+      for (let turn = 0; turn < 3; turn++) {
+        const reply = new Promise<string>((resolve) =>
+          client.once("data", (data) => resolve(String(data))),
+        );
+        const answer = within(reply, 20).catch((error: Error) => error.message);
+        const got = new Promise<void>((resolve) => {
+          received = resolve;
+        });
+        client.write("ping");
+        await got;
+        // The answer is on its way; block this loop past the timeout.
+        const until = Date.now() + 100;
+        while (Date.now() < until) {
+          // Busy, as in a long GC or a heavy request.
+        }
+        expect(await answer, `turn ${turn}`).toBe("pong");
+      }
+    } finally {
+      client.destroy();
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });
