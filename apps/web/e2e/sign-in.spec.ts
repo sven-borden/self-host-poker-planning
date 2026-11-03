@@ -224,10 +224,17 @@ test.describe("with provider keys", () => {
       }).observe(document.documentElement, { childList: true, subtree: true });
     });
 
-    // The room's row stays locked, so the commit waits as on a slow database, until the other
-    // tab has waited 3 s from `signedIn` ("Reconnecting"): the callback answers that much later.
-    // Released by the test, not after a fixed time, as Edge shows "Reconnecting" about 1.6 s later
-    // than Chromium; still within the callback's 5 s (`MOVE_WAIT_MS`).
+    // The room's row stays locked, so the commit waits as on a slow database, until 3 s after the
+    // provider's callback reached the server, which starts the move and tells the other tab
+    // `signedIn`: the callback answers that much later. The test releases it, counting from the
+    // callback, not from the click (Edge reaches the callback about 1.6 s later than Chromium) nor
+    // from "Reconnecting" (a loaded machine shows it seconds late): the move must end within the
+    // callback's 5 s (`MOVE_WAIT_MS`), or the page lands and the other tab rightly reloads.
+    let callbackAt = 0;
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname.startsWith("/api/auth/callback/"))
+        callbackAt = Date.now();
+    });
     const release = await holdInTransaction("select 1 from room where code = $1 for update", [
       code,
     ]);
@@ -235,8 +242,9 @@ test.describe("with provider keys", () => {
     try {
       await buttonOf(page, "Sign in with Google").click();
       await expect(other.getByText(/Reconnecting/).first()).toBeVisible();
-      // Past the old 2 s: still the guest's page, reading nothing.
-      await other.waitForTimeout(3_000);
+      await expect.poll(() => callbackAt).toBeGreaterThan(0);
+      // Past the old 2 s after `signedIn`: still the guest's page, reading nothing.
+      await other.waitForTimeout(Math.max(0, callbackAt + 3_000 - Date.now()));
       expect(asked).toEqual([]);
       expect(
         await other.evaluate(() => (window as unknown as { seen: { forms: number } }).seen.forms),
