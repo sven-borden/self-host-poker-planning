@@ -319,7 +319,8 @@ test("one tab gets in with the password: the other tabs of that browser enter to
     await joinWithPassword(eve.page, "Eve", "two tabs here");
     // The other tab was told: it entered again, and now sees Eve at the table.
     await expect(passwordField(second)).toHaveCount(0);
-    await expect(seated(second)).toBeVisible();  } catch (error) {
+    await expect(seated(second)).toBeVisible();
+  } catch (error) {
     await attachIdentityTrace(tabs, auth);
     throw error;
   } finally {
