@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import {
   type ClientToServerEvents,
@@ -8,12 +8,10 @@ import {
   type ServerToClientEvents,
 } from "@pp/protocol";
 import { io as connect, type Socket } from "socket.io-client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CONNECT_TIMEOUT_MS,
   HANDSHAKE_LIMIT,
-  HANDSHAKE_WARN_EVERY_MS,
-  hasCookie,
   MAX_PAYLOAD_BYTES,
   MAX_SOCKETS_PER_USER,
   type SocketMiddleware,
@@ -143,6 +141,22 @@ function connected(socket: Client): Promise<void> {
 
 const raw = (socket: Client) => socket as unknown as RawClient;
 const ENTER = { code: "AbCdEf1234", protocol: PROTOCOL_VERSION };
+
+/** The session cookie's name on http (`cookieNaming`). */
+const COOKIE = "pp.session_token";
+
+/** A session cookie for `token`, signed as Better Auth signs it (`session-cookie.ts`). */
+function signed(token: string): { cookie: string } {
+  const signature = createHmac("sha256", testConfig().betterAuthSecret)
+    .update(token)
+    .digest("base64");
+  return { cookie: `${COOKIE}=${encodeURIComponent(`${token}.${signature}`)}` };
+}
+
+/** `token` with a signature of the right shape that does not hold. */
+function forged(token: string): { cookie: string } {
+  return { cookie: `${COOKIE}=${encodeURIComponent(`${token}.${"A".repeat(43)}=`)}` };
+}
 
 describe("Socket.IO", () => {
   it("answers enter with a typed room_not_found ack", async () => {
@@ -470,33 +484,25 @@ describe("the Origin check", () => {
 });
 
 describe("connections that are nobody's (#36)", () => {
-  const COOKIE = "pp.session_token";
   const refuse: SocketMiddleware = (_socket, next) => next(new Error("unauthenticated"));
 
-  it("reads the cookie's name, not a value or a longer name", () => {
-    expect(hasCookie(`a=1; ${COOKIE}=x.y`, COOKIE)).toBe(true);
-    expect(hasCookie(`${COOKIE}=`, COOKIE)).toBe(true);
-    expect(hasCookie(`x${COOKIE}=1; a=${COOKIE}=2`, COOKIE)).toBe(false);
-    expect(hasCookie(`${COOKIE}_data=1`, COOKIE)).toBe(false);
-    expect(hasCookie(undefined, COOKIE)).toBe(false);
-  });
-
-  it("refuses a handshake without the session cookie before the upgrade, on both transports", async () => {
+  it("refuses a handshake without a signed session cookie before the upgrade, on both transports", async () => {
     const { port, server } = await start({ sessionCookie: COOKIE });
     expect(await handshake(port, "websocket", undefined)).toBe(400);
     expect(await handshake(port, "polling", undefined)).toBe(403);
     expect(await handshake(port, "polling", undefined, { cookie: "other=1" })).toBe(403);
-    expect(await handshake(port, "websocket", undefined, { cookie: `${COOKIE}=x` })).toBe(101);
+    // The cookie's name is public: a value Better Auth did not sign is refused just the same.
+    expect(await handshake(port, "polling", undefined, { cookie: `${COOKIE}=x` })).toBe(403);
+    expect(await handshake(port, "websocket", undefined, forged("ada"))).toBe(400);
+    expect(await handshake(port, "websocket", undefined, signed("ada"))).toBe(101);
     // The Origin check still comes first.
-    expect(
-      await handshake(port, "polling", "https://evil.example", { cookie: `${COOKIE}=x` }),
-    ).toBe(403);
+    expect(await handshake(port, "polling", "https://evil.example", signed("ada"))).toBe(403);
     expect(server.io.engine.clientsCount).toBe(0);
   });
 
   it("closes the connection as soon as the session middleware refused its socket", async () => {
     const { port, server } = await start({ sessionCookie: COOKIE, socketMiddleware: [refuse] });
-    const bare = bareSocket(port, { cookie: `${COOKIE}=junk` });
+    const bare = bareSocket(port, signed("expired"));
     expect(await bare.opened).toBe(true);
     bare.ws.send("40");
     expect(await within(bare.closed, 1_000)).toBeLessThan(1_000);
@@ -518,142 +524,298 @@ describe("connections that are nobody's (#36)", () => {
   }, 10_000);
 });
 
-describe("handshakes per address (U2)", () => {
-  const COOKIE = "pp.session_token";
-  const withCookie = { cookie: `${COOKIE}=x` };
-
-  /** Stands in for the session lookup, the first thing a handshake costs: counts who reach it. */
-  function lookups() {
+describe("handshakes per session (U2)", () => {
+  /**
+   * Stands in for the session lookup, the first thing a handshake costs: counts who reach it.
+   * `ms` makes it take that long, as a query does.
+   */
+  function lookups(ms = 0) {
     const reached = { count: 0 };
     const middleware: SocketMiddleware = (_socket, next) => {
       reached.count += 1;
-      next();
+      if (ms === 0) next();
+      else setTimeout(() => next(), ms);
     };
     return { reached, middleware };
   }
 
-  /** A polling handshake's status and body: the web app reads the 403's message (`refusalOf`). */
-  function poll(port: number, headers: Record<string, string>): Promise<[number, string]> {
+  /**
+   * An Engine.IO polling request's status and body: the web app reads the 403's message
+   * (`refusalOf`), which Node's XHR hides. Without `sid`, a handshake.
+   */
+  function poll(
+    port: number,
+    headers: Record<string, string>,
+    { sid, body }: { sid?: string; body?: string } = {},
+  ): Promise<[number, string]> {
     return new Promise((resolve, reject) => {
       const request = httpRequest({
         host: "localhost",
         port,
-        path: "/socket.io/?EIO=4&transport=polling",
-        headers,
+        method: body === undefined ? "GET" : "POST",
+        path: `/socket.io/?EIO=4&transport=polling${sid === undefined ? "" : `&sid=${sid}`}`,
+        headers: body === undefined ? headers : { ...headers, "content-type": "text/plain" },
         agent: false,
       });
       request.once("response", (response) => {
-        let body = "";
+        let text = "";
         response.setEncoding("utf8");
         response.on("data", (chunk: string) => {
-          body += chunk;
+          text += chunk;
         });
-        response.once("end", () => resolve([response.statusCode ?? 0, body]));
+        response.once("end", () => resolve([response.statusCode ?? 0, text]));
       });
       request.once("error", reject);
-      request.end();
+      request.end(body);
     });
   }
 
-  it("refuses a loop from one address before the session is looked up, with a retryable 403", async () => {
+  /** Lines about refused handshakes. */
+  const refusals = (logs: LogCollector) =>
+    logs.lines.filter((line) => String(line.msg).startsWith("socket handshakes refused"));
+
+  it("holds a session to 30 handshakes at once, then one a second", () => {
+    expect(HANDSHAKE_LIMIT).toEqual({ perSecond: 1, burst: 30 });
+  });
+
+  it("refuses a loop on one session before the session is looked up, with a retryable 403, and logs it once a period", async () => {
     const lookup = lookups();
+    const warnEveryMs = 400;
     const { port, server, client, logs } = await start({
       sessionCookie: COOKIE,
       socketMiddleware: [lookup.middleware],
-      realtimeLimits: { handshakeLimit: { perSecond: 0.001, burst: 5 } },
+      realtimeLimits: {
+        handshakeLimit: { perSecond: 0.001, burst: 5 },
+        handshakeWarnEveryMs: warnEveryMs,
+      },
     });
-    // A handshake without the cookie is refused for that, and spends nothing.
-    for (let i = 0; i < 10; i++) expect(await handshake(port, "polling", undefined)).toBe(403);
-
-    const loop = Array.from({ length: 12 }, () => client(["polling"], withCookie));
+    const token = randomBytes(24).toString("base64url");
+    const loop = Array.from({ length: 12 }, () => client(["polling"], signed(token)));
     const outcomes = await Promise.allSettled(loop.map(connected));
     const refused = outcomes.flatMap((o) => (o.status === "rejected" ? [o.reason] : []));
     expect(outcomes.length - refused.length).toBe(5);
     expect(refused.map((error) => (error as { description?: unknown }).description)).toEqual(
       Array.from({ length: 7 }, () => 403),
     );
-    // The body the web app reads (Node's XHR hides it), and the upgrade, refused before it happens.
-    expect(await poll(port, withCookie)).toEqual([403, '{"code":4,"message":"rate_limited"}']);
-    expect(await handshake(port, "websocket", undefined, withCookie)).toBe(400);
+    // The body the web app reads, and a WebSocket opened without a polling connection.
+    expect(await poll(port, signed(token))).toEqual([403, '{"code":4,"message":"rate_limited"}']);
+    expect(await handshake(port, "websocket", undefined, signed(token))).toBe(400);
     // Nothing past the cap reached the session lookup, or holds a connection.
     expect(lookup.reached.count).toBe(5);
     expect(server.io.engine.clientsCount).toBe(5);
-    // One line for the lot, which names no address.
-    const lines = logs.lines.filter((line) =>
-      String(line.msg).startsWith("socket handshakes refused"),
+    // The first refusal is logged at once, the rest in a line a period later at most, without
+    // waiting for another refusal; the lines name no address, token, secret or room.
+    await vi.waitFor(
+      () => expect(refusals(logs).reduce((sum, line) => sum + Number(line.refused), 0)).toBe(9),
+      { timeout: 5 * warnEveryMs },
     );
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatchObject({ level: 40, refused: 1 });
-    expect(logs.raw.join("")).not.toMatch(/127\.0\.0\.1|::1|localhost/);
-    expect(HANDSHAKE_WARN_EVERY_MS).toBe(60_000);
+    const lines = refusals(logs);
+    expect(lines[0]).toMatchObject({ level: 40, refused: 1, windowMs: 0 });
+    for (const line of lines.slice(1)) {
+      expect(Number(line.windowMs)).toBeGreaterThanOrEqual(warnEveryMs - 5);
+    }
+    const written = logs.raw.join("");
+    for (const secret of [token, testConfig().betterAuthSecret, "127.0.0.1", "::1", "localhost"]) {
+      expect(written).not.toContain(secret);
+    }
   });
 
-  it("lets an address in again as its bucket refills, and keeps addresses apart", async () => {
+  it("refuses a forged cookie or none for free: no lookup, and no bucket spent", async () => {
+    const lookup = lookups();
+    const { port, server } = await start({
+      sessionCookie: COOKIE,
+      socketMiddleware: [lookup.middleware],
+      realtimeLimits: { handshakeLimit: { perSecond: 0.001, burst: 1 } },
+    });
+    // Ada's own token with a signature that does not hold, and no cookie at all, from her
+    // address: 1,000 handshakes, 50 at a time.
+    expect(await poll(port, forged("ada"))).toEqual([
+      403,
+      '{"code":4,"message":"unauthenticated"}',
+    ]);
+    for (let batch = 0; batch < 20; batch++) {
+      const statuses = await Promise.all(
+        Array.from({ length: 50 }, (_, i) =>
+          i % 2 === 0
+            ? handshake(port, "polling", undefined, forged("ada"))
+            : handshake(port, "websocket", undefined),
+        ),
+      );
+      expect(new Set(statuses)).toEqual(new Set([403, 400]));
+    }
+    expect(lookup.reached.count).toBe(0);
+    expect(server.io.engine.clientsCount).toBe(0);
+    // Her one token is still there.
+    const ada = connect(`http://localhost:${port}`, {
+      transports: ["websocket"],
+      reconnection: false,
+      forceNew: true,
+      extraHeaders: signed("ada"),
+    });
+    open.at(-1)?.clients.push(ada);
+    expect(await within(connected(ada), 1_000)).toBeLessThan(1_000);
+    expect(lookup.reached.count).toBe(1);
+  }, 20_000);
+
+  it("keeps two sessions on one address apart, and one session's bucket across addresses", async () => {
     let clock = 0;
     const { port } = await start({
       sessionCookie: COOKIE,
       realtimeLimits: { handshakeLimit: { perSecond: 1, burst: 2, now: () => clock } },
     });
-    // TRUST_PROXY=1 (the default): the address is X-Forwarded-For's last entry.
-    const from = (address: string) => ({ ...withCookie, "x-forwarded-for": address });
-    const ada = from("192.0.2.1");
-    expect(await handshake(port, "websocket", undefined, ada)).toBe(101);
-    expect(await handshake(port, "polling", undefined, ada)).toBe(200);
-    expect(await handshake(port, "websocket", undefined, ada)).toBe(400);
-    expect(await handshake(port, "websocket", undefined, from("192.0.2.2"))).toBe(101);
-    // A client cannot pick another address further left: only the proxy's entry counts.
-    expect(await handshake(port, "websocket", undefined, from("198.51.100.7, 192.0.2.1"))).toBe(
-      400,
-    );
+    // TRUST_PROXY=1 (the default): these would be two addresses, and are one with 0.
+    const from = (address: string, token: string) => ({
+      ...signed(token),
+      "x-forwarded-for": address,
+    });
+    expect(await handshake(port, "websocket", undefined, from("192.0.2.1", "ada"))).toBe(101);
+    expect(await handshake(port, "polling", undefined, from("192.0.2.2", "ada"))).toBe(200);
+    expect(await handshake(port, "websocket", undefined, from("192.0.2.1", "ada"))).toBe(400);
+    // Bob, on Ada's address, has his own bucket, which her loop never touched.
+    expect(await handshake(port, "websocket", undefined, from("192.0.2.1", "bob"))).toBe(101);
+    expect(await handshake(port, "polling", undefined, from("192.0.2.1", "bob"))).toBe(200);
+    expect(await handshake(port, "polling", undefined, from("192.0.2.1", "bob"))).toBe(403);
     clock += 999;
-    expect(await handshake(port, "polling", undefined, ada)).toBe(403);
+    expect(await handshake(port, "polling", undefined, from("192.0.2.1", "ada"))).toBe(403);
     clock += 1;
-    expect(await handshake(port, "polling", undefined, ada)).toBe(200);
-    expect(await handshake(port, "polling", undefined, ada)).toBe(403);
+    expect(await handshake(port, "polling", undefined, from("192.0.2.1", "ada"))).toBe(200);
+    expect(await handshake(port, "polling", undefined, from("192.0.2.1", "ada"))).toBe(403);
+    expect(await handshake(port, "polling", undefined, from("192.0.2.1", "bob"))).toBe(200);
   });
 
-  it(`lets a redeploy's reconnect storm of six full rooms from one address through at ${HANDSHAKE_LIMIT.burst} a burst`, async () => {
-    expect(HANDSHAKE_LIMIT).toEqual({ perSecond: 10, burst: 600 });
+  it("checks the Origin before anything else: a foreign page's handshakes spend nothing", async () => {
     const lookup = lookups();
+    const { port } = await start({
+      sessionCookie: COOKIE,
+      socketMiddleware: [lookup.middleware],
+      realtimeLimits: { handshakeLimit: { perSecond: 0.001, burst: 2 } },
+    });
+    for (let i = 0; i < 10; i++) {
+      const transport = i % 2 === 0 ? "polling" : "websocket";
+      expect(await handshake(port, transport, "https://evil.example", signed("ada"))).toBe(
+        transport === "polling" ? 403 : 400,
+      );
+    }
+    expect(lookup.reached.count).toBe(0);
+    expect(await handshake(port, "websocket", undefined, signed("ada"))).toBe(101);
+    expect(await handshake(port, "polling", undefined, signed("ada"))).toBe(200);
+    expect(await handshake(port, "polling", undefined, signed("ada"))).toBe(403);
+  });
+
+  it("takes one CONNECT per connection, even while the first is still being looked up", async () => {
+    const lookup = lookups(100);
     const { port, server } = await start({
       sessionCookie: COOKIE,
       socketMiddleware: [lookup.middleware],
     });
-    // As the web app: long-polling first, Socket.IO's own reconnection (0.5 to 1.5 s, then
-    // doubling), all from one address, as behind an office's NAT or an untrusted proxy.
-    const people = 6 * 16;
+    const [status, opening] = await poll(port, signed("ada"));
+    expect(status).toBe(200);
+    const { sid } = JSON.parse(opening.slice(1)) as { sid: string };
+    // 50 CONNECT packets for "/" in one payload, as a script would send them.
+    const connects = Array.from({ length: 50 }, () => "40").join("\x1e");
+    expect(await poll(port, signed("ada"), { sid, body: connects })).toEqual([200, "ok"]);
+    // Polling closes on the client's next requests: the first carries the refusal, the next
+    // the close, as a browser's pending poll would.
+    for (let i = 0; i < 5 && server.io.engine.clientsCount > 0; i++) {
+      await within(poll(port, signed("ada"), { sid }), 2_000);
+    }
+    expect(server.io.engine.clientsCount).toBe(0);
+    expect(lookup.reached.count).toBe(1);
+  });
+
+  it.each([
+    ["the default transports", undefined],
+    ["WebSocket only", ["websocket"]],
+  ])(
+    "lets a client with %s connect again after it disconnected or lost its connection",
+    async (_, transports) => {
+      const lookup = lookups();
+      const { port, server } = await start({
+        sessionCookie: COOKIE,
+        socketMiddleware: [lookup.middleware],
+      });
+      const socket: Client = connect(`http://localhost:${port}`, {
+        ...(transports && { transports }),
+        forceNew: true,
+        reconnectionDelay: 50,
+        reconnectionDelayMax: 100,
+        extraHeaders: signed("ada"),
+      });
+      open.at(-1)?.clients.push(socket);
+      await within(connected(socket), 2_000);
+      socket.disconnect();
+      socket.connect();
+      await within(connected(socket), 2_000);
+      const engine = server.io.engine as unknown as { clients: Record<string, { close(): void }> };
+      for (const connection of Object.values(engine.clients)) connection.close();
+      await within(connected(socket), 2_000);
+      expect(lookup.reached.count).toBe(3);
+    },
+  );
+
+  /**
+   * K tabs on one session, with the default transports, so every socket polls and upgrades: all
+   * connect on a bucket of exactly K, every connection drops at once, and the bucket refills by
+   * `refill` before they come back. A poll or an upgrade that cost a token would refuse a tab.
+   */
+  async function storm(refill: number) {
+    const tabs = 10;
+    let clock = 0;
+    const lookup = lookups();
+    const { port, server } = await start({
+      sessionCookie: COOKIE,
+      socketMiddleware: [lookup.middleware],
+      realtimeLimits: { handshakeLimit: { perSecond: 1, burst: tabs, now: () => clock } },
+    });
     let connects = 0;
-    let refusals = 0;
-    const sockets: Client[] = Array.from({ length: people }, () => {
+    let refused = 0;
+    const sockets: Client[] = Array.from({ length: tabs }, () => {
       const socket: Client = connect(`http://localhost:${port}`, {
         forceNew: true,
-        extraHeaders: withCookie,
+        extraHeaders: signed("ada"),
       });
       socket.on("connect", () => {
         connects += 1;
       });
-      // A refused handshake is a 403. Windows refuses some of a burst of TCP connections
-      // (ECONNREFUSED), which Socket.IO retries like any network error.
       socket.on("connect_error", (error) => {
-        if ((error as { description?: unknown }).description === 403) refusals += 1;
+        if ((error as { description?: unknown }).description === 403) refused += 1;
       });
       return socket;
     });
     open.at(-1)?.clients.push(...sockets);
-    const until = async (done: () => boolean, limitMs: number) => {
-      const end = Date.now() + limitMs;
-      while (!done()) {
-        if (Date.now() > end) throw new Error(`not within ${limitMs} ms`);
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
-    };
-    await until(() => connects === people, 5_000);
-    // The redeploy: every connection drops at once, as `close()` drops them, and comes back.
+    const upgraded = () =>
+      sockets.every(
+        (socket) => socket.connected && socket.io.engine.transport.name === "websocket",
+      );
+    await vi.waitFor(() => expect(upgraded()).toBe(true), { timeout: 10_000, interval: 20 });
+    expect(connects).toBe(tabs);
+    expect(refused).toBe(0);
+    // The redeploy: every connection drops at once, and the bucket refills by `refill` only.
+    clock += refill * 1_000;
     const engine = server.io.engine as unknown as { clients: Record<string, { close(): void }> };
     for (const connection of Object.values(engine.clients)) connection.close();
-    await until(() => connects === 2 * people, 10_000);
-    expect(refusals).toBe(0);
-    expect(lookup.reached.count).toBe(2 * people);
+    return { tabs, lookup, count: () => ({ connects, refused }) };
+  }
+
+  it("costs one token per connection: K tabs reconnect on a bucket refilled by exactly K", async () => {
+    const { tabs, lookup, count } = await storm(10);
+    await vi.waitFor(() => expect(count().connects).toBe(2 * tabs), {
+      timeout: 10_000,
+      interval: 20,
+    });
+    expect(count().refused).toBe(0);
+    expect(lookup.reached.count).toBe(2 * tabs);
+  }, 20_000);
+
+  it("refuses a tab when the bucket refilled by one less than the tabs", async () => {
+    const { tabs, count } = await storm(9);
+    await vi.waitFor(
+      () => {
+        expect(count().refused).toBeGreaterThanOrEqual(1);
+        expect(count().connects).toBe(2 * tabs - 1);
+      },
+      { timeout: 10_000, interval: 20 },
+    );
   }, 20_000);
 });
 

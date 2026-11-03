@@ -38,7 +38,7 @@ async function signedByBetterAuth(): Promise<{ cookie: string; token: string }> 
 }
 
 /** `token.signature` as better-call signs it, URI-encoded. */
-const sign = (token: string, secret = SECRET) =>
+const sign = (token: string, secret: string = SECRET) =>
   encodeURIComponent(`${token}.${createHmac("sha256", secret).update(token).digest("base64")}`);
 
 describe("signedSessionToken", () => {

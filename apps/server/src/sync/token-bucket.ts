@@ -58,7 +58,7 @@ export function createTokenBucket({
   };
 }
 
-/** One token bucket per key (an address: the socket handshakes, `realtime.ts`). */
+/** One token bucket per key (a session: the socket handshakes, `realtime.ts`). */
 export interface KeyedTokenBuckets {
   /** Takes one token from `key`'s bucket, a full one if the key is new: false when empty. */
   take(key: string): boolean;
@@ -75,8 +75,7 @@ const KEYED_SWEEP_EVERY_MS = 30_000;
  * A token bucket per key, in this process. A bucket that has refilled is the same as a new
  * one, so it is forgotten: every 30 s, and before a new key would pass `maxKeys`. If the map
  * is still full, the tenth whose last take is oldest goes. Memory stays bounded; only a client
- * that spreads its requests over more than `maxKeys` addresses (or IPv6 /64 networks) gets a
- * fresh bucket that way.
+ * that spreads its requests over more than `maxKeys` keys gets a fresh bucket that way.
  */
 export function createKeyedTokenBuckets(
   { perSecond, burst, now = () => performance.now() }: TokenBucketOptions,

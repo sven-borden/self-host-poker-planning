@@ -25,14 +25,20 @@ export interface ServerDeps extends AppDeps {
   /** How long `close()` waits for the answers owed to sockets; `DRAIN_TIMEOUT_MS`. */
   drainTimeoutMs?: number;
   /**
-   * The cookie a socket handshake must carry to be considered at all (`setup.ts`: the
-   * session cookie's name); see `RealtimeOptions.sessionCookie`.
+   * The cookie a socket handshake must carry, signed with `config.betterAuthSecret`, to be
+   * considered at all (`setup.ts`: the session cookie's name); see
+   * `RealtimeOptions.sessionCookie`.
    */
   sessionCookie?: string;
   /** The socket limits, for tests only (the fuzz test raises them). */
   realtimeLimits?: Pick<
     RealtimeOptions,
-    "messageLimit" | "rosterLimit" | "historyLimit" | "queueLimit" | "handshakeLimit"
+    | "messageLimit"
+    | "rosterLimit"
+    | "historyLimit"
+    | "queueLimit"
+    | "handshakeLimit"
+    | "handshakeWarnEveryMs"
   >;
   /** Several instances (#39, `scale-out.ts`): the Redis adapter, WebSocket only. */
   realtimeCluster?: Pick<RealtimeOptions, "adapter" | "transports">;
@@ -70,9 +76,10 @@ export function createServer(config: Config, deps: ServerDeps): PokerServer {
   const io = createRealtime(httpServer, {
     logger,
     allowedOrigin: config.baseUrl,
-    trustProxy: config.trustProxy,
     responseHeaders: headers,
-    ...(deps.sessionCookie !== undefined && { sessionCookie: deps.sessionCookie }),
+    ...(deps.sessionCookie !== undefined && {
+      sessionCookie: { name: deps.sessionCookie, secret: config.betterAuthSecret },
+    }),
     ...deps.realtimeLimits,
     ...deps.realtimeCluster,
     ...(deps.handlers && { handlers: deps.handlers }),
