@@ -1,5 +1,4 @@
-import { AxeBuilder } from "@axe-core/playwright";
-import { WCAG_TAGS } from "./a11y.ts";
+import { scan } from "./a11y.ts";
 import { type BrowserContext, expect, type Page, test } from "./fixtures.ts";
 import { SIGN_IN_BASE, SIGN_IN_FAKE_ORIGIN } from "./signed-in.ts";
 import { newPerson, ROOM_PATH } from "./support.ts";
@@ -86,9 +85,7 @@ test("a guest is asked to sign in, a wrong account is told why, and the right on
   await expect(guest.page.getByRole("button", { name: "Sign in with Microsoft" })).toHaveCount(0);
   await expect(guest.page.locator("body")).not.toContainText("Confidential planning");
   await expect(guest.page.locator("body")).not.toContainText("Pia");
-  expect(
-    (await new AxeBuilder({ page: guest.page }).withTags(WCAG_TAGS).analyze()).violations,
-  ).toEqual([]);
+  expect((await scan(guest.page)).violations).toEqual([]);
 
   // A wrong account: told which rule failed, and how to try another.
   await signsInAs(guest.context, person("Otto Other", "elsewhere.example"));

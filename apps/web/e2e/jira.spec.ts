@@ -1,5 +1,4 @@
-import { AxeBuilder } from "@axe-core/playwright";
-import { settle, WCAG_TAGS } from "./a11y.ts";
+import { scan } from "./a11y.ts";
 import { type BrowserContext, expect, type Page, test } from "./fixtures.ts";
 import { JIRA_FAKE_ORIGIN, SIGN_IN_BASE, SIGN_IN_FAKE_ORIGIN } from "./signed-in.ts";
 import { handCard, newPerson, ownAddress, ROOM_PATH, recordFrames } from "./support.ts";
@@ -190,8 +189,9 @@ test("a write that fails keeps the round, shows beside it and can be tried again
   const before = (await fakeState()).writes.length;
   await failed.getByRole("button", { name: "Try again" }).click();
   await expect(failed).toHaveCount(0);
+  // The line goes as the retry starts; the stand-in records the write when it lands.
+  await expect.poll(async () => (await fakeState()).writes.length).toBe(before + 1);
   const state = await fakeState();
-  expect(state.writes).toHaveLength(before + 1);
   expect(state.writes.at(-1)).toMatchObject({
     issue: "10001",
     body: { fields: { customfield_10016: 8 } },
@@ -406,8 +406,7 @@ test("axe finds nothing at 320 px, connecting and connected", async ({ browser }
   await poInRoom(page);
   await page.locator("[data-queue-open]").click();
   const audit = async () => {
-    await settle(page);
-    const { violations } = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+    const { violations } = await scan(page);
     expect(violations.map(({ id }) => id)).toEqual([]);
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

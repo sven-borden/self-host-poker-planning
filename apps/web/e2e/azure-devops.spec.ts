@@ -1,5 +1,4 @@
-import { AxeBuilder } from "@axe-core/playwright";
-import { settle, WCAG_TAGS } from "./a11y.ts";
+import { scan } from "./a11y.ts";
 import { type BrowserContext, expect, type Page, test } from "./fixtures.ts";
 import { AZURE_FAKE_ORIGIN, SIGN_IN_BASE, SIGN_IN_FAKE_ORIGIN } from "./signed-in.ts";
 import { handCard, newPerson, ownAddress, ROOM_PATH, recordFrames } from "./support.ts";
@@ -508,8 +507,7 @@ test("without the vault nothing of it shows", async ({ page }) => {
 });
 
 async function audit(page: Page) {
-  await settle(page);
-  const { violations } = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+  const { violations } = await scan(page);
   expect(violations.map(({ id }) => id)).toEqual([]);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

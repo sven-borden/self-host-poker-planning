@@ -373,6 +373,34 @@ export async function dbQuery<Row>(sql: string, params: unknown[]): Promise<Row[
   }
 }
 
+/**
+ * Runs `sql` (a `for update`, say) in a transaction left open, so its locks hold until the
+ * returned `release` commits it. Call `release` in a `finally`: a lock left behind blocks the
+ * room for the rest of the run.
+ */
+export async function holdInTransaction(
+  sql: string,
+  params: unknown[],
+): Promise<() => Promise<void>> {
+  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  client.on("error", () => {});
+  await client.connect();
+  try {
+    await client.query("begin");
+    await client.query(sql, params);
+  } catch (error) {
+    await client.end();
+    throw error;
+  }
+  return async () => {
+    try {
+      await client.query("commit");
+    } finally {
+      await client.end();
+    }
+  };
+}
+
 /** A finished round as the history request answers it (#33). */
 export interface HistoryRow {
   number: number;

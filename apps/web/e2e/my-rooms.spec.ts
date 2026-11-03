@@ -1,5 +1,4 @@
-import { AxeBuilder } from "@axe-core/playwright";
-import { WCAG_TAGS } from "./a11y.ts";
+import { scan } from "./a11y.ts";
 import { type Browser, expect, type Page, test } from "./fixtures.ts";
 import { SIGN_IN_BASE, SIGN_IN_FAKE_ORIGIN } from "./signed-in.ts";
 import { join, newPerson, ROOM_PATH } from "./support.ts";
@@ -196,9 +195,7 @@ test.describe("with provider keys", () => {
     await page.setViewportSize({ width: 320, height: 640 });
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(width).toBeLessThanOrEqual(320);
-    expect(
-      (await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze()).violations.map(({ id }) => id),
-    ).toEqual([]);
+    expect((await scan(page)).violations.map(({ id }) => id)).toEqual([]);
 
     const id = await page.evaluate(async () => {
       const { rooms } = await (await fetch("/api/my-rooms")).json();
@@ -239,17 +236,13 @@ test.describe("with provider keys", () => {
     await expect(page.locator("[data-my-room]")).toHaveCount(1);
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(width).toBeLessThanOrEqual(320);
-    expect(
-      (await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze()).violations.map(({ id }) => id),
-    ).toEqual([]);
+    expect((await scan(page)).violations.map(({ id }) => id)).toEqual([]);
     await page.getByRole("button", { name: /^Delete / }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     // Faded in, or axe reads the colours halfway.
     await dialog.evaluate((box) => Promise.all(box.getAnimations().map((run) => run.finished)));
-    expect(
-      (await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze()).violations.map(({ id }) => id),
-    ).toEqual([]);
+    expect((await scan(page)).violations.map(({ id }) => id)).toEqual([]);
     await context.close();
   });
 });

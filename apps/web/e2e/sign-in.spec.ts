@@ -1,5 +1,4 @@
-import { AxeBuilder } from "@axe-core/playwright";
-import { WCAG_TAGS } from "./a11y.ts";
+import { scan } from "./a11y.ts";
 import {
   type Browser,
   type BrowserContext,
@@ -9,7 +8,14 @@ import {
   test,
 } from "./fixtures.ts";
 import { SIGN_IN_BASE, SIGN_IN_FAKE_ORIGIN } from "./signed-in.ts";
-import { dbQuery, newPerson, ownAddress, ROOM_PATH, recordFrames } from "./support.ts";
+import {
+  dbQuery,
+  holdInTransaction,
+  newPerson,
+  ownAddress,
+  ROOM_PATH,
+  recordFrames,
+} from "./support.ts";
 
 // Sign-in with Google and Microsoft (#47, ADR-023) in a real browser, under the production
 // headers: `e2e/fixtures.ts` fails a test on any policy violation, so the whole flow proves the
@@ -218,36 +224,29 @@ test.describe("with provider keys", () => {
       }).observe(document.documentElement, { childList: true, subtree: true });
     });
 
-    // The room's row stays locked for over 3 s, so the commit waits as on a slow database, and
-    // the callback answers that much after the other tab heard `signedIn`.
-    const holding = dbQuery(
-      `do $$ begin perform 1 from room where code = '${code}' for update;
-       perform pg_sleep(3.5); end $$`,
-      [],
-    );
-    await expect
-      .poll(async () => {
-        const rows = await dbQuery(
-          "select 1 from pg_stat_activity where query like 'do $$ begin perform 1 from room%' and state = 'active' and pid <> pg_backend_pid()",
-          [],
-        );
-        return rows.length;
-      })
-      .toBeGreaterThan(0);
+    // The room's row stays locked, so the commit waits as on a slow database, until the other
+    // tab has waited 3 s from `signedIn` ("Reconnecting"): the callback answers that much later.
+    // Released by the test, not after a fixed time, as Edge shows "Reconnecting" about 1.6 s later
+    // than Chromium; still within the callback's 5 s (`MOVE_WAIT_MS`).
+    const release = await holdInTransaction("select 1 from room where code = $1 for update", [
+      code,
+    ]);
     const started = Date.now();
-    await buttonOf(page, "Sign in with Google").click();
-
-    await expect(other.getByText(/Reconnecting/).first()).toBeVisible();
-    // Past the old 2 s: still the guest's page, reading nothing.
-    await other.waitForTimeout(2_500);
-    expect(asked).toEqual([]);
-    expect(
-      await other.evaluate(() => (window as unknown as { seen: { forms: number } }).seen.forms),
-    ).toBe(0);
+    try {
+      await buttonOf(page, "Sign in with Google").click();
+      await expect(other.getByText(/Reconnecting/).first()).toBeVisible();
+      // Past the old 2 s: still the guest's page, reading nothing.
+      await other.waitForTimeout(3_000);
+      expect(asked).toEqual([]);
+      expect(
+        await other.evaluate(() => (window as unknown as { seen: { forms: number } }).seen.forms),
+      ).toBe(0);
+    } finally {
+      await release();
+    }
 
     await expect(page.locator("section[data-you] [data-account]")).toHaveText("Slow Move");
     expect(Date.now() - started).toBeGreaterThan(3_000);
-    await holding;
 
     await expect(other.locator("section[data-you] [data-account]")).toHaveText("Slow Move");
     await expect(other.locator("[data-you-name] bdi")).toHaveText("Seat Name");
@@ -360,12 +359,13 @@ test.describe("with provider keys", () => {
       page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
     await expect(page.getByRole("button", { name: "Mit Google anmelden" })).toBeVisible();
     expect(await fits()).toBe(true);
-    const audit = () => new AxeBuilder({ page }).include("[data-sign-in]").withTags(WCAG_TAGS);
-    expect((await audit().analyze()).violations).toEqual([]);
+    // After the enter fade (260 ms): axe reading the text mid-fade finds low contrast.
+    const audit = async () => (await scan(page, "[data-sign-in]")).violations;
+    expect(await audit()).toEqual([]);
     await page.getByRole("button", { name: "Mit Google anmelden" }).click();
     await expect(page.locator("[data-account]")).toBeVisible();
     expect(await fits()).toBe(true);
-    expect((await audit().analyze()).violations).toEqual([]);
+    expect(await audit()).toEqual([]);
     await context.close();
   });
 });
