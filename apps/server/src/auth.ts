@@ -44,7 +44,7 @@ import type { Db } from "./db/rooms.ts";
 import type { GuestLinks } from "./guest-link.ts";
 import { foreignOrigin, isJsonBody, rateLimited, requestIp } from "./http.ts";
 import type { Logger } from "./logger.ts";
-import { memoryRateLimit, type RateLimiter } from "./rate-limit.ts";
+import { memoryRateLimit, type RateLimiter, type RateLimitRule } from "./rate-limit.ts";
 import type { SocketMiddleware } from "./realtime.ts";
 import {
   accountGoingOutcome,
@@ -216,6 +216,8 @@ export function authOptions(
   limiter: RateLimiter = memoryRateLimit(),
   links?: Pick<GuestLinks, "link">,
   deletions?: Pick<AccountDeletions, "refuses">,
+  /** Tests only (`SetupTuning`): production keeps `ANONYMOUS_SIGN_IN_LIMIT`. */
+  anonymousSignInLimit: RateLimitRule = ANONYMOUS_SIGN_IN_LIMIT,
 ) {
   const { secure } = cookieNaming(config.baseUrl);
   const log = logger.child({ source: "better-auth" });
@@ -254,7 +256,7 @@ export function authOptions(
       ...AUTH_DEFAULT_LIMIT,
       customStorage: limiter,
       customRules: {
-        "/sign-in/anonymous": ANONYMOUS_SIGN_IN_LIMIT,
+        "/sign-in/anonymous": anonymousSignInLimit,
         "/sign-in/social": SOCIAL_SIGN_IN_LIMIT,
       },
     },
@@ -387,8 +389,11 @@ export function createAuth(
   limiter?: RateLimiter,
   links?: Pick<GuestLinks, "link">,
   deletions?: Pick<AccountDeletions, "refuses">,
+  anonymousSignInLimit?: RateLimitRule,
 ) {
-  return betterAuth(authOptions(config, db, logger, limiter, links, deletions));
+  return betterAuth(
+    authOptions(config, db, logger, limiter, links, deletions, anonymousSignInLimit),
+  );
 }
 
 export type Auth = ReturnType<typeof createAuth>;
