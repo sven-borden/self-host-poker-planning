@@ -10,7 +10,8 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
 - `src/main.ts`: the only start path. Calls
   `run(process.env, { ...processHooks(process), setup: setupServer })`.
 - `src/setup.ts`: `setupServer(config, logger, signal, tuning)`, the `setup` hook (`tuning`
-  is for tests only: `presenceGraceMs`, `retentionStartDelayMs`, `retentionNow`):
+  is for tests only, timers and limits: see `SetupTuning` in `src/setup.ts`; the newest is
+  `anonymousSignInLimit`, the guest sign-in rate):
   `setupDatabase`, then `createAuth` on its pool; returns `deps` with `checkDb`,
   `registerApi` (auth routes, then the room API), `socketMiddleware` (the session) and
   `handlers` (the room sync), plus `database`, `auth` and `retention`, and starts the

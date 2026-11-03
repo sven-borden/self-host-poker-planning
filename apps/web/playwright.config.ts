@@ -35,8 +35,10 @@ const env = {
   STATIC_DIR: fileURLToPath(new URL("./dist", import.meta.url)),
   // The header a test sends is the client address: each test's default context gets its own
   // (e2e/fixtures.ts), and `newPerson` one per person (e2e/support.ts), to stay under the
-  // per-address room-creation and sign-in limits. A context made without one counts as the
-  // socket's address, which every such context in the run shares.
+  // per-address room-creation and sign-in limits. A context the test makes without its own
+  // header inherits the test's address (Playwright applies `use` options, `extraHTTPHeaders`
+  // included, to every `browser.newContext()` in a test); `newPerson`, `phone` or `ownAddress()`
+  // give it one of its own.
   TRUST_PROXY: "1",
   LOG_LEVEL: "warn",
 };

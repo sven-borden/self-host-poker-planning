@@ -876,9 +876,10 @@ tracker, since a queue can hold items of both.
   that breaks a policy on purpose sets `policyViolationsExpected` and reads what the guard
   saw from the `policyProblems` fixture. The fixture also gives each test's default context
   (`page`) a client address of its own, so the server's per-address limits (20 rooms in 10
-  minutes) count each test alone; a context a test makes itself takes one from `newPerson`,
-  `phone` or `ownAddress()` in `e2e/support.ts`, or shares the socket's address with every
-  other such context in the run.
+  minutes) count each test alone; a context the test makes without its own header inherits
+  the test's address (Playwright applies `use` options, `extraHTTPHeaders` included, to every
+  `browser.newContext()` in a test); `newPerson`, `phone` or `ownAddress()` in
+  `e2e/support.ts` give it one of its own.
   `e2e/security.spec.ts` checks the headers and that style props, the Web Animations
   API, the scroll lock and sonner's sheet work under the policy. Locally it builds first and uses the installed Microsoft Edge; in CI
   (`web-e2e` job) it uses Chromium on the build from the step before. Screenshots go to

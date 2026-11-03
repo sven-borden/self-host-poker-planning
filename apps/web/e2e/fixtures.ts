@@ -10,7 +10,10 @@ import { ownAddress } from "./support.ts";
 // It also gives the default context (the `page` and `context` fixtures) a client address of its
 // own per test, as `newPerson` does for the contexts a test makes: the server's per-address
 // limits (20 rooms in 10 minutes, 60 sign-ins a minute) then count each test alone, and a fast
-// run on one machine cannot spend them for the whole suite.
+// run on one machine cannot spend them for the whole suite. A context the test makes without its
+// own header inherits the test's address (Playwright applies `use` options, `extraHTTPHeaders`
+// included, to every `browser.newContext()` in a test); `newPerson`, `phone` or `ownAddress()`
+// give it one of its own.
 
 export * from "@playwright/test";
 
