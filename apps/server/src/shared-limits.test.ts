@@ -3,7 +3,7 @@
  * instance's own counters decide, the keys, and the scripts' loading. The scripts themselves
  * run against a real Redis in `shared-limits.db.test.ts`, held to the in-memory answers.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { memoryRateLimit } from "./rate-limit.ts";
 import {
   createSharedLimits,
@@ -11,6 +11,7 @@ import {
   LIMIT_LOCAL_FOR_MS,
   LIMIT_TIMEOUT_MS,
   type LimitCommands,
+  limitErrorCode,
   redisErrorCode,
   TOKEN_BUCKET_SCRIPT,
 } from "./shared-limits.ts";
@@ -54,7 +55,10 @@ function fakeRedis(answer: (call: Call) => unknown | Promise<unknown>, knows = t
   return redis;
 }
 
-const refused = Object.assign(new Error("The client is offline"), { code: "ECONNREFUSED" });
+/** What node-redis 6 throws for a command while it has no connection: no `code`, named Error. */
+const refused = new Error("The client is offline");
+/** What Redis answers a user without `+@scripting`. */
+const noPermission = new Error("NOPERM this user has no permissions to run the 'evalsha' command");
 
 function limits(redis: LimitCommands, options: { now?: () => number; prefix?: string } = {}) {
   const logs = collectLogs("debug");
@@ -120,9 +124,9 @@ describe("shared limits (U4)", () => {
     expect((await limiter.consume("password|ip|192.0.2.1", RULE)).allowed).toBe(true);
     expect(redis.calls).toHaveLength(2);
     const lines = logs.lines.filter((line) => line.part === "redis");
-    expect(lines.map((line) => [line.msg, line.err])).toEqual([
-      ["rate limits: redis unavailable, counting on this instance", "ECONNREFUSED"],
-      ["rate limits: shared through redis again", undefined],
+    expect(lines.map((line) => [line.level, line.msg, line.err])).toEqual([
+      [40, "rate limits: redis unavailable, counting on this instance", "offline"],
+      [30, "rate limits: shared through redis again", undefined],
     ]);
     // No address, key or secret in any line.
     for (const raw of logs.raw) {
@@ -133,7 +137,8 @@ describe("shared limits (U4)", () => {
 
   it("gives up on a stalled Redis after the timeout and lets the handshake through locally", async () => {
     const redis = fakeRedis(() => new Promise(() => {}));
-    const buckets = limits(redis).shared.tokenBuckets(
+    const { shared, logs } = limits(redis);
+    const buckets = shared.tokenBuckets(
       "handshake",
       { perSecond: 1, burst: 2 },
       createKeyedTokenBuckets({ perSecond: 1, burst: 2 }),
@@ -148,6 +153,58 @@ describe("shared limits (U4)", () => {
     expect(await buckets.take("session")).toBe(true);
     expect(await buckets.take("session")).toBe(false);
     expect(performance.now() - next).toBeLessThan(100);
+    expect(logs.lines.map((line) => [line.level, line.msg, line.err])).toEqual([
+      [40, "rate limits: redis unavailable, counting on this instance", "timeout"],
+    ]);
+  });
+
+  it("logs a refusal by Redis as an error, by its code: waiting will not heal it", async () => {
+    let clock = 0;
+    const redis = fakeRedis(() => {
+      throw noPermission;
+    });
+    const { shared, logs } = limits(redis, { now: () => clock });
+    const limiter = shared.rateLimiter(memoryRateLimit());
+    expect((await limiter.consume("rooms|create|192.0.2.1", RULE)).allowed).toBe(true);
+    clock += LIMIT_LOCAL_FOR_MS;
+    expect((await limiter.consume("rooms|create|192.0.2.1", RULE)).allowed).toBe(true);
+    expect(redis.calls).toHaveLength(2);
+    // One line, at error level, naming the refusal and nothing of the message's rest.
+    expect(logs.lines.map((line) => [line.level, line.msg, line.err])).toEqual([
+      [50, "rate limits: redis unavailable, counting on this instance", "NOPERM"],
+    ]);
+    for (const raw of logs.raw) expect(raw).not.toContain("evalsha");
+  });
+
+  it("does not call Redis back by a late answer to a call that started before the failure", async () => {
+    let clock = 0;
+    const replies: ((value: unknown) => void)[] = [];
+    let fail = false;
+    const redis = fakeRedis(() => {
+      if (fail) throw refused;
+      return new Promise((resolve) => replies.push(resolve));
+    });
+    const { shared, logs } = limits(redis, { now: () => clock });
+    const limiter = shared.rateLimiter(memoryRateLimit());
+    const slow = limiter.consume("a", RULE);
+    await vi.waitFor(() => expect(replies).toHaveLength(1));
+    fail = true;
+    await limiter.consume("b", RULE);
+    // The slow call's answer comes now, inside the local window: Redis is not back for that.
+    replies[0]?.([1, 61_000, 1_000]);
+    expect(await slow).toEqual({ allowed: true, retryAfter: null });
+    expect(logs.messages()).toEqual(["rate limits: redis unavailable, counting on this instance"]);
+    // A call that starts after the window and is answered is.
+    fail = false;
+    clock += LIMIT_LOCAL_FOR_MS;
+    const next = limiter.consume("c", RULE);
+    await vi.waitFor(() => expect(replies).toHaveLength(2));
+    replies[1]?.([1, 61_000, 1_000]);
+    await next;
+    expect(logs.messages()).toEqual([
+      "rate limits: redis unavailable, counting on this instance",
+      "rate limits: shared through redis again",
+    ]);
   });
 
   it("takes Redis's bucket over the local one, and the local one when the reply is not one", async () => {
@@ -255,8 +312,24 @@ describe("shared limits (U4)", () => {
     expect((await limiter.reserve("password|user|room|me", rule)).allowed).toBe(true);
   });
 
-  it("names a driver error by its code or its name, never its message", () => {
-    expect(redisErrorCode(refused)).toBe("ECONNREFUSED");
+  it("names a failure by a short code, never its message", () => {
+    expect(limitErrorCode(new Error("timeout"))).toBe("timeout");
+    expect(limitErrorCode(refused)).toBe("offline");
+    expect(limitErrorCode(new Error("The client is closed"))).toBe("closed");
+    expect(limitErrorCode(noPermission)).toBe("NOPERM");
+    expect(limitErrorCode(new Error("READONLY You can't write against a read only replica."))).toBe(
+      "READONLY",
+    );
+    expect(limitErrorCode(new Error("ERR unknown command 'evalsha'"))).toBe("ERR");
+    expect(limitErrorCode(new Error("unexpected reply"))).toBe("unexpected_reply");
+    // A socket's error by its code; a message that is no reply by the error's name.
+    expect(
+      limitErrorCode(Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })),
+    ).toBe("ECONNRESET");
+    expect(limitErrorCode(new Error("redis://:secret@host"))).toBe("Error");
+    expect(redisErrorCode(Object.assign(new Error("x"), { code: "ECONNREFUSED" }))).toBe(
+      "ECONNREFUSED",
+    );
     expect(redisErrorCode(new Error("redis://:secret@host"))).toBe("Error");
     expect(redisErrorCode({ code: "redis://x", name: "has spaces" })).toBe("unknown");
     expect(redisErrorCode(null)).toBe("unknown");

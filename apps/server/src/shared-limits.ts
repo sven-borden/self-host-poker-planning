@@ -83,6 +83,34 @@ export function redisErrorCode(error: unknown): string {
   return typeof name === "string" && /^\w{1,40}$/.test(name) ? name : "unknown";
 }
 
+const UNEXPECTED_REPLY = "unexpected reply";
+
+/**
+ * A refusal by Redis, which waiting does not heal: the word its error reply starts with
+ * (`NOPERM` for a user without `+@scripting`, `READONLY` for a replica, `OOM`, `WRONGTYPE`,
+ * `ERR` …), or `unexpected_reply` when the answer was none of the script's.
+ */
+function refusalCode(error: unknown): string | undefined {
+  if (!(error instanceof Error)) return undefined;
+  if (error.message === UNEXPECTED_REPLY) return "unexpected_reply";
+  return /^([A-Z][A-Z_]{1,19})(?:\s|$)/.exec(error.message)?.[1];
+}
+
+/**
+ * Why a limit's call failed, as a short code and never the message: `timeout` (no answer
+ * within `LIMIT_TIMEOUT_MS`), `offline` or `closed` (node-redis 6 has no connection: these
+ * errors carry no `code` and are named `Error`), a refusal's code (`refusalCode`), else
+ * `redisErrorCode`.
+ */
+export function limitErrorCode(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.message === "timeout") return "timeout";
+    if (error.message === "The client is offline") return "offline";
+    if (error.message === "The client is closed") return "closed";
+  }
+  return refusalCode(error) ?? redisErrorCode(error);
+}
+
 /** The clock both scripts start from: the caller's (tests), else Redis's own. */
 const CLOCK = `
 local now = tonumber(ARGV[1])
@@ -196,10 +224,13 @@ export function createSharedLimits({
   let shared = true;
   /** What Redis answered, or undefined when it did not (and the local counter decides). */
   const attempt = async <T>(call: () => Promise<T>): Promise<T | undefined> => {
-    if (now() < localUntil) return undefined;
+    const startedAt = now();
+    if (startedAt < localUntil) return undefined;
     try {
       const answer = await within(Promise.resolve().then(call), timeoutMs);
-      if (!shared) {
+      // A call that started before a failure says nothing of Redis since: only one that
+      // started after the local window is a sign that Redis is back.
+      if (!shared && startedAt >= localUntil) {
         shared = true;
         log.info("rate limits: shared through redis again");
       }
@@ -208,10 +239,12 @@ export function createSharedLimits({
       localUntil = now() + localForMs;
       if (shared) {
         shared = false;
-        log.warn(
-          { err: redisErrorCode(error) },
-          "rate limits: redis unavailable, counting on this instance",
-        );
+        const err = limitErrorCode(error);
+        const message = "rate limits: redis unavailable, counting on this instance";
+        // A refusal (no right to run scripts, a read-only replica, a full Redis) does not
+        // pass by waiting: every limit stays per instance until someone fixes it.
+        if (refusalCode(error) === undefined) log.warn({ err }, message);
+        else log.error({ err }, message);
       }
       return undefined;
     }
@@ -222,7 +255,7 @@ export function createSharedLimits({
     const reply = await run(FIXED_WINDOW, key, [String(window * 1000), String(max)]);
     const [allowed, reset, at] = Array.isArray(reply) ? reply : [];
     if (typeof allowed !== "number" || typeof reset !== "number" || typeof at !== "number") {
-      throw new Error("unexpected reply");
+      throw new Error(UNEXPECTED_REPLY);
     }
     return {
       allowed: allowed === 1,
@@ -266,7 +299,7 @@ export function createSharedLimits({
           const mine = local.take(key);
           const answer = await attempt(async () => {
             const reply = await run(TOKEN_BUCKET, `${prefix}:tb:${name}:${hashed(key)}`, args);
-            if (reply !== 0 && reply !== 1) throw new Error("unexpected reply");
+            if (reply !== 0 && reply !== 1) throw new Error(UNEXPECTED_REPLY);
             return reply === 1;
           });
           return answer ?? mine;
