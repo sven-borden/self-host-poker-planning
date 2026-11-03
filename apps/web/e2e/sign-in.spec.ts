@@ -205,6 +205,28 @@ test.describe("with provider keys", () => {
     await joinAs(page);
 
     const other = await context.newPage();
+    // When `signedIn` reaches the other tab, on its WebSocket or in a polling response: the
+    // server sends it as the move starts, after the callback's code exchange and new session.
+    let signedInAt = 0;
+    const heard = (at: number, payload: string) => {
+      if (signedInAt === 0 && payload.includes('"signedIn"')) signedInAt = at;
+    };
+    other.on("websocket", (ws) =>
+      ws.on("framereceived", ({ payload }) => heard(Date.now(), String(payload))),
+    );
+    other.on("response", async (response) => {
+      const at = Date.now();
+      if (
+        new URL(response.url()).pathname.startsWith("/socket.io/") &&
+        response.request().method() === "GET"
+      )
+        heard(at, await response.text().catch(() => ""));
+    });
+    let answeredAt = 0;
+    page.on("response", (response) => {
+      if (new URL(response.url()).pathname.startsWith("/api/auth/callback/"))
+        answeredAt = Date.now();
+    });
     await other.goto(`${SIGN_IN_BASE}/r/${code}`);
     await expect(other.locator("[data-you-name] bdi")).toHaveText("Seat Name");
     const asked: string[] = [];
@@ -224,37 +246,34 @@ test.describe("with provider keys", () => {
       }).observe(document.documentElement, { childList: true, subtree: true });
     });
 
-    // The room's row stays locked, so the commit waits as on a slow database, until 3 s after the
-    // provider's callback reached the server, which starts the move and tells the other tab
-    // `signedIn`: the callback answers that much later. The test releases it, counting from the
-    // callback, not from the click (Edge reaches the callback about 1.6 s later than Chromium) nor
-    // from "Reconnecting" (a loaded machine shows it seconds late): the move must end within the
-    // callback's 5 s (`MOVE_WAIT_MS`), or the page lands and the other tab rightly reloads.
-    let callbackAt = 0;
-    page.on("request", (request) => {
-      if (new URL(request.url()).pathname.startsWith("/api/auth/callback/"))
-        callbackAt = Date.now();
-    });
-    const release = await holdInTransaction("select 1 from room where code = $1 for update", [
-      code,
-    ]);
-    const started = Date.now();
+    // The room's row stays locked, so the move's commit waits as on a slow database, and the
+    // callback answers only once the test releases it: 2.5 s after `signedIn` reached the other
+    // tab, counted from that frame, not from the click (Edge reaches the callback about 1.6 s
+    // later than Chromium) nor from "Reconnecting" (a loaded machine shows it seconds late). The
+    // move must end within the callback's 5 s (`MOVE_WAIT_MS`, started just before `signedIn`),
+    // or the page lands and the other tab rightly reloads.
+    const hold = await holdInTransaction("select 1 from room where code = $1 for update", [code]);
+    expect(hold.rows).toBe(1);
+    let releasedAt = 0;
     try {
       await buttonOf(page, "Sign in with Google").click();
-      await expect(other.getByText(/Reconnecting/).first()).toBeVisible();
-      await expect.poll(() => callbackAt).toBeGreaterThan(0);
+      await expect.poll(() => signedInAt).toBeGreaterThan(0);
       // Past the old 2 s after `signedIn`: still the guest's page, reading nothing.
-      await other.waitForTimeout(Math.max(0, callbackAt + 3_000 - Date.now()));
+      await other.waitForTimeout(Math.max(0, signedInAt + 2_500 - Date.now()));
+      await expect(other.getByText(/Reconnecting/).first()).toBeVisible();
       expect(asked).toEqual([]);
       expect(
         await other.evaluate(() => (window as unknown as { seen: { forms: number } }).seen.forms),
       ).toBe(0);
     } finally {
-      await release();
+      releasedAt = Date.now();
+      await hold.release();
     }
 
     await expect(page.locator("section[data-you] [data-account]")).toHaveText("Slow Move");
-    expect(Date.now() - started).toBeGreaterThan(3_000);
+    // The callback waited for the move, which outlasted the old 2 s after `signedIn`.
+    expect(answeredAt).toBeGreaterThanOrEqual(releasedAt);
+    expect(answeredAt - signedInAt).toBeGreaterThan(2_000);
 
     await expect(other.locator("section[data-you] [data-account]")).toHaveText("Slow Move");
     await expect(other.locator("[data-you-name] bdi")).toHaveText("Seat Name");
