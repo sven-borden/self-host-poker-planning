@@ -185,6 +185,8 @@ here), and so does an account, until its owner deletes it (ADR-029). No analytic
 asset slots and an entitlements check, so either open core (commercial `ee/` folder
 and signed licence keys) or a paid hosted edition plugs in. Decided in #56 (OQ-3).
 
+**Since 2026-11-03 (ADR-033):** a free tool for now. No paid option; W7 is parked.
+
 ## ADR-016: Several instances through Redis, signals only (2026-10-29, #39)
 
 **Context.** ADR-001 ships one container and leaves scale-out for `REDIS_URL`. Every
@@ -2510,3 +2512,24 @@ identifies nobody.
 **No cost figure.** Microsoft's pricing pages showed `$-` to a plain reader on this date, and the retail
 prices API is an Azure service, off limits for this work. The guide lists the meters and the calculator,
 and names no number rather than a guessed one.
+
+## ADR-033: A free tool for now, paid branding parked (2026-11-03, #56)
+
+**Context.** ADR-015 left the licence and the price of branding to W7 (OQ-3). #56 asked for a
+comparison of open core (a commercial `ee/` folder unlocked by signed licence keys) and a paid
+hosted edition (Stripe). The comparison went to Sven as a private page, as this repo is public.
+
+**Decision.** Sven, 2026-11-03: "free tool for now". Poker Planning stays a free tool under MIT:
+no paid tier, no licence keys, no billing, no hosted edition. OQ-3 is closed.
+
+**What follows.**
+- #56 is done with this ADR. The issues name ADR-016 for it; that number went to Redis (#39).
+- #57 (brand settings) and #58 (card faces) are parked, not built free. Code released under MIT
+  cannot be taken back, so building branding free now gives away the one thing a paid option
+  could sell later. Building them free is Sven's call.
+- #59 (entitlements and billing) has nothing to gate. It stays open and parked, in case the
+  question comes back.
+- Nothing is added for a paid option: no `ee/` folder, no entitlement check. The seam that
+  exists stays: every colour is a token (ADR-007), so branding starts from a token file.
+
+**Revisit** when someone asks to pay, or when Sven wants branding built free.

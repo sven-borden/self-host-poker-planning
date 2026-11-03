@@ -136,8 +136,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 ## Next
 
 - W3 (#33–#41): all merged. #38 stays open for its live run.
-- W7 waits for his OQ-3 (#56). The comparison is written and with him, in a private page: the
-  repo is public. His decision becomes ADR-033, not the ADR-016 the issues name.
+- W7 is parked: "free tool for now" (Sven, 2026-11-03, ADR-033). MIT, no paid option. #57 and
+  #58 are not built free unless he says so, as MIT code cannot be taken back; #59 has nothing to
+  gate. #56 is decided.
 - The local reveal budget fails on Windows, not in the code: #43's own commit fails it today.
   Chromium's nominal 4x overshoots here (layout x7.5 to 8.3, x3.4 to 4.7 on Linux), which leaves
   this machine on the 50 ms line. CI stays the judge; keep the budget. What tipped it between
@@ -181,7 +182,7 @@ keys `PP-NNN` equal issue numbers.
 | W4 Delight | #42–#46 | Avatars, motion polish, sound, music, PWA |
 | W5 Accounts | #47–#51 | Sign in with Google or Microsoft |
 | W6 Backlog import | #52–#55 | Fill the queue from Jira or Azure DevOps |
-| W7 Branding | #56–#59 | A company's look, as a paid option |
+| W7 Branding | #56–#59 | Parked: a free tool for now (ADR-033) |
 
 Inside a wave an issue may be taken out of number order only when its "Depends on"
 issues are merged.
@@ -246,8 +247,8 @@ issues are merged.
 - **After #41**: read "Choices for Sven" in PR #117. Two are yours alone: the German catalogue
   writes `ß`, which Swiss German does not; and on your own Azure tenant, check whether its French
   says "Étendues" for scopes and whether a localised page shows "Work Items, Read & write".
-- **#56**: licence and pricing model for branding (OQ-3). Read the comparison and answer the six
-  questions at its end.
+- **#56** is decided (ADR-033): close it. W7 stays parked until you want branding built free or
+  sold.
 
 ## Merge gate
 

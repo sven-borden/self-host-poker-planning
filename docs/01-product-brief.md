@@ -43,7 +43,7 @@ Source: `input.md`. Decisions: `docs/05-decisions.md`.
 | R18 | Efficient, professional design around a table | The boardroom table (ADR-005) | W0–W1 |
 | R19 | Jira / Azure DevOps paste or connector, later | Paste first, then connectors | W6 |
 | R20 | Top-notch card animations | Motion for React and a motion spec (ADR-008) | W1, W4 |
-| R21 | Paid branding later; base free | Seams now, model decided in W7 (ADR-015) | W7 |
+| R21 | Paid branding later; base free | A free tool for now; paid branding parked (ADR-015, ADR-033) | W7, parked |
 | R22 | Background music while waiting, later | Original loops composed in code | W4 |
 | R23 | Light and dark mode | Design tokens, system default plus toggle | W0 |
 | R24 | Works on mobile | Tall table, scrolling hand | W1 |
@@ -98,4 +98,4 @@ Each wave is a GitHub milestone; issues are built one at a time.
 | W4 Delight | Avatars, motion polish, sound, music, PWA | #42–#46 |
 | W5 Accounts | Sign in with Google or Microsoft | #47–#51 |
 | W6 Backlog import | Fill the queue from Jira or Azure DevOps | #52–#55 |
-| W7 Branding | A company's look, as a paid option | #56–#59 |
+| W7 Branding | A company's look, as a paid option. Parked: a free tool for now (ADR-033) | #56–#59 |
