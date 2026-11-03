@@ -32,12 +32,23 @@ describe("redisAcks (#39)", () => {
     const redis = fakeRedis();
     const acks = redisAcks(redis);
     const key = sharedAckKey("user-1", "room-1", "c1");
-    expect(key).toBe("pp:ack:user-1 room-1 c1");
     expect(await acks.claim(key)).toEqual({ state: "mine" });
+    // The key #39 wrote, with the default prefix: a rolling deploy keeps reading it (U4).
+    expect([...redis.values.keys()]).toEqual(["pp:ack:user-1 room-1 c1"]);
     expect(await acks.claim(key)).toEqual({ state: "running" });
     await acks.settle(key, { ok: true, version: 7 });
     expect(await acks.claim(key)).toEqual({ state: "done", ack: { ok: true, version: 7 } });
     expect(redis.ttls).toEqual([ACK_CLAIM_MS, ACK_KEEP_MS]);
+  });
+
+  it("puts every key under the deployment's own prefix (U4)", async () => {
+    const redis = fakeRedis();
+    const acks = redisAcks(redis, "staging");
+    await acks.claim("u r c");
+    await acks.settle("u r c", { ok: true, version: 1 });
+    await acks.claim("u r d");
+    await acks.settle("u r d", null);
+    expect([...redis.values.keys()]).toEqual(["staging:ack:u r c"]);
   });
 
   it("lets a released claim run again", async () => {
@@ -49,8 +60,8 @@ describe("redisAcks (#39)", () => {
 
   it("takes an unreadable value for a command still running, never for an answer", async () => {
     const redis = fakeRedis();
-    redis.values.set("k", "{not json");
-    redis.values.set("j", JSON.stringify({ ok: "yes" }));
+    redis.values.set("pp:ack:k", "{not json");
+    redis.values.set("pp:ack:j", JSON.stringify({ ok: "yes" }));
     const acks = redisAcks(redis);
     expect(await acks.claim("k")).toEqual({ state: "running" });
     expect(await acks.claim("j")).toEqual({ state: "running" });
@@ -78,7 +89,7 @@ describe("redisAcks (#39)", () => {
       get: () => new Promise(() => {}),
       del: () => new Promise(() => {}),
     };
-    await expect(redisAcks(hung, 20).claim("k")).rejects.toThrow("timeout");
+    await expect(redisAcks(hung, "pp", 20).claim("k")).rejects.toThrow("timeout");
     await expect(within(Promise.resolve(3), 20)).resolves.toBe(3);
   });
 });

@@ -39,6 +39,7 @@ import { Decoder, Encoder } from "socket.io-parser";
 import type { SocketUser } from "./auth.ts";
 import type { Logger } from "./logger.ts";
 import { sessionKey, signedSessionToken } from "./session-cookie.ts";
+import type { SharedLimits } from "./shared-limits.ts";
 import {
   createKeyedTokenBuckets,
   createTokenBucket,
@@ -187,6 +188,11 @@ export interface RealtimeOptions {
    * stays on one instance, so no sticky sessions are needed (#39).
    */
   transports?: ("polling" | "websocket")[];
+  /**
+   * Several instances (U4, `shared-limits.ts`): the handshake cap counts in Redis for every
+   * instance at once, and this instance's own buckets answer while Redis does not.
+   */
+  sharedLimits?: Pick<SharedLimits, "tokenBuckets">;
 }
 
 /**
@@ -326,8 +332,12 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     sessionCookie,
     adapter,
     transports,
+    sharedLimits,
   } = options;
-  const handshakes = createKeyedTokenBuckets(handshakeLimit);
+  const localHandshakes = createKeyedTokenBuckets(handshakeLimit);
+  const handshakes: { take(key: string): boolean | Promise<boolean> } = sharedLimits
+    ? sharedLimits.tokenBuckets("handshake", handshakeLimit, localHandshakes)
+    : localHandshakes;
   // Only how many were refused and over how long: no address, no token, no room.
   let refused = 0;
   let windowStart = 0;
@@ -376,11 +386,19 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
         // Engine.IO answers 403 with this message over polling, which the web app reads and
         // retries (`refusalOf`), and a bare 400 on a WebSocket opened without a polling
         // connection, which Socket.IO retries itself.
-        if (!handshakes.take(sessionKey(token))) {
+        const decide = (allowed: boolean) => {
+          if (allowed) {
+            callback(null, true);
+            return;
+          }
           refuseHandshake();
           callback("rate_limited", false);
-          return;
-        }
+        };
+        // In memory the answer comes at once; through Redis it never rejects (U4).
+        const taken = handshakes.take(sessionKey(token));
+        if (typeof taken === "boolean") decide(taken);
+        else void taken.then(decide);
+        return;
       }
       callback(null, true);
     },

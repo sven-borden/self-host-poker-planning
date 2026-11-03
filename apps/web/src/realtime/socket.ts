@@ -24,13 +24,17 @@ export type SocketFactoryOptions = Partial<ManagerOptions & SocketOptions>;
 
 /**
  * The transports the server takes, from the tag it puts in `index.html` (#39): with several
- * instances behind one address it takes WebSocket only, so one connection stays on one
- * instance. Without the tag (one instance), undefined: Socket.IO's default, long-polling
- * first, then the upgrade. A tag and not a script, since the CSP refuses inline script.
+ * instances behind one address it takes WebSocket only (`websocket`), so one connection stays
+ * on one instance, or both (`polling websocket`) when the load balancer keeps each client on
+ * one instance (`STICKY_SESSIONS`, U4). Without the tag (one instance), or with anything else,
+ * undefined: Socket.IO's default, long-polling first, then the upgrade. A tag and not a
+ * script, since the CSP refuses inline script.
  */
 export function socketTransports(doc: Document | undefined = globalThis.document) {
-  const meta = doc?.querySelector('meta[name="pp-socket-transport"]');
-  return meta?.getAttribute("content") === "websocket" ? ["websocket"] : undefined;
+  const content = doc?.querySelector('meta[name="pp-socket-transport"]')?.getAttribute("content");
+  if (content === "websocket") return ["websocket"];
+  if (content === "polling websocket") return ["polling", "websocket"];
+  return undefined;
 }
 
 /**

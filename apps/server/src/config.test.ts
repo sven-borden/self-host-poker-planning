@@ -38,6 +38,8 @@ describe("loadConfig", () => {
       cspReportOnly: false,
       cspExtraSources: {},
       redisUrl: undefined,
+      redisKeyPrefix: "pp",
+      stickySessions: false,
       sentryDsn: undefined,
       umami: undefined,
       socialProviders: { google: undefined, microsoft: undefined },
@@ -63,6 +65,8 @@ describe("loadConfig", () => {
       CSP_REPORT_ONLY: "true",
       CSP_EXTRA_SOURCES: "script-src https://stats.example.com",
       REDIS_URL: "redis://redis.internal:6379/0",
+      REDIS_KEY_PREFIX: "pp_staging",
+      STICKY_SESSIONS: "1",
       SENTRY_DSN: "https://abc123@o1.ingest.sentry.io/42",
       AZURE_DEVOPS_CONNECTOR: "on",
       UMAMI_URL: "https://stats.example.com",
@@ -83,6 +87,8 @@ describe("loadConfig", () => {
       cspReportOnly: true,
       cspExtraSources: { "script-src": ["https://stats.example.com"] },
       redisUrl: "redis://redis.internal:6379/0",
+      redisKeyPrefix: "pp_staging",
+      stickySessions: true,
       sentryDsn: "https://abc123@o1.ingest.sentry.io/42",
       azureDevOps: true,
       umami: {
@@ -329,6 +335,31 @@ describe("loadConfig", () => {
       expect(error.message).toContain("REDIS_URL must be a redis:// or rediss:// URL");
       expect(error.message).not.toContain(SECRET);
     }
+  });
+
+  it("takes a REDIS_KEY_PREFIX that can be no other prefix's channel, and STICKY_SESSIONS (U4)", () => {
+    expect(loadConfig({ ...VALID_ENV, REDIS_KEY_PREFIX: "Team_2" }).redisKeyPrefix).toBe("Team_2");
+    expect(loadConfig({ ...VALID_ENV, REDIS_KEY_PREFIX: "" }).redisKeyPrefix).toBe("pp");
+    // `-`, `#` and `:` build the channels and keys (`pp-request#/#`): `pp-request` would hear
+    // the default deployment's requests.
+    for (const REDIS_KEY_PREFIX of ["pp-request", "a#b", "a:b", "a b", "é", "x".repeat(33)]) {
+      const error = configError({ ...VALID_ENV, REDIS_KEY_PREFIX });
+      expect(error.variables).toEqual(["REDIS_KEY_PREFIX"]);
+      expect(error.message).toContain(
+        "REDIS_KEY_PREFIX must be 1 to 32 letters, digits or underscores",
+      );
+    }
+    for (const [value, sticky] of [
+      ["true", true],
+      ["1", true],
+      ["false", false],
+      ["0", false],
+    ] as const) {
+      expect(loadConfig({ ...VALID_ENV, STICKY_SESSIONS: value }).stickySessions).toBe(sticky);
+    }
+    expect(configError({ ...VALID_ENV, STICKY_SESSIONS: "on" }).variables).toEqual([
+      "STICKY_SESSIONS",
+    ]);
   });
 
   it("reads TRUST_PROXY as a number of proxies: true is 1, false is 0", () => {

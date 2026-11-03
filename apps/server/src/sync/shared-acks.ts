@@ -42,15 +42,23 @@ export interface AckCommands {
 /** The value of a claim whose command still runs. An ack is JSON, never empty. */
 const RUNNING = "";
 
-/** One key per person, room and command id. None of the three holds a space. */
+/**
+ * One key per person, room and command id. None of the three holds a space. `redisAcks` puts
+ * it under `<prefix>:ack:` (`pp:ack:` by default, as #39 named them).
+ */
 export function sharedAckKey(user: string, roomId: string, commandId: string): string {
-  return `pp:ack:${user} ${roomId} ${commandId}`;
+  return `${user} ${roomId} ${commandId}`;
 }
 
-export function redisAcks(redis: AckCommands, timeoutMs = ACK_TIMEOUT_MS): SharedAcks {
+export function redisAcks(
+  redis: AckCommands,
+  prefix = "pp",
+  timeoutMs = ACK_TIMEOUT_MS,
+): SharedAcks {
   const answer = <T>(command: Promise<T>) => within(command, timeoutMs);
   return {
-    async claim(key) {
+    async claim(id) {
+      const key = `${prefix}:ack:${id}`;
       // A second turn only when the key expired between the SET and the GET.
       for (let turn = 0; turn < 2; turn++) {
         const set = await answer(
@@ -67,7 +75,8 @@ export function redisAcks(redis: AckCommands, timeoutMs = ACK_TIMEOUT_MS): Share
       }
       return { state: "running" };
     },
-    async settle(key, ack) {
+    async settle(id, ack) {
+      const key = `${prefix}:ack:${id}`;
       if (ack === null) {
         await answer(redis.del(key));
         return;
