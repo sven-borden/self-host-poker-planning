@@ -10,15 +10,15 @@
  *
  * Needs `TEST_REDIS_URL`, like `sync/scale-out.db.test.ts` (CI's `db-tests` job has one):
  * skipped locally without it, failing in CI. Every block takes a fresh prefix, so a run
- * within a window of the one before starts from empty counters. The default prefix (`pp`,
- * #39's names) is what `sync/scale-out.db.test.ts` runs on and reads back.
+ * within a window of the one before starts from empty counters, but one: the default prefix
+ * (`pp`) keeps #39's channel and key names, which a rolling deploy needs.
  */
 import { randomBytes } from "node:crypto";
 import net from "node:net";
 import { createRoom as newRoom } from "@pp/domain";
 import { createClient } from "@redis/client";
 import { io } from "socket.io-client";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Config } from "./config.ts";
 import { createTestDatabase, type TestDatabase } from "./db/test-db.ts";
 import { memoryRateLimit, type RateLimitRule } from "./rate-limit.ts";
@@ -168,7 +168,15 @@ describe.skipIf(!REDIS_URL)("limits shared through Redis (U4)", () => {
    * limit, which the same address spends, stays whole for its own test.
    */
   async function passwordRoom(instance: Instance, owner: Guest): Promise<string> {
-    const base = instance.base;
+    const code = await insertRoom(instance, owner);
+    expect(
+      (await post(instance.base, owner, `/${code}/password`, { password: PASSWORD }, "PUT")).status,
+    ).toBe(204);
+    return code;
+  }
+
+  /** A room owned by `owner`, written to the store directly; its code. */
+  async function insertRoom(instance: Instance, owner: Guest): Promise<string> {
     const code = roomCode();
     const room = await instance.database.store.insertRoom({
       code,
@@ -176,10 +184,12 @@ describe.skipIf(!REDIS_URL)("limits shared through Redis (U4)", () => {
       state: newRoom({ ownerId: owner.id }),
     });
     if (!room) throw new Error("code taken");
-    expect(
-      (await post(base, owner, `/${code}/password`, { password: PASSWORD }, "PUT")).status,
-    ).toBe(204);
     return code;
+  }
+
+  /** How many clients listen on `channel`. */
+  async function numsub(channel: string): Promise<unknown> {
+    return ((await redis.sendCommand(["PUBSUB", "NUMSUB", channel])) as unknown[])[1];
   }
 
   /** A wrong password: its status and, when refused for the limit, the error code. */
@@ -425,14 +435,20 @@ describe.skipIf(!REDIS_URL)("limits shared through Redis (U4)", () => {
         { databaseUrl: other.url },
       );
 
-      // Each deployment's instances listen on its own channels only.
-      const numsub = (await redis.sendCommand([
-        "PUBSUB",
-        "NUMSUB",
-        `${px}-request#/#`,
-        `${py}-request#/#`,
-      ])) as unknown[];
-      expect(numsub).toEqual([`${px}-request#/#`, 2, `${py}-request#/#`, 1]);
+      // Each deployment's instances listen on its own channels only (the adapter subscribes
+      // once its connection is ready, a moment after the instance listens).
+      await vi.waitFor(
+        async () => {
+          const numsub = (await redis.sendCommand([
+            "PUBSUB",
+            "NUMSUB",
+            `${px}-request#/#`,
+            `${py}-request#/#`,
+          ])) as unknown[];
+          expect(numsub).toEqual([`${px}-request#/#`, 2, `${py}-request#/#`, 1]);
+        },
+        { timeout: 3_000, interval: 50 },
+      );
 
       // A round on X reaches X's other instance, and nothing reaches Y's channels.
       const [ada, bob] = await Promise.all([
@@ -469,6 +485,30 @@ describe.skipIf(!REDIS_URL)("limits shared through Redis (U4)", () => {
       await createRoom(y.base, cy);
       // And Y does not know X's room.
       expect((await fetch(`${y.base}/api/rooms/${code}`)).status).toBe(404);
+    });
+  });
+
+  describe("the default prefix", () => {
+    it("keeps #39's channel and key names, so a rolling deploy keeps one cluster", async () => {
+      const before = Number(await numsub("pp-request#/#"));
+      const instance = await startInstance({ REDIS_URL: REDIS_URL ?? "" });
+      await vi.waitFor(async () => expect(await numsub("pp-request#/#")).toBe(before + 1), {
+        timeout: 3_000,
+        interval: 50,
+      });
+      // A room written to the store: no room-creation try spent on the default prefix.
+      const guest = await signInGuest(instance.base, ORIGIN);
+      const code = await insertRoom(instance, guest);
+      const c = testClient(instance.base, { cookie: guest.cookie });
+      clients.push(c);
+      await c.enter(code);
+      const id = `u4-${randomBytes(4).toString("hex")}`;
+      const joined = await c.cmd("join", { name: "Ada", role: "voter" }, id);
+      expect(joined.ok).toBe(true);
+      const roomId = (await instance.database.store.loadRoom(code))?.id;
+      const key = `pp:ack:${guest.id} ${roomId} ${id}`;
+      expect(JSON.parse(String(await redis.get(key)))).toEqual(joined);
+      await redis.del(key);
     });
   });
 

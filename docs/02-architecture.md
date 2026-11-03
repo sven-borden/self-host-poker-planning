@@ -69,8 +69,8 @@ database number, so the prefix is what keeps two deployments apart. `-`, `#` and
 refused: a prefix such as `pp-request` would match the default deployment's request channel
 in the adapter's `<prefix>#/#*` pattern. The default keeps #39's names exactly, so instances
 of the old and the new build hear each other during a rolling deploy:
-`scale-out.db.test.ts` runs on the default and reads `pp-request#/#` and `pp:ack:*` back,
-and `shared-acks.test.ts` checks the key it writes. Changing the prefix of a running
+`shared-limits.db.test.ts` starts an instance on the default and finds it on `pp-request#/#`
+and its command id under `pp:ack:`, and `shared-acks.test.ts` checks the key it writes. Changing the prefix of a running
 deployment splits it until every instance has the new one: change it with a full restart,
 not a rolling one.
 
