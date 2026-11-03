@@ -746,7 +746,8 @@ tracker, since a queue can hold items of both.
   reduced-motion variant (120 ms cross-fade, no travel, no delay).
 - A reveal's cost (#43, ADR-019): `e2e/reveal-performance.spec.ts`
   plays the last vote of 16 seats on a Pixel 7 profile, with the CPU set from a small
-  benchmark so that every machine tests the same speed, and fails on any long task; it runs
+  benchmark taken under the throttle so that every machine tests the same speed (Chromium's
+  nominal 4x runs layout about 8x slower on Windows, about 4x on Linux), and fails on any long task; it runs
   alone after the other specs (`performance` project; add `--no-deps` to run it by
   itself). Three rules keep it green. A commit on the table's side reads no layout: use a
   ResizeObserver's first delivery (`CardValue`). Set what only the root needs on the root itself, not in
