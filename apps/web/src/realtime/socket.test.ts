@@ -83,7 +83,9 @@ describe("createSocket", () => {
     fire(socket, "connect_error", new Error("internal"));
     fire(socket, "connect_error", new Error("rate_limited"));
     fire(socket, "connect_error", new Error("unauthenticated"));
-    expect(statuses).toEqual(["reconnecting", "reconnecting", "offline"]);
+    // Too many handshakes from one address (U2): Engine.IO's 403, before any socket.
+    fire(socket, "connect_error", engineRefusal(403, '{"code":4,"message":"rate_limited"}'));
+    expect(statuses).toEqual(["reconnecting", "reconnecting", "offline", "reconnecting"]);
     stop();
     socket.close();
   });
@@ -213,6 +215,11 @@ describe("connectWhenIdentified", () => {
       expect(delay).toHaveBeenLastCalledWith(2, 7);
       await vi.advanceTimersByTimeAsync(4000);
       expect(connect).toHaveBeenCalledTimes(4);
+      // Too many handshakes from one address (U2): Engine.IO's 403 is retried the same way.
+      fire(socket, "connect_error", engineRefusal(403, '{"code":4,"message":"rate_limited"}'));
+      expect(delay).toHaveBeenLastCalledWith(3, undefined);
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(connect).toHaveBeenCalledTimes(5);
       // Back: the next refusal starts the backoff over.
       fire(socket, "connect");
       fire(socket, "connect_error", new Error("internal"));
@@ -221,7 +228,7 @@ describe("connectWhenIdentified", () => {
       // Cleanup cancels the pending retry.
       stop();
       await vi.advanceTimersByTimeAsync(60_000);
-      expect(connect).toHaveBeenCalledTimes(4);
+      expect(connect).toHaveBeenCalledTimes(5);
     } finally {
       vi.useRealTimers();
     }

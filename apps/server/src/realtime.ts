@@ -14,7 +14,8 @@
  * A connection costs memory before it is anyone's (#36): a handshake without the session
  * cookie is refused before the upgrade (`sessionCookie`), a refused handshake closes its
  * transport at once, and a connection that never asks for a socket is closed after
- * `CONNECT_TIMEOUT_MS`.
+ * `CONNECT_TIMEOUT_MS`. One address opens at most `HANDSHAKE_LIMIT` connections (U2), counted
+ * before the session is looked up.
  */
 import { randomBytes } from "node:crypto";
 import type { Server as HttpServer } from "node:http";
@@ -36,8 +37,10 @@ import {
 import { type ExtendedError, Server, type ServerOptions, type Socket } from "socket.io";
 import { Decoder, Encoder } from "socket.io-parser";
 import type { SocketUser } from "./auth.ts";
+import { clientIp } from "./client-ip.ts";
 import type { Logger } from "./logger.ts";
 import {
+  createKeyedTokenBuckets,
   createTokenBucket,
   HISTORY_LIMIT,
   QUEUE_WRITE_LIMIT,
@@ -157,6 +160,13 @@ export interface RealtimeOptions {
   queueLimit?: TokenBucketOptions;
   /** Sockets one person may hold at once; `MAX_SOCKETS_PER_USER` by default. */
   maxSocketsPerUser?: number;
+  /** Handshakes per address; `HANDSHAKE_LIMIT` by default. */
+  handshakeLimit?: TokenBucketOptions;
+  /**
+   * `config.trustProxy`: how many proxies' `X-Forwarded-For` entries name the address a
+   * handshake is counted on (`clientIp`). 0, the socket's peer, by default.
+   */
+  trustProxy?: number;
   /** Added to every HTTP answer of Socket.IO's own (polling, the upgrade): the app's (#36). */
   responseHeaders?: Readonly<Record<string, string>>;
   /**
@@ -196,6 +206,27 @@ export function hasCookie(header: string | undefined, name: string): boolean {
  * enough that one session cannot multiply its message budget or the server's work.
  */
 export const MAX_SOCKETS_PER_USER = 8;
+
+/**
+ * Socket handshakes per address (U2): the connections one address opens, each the polling
+ * request that opens one or a WebSocket opened without one (a polling connection's upgrade
+ * is the same connection). Counted in `allowRequest`, before the session middleware or
+ * anything else that costs a query, and only once the Origin and cookie checks passed, which
+ * cost nothing: a script without a cookie cannot spend an office's bucket.
+ *
+ * Sized for one address that stands for everybody. An instance behind a proxy it does not
+ * trust (`TRUST_PROXY` too low, as at poker.borden.ch until the owner sets it) keys every
+ * visitor on the proxy's address. A redeploy drops every socket at once, and every open tab
+ * reconnects within seconds (Socket.IO's own backoff, 0.5 to 1.5 s for the first try), on a
+ * process whose buckets are new and full. 600 at once is 37 full rooms of 16 behind one
+ * address; past it, 10 a second, and a refused tab tries again within seconds. A client in a
+ * loop gets 10 session lookups a second, and holds at most about 650 connections without a
+ * socket (each closed after `CONNECT_TIMEOUT_MS`).
+ */
+export const HANDSHAKE_LIMIT = { perSecond: 10, burst: 600 } as const;
+
+/** Refused handshakes are logged at most this often, as one line with their count. */
+export const HANDSHAKE_WARN_EVERY_MS = 60_000;
 
 /** One person's sockets and their shared buckets. */
 interface Holder {
@@ -286,11 +317,28 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     historyLimit = HISTORY_LIMIT,
     queueLimit = QUEUE_WRITE_LIMIT,
     maxSocketsPerUser = MAX_SOCKETS_PER_USER,
+    handshakeLimit = HANDSHAKE_LIMIT,
+    trustProxy = 0,
     responseHeaders = {},
     sessionCookie,
     adapter,
     transports,
   } = options;
+  const handshakes = createKeyedTokenBuckets(handshakeLimit);
+  // The address is never logged (no tracking by default), only how many were refused.
+  let refusedHandshakes = 0;
+  let lastWarning = Number.NEGATIVE_INFINITY;
+  const refuseHandshake = () => {
+    refusedHandshakes += 1;
+    const at = Date.now();
+    if (at - lastWarning < HANDSHAKE_WARN_EVERY_MS) return;
+    logger.warn(
+      { refused: refusedHandshakes },
+      "socket handshakes refused: too many from one address",
+    );
+    refusedHandshakes = 0;
+    lastWarning = at;
+  };
   const io: RealtimeServer = new Server(httpServer, {
     ...(adapter && { adapter }),
     ...(transports && { transports }),
@@ -307,6 +355,14 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
       }
       if (sessionCookie !== undefined && !hasCookie(request.headers.cookie, sessionCookie)) {
         callback("unauthenticated", false);
+        return;
+      }
+      // Engine.IO answers 403 with this message over polling, which the web app reads and
+      // retries (`refusalOf`), and a bare 400 on a WebSocket, which Socket.IO retries itself.
+      const address = clientIp(request, trustProxy);
+      if (address !== undefined && !handshakes.take(address)) {
+        refuseHandshake();
+        callback("rate_limited", false);
         return;
       }
       callback(null, true);
