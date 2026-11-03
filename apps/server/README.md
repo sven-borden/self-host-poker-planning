@@ -292,7 +292,8 @@ keeps (#35).
   (the timers, fake clock);
   `restart.db.test.ts` runs the built `dist/main.mjs` (build it first; CI does);
   `scale-out.db.test.ts` runs two instances on one Postgres and one Redis
-  (`TEST_REDIS_URL`; skipped without it locally, a failure in CI).
+  (`TEST_REDIS_URL`; skipped without it locally, a failure in CI), and so does
+  `../shared-limits.db.test.ts` for the limits shared through Redis (U4).
 
 ## Identity
 

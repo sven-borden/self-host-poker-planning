@@ -71,6 +71,8 @@ Variables compose reads from `.env` (the full list is in
 | `JIRA_CLIENT_ID`, `JIRA_CLIENT_SECRET` | no | turn on the Jira Cloud connector; both or neither, or the server does not start. It also needs `POKER_VAULT_KEY` and a sign-in provider (see "Jira Cloud") |
 | `AZURE_DEVOPS_CONNECTOR` | no | exactly `on` turns on the Azure DevOps connector, which also needs `POKER_VAULT_KEY` and a sign-in provider (see "Azure DevOps") |
 | `REDIS_URL` | no | several instances only. `compose.yaml` does not pass it: `compose.scale-out.yaml` sets it (see "Running several instances") |
+| `REDIS_KEY_PREFIX` | no (`pp`) | with `REDIS_URL`: what every Redis key and channel of this deployment starts with; give each deployment that shares one Redis its own (letters, digits and `_`, up to 32). Change it with a full restart, not a rolling one |
+| `STICKY_SESSIONS` | no (`false`) | with `REDIS_URL`: `true` lets sockets long-poll, for a load balancer that keeps each client on one instance (see "Running several instances") |
 
 Compose refuses to start while a required variable is empty. `DATABASE_URL` is built
 from the bundled database; to use your own Postgres, run the image alone with
@@ -329,15 +331,22 @@ nothing about Redis is loaded or opened.
 - **Load balancer**: sockets use WebSocket only once `REDIS_URL` is set (the web app reads
   it from the page), so a connection stays on the instance it reached and plain round
   robin works; let WebSocket upgrades through as for one instance. Clients that cannot
-  open a WebSocket (some corporate proxies) cannot connect then. The alternative, if you
-  need long-polling, is sticky sessions (a cookie or client-IP affinity on the balancer)
-  with the default transports; this build does not offer that mode, so it would take a
-  code change (`transports` in `apps/server/src/setup.ts`).
-- **Per instance, on purpose**: the rate limits (room creation, sign-ins, wrong passwords
-  per person and address, socket messages and handshakes) and the 8 sockets per person count on each
-  instance, so with two instances a client can get twice as much; the 50 wrong passwords
-  per room in 10 minutes are counted in Postgres for all of them
-  ([architecture, section 8](docs/02-architecture.md#8-rooms-access-and-security)).
+  open a WebSocket (some corporate proxies) cannot connect then.
+- **Sticky sessions, for long-polling**: with `STICKY_SESSIONS=true` sockets may long-poll
+  again, as with one instance, and the page is told so. The balancer must then keep each
+  client on one instance, by a cookie (Traefik's `sticky.cookie`, the App Service's ARR
+  affinity, nginx Plus `sticky cookie`) or by the client's address (nginx `ip_hash`, HAProxy
+  `balance source`; everyone behind one address then lands on one instance). Without that,
+  a poll or an upgrade that reaches another instance is refused (400, `Session ID
+  unknown`) and the client keeps reconnecting.
+- **Shared limits**: the rate limits (room creation, sign-ins, wrong passwords per person and
+  address, every other limit per address or person) and the socket handshakes per session
+  are counted in Redis, so two instances allow what one would. The socket message limits and
+  the 8 sockets per person still count on each instance, and the 50 wrong passwords per room
+  in 10 minutes in Postgres
+  ([architecture, section 8](docs/02-architecture.md#8-rooms-access-and-security)). Redis
+  holds no address or session in clear: its keys are HMACs under a key derived from
+  `BETTER_AUTH_SECRET`.
 - **Redis must be trusted**: whoever can talk to it can read every connection's
   headers, session cookies included, and room codes from the instances (the Socket.IO
   adapter answers such questions from any Redis client), and can send any client a
@@ -348,11 +357,17 @@ nothing about Redis is loaded or opened.
 - **Redis down**: each instance keeps serving its own sockets, and people on the other
   instances see the changes once Redis is back (with the next change, or when they
   reconnect), without the announcements of what they missed; meanwhile nobody is marked
-  away, a command id is remembered per instance only, and the retention purge waits for
-  its next run. A running instance never stops because of Redis; the start fails if
-  Redis cannot be reached within 30 s. Redis keeps nothing that matters across a restart
-  (no persistence needed). Give each deployment its own Redis: pub/sub ignores the
-  database number.
+  away, a command id is remembered per instance only, the retention purge waits for its
+  next run, and each instance counts the rate limits on its own (a limit call waits at most
+  250 ms for a stalled Redis, then the instance stops asking for 5 s): rooms, sign-ins and
+  handshakes still pass, and a password room stays as closed to guessing as on one
+  instance. A running instance never stops because of Redis; the start fails if Redis
+  cannot be reached within 30 s. Redis keeps nothing that matters across a restart (no
+  persistence needed; every key it holds expires on its own).
+- **Two deployments on one Redis** (say staging and production): give each its own
+  `REDIS_KEY_PREFIX`, such as `staging` and the default `pp`. Pub/sub ignores the database
+  number, so the prefix is what keeps their rooms' signals, command ids and limits apart.
+  The default keeps the names of earlier builds, so a rolling deploy keeps one cluster.
 - **Turning it on**: browser tabs opened before `REDIS_URL` was set keep long-polling
   and are refused (400) until they reload the page.
 - **Example**: [`compose.scale-out.yaml`](compose.scale-out.yaml) runs two replicas behind

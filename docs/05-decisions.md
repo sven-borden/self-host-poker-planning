@@ -221,6 +221,23 @@ read, but cards in Redis); sticky sessions with polling (a balancer setting ever
 self-hoster must get right); Postgres `LISTEN/NOTIFY` (no new service, but no request and
 answer between instances, and one more long-lived connection per instance on the pool).
 
+**Amended 2026-11-03 (U4).** Three things #39 left for later. (1) The limits are shared:
+with `REDIS_URL`, the app's limiter (Better Auth's limits through its `customStorage`, every
+per-address, per-person and per-room limit of the routes and the room sync) and the
+handshake cap count in Redis, one atomic Lua script per call on Redis's clock, keys
+HMAC'd under a key derived from `BETTER_AUTH_SECRET`, each with a TTL. Each instance keeps
+counting in memory too, and that counter answers when Redis fails or takes over 250 ms
+(then for 5 s without asking): no limit falls open or shut for Redis. The socket message
+buckets and the 8 sockets per person stay per instance (a round trip per message, for
+little). Better Auth's own `secondary-storage` mode was not used: it needs a
+`secondaryStorage` with `increment`, which Better Auth then also uses for sessions unless
+told otherwise, and Redis would hold them; its `customStorage`, which it asks first, takes
+the same `consume` the app's limiter already offers. (2)
+`REDIS_KEY_PREFIX` (default `pp`, the names above) starts every channel and key, so two
+deployments can share one Redis. (3) `STICKY_SESSIONS=true` gives back long-polling for a
+balancer with affinity, told to the page by the same `<meta>`. Architecture section 1
+("Several instances") and section 8 hold the details.
+
 ## ADR-018: Avatars printed on the person's colour, moving one at a time (2026-11-01, #42)
 
 **Context.** W4 adds 24 small animated avatars, picked by choice and optional. The room

@@ -23,7 +23,9 @@ PostgreSQL 17: rooms (live state + version), round history, auth tables
 - Default and target: **one replica**. Fan-out happens in memory.
 - Several replicas (#39, ADR-016): set `REDIS_URL` on every one. Socket.IO's Redis
   adapter then carries the instances' messages to each other, sockets use WebSocket only
-  (no sticky sessions needed), and Redis holds the command ids. Postgres stays the only
+  (no sticky sessions needed; `STICKY_SESSIONS` brings long-polling back behind a balancer
+  with affinity, U4), and Redis holds the command ids and the rate limits (U4). Postgres
+  stays the only
   store of room state: an instance that hears "room changed" (an id, a version, the
   causes) loads the room and sends its own sockets their own snapshots, so no state and
   no card crosses Redis. What is shared and what stays per instance: "Several instances"
@@ -34,10 +36,12 @@ PostgreSQL 17: rooms (live state + version), round history, auth tables
 
 `apps/server/src/scale-out.ts` connects three Redis clients (`@redis/client`, RESP2: the
 adapter's publisher and subscriber, and one without an offline queue for the command
-ids) in the `setup` hook, within 30 s or the start fails (`redis: unavailable`), and
-closes them in `dispose`. Channels are `pp#/#…`, `pp-request#/#` and `pp-response#/#`;
-keys `pp:ack:<user> <room id> <command id>`. Neither ever holds a room code. Every
-per-instance structure of the realtime path and its verdict:
+ids and the shared limits) in the `setup` hook, within 30 s or the start fails
+(`redis: unavailable`), and closes them in `dispose`. Channels are `pp#/#…`,
+`pp-request#/#` and `pp-response#/#`; keys `pp:ack:<user> <room id> <command id>`, and the
+limits' `pp:rl:<hmac>` and `pp:tb:handshake:<hmac>` (section 8). None ever holds a room
+code. `pp` is `REDIS_KEY_PREFIX`'s default (below). Every per-instance structure of the
+realtime path and its verdict:
 
 | Structure | Verdict |
 |---|---|
@@ -51,10 +55,37 @@ per-instance structure of the realtime path and its verdict:
 | Command ids (`recent-acks.ts`) | shared: the process memory stays, and each command id is also claimed in Redis (`SET NX`, 15 s) before it runs; a claim while it runs answers `busy` (the client sends it again), a later one gets the stored answer (2 min). Redis away: the command runs, as with one instance |
 | Retention's `occupied` | shared: the local rooms plus every other instance's answer to `occupied`; no answer skips the run |
 | `idOf`, `codeOf`, `entering`, `admitted`, `sessionChecked` | per instance, by design (a cache, or one socket's own state) |
-| Sockets per person, socket message buckets, HTTP rate limits | per instance: section 8 |
+| HTTP rate limits, Better Auth's limits, the handshake cap | shared (U4): counted in Redis, each instance's own counters answering while Redis does not. Section 8 |
+| Sockets per person, socket message buckets | per instance: section 8 |
 
-The instances' own messages are checked on arrival like a client's. Two deployments must
-not share one Redis (pub/sub ignores the database number).
+The instances' own messages are checked on arrival like a client's.
+
+**Two deployments on one Redis** (U4) each set their own `REDIS_KEY_PREFIX` (letters,
+digits and `_`, at most 32; `pp` by default). It starts every channel and key:
+`<prefix>#/#…`, `<prefix>-request#/#`, `<prefix>-response#/#…`, `<prefix>:ack:…`,
+`<prefix>:rl:…`, `<prefix>:tb:…`. Kicks, lockouts, presence questions and every other
+signal ride the adapter's channels, so they follow the prefix too. Pub/sub ignores the
+database number, so the prefix is what keeps two deployments apart. `-`, `#` and `:` are
+refused: a prefix such as `pp-request` would match the default deployment's request channel
+in the adapter's `<prefix>#/#*` pattern. The default keeps #39's names exactly, so instances
+of the old and the new build hear each other during a rolling deploy:
+`scale-out.db.test.ts` runs on the default and reads `pp-request#/#` and `pp:ack:*` back,
+and `shared-acks.test.ts` checks the key it writes. Changing the prefix of a running
+deployment splits it until every instance has the new one: change it with a full restart,
+not a rolling one.
+
+**Sticky sessions** (U4): with `STICKY_SESSIONS=true`, Socket.IO takes both transports, as
+with one instance, and `index.html` carries `<meta name="pp-socket-transport"
+content="polling websocket">`, which the web app reads. Long-polling is many HTTP requests
+per connection, each carrying the connection's `sid`, which only the instance that opened it
+knows, and the upgrade to WebSocket must reach that instance too. So the load balancer must
+keep a client on one instance: by a cookie (nginx Plus `sticky cookie`, Traefik's
+`sticky.cookie`, the App Service's ARR affinity) or by the client's address (nginx
+`ip_hash`, HAProxy `balance source`; every client behind one address then lands on one
+instance). Without affinity a poll that reaches another instance gets 400 `Session ID
+unknown`, the client reconnects, and may keep failing that way; the upgrade fails the same
+way. Off by default: WebSocket only asks nothing of the balancer. Without `REDIS_URL` the
+setting does nothing (one instance takes both transports already).
 
 Redis is trusted: the adapter answers any client of it that asks for the sockets
 (FETCH_SOCKETS: every socket's handshake, its headers and session cookie included, and its
@@ -929,8 +960,9 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
     password that dropped the grant has committed first, on any instance; a miss writes
     nothing, answers `password_required`, and the socket leaves the room.
   - **Limits** (`PASSWORD_LIMITS`, each in 10 minutes): 10 wrong passwords per person
-    (session user) and room, in the process, so one person's typos never lock out a team
-    that shares an address; 25 wrong passwords per address and room, in the process, so
+    (session user) and room, in the process (and in Redis with several instances, U4), so
+    one person's typos never lock out a team that shares an address; 25 wrong passwords per
+    address and room, in the process, so
     one address with a handful of guest sessions cannot spend the room's 50 alone; 50
     wrong passwords per room whatever the people or addresses,
     in the database (`room.password_failures`, a fixed window updated atomically), so
@@ -1037,9 +1069,9 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   20 per address in 10 minutes, so an office behind one
   address creates rooms freely while a loop gets two a minute; room header reads 120 per
   address and minute. Answer: 429
-  `rate_limited` with `Retry-After`. The counters live in the process (per instance
-  with several, #39), at most 50,000 at once: expired ones are swept every 30 s, and when full the
-  oldest tenth goes.
+  `rate_limited` with `Retry-After`. The counters live in the process, at most 50,000 at
+  once: expired ones are swept every 30 s, and when full the oldest tenth goes. With
+  `REDIS_URL` they live in Redis too (U4, "With several instances" below).
 - Every limit in one place (#36). "Address" is the client address below, "person" the
   session's user; each answers `rate_limited` (429 with `Retry-After` over HTTP).
 
@@ -1109,12 +1141,60 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   with the count since the line before and the window it covers; never an address, a token
   or a room.
 
-  **With several instances** (#39) every limit above counts per instance, except the
-  wrong passwords per room, which live in the database: behind a load balancer that
-  spreads requests, a client may get up to the number of instances times a limit (two
-  instances: 40 rooms in 10 minutes, 20 wrong passwords per person and room, 16 sockets
-  per person, 60 handshakes at once per session). The room's 50 in 10 minutes still caps a brute force. Sharing the counters
-  in Redis is left for later.
+  **With several instances** (#39, U4, `apps/server/src/shared-limits.ts`) the instances
+  behind one balancer hold the limits one instance would. With `REDIS_URL`, everything the
+  app's limiter counts (`rate-limit.ts`: Better Auth's own limits through its
+  `customStorage`, and every route that counts by address, person, path or room) and the
+  handshake cap count in Redis. Where each limit lives, and what it does when Redis fails:
+
+  | Limit | With `REDIS_URL` | Redis slow or down |
+  |---|---|---|
+  | Room creation, room header reads | Redis | the instance's own counter |
+  | Anonymous sign-in, a Google or Microsoft sign-in started, other auth endpoints | Redis (Better Auth's limiter) | the instance's own counter |
+  | Display name, avatar | Redis | the instance's own counter |
+  | Password checks per address, wrong passwords per person and room, per address and room | Redis | the instance's own counter: still enforced, never "allow all" |
+  | Wrong passwords per room | Postgres, as before | not involved |
+  | Password changes, the rule's count, commits that set a rule, removing outsiders, "My rooms", the account page, exports, deletion, the connectors' limits | Redis | the instance's own counter |
+  | Socket handshakes | Redis, per session | the instance's own bucket |
+  | argon2 runs at once | instance: its memory and CPU | not involved |
+  | Socket messages, roster commands, queue writes, history and queue requests | instance: the buckets of the person's sockets there | not involved |
+  | Sockets per person (8) | instance | not involved |
+  | Connections before a socket, payloads, the queue, the room's rule, people in a room | instance or room, as before | not involved |
+
+  - **Why the socket buckets stay on the instance.** Each message is checked before it runs,
+    and a Redis round trip there would add to every vote's latency. A person reaches several
+    instances only with sockets on each, every one paid for by a handshake from the shared
+    cap, and at most 8 per instance: with two instances, a person may send 20 messages a
+    second and hold 16 sockets. Counting sockets across instances would need presence-like
+    bookkeeping that survives a crashed instance, for little: the per-person buckets already
+    bound what one session does.
+  - **How.** One Lua script per call, atomic, on Redis's own clock (`TIME`), so instances
+    whose clocks differ share one window. A fixed window is a hash `{ c, r }` (count, end)
+    whose TTL is the window; a token bucket is `{ t, l }` (tokens, last take) whose TTL is the
+    time it takes to fill again, which is the same as no key. The arithmetic is the in-memory
+    versions', and `shared-limits.db.test.ts` holds the scripts to the same answers for the
+    same calls at the same times. A key is `<prefix>:rl:<hmac>` or
+    `<prefix>:tb:handshake:<hmac>`: an HMAC-SHA256 of the counted key (an address, a
+    session's hash, a person's or a room's id) under a key derived from `BETTER_AUTH_SECRET`,
+    so a dump of Redis gives neither addresses nor sessions, not even by trying every IPv4
+    address. A reserved password try that was right is taken back in Redis as in memory, only
+    within the window it counted in.
+  - **When Redis fails.** The connection has no offline queue, so a Redis that is away fails
+    at once. A call Redis has not answered within 250 ms (`LIMIT_TIMEOUT_MS`) gets the
+    instance's own answer, and for the next 5 s (`LIMIT_LOCAL_FOR_MS`) the instance does not
+    ask Redis at all: a stalled Redis delays the requests in flight by up to 250 ms, then
+    none for 5 s. Never shut: room creation, sign-ins and handshakes pass as on
+    one instance. Never open: the password guard falls back to the local counters, which kept
+    counting every try this instance saw while Redis answered, so a guesser who spent 6 of 10
+    tries here has 4 left here, not 10. With Redis down, a client spreading requests may get
+    up to the number of instances times a limit (as before U4), and the room's 50 wrong
+    passwords in 10 minutes, in Postgres, still cap a brute force. A Redis error never
+    reaches a request. One line `rate limits: redis unavailable, counting on this instance`
+    (with the error's code) when it starts, `rate limits: shared through redis again` when it
+    ends; never a key, an address or a session.
+  - **A rolling deploy** from a build without U4 counts in two places for a while: the old
+    instances in memory, the new ones in Redis. Nothing breaks; a client may get a little
+    more for those minutes.
 
   **Behind proxies the app is not told about** (`TRUST_PROXY` lower than the proxies in
   front), every client shares the last proxy's address, so every per-address limit
