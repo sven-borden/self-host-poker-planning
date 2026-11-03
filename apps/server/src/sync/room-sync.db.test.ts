@@ -25,6 +25,7 @@ import { cardLeaks } from "@pp/protocol/leak-scan";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Config } from "../config.ts";
 import { createTestDatabase, testClient as dbClient, type TestDatabase } from "../db/test-db.ts";
+import { HANDSHAKE_LIMIT } from "../realtime.ts";
 import { createServer, type PokerServer } from "../server.ts";
 import { type SetupTuning, setupServer } from "../setup.ts";
 import { collectLogs, testConfig, VALID_ENV } from "../test-support.ts";
@@ -1048,8 +1049,9 @@ describe("one session flooding a room from many sockets", () => {
     }
     const quiet = await vote(5, "quiet");
 
-    // Mallory tries 40 sockets: 8 connect, the rest are refused at the handshake.
-    const attempts = Array.from({ length: 40 }, () => client(mallory));
+    // Mallory tries 30 sockets, her whole handshake bucket (U2): 8 connect, the rest are
+    // refused at the handshake.
+    const attempts = Array.from({ length: HANDSHAKE_LIMIT.burst }, () => client(mallory));
     const outcomes = await Promise.all(
       attempts.map(
         (c) =>
@@ -1060,7 +1062,7 @@ describe("one session flooding a room from many sockets", () => {
       ),
     );
     expect(outcomes.filter((o) => o === "connected")).toHaveLength(8);
-    expect(outcomes.filter((o) => o === "rate_limited")).toHaveLength(32);
+    expect(outcomes.filter((o) => o === "rate_limited")).toHaveLength(HANDSHAKE_LIMIT.burst - 8);
     const flood = attempts.filter((c) => c.socket.connected);
     await enterAll(code, ...flood);
 
