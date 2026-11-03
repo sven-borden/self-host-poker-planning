@@ -93,7 +93,11 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   command (`join`, `leave`, `rename`, `setAvatar`, `setRole`) takes a token from the person's
   `ROSTER_LIMIT` bucket too (10 a minute), a parsed `history` or `queue` request from
   `HISTORY_LIMIT` (2 a second, bursts of 10). A person holds at most
-  `MAX_SOCKETS_PER_USER` (8) sockets; the next handshake gets `rate_limited`. Engine.IO's
+  `MAX_SOCKETS_PER_USER` (8) sockets; the next handshake gets `rate_limited`. One address
+  opens at most `HANDSHAKE_LIMIT` connections (600 at once, then 10 a second, a
+  `createKeyedTokenBuckets` keyed by `clientIp` with `TRUST_PROXY`), counted in `allowRequest`
+  after the Origin and cookie checks, before any session lookup; past it Engine.IO answers 403
+  `rate_limited` (400 on a WebSocket upgrade). Tests lower it through `realtimeLimits`. Engine.IO's
   own HTTP answers get the security headers through its `headers` event.
   `SocketData` holds `user`, `sessionId` and `room` (`{ id, code }`). Handlers may have
   `attach(io)` and `disconnect(socket)`. `drainRealtime(io, ms)` stops taking messages and

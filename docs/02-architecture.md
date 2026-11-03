@@ -341,7 +341,9 @@ sends it. So every tab open across that deploy kept its room instead of reloadin
 - **Handshake**: a browser handshake must come from `BASE_URL`'s origin (checked first,
   on both transports), then carry the session cookie (section 7). Engine.IO's
   `allowRequest` refuses a request without that cookie before any upgrade or connection
-  (403 with the message `unauthenticated` over polling, 400 on the upgrade); the
+  (403 with the message `unauthenticated` over polling, 400 on the upgrade). One address
+  then opens at most 600 connections at once, then 10 a second (`HANDSHAKE_LIMIT`, U2;
+  section 8), refused the same way with `rate_limited` before anything costs a query. The
   middleware then resolves the cookie and sets `socket.data.user = { id, name,
   isAnonymous }`, or refuses the socket with `connect_error` `unauthenticated`; a
   database failure refuses it with `internal`. Every refused handshake closes its
@@ -1066,6 +1068,7 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   | Queue writes (`queueAdd`, `queueMove`, `queueRemove`, `queueClear`) | a column of up to 256 KB rewritten | person | 2 a second, bursts of 30 |
   | History and queue requests | database reads | person | 2 a second, bursts of 10 (the web's `historyPace`, #34, sends at most 8 at once, then 2 a second) |
   | Sockets | multiplying the buckets | person | 8 at once |
+  | Socket handshakes (a new connection: the poll that opens it, or a WebSocket without one) | session lookups and connections in a loop | address | 600 at once, then 10 a second (`HANDSHAKE_LIMIT`), counted before the session lookup and only once the Origin and the cookie passed; 403 `rate_limited` over polling, 400 on the upgrade, both retried by the web app with backoff while it shows "reconnecting". Sizing below |
   | Connections before a socket | memory | connection | none without the session cookie; closed at a refusal, or after 5 s without a socket |
   | Payload | memory, parsing | socket message | 16 KB, every frame, before the session is checked; no binary. 100 connections with no room and no session hold 15 MiB at this cap, 134 MiB at 128 KB (#52, ADR-024). The token bucket runs after the frame is decoded, so it does not bound the parsing |
   | Payload | memory, parsing | HTTP request | 16 KB (identity routes 4 KB) |
@@ -1074,22 +1077,38 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   | Queue item's title | a snapshot, which carries the next item's | item | 800 bytes on top of the 200 characters: at most 1,053 bytes more in a snapshot, 205 for a bare link, of which it carries 64 characters |
   | People in a room | the table | room | 16 counted, 32 at most |
 
-  Not limited per address: socket handshakes (a request without the session cookie is
-  refused before the upgrade, a refused handshake closes at once, an idle connection
-  after 5 s, and sign-ins are limited), and wrong passwords across rooms (room codes are 58-bit secrets; behind a
+  Not limited per address: wrong passwords across rooms (room codes are 58-bit secrets; behind a
   shared address such a limit would let one client lock every password room).
+
+  **The handshake cap's size** (U2). It is there for one client opening connections in a
+  loop, each a session lookup in Postgres and a connection held for up to 5 s; it need not be
+  tight for that. What it must never do is refuse real people, and three cases set it:
+  - An instance behind a proxy it does not trust keys every visitor on one address, as
+    poker.borden.ch does until its owner sets `TRUST_PROXY=2`: the cap is the whole
+    instance's.
+  - A redeploy drops every socket at once, and every open tab reconnects within seconds
+    (Socket.IO's backoff: 0.5 to 1.5 s, then doubling up to 5 s), each with one handshake.
+    The new process's buckets are full, so 600 at once covers 37 full rooms of 16 behind one
+    address; past that, 10 a second, and a refused tab tries again within seconds, showing
+    "reconnecting" meanwhile. Nothing is lost: the room is in Postgres, and the client sends
+    its commands again once it is back.
+  - An office behind one NAT, several rooms of 16 reconnecting together: a few dozen.
+  A loop gets 600, then 10 lookups a second, and holds at most about 650 connections without a
+  socket. A constant, not a setting: a deployment too big for it behind one address needs
+  `TRUST_PROXY` set right, which every other per-address limit needs too. A refusal logs one
+  warning a minute with the count, never the address.
 
   **With several instances** (#39) every limit above counts per instance, except the
   wrong passwords per room, which live in the database: behind a load balancer that
   spreads requests, a client may get up to the number of instances times a limit (two
   instances: 40 rooms in 10 minutes, 20 wrong passwords per person and room, 16 sockets
-  per person). The room's 50 in 10 minutes still caps a brute force. Sharing the counters
+  per person, 1,200 handshakes at once from one address). The room's 50 in 10 minutes still caps a brute force. Sharing the counters
   in Redis is left for later.
 
   **Behind proxies the app is not told about** (`TRUST_PROXY` lower than the proxies in
   front), every client shares the last proxy's address, so every per-address limit
   applies to everyone at once: 20 rooms in 10 minutes for the whole instance, 60
-  sign-ins a minute, 300 password checks. The per-person and per-room limits are as meant
+  sign-ins a minute, 300 password checks, 600 socket handshakes at once and 10 a second. The per-person and per-room limits are as meant
   whatever the proxies.
 - Headers (#36), on every response the server sends (the web app, the API, static files,
   404s and 500s, and Socket.IO's own polling and upgrade answers), built once at start by

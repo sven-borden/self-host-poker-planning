@@ -334,7 +334,7 @@ nothing about Redis is loaded or opened.
   with the default transports; this build does not offer that mode, so it would take a
   code change (`transports` in `apps/server/src/setup.ts`).
 - **Per instance, on purpose**: the rate limits (room creation, sign-ins, wrong passwords
-  per person and address, socket messages) and the 8 sockets per person count on each
+  per person and address, socket messages and handshakes) and the 8 sockets per person count on each
   instance, so with two instances a client can get twice as much; the 50 wrong passwords
   per room in 10 minutes are counted in Postgres for all of them
   ([architecture, section 8](docs/02-architecture.md#8-rooms-access-and-security)).
@@ -468,8 +468,9 @@ nothing about Redis is loaded or opened.
   can break the page, and some graders count a duplicated header as missing. Check with
   `curl -sI https://your-host/` that each header appears once.
 - **Limits**: room creation, sign-in, header reads and password checks are limited per
-  client address, wrong passwords also per person and room, and socket messages per
-  person (the full table is in
+  client address, wrong passwords also per person and room, socket messages per
+  person, and socket connections per address, roomy enough for a redeploy's reconnects
+  (the full table is in
   [architecture, section 8](docs/02-architecture.md#8-rooms-access-and-security)). Set
   `TRUST_PROXY` to the number of proxies in front: too low, and every visitor shares one
   address, so the per-address limits apply to everyone at once.
