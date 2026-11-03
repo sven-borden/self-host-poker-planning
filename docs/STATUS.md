@@ -116,6 +116,10 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 - The French and German review from #41: vous and Sie everywhere, a test on the tone, and a
   glossary in `docs/08-glossary.md`. The page's description now follows the language. Live at
   c301db6. **W3 is complete** but for #38's live run.
+- A cap on socket handshakes from U2 (PR #118): per session, never per address, so a shared
+  address shares nothing. The cookie's signature is checked first with no query (a forged one
+  costs nothing), then 30 at once and one a second; one CONNECT per connection. Live at 8626d35,
+  a real guest handshake checked there.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -128,7 +132,7 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 - **Agents again since 2026-11-03** (Sven: "start with agents, you orchestrate"), no end date:
   the upkeep list below, then stop and report.
-- U1 and U2 start together.
+- U1 (PR not yet open) and U4 run together. U2 merged.
 - #38 is merged and stays open until Sven's run on a fresh subscription.
 - #54 and #55 are merged and stay open until the live checks at Sven's site and organisation.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
@@ -143,9 +147,7 @@ In this order; pairs run together where they touch different parts.
   2026-11-02); the db tests get sign-in headroom through `SetupTuning` (about 41 of 60 a minute);
   e2e rooms made on the plain `page` fixture tip the 20-in-10-minutes limit; the Dockerfile's
   comments quote 220 MB and 247 MB (the image is 239 MB of 250).
-- **U2, a per-address cap on socket handshakes**, before any session lookup, roomy enough for a
-  16-person reconnect behind one NAT; and the burst test's one `room_not_found` under load,
-  explained.
+- **U2, merged** (PR #118): see Live.
 - **U3, `/dev/table` crashes in WebKit** (React #185, with or without the CSP). Check a real
   round in WebKit too: no Safari has run the app. Fix and hold it with a WebKit test.
 - **U4, left by #39**, after U2: rate limits shared through Redis, a Redis key prefix so two
