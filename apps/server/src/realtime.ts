@@ -11,10 +11,11 @@
  * person holds at most `MAX_SOCKETS_PER_USER` sockets; the next handshake is refused with
  * `rate_limited`. `drainRealtime` stops taking messages and waits for the answers owed.
  *
- * A connection costs memory before it is anyone's (#36): a handshake without the session
- * cookie is refused before the upgrade (`sessionCookie`), a refused handshake closes its
- * transport at once, and a connection that never asks for a socket is closed after
- * `CONNECT_TIMEOUT_MS`.
+ * A connection costs memory before it is anyone's (#36): a handshake without a session
+ * cookie whose signature holds is refused before the upgrade (`sessionCookie`), a refused
+ * handshake closes its transport at once, and a connection that never asks for a socket is
+ * closed after `CONNECT_TIMEOUT_MS`. One session opens at most `HANDSHAKE_LIMIT` connections
+ * (U2), counted before the session is looked up, and a connection asks for one socket.
  */
 import { randomBytes } from "node:crypto";
 import type { Server as HttpServer } from "node:http";
@@ -37,7 +38,9 @@ import { type ExtendedError, Server, type ServerOptions, type Socket } from "soc
 import { Decoder, Encoder } from "socket.io-parser";
 import type { SocketUser } from "./auth.ts";
 import type { Logger } from "./logger.ts";
+import { sessionKey, signedSessionToken } from "./session-cookie.ts";
 import {
+  createKeyedTokenBuckets,
   createTokenBucket,
   HISTORY_LIMIT,
   QUEUE_WRITE_LIMIT,
@@ -157,15 +160,22 @@ export interface RealtimeOptions {
   queueLimit?: TokenBucketOptions;
   /** Sockets one person may hold at once; `MAX_SOCKETS_PER_USER` by default. */
   maxSocketsPerUser?: number;
+  /** Handshakes per session; `HANDSHAKE_LIMIT` by default. */
+  handshakeLimit?: TokenBucketOptions;
+  /** How often refused handshakes are logged, as one line; `HANDSHAKE_WARN_EVERY_MS` by default. */
+  handshakeWarnEveryMs?: number;
   /** Added to every HTTP answer of Socket.IO's own (polling, the upgrade): the app's (#36). */
   responseHeaders?: Readonly<Record<string, string>>;
   /**
-   * The cookie every handshake must carry (`setup.ts`: the session cookie's name). Without
-   * it, Engine.IO refuses the request before any upgrade or session, with the message
-   * `unauthenticated` (403 over polling, 400 on the upgrade); its value is still checked
-   * by the session middleware. Left out (tests without identity), no cookie is needed.
+   * The cookie every handshake must carry (`setup.ts`: the session cookie's name) and the
+   * secret Better Auth signs it with. Without it, or with a signature that does not hold,
+   * Engine.IO refuses the request before any upgrade or query, with the message
+   * `unauthenticated` (403 over polling, 400 on a WebSocket opened without a polling
+   * connection); the session behind a valid one is still looked up by the session middleware.
+   * Its token keys the handshake cap. Left out (tests without identity), no cookie is needed
+   * and no handshake is counted.
    */
-  sessionCookie?: string;
+  sessionCookie?: { readonly name: string; readonly secret: string };
   /**
    * Socket.IO's adapter (#39: the Redis adapter, `scale-out.ts`); the in-memory one when
    * left out.
@@ -186,16 +196,40 @@ export interface RealtimeOptions {
  */
 export const CONNECT_TIMEOUT_MS = 5_000;
 
-/** True when the `Cookie` header names `name` (its value is the middleware's to check). */
-export function hasCookie(header: string | undefined, name: string): boolean {
-  return (header ?? "").split(";").some((part) => part.trimStart().startsWith(`${name}=`));
-}
-
 /**
  * Sockets one person may hold open at once (tabs, devices): enough for a few tabs, few
  * enough that one session cannot multiply its message budget or the server's work.
  */
 export const MAX_SOCKETS_PER_USER = 8;
+
+/**
+ * Socket handshakes per session (U2): the connections one session cookie opens, each the
+ * polling request that opens one or a WebSocket opened without one (a polling connection's
+ * later requests and its upgrade carry its `sid` and are not handshakes). Counted in
+ * `allowRequest`, before the session middleware's query, once the Origin check and the cookie's
+ * signature passed, which cost no query: a forged cookie is refused for that and spends nothing.
+ *
+ * Per session, not per address. Behind a proxy the app does not trust (`TRUST_PROXY` too low,
+ * as at poker.borden.ch until the owner sets it), every visitor shares one address, so a cap
+ * per address would let one client refuse everyone's reconnects; per session, a shared address
+ * shares nothing, and a loop spends only its own bucket. A client gets more buckets only by
+ * signing in again, which the anonymous sign-in limit holds to 60 a minute per address.
+ *
+ * Sized for one browser: its tabs share the session, a person holds at most
+ * `MAX_SOCKETS_PER_USER` (8) sockets, and a redeploy or a laptop waking up reconnects every tab
+ * at once (Socket.IO's backoff, 0.5 to 1.5 s for the first try), one handshake each, on a
+ * process whose buckets are new and full. 30 at once covers ten tabs three times over; past it,
+ * one a second, and a refused tab tries again quietly while it shows "reconnecting". A loop on
+ * one session gets one session lookup a second, and holds at most about 35 connections without
+ * a socket (each closed after `CONNECT_TIMEOUT_MS`).
+ */
+export const HANDSHAKE_LIMIT = { perSecond: 1, burst: 30 } as const;
+
+/**
+ * Refused handshakes are logged at most this often: the first at once, then one line for those
+ * refused since the line before, until a whole period passes with none.
+ */
+export const HANDSHAKE_WARN_EVERY_MS = 60_000;
 
 /** One person's sockets and their shared buckets. */
 interface Holder {
@@ -286,11 +320,38 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     historyLimit = HISTORY_LIMIT,
     queueLimit = QUEUE_WRITE_LIMIT,
     maxSocketsPerUser = MAX_SOCKETS_PER_USER,
+    handshakeLimit = HANDSHAKE_LIMIT,
+    handshakeWarnEveryMs = HANDSHAKE_WARN_EVERY_MS,
     responseHeaders = {},
     sessionCookie,
     adapter,
     transports,
   } = options;
+  const handshakes = createKeyedTokenBuckets(handshakeLimit);
+  // Only how many were refused and over how long: no address, no token, no room.
+  let refused = 0;
+  let windowStart = 0;
+  let nextReport: ReturnType<typeof setTimeout> | undefined;
+  const report = () => {
+    nextReport = undefined;
+    if (refused === 0) return;
+    const at = Date.now();
+    logger.warn(
+      { refused, windowMs: at - windowStart },
+      "socket handshakes refused: too many from one session",
+    );
+    refused = 0;
+    windowStart = at;
+    nextReport = setTimeout(report, handshakeWarnEveryMs);
+    nextReport.unref();
+  };
+  const refuseHandshake = () => {
+    refused += 1;
+    if (nextReport !== undefined) return;
+    windowStart = Date.now();
+    report();
+  };
+  httpServer.once("close", () => clearTimeout(nextReport));
   const io: RealtimeServer = new Server(httpServer, {
     ...(adapter && { adapter }),
     ...(transports && { transports }),
@@ -305,9 +366,21 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
         callback(null, false);
         return;
       }
-      if (sessionCookie !== undefined && !hasCookie(request.headers.cookie, sessionCookie)) {
-        callback("unauthenticated", false);
-        return;
+      if (sessionCookie !== undefined) {
+        const { name, secret } = sessionCookie;
+        const token = signedSessionToken(request.headers.cookie, name, secret);
+        if (token === null) {
+          callback("unauthenticated", false);
+          return;
+        }
+        // Engine.IO answers 403 with this message over polling, which the web app reads and
+        // retries (`refusalOf`), and a bare 400 on a WebSocket opened without a polling
+        // connection, which Socket.IO retries itself.
+        if (!handshakes.take(sessionKey(token))) {
+          refuseHandshake();
+          callback("rate_limited", false);
+          return;
+        }
       }
       callback(null, true);
     },
@@ -318,10 +391,21 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     Object.assign(headers, responseHeaders);
   });
 
-  io.use((socket, next) => {
-    socket.data.conn = randomBytes(6).toString("base64url");
-    next();
-  });
+  // One socket per Engine.IO connection (U2): the cap counts connections, and every CONNECT
+  // packet runs the session lookup, so a second one, even while the first is still being
+  // looked up, is refused and the connection closed. The web client sends one per connection.
+  const asked = new WeakSet<object>();
+  io.use(
+    closeOnRefusal((socket, next) => {
+      if (asked.has(socket.client)) {
+        next(new Error("rate_limited"));
+        return;
+      }
+      asked.add(socket.client);
+      socket.data.conn = randomBytes(6).toString("base64url");
+      next();
+    }),
+  );
   for (const fn of middleware) io.use(closeOnRefusal(guard(fn, logger)));
 
   // After the session: the sockets and the message bucket of each person. Without

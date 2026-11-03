@@ -25,6 +25,7 @@ import { cardLeaks } from "@pp/protocol/leak-scan";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Config } from "../config.ts";
 import { createTestDatabase, testClient as dbClient, type TestDatabase } from "../db/test-db.ts";
+import { HANDSHAKE_LIMIT } from "../realtime.ts";
 import { createServer, type PokerServer } from "../server.ts";
 import { type SetupTuning, setupServer } from "../setup.ts";
 import { collectLogs, testConfig, VALID_ENV } from "../test-support.ts";
@@ -117,6 +118,18 @@ function client(guest: Guest, instance = main()): TestClient {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
+ * Enters each client, and fails on a refused enter with its own code. A refused enter leaves
+ * the socket in no room, so a command that later gets a token from the bucket answers
+ * `room_not_found`: that was the burst test's one `room_not_found` in October (U2). Its enter
+ * met a bucket the join latency test had just spent, was refused with `rate_limited`, and the
+ * one command a refill let through found no room.
+ */
+async function enterAll(code: string, ...entering: TestClient[]): Promise<void> {
+  const acks = await Promise.all(entering.map((each) => each.enter(code)));
+  expect(acks.map((ack) => (ack.ok ? "ok" : ack.code))).toEqual(entering.map(() => "ok"));
+}
+
+/**
  * A fixture clock that never repeats: two joins in one millisecond would tie on `joinedAt`,
  * and the snapshot would then order those people by id, which differs from room to room.
  */
@@ -192,7 +205,7 @@ describe("a burst past the message limit (AC 3)", () => {
     const a = client(ada);
     const b = client(bob);
     const c = client(cy);
-    await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
+    await enterAll(code, a, b, c);
     const burst = Promise.all(
       Array.from({ length: 200 }, (_, i) =>
         b.cmd("castVote", { card: i % 2 ? "5" : "3", round: 1, restart: 0 }),
@@ -232,7 +245,7 @@ describe("secrecy on the real frames", () => {
     const a = client(ada);
     const b = client(bob);
     const c = client(cy);
-    await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
+    await enterAll(code, a, b, c);
     expect((await a.cmd("castVote", { card: "13", round: 1, restart: 0 })).ok).toBe(true);
     expect((await b.cmd("castVote", { card: "5", round: 1, restart: 0 })).ok).toBe(true);
     // Everyone voted: the room reveals by itself; wait for the last voting snapshot first.
@@ -263,7 +276,7 @@ describe("secrecy on the real frames", () => {
       const a = client(ada);
       const b = client(bob);
       const c = client(cy);
-      await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
+      await enterAll(code, a, b, c);
       // The second vote completes the round: "everyone voted" reveals it.
       expect((await a.cmd("castVote", { card: cards[0], round: 1, restart: 0 })).ok).toBe(true);
       expect((await b.cmd("castVote", { card: cards[1], round: 1, restart: 0 })).ok).toBe(true);
@@ -302,7 +315,7 @@ describe("the reveal (#19)", () => {
     const code = await insert(votingRoom());
     const b = client(bob);
     const c = client(cy);
-    await Promise.all([b.enter(code), c.enter(code)]);
+    await enterAll(code, b, c);
     expect(await b.cmd("reveal")).toEqual({ ok: false, code: "not_allowed" });
     expect(await c.cmd("reveal")).toEqual({ ok: false, code: "not_allowed" });
     // Nothing was stored or broadcast: the round still votes, at the inserted version.
@@ -314,7 +327,7 @@ describe("the reveal (#19)", () => {
     expect(stored?.state.round?.phase).toBe("voting");
     // The PO may.
     const a = client(ada);
-    await a.enter(code);
+    await enterAll(code, a);
     expect(await a.cmd("reveal")).toEqual({ ok: true, version: 2 });
     const seen = await c.waitFor((s) => s.room.round?.phase === "revealed");
     expect(seen.snapshot.causes).toEqual([{ type: "revealed", by: "manual", who: ada.id }]);
@@ -330,7 +343,7 @@ describe("the reveal (#19)", () => {
     const a = client(ada, instances[0]);
     const b = client(bob, instances[1]);
     const watchers = [client(cy, instances[0]), client(cy, instances[1])];
-    await Promise.all([a.enter(code), b.enter(code), ...watchers.map((w) => w.enter(code))]);
+    await enterAll(code, a, b, ...watchers);
     const acks = await Promise.all([
       a.cmd("castVote", { card: "3", round: 1, restart: 0 }),
       b.cmd("castVote", { card: "8", round: 1, restart: 0 }),
@@ -398,7 +411,7 @@ describe("reveal modes (#28)", () => {
     const code = await insert(roundWith({ whoCanReveal: "anyone" }));
     const b = client(bob);
     const c = client(cy);
-    await Promise.all([b.enter(code), c.enter(code)]);
+    await enterAll(code, b, c);
     expect(await c.cmd("reveal")).toEqual({ ok: false, code: "not_allowed" });
     // Nothing was stored or broadcast: the round stays secret.
     await sleep(100);
@@ -414,10 +427,10 @@ describe("reveal modes (#28)", () => {
     const code = await insert(roundWith({ revealWhenAllVoted: false }));
     const a = client(ada);
     const c = client(cy);
-    await Promise.all([a.enter(code), c.enter(code)]);
+    await enterAll(code, a, c);
     expect((await a.cmd("castVote", { card: "3", round: 1, restart: 0 })).ok).toBe(true);
     const b = client(bob);
-    await b.enter(code);
+    await enterAll(code, b);
     expect(await b.cmd("castVote", { card: "8", round: 1, restart: 0 })).toEqual({
       ok: true,
       version: 3,
@@ -437,7 +450,7 @@ describe("reveal modes (#28)", () => {
     const code = await insert(state);
     const a = client(ada);
     const c = client(cy);
-    await Promise.all([a.enter(code), c.enter(code)]);
+    await enterAll(code, a, c);
     expect(c.latest()?.room.round?.phase).toBe("voting");
     expect(await a.cmd("updateSettings", { patch: { revealWhenAllVoted: true } })).toEqual({
       ok: true,
@@ -463,7 +476,7 @@ describe("reveal modes (#28)", () => {
       const code = await insert(state);
       const b = client(bob);
       const c = client(cy);
-      await Promise.all([b.enter(code), c.enter(code)]);
+      await enterAll(code, b, c);
       expect((await b.cmd("castVote", { card: cards[1], round: 1, restart: 0 })).ok).toBe(true);
       expect((await b.cmd("reveal")).ok).toBe(true);
       await c.waitFor((s) => s.room.round?.phase === "revealed");
@@ -501,7 +514,7 @@ describe("reveal modes (#28)", () => {
     const code = await insert(step(roundWith(anonymous), ada.id, { type: "castVote", card: "13" }));
     const b = client(bob);
     const c = client(cy);
-    await Promise.all([b.enter(code), c.enter(code)]);
+    await enterAll(code, b, c);
     expect(await b.cmd("reveal")).toEqual({ ok: false, code: "too_few_cards" });
     // Nothing was stored or broadcast: Ada's lone card stays hers.
     await sleep(100);
@@ -516,7 +529,7 @@ describe("reveal modes (#28)", () => {
     // The PO reveals at one card: the PO facilitates, and a room with one voter moves on.
     const lone = await insert(step(roundWith(anonymous), bob.id, { type: "castVote", card: "8" }));
     const a = client(ada);
-    await a.enter(lone);
+    await enterAll(lone, a);
     expect(await a.cmd("reveal")).toEqual({ ok: true, version: 2 });
   });
 });
@@ -560,7 +573,7 @@ describe("a change after the reveal (#29)", () => {
       const code = await insert(revealedWith(settings));
       const b = client(bob);
       const c = client(cy);
-      await Promise.all([b.enter(code), c.enter(code)]);
+      await enterAll(code, b, c);
       expect(await b.cmd("castVote", { card: "3", round: 1, restart: 0 })).toEqual({
         ok: false,
         code: "round_revealed",
@@ -576,7 +589,7 @@ describe("a change after the reveal (#29)", () => {
   it("never takes a card back after the reveal, even when changes are allowed", async () => {
     const code = await insert(revealedWith({ allowChangeAfterReveal: true }));
     const b = client(bob);
-    await b.enter(code);
+    await enterAll(code, b);
     expect(await b.cmd("retractVote", { round: 1, restart: 0 })).toEqual({
       ok: false,
       code: "not_voting",
@@ -591,7 +604,7 @@ describe("a change after the reveal (#29)", () => {
     const a = client(ada);
     const b = client(bob);
     const c = client(cy);
-    await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
+    await enterAll(code, a, b, c);
     expect(await b.cmd("castVote", { card: "13", round: 1, restart: 0 })).toEqual({
       ok: true,
       version: 2,
@@ -629,7 +642,7 @@ describe("a change after the reveal (#29)", () => {
     const code = await insert(revealedWith({ allowChangeAfterReveal: true }));
     const a = client(ada);
     const b = client(bob);
-    await Promise.all([a.enter(code), b.enter(code)]);
+    await enterAll(code, a, b);
     // 5 and 8 suggest 5; Ada records it.
     expect((await a.cmd("setFinal", { card: "5" })).ok).toBe(true);
     expect(await historyOf(code)).toMatchObject([
@@ -686,7 +699,7 @@ describe("the room settings (#25)", () => {
   it("shows a new room's settings exactly as ADR-011 sets them (AC 3)", async () => {
     const code = await insert(lobby());
     const b = client(bob);
-    await b.enter(code);
+    await enterAll(code, b);
     expect(b.latest()?.room.settings).toEqual({ ...DEFAULT_SETTINGS, hasPassword: false });
   });
 
@@ -694,7 +707,7 @@ describe("the room settings (#25)", () => {
     const code = await insert(lobby());
     const b = client(bob);
     const c = client(cy);
-    await Promise.all([b.enter(code), c.enter(code)]);
+    await enterAll(code, b, c);
     expect(await b.cmd("updateSettings", { patch: { revealNames: false } })).toEqual({
       ok: false,
       code: "not_owner",
@@ -715,7 +728,7 @@ describe("the room settings (#25)", () => {
   it("brings the PO's change to every client in one snapshot (AC 1)", async () => {
     const code = await insert(lobby());
     const watchers = [client(ada), client(bob), client(cy)];
-    await Promise.all(watchers.map((w) => w.enter(code)));
+    await enterAll(code, ...watchers);
     const [a] = watchers;
     expect(
       await a?.cmd("updateSettings", { patch: { revealNames: false, poVotes: false } }),
@@ -745,7 +758,7 @@ describe("the deck (#26)", () => {
   it("refuses a deck change from a voter and an observer, and brings every custom-deck code to the PO", async () => {
     const code = await insert(votingRoom());
     const [a, b, c] = [client(ada), client(bob), client(cy)];
-    await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
+    await enterAll(code, a, b, c);
     const tshirt = { deck: { kind: "preset", id: "tshirt" } };
     expect(await b.cmd("updateSettings", { patch: tshirt })).toEqual({
       ok: false,
@@ -775,7 +788,7 @@ describe("the deck (#26)", () => {
   it("restarts the round on a new deck: votes cleared, same subject and number, and a vote sent before it is refused", async () => {
     const code = await insert(votingRoom());
     const [a, b, c] = [client(ada), client(bob), client(cy)];
-    await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
+    await enterAll(code, a, b, c);
     expect((await b.cmd("castVote", { card: "5", round: 1, restart: 0 })).ok).toBe(true);
     const cards = ["0.5", "1", "1.5", "2.5", "5"];
     expect((await a.cmd("updateSettings", { patch: { deck: { kind: "custom", cards } } })).ok).toBe(
@@ -870,14 +883,8 @@ describe("the deck (#26)", () => {
       client(ada),
       client(cy),
     ];
-    await Promise.all([
-      a1.enter(codes[0]),
-      c1.enter(codes[0]),
-      a2.enter(codes[1]),
-      c2.enter(codes[1]),
-      a3.enter(codes[2]),
-      c3.enter(codes[2]),
-    ]);
+    const [first, second, third] = codes;
+    await Promise.all([enterAll(first, a1, c1), enterAll(second, a2, c2), enterAll(third, a3, c3)]);
     const tshirt = { deck: { kind: "preset", id: "tshirt" } };
     const before = Date.now();
     expect((await a1.cmd("updateSettings", { patch: tshirt })).ok).toBe(true);
@@ -929,7 +936,7 @@ describe("the next round (#21)", () => {
     const a = client(ada);
     const b = client(bob);
     const c = client(cy);
-    await Promise.all([a.enter(code), b.enter(code), c.enter(code)]);
+    await enterAll(code, a, b, c);
     expect((await a.cmd("castVote", { card: "5", round: 1, restart: 0 })).ok).toBe(true);
     expect((await b.cmd("castVote", { card: "8", round: 1, restart: 0 })).ok).toBe(true);
     await c.waitFor((s) => s.room.round?.phase === "revealed");
@@ -977,7 +984,7 @@ describe("the next round (#21)", () => {
   it("refuses a subject over 200 characters and a link with credentials (AC 3)", async () => {
     const code = await insert(votingRoom());
     const a = client(ada);
-    await a.enter(code);
+    await enterAll(code, a);
     expect(await a.cmd("reveal")).toMatchObject({ ok: true });
     for (const subject of [
       { kind: "title", text: "x".repeat(201) },
@@ -996,7 +1003,7 @@ describe("commands", () => {
   it("applies a command id once on Postgres too", async () => {
     const code = await insert(votingRoom());
     const b = client(bob);
-    await b.enter(code);
+    await enterAll(code, b);
     const [x, y] = await Promise.all([
       b.cmd("castVote", { card: "8", round: 1, restart: 0 }, "twice"),
       b.cmd("castVote", { card: "8", round: 1, restart: 0 }, "twice"),
@@ -1029,7 +1036,7 @@ describe("one session flooding a room from many sockets", () => {
     const mallory = await signInGuest(main().base, ORIGIN);
     const code = await insert(votingRoom());
     const honest = client(bob);
-    await honest.enter(code);
+    await enterAll(code, honest);
 
     /** Bob's votes, one after the other: each one's latency, and every ack. */
     async function vote(times: number, label: string) {
@@ -1051,8 +1058,9 @@ describe("one session flooding a room from many sockets", () => {
     }
     const quiet = await vote(5, "quiet");
 
-    // Mallory tries 40 sockets: 8 connect, the rest are refused at the handshake.
-    const attempts = Array.from({ length: 40 }, () => client(mallory));
+    // Mallory tries 30 sockets, her whole handshake bucket (U2): 8 connect, the rest are
+    // refused at the handshake.
+    const attempts = Array.from({ length: HANDSHAKE_LIMIT.burst }, () => client(mallory));
     const outcomes = await Promise.all(
       attempts.map(
         (c) =>
@@ -1063,9 +1071,9 @@ describe("one session flooding a room from many sockets", () => {
       ),
     );
     expect(outcomes.filter((o) => o === "connected")).toHaveLength(8);
-    expect(outcomes.filter((o) => o === "rate_limited")).toHaveLength(32);
+    expect(outcomes.filter((o) => o === "rate_limited")).toHaveLength(HANDSHAKE_LIMIT.burst - 8);
     const flood = attempts.filter((c) => c.socket.connected);
-    await Promise.all(flood.map((c) => c.enter(code)));
+    await enterAll(code, ...flood);
 
     // Each socket sends timeUp (open to anyone) at what a socket's own bucket used to allow.
     let stop = false;
@@ -1132,7 +1140,7 @@ describe("the PO's powers (#30)", () => {
     const { state, since } = ownerAway(60_000);
     const code = await insert(state);
     const b = client(bob);
-    await b.enter(code);
+    await enterAll(code, b);
     expect(b.latest()?.room.ownerClaimableAt).toBe(since + 120_000);
     expect(await b.cmd("claimOwner")).toEqual({ ok: false, code: "owner_present" });
     expect((await main().database.store.loadRoom(code))?.state.ownerId).toBe(ada.id);
@@ -1143,7 +1151,7 @@ describe("the PO's powers (#30)", () => {
     const code = await insert(ownerAway(121_000).state);
     const b = client(bob);
     const c = client(cy, second);
-    await Promise.all([b.enter(code), c.enter(code)]);
+    await enterAll(code, b, c);
     const acks = await Promise.all([b.cmd("claimOwner"), c.cmd("claimOwner")]);
     expect(acks.filter((ack) => ack.ok)).toHaveLength(1);
     expect(acks.filter((ack) => !ack.ok)).toEqual([{ ok: false, code: "owner_present" }]);
@@ -1165,7 +1173,7 @@ describe("the PO's powers (#30)", () => {
     const code = await insert(votingRoom());
     const a = client(ada);
     const tabs = [client(bob), client(bob)];
-    await Promise.all([a.enter(code), ...tabs.map((tab) => tab.enter(code))]);
+    await enterAll(code, a, ...tabs);
     const closed = tabs.map(
       (tab) =>
         new Promise<number>((resolve) =>
@@ -1199,7 +1207,7 @@ describe("the deadline timeout", () => {
     state = step(state, bob.id, { type: "castVote", card: "5" });
     const code = await insert(withDeadline(state, Date.now() + 400));
     const c = client(cy);
-    await c.enter(code);
+    await enterAll(code, c);
     const seen = await c.waitFor((s) => s.room.round?.phase === "revealed", 3000);
     expect(seen.snapshot.causes).toEqual([{ type: "revealed", by: "timer" }]);
     expect((await main().database.store.loadRoom(code))?.version).toBe(2);
@@ -1212,7 +1220,7 @@ describe("the deadline timeout", () => {
     const code = await insert(withDeadline(state, Date.now() + 500));
     const one = client(cy);
     const two = client(ada, second);
-    await Promise.all([one.enter(code), two.enter(code)]);
+    await enterAll(code, one, two);
     await Promise.all([
       one.waitFor((s) => s.room.round?.phase === "revealed", 3000),
       two.waitFor((s) => s.room.round?.phase === "revealed", 3000),
@@ -1233,7 +1241,7 @@ describe("the deadline timeout", () => {
     state = step(state, bob.id, { type: "castVote", card: "5" });
     const code = await insert(withDeadline(state, Date.now() + 1_500));
     const pages = [client(ada, quiet), client(bob, quiet), client(cy, quiet), client(ada, quiet)];
-    await Promise.all(pages.map((page) => page.enter(code)));
+    await enterAll(code, ...pages);
     const stored = async () => (await main().database.store.loadRoom(code))?.version;
     const frames = () => pages.reduce((n, page) => n + page.received.length, 0);
     // Before the deadline a ping finds nothing to do.
