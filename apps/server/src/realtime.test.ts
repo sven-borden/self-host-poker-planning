@@ -657,6 +657,30 @@ describe("handshakes per session (U2)", () => {
     expect(lookup.reached.count).toBe(0);
   });
 
+  it("refuses a handshake as internal when the shared buckets fail, and logs no session", async () => {
+    const lookup = lookups();
+    const { port, logs } = await start({
+      sessionCookie: COOKIE,
+      socketMiddleware: [lookup.middleware],
+      realtimeCluster: {
+        sharedLimits: {
+          tokenBuckets: () => ({
+            take: () => Promise.reject(new Error("boom with a session in it")),
+          }),
+        },
+      },
+    });
+    const token = randomBytes(24).toString("base64url");
+    expect(await poll(port, signed(token))).toEqual([403, '{"code":4,"message":"internal"}']);
+    const failed = logs.lines.filter((line) => line.msg === "handshake decision failed");
+    expect(failed.map((line) => line.level)).toEqual([50]);
+    for (const raw of logs.raw) {
+      expect(raw).not.toContain(token);
+      expect(raw).not.toContain("boom");
+    }
+    expect(lookup.reached.count).toBe(0);
+  });
+
   it("refuses a forged cookie or none for free: no lookup, and no bucket spent", async () => {
     const lookup = lookups();
     const { port, server } = await start({

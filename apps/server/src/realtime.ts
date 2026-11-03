@@ -386,7 +386,9 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
         // Engine.IO answers 403 with this message over polling, which the web app reads and
         // retries (`refusalOf`), and a bare 400 on a WebSocket opened without a polling
         // connection, which Socket.IO retries itself.
+        let answered = false;
         const decide = (allowed: boolean) => {
+          answered = true;
           if (allowed) {
             callback(null, true);
             return;
@@ -394,10 +396,19 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
           refuseHandshake();
           callback("rate_limited", false);
         };
-        // In memory the answer comes at once; through Redis it never rejects (U4).
+        // In memory the answer comes at once; through Redis it should never reject (U4), but
+        // a request must not hang if it does: refused as `internal`, which the page retries.
         const taken = handshakes.take(sessionKey(token));
         if (typeof taken === "boolean") decide(taken);
-        else void taken.then(decide);
+        else {
+          taken.then(decide).catch(() => {
+            // No address, token or room: the error itself may carry any of them.
+            logger.error("handshake decision failed");
+            if (answered) return;
+            answered = true;
+            callback("internal", false);
+          });
+        }
         return;
       }
       callback(null, true);
