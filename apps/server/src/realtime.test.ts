@@ -17,6 +17,7 @@ import {
   type SocketMiddleware,
 } from "./realtime.ts";
 import { createServer, type PokerServer, type ServerDeps } from "./server.ts";
+import { sessionKey } from "./session-cookie.ts";
 import { HISTORY_LIMIT, QUEUE_WRITE_LIMIT, ROSTER_LIMIT } from "./sync/token-bucket.ts";
 import { collectLogs, type LogCollector, testConfig } from "./test-support.ts";
 
@@ -618,6 +619,42 @@ describe("handshakes per session (U2)", () => {
     for (const secret of [token, testConfig().betterAuthSecret, "127.0.0.1", "::1", "localhost"]) {
       expect(written).not.toContain(secret);
     }
+  });
+
+  it("asks the shared buckets when there are some, with this instance's own as theirs (U4)", async () => {
+    const lookup = lookups();
+    const asked: { name: string; key: string }[] = [];
+    let verdict = true;
+    const { port } = await start({
+      sessionCookie: COOKIE,
+      socketMiddleware: [lookup.middleware],
+      realtimeLimits: { handshakeLimit: { perSecond: 0.001, burst: 7 } },
+      realtimeCluster: {
+        sharedLimits: {
+          tokenBuckets: (name, limit, local) => {
+            expect(limit).toEqual({ perSecond: 0.001, burst: 7 });
+            expect(local.size).toBe(0);
+            return {
+              take: async (key) => {
+                asked.push({ name, key });
+                await new Promise((resolve) => setTimeout(resolve, 20));
+                return verdict;
+              },
+            };
+          },
+        },
+      },
+    });
+    const token = randomBytes(24).toString("base64url");
+    const [status] = await poll(port, signed(token));
+    expect(status).toBe(200);
+    verdict = false;
+    expect(await poll(port, signed(token))).toEqual([403, '{"code":4,"message":"rate_limited"}']);
+    expect(asked).toEqual([
+      { name: "handshake", key: sessionKey(token) },
+      { name: "handshake", key: sessionKey(token) },
+    ]);
+    expect(lookup.reached.count).toBe(0);
   });
 
   it("refuses a forged cookie or none for free: no lookup, and no bucket spent", async () => {
