@@ -223,15 +223,18 @@ describe.skipIf(!REDIS_URL)("limits shared through Redis (U4)", () => {
         logger,
         scriptNow: () => clock,
       }).rateLimiter(memoryRateLimit());
+      // Redis expires a key on its own clock, which runs while the test waits, and the
+      // scripts read the test's: the shortest window is 30 s, so no pause on a slow runner
+      // lets Redis drop a window the in-memory limiter still holds.
       const rules: Record<string, RateLimitRule> = {
-        a: { window: 1, max: 3 },
-        b: { window: 10, max: 5 },
-        c: { window: 60, max: 1 },
+        a: { window: 30, max: 3 },
+        b: { window: 120, max: 5 },
+        c: { window: 600, max: 1 },
       };
       const held: { memory: () => void; shared: () => void }[] = [];
       const answers: string[] = [];
       for (let i = 0; i < 600; i++) {
-        clock += pick(random, [0, 0, 0, 40, 300, 1_000, 4_000, 20_000]);
+        clock += pick(random, [0, 0, 0, 1_200, 9_000, 30_000, 120_000, 600_000]);
         const key = pick(random, ["a", "b", "c"]);
         const rule = rules[key] as RateLimitRule;
         const what = random();
@@ -259,10 +262,13 @@ describe.skipIf(!REDIS_URL)("limits shared through Redis (U4)", () => {
     });
 
     it("answers every take of a token bucket as createKeyedTokenBuckets does", async () => {
+      // A bucket's key lives until it would be full again, on Redis's clock: at 0.2 a second
+      // one spent token keeps it 5 s, so a pause on a slow runner cannot expire a bucket the
+      // in-memory one still holds. 1/60 keeps a rate with no short decimal form.
       for (const [seed, limit] of [
-        [1, { perSecond: 1, burst: 4 }],
-        [2, { perSecond: 10 / 60, burst: 10 }],
-        [3, { perSecond: 10, burst: 3 }],
+        [1, { perSecond: 0.2, burst: 4 }],
+        [2, { perSecond: 1 / 60, burst: 10 }],
+        [3, { perSecond: 0.2, burst: 3 }],
       ] as const) {
         const random = seeded(seed);
         let clock = 1_800_000_000_000;
@@ -276,7 +282,7 @@ describe.skipIf(!REDIS_URL)("limits shared through Redis (U4)", () => {
         }).tokenBuckets("test", limit, createKeyedTokenBuckets(limit));
         const answers = new Set<boolean>();
         for (let i = 0; i < 400; i++) {
-          clock += pick(random, [0, 0, 0, 0, 0, 10, 100, 700, 3_000, 60_000]);
+          clock += pick(random, [0, 0, 0, 0, 0, 50, 500, 3_500, 15_000, 300_000]);
           const key = pick(random, ["x", "y", "z"]);
           const m = memory.take(key);
           expect(await shared.take(key), `limit ${seed}, step ${i}`).toBe(m);
@@ -284,6 +290,31 @@ describe.skipIf(!REDIS_URL)("limits shared through Redis (U4)", () => {
         }
         expect(answers).toEqual(new Set([true, false]));
       }
+    });
+
+    it("takes Redis's answer when this process's own loop was blocked past the timeout", async () => {
+      const logs = collectLogs("debug");
+      const limiter = createSharedLimits({
+        redis: redis as unknown as LimitCommands,
+        prefix: freshPrefix(),
+        secret,
+        logger: logs.logger,
+      }).rateLimiter(memoryRateLimit());
+      await limiter.consume("warm", { window: 60, max: 5 });
+      for (let turn = 0; turn < 3; turn++) {
+        const pending = limiter.consume("k", { window: 60, max: 5 });
+        // Let the script go out (node-redis writes in a setImmediate of its own, queued behind
+        // this one), then block the loop past LIMIT_TIMEOUT_MS: Redis answers meanwhile, and
+        // the answer waits in the socket when the timer runs out.
+        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => setImmediate(resolve));
+        const until = Date.now() + 300;
+        while (Date.now() < until) {
+          // Busy, as in a long GC or a heavy request.
+        }
+        expect(await pending, `turn ${turn}`).toEqual({ allowed: true, retryAfter: null });
+      }
+      expect(logs.messages().filter((msg) => msg.startsWith("rate limits"))).toEqual([]);
     });
 
     it("gives every key a TTL, so nothing it writes stays", async () => {
