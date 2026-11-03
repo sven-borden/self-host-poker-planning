@@ -43,7 +43,7 @@ export async function settle(page: Page) {
  * axe over `page` with the WCAG tags, once it has settled: every scan outside `audit` goes
  * through here, so none reads a page mid-animation. `include` limits it to a part.
  */
-export async function scan(page: Page, include?: string) {
+export async function scan(page: Page, include?: string): ReturnType<AxeBuilder["analyze"]> {
   await settle(page);
   const builder = new AxeBuilder({ page }).withTags(WCAG_TAGS);
   return (include === undefined ? builder : builder.include(include)).analyze();
