@@ -126,12 +126,35 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- Nothing in flight. What is left needs Sven (Owner items), or his word on the mode.
+- **Agents again since 2026-11-03** (Sven: "start with agents, you orchestrate"), no end date:
+  the upkeep list below, then stop and report.
+- U1 and U2 start together.
 - #38 is merged and stays open until Sven's run on a fresh subscription.
 - #54 and #55 are merged and stay open until the live checks at Sven's site and organisation.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
-- **The agent run ended with 2026-11-02** (Sven, 2026-11-01). Nothing chains now: ask him which
-  mode applies.
+
+## Upkeep (no GitHub issues: creating them was refused, so each is a `chore/uN-…` PR)
+
+In this order; pairs run together where they touch different parts.
+- **U1, local test reliability.** `jira.spec.ts:165` polls the write count; `sign-in.spec.ts:191`
+  counts its 2.5 s from the click; `sign-in.spec.ts:342` audits after the enter fade;
+  `reveal-performance.spec.ts` sets its rate from a benchmark under the throttle, or only reports
+  off CI, with `REFERENCE_MS` measured again (Windows overshoots the nominal 4x: build log,
+  2026-11-02); the db tests get sign-in headroom through `SetupTuning` (about 41 of 60 a minute);
+  e2e rooms made on the plain `page` fixture tip the 20-in-10-minutes limit; the Dockerfile's
+  comments quote 220 MB and 247 MB (the image is 239 MB of 250).
+- **U2, a per-address cap on socket handshakes**, before any session lookup, roomy enough for a
+  16-person reconnect behind one NAT; and the burst test's one `room_not_found` under load,
+  explained.
+- **U3, `/dev/table` crashes in WebKit** (React #185, with or without the CSP). Check a real
+  round in WebKit too: no Safari has run the app. Fix and hold it with a WebKit test.
+- **U4, left by #39**, after U2: rate limits shared through Redis, a Redis key prefix so two
+  deployments share one Redis, a sticky-session setting with polling.
+- **U5, a person removed while their socket was down** comes back to the join form with no
+  notice (accepted at #30's review): tell them, in en, fr and de.
+- **U6, lighter pages**, after U5 (both touch the catalogues): the settings and history panels'
+  copy loads with the panel; nothing uses Motion's `m` any more (ADR-008), so check whether
+  `motion` and `AppMotionConfig` can go.
 
 ## Next
 
@@ -139,32 +162,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 - W7 is parked: "free tool for now" (Sven, 2026-11-03, ADR-033). MIT, no paid option. #57 and
   #58 are not built free unless he says so, as MIT code cannot be taken back; #59 has nothing to
   gate. #56 is decided.
-- The local reveal budget fails on Windows, not in the code: #43's own commit fails it today.
-  Chromium's nominal 4x overshoots here (layout x7.5 to 8.3, x3.4 to 4.7 on Linux), which leaves
-  this machine on the 50 ms line. CI stays the judge; keep the budget. What tipped it between
-  2026-11-01 20:09 and 2026-11-02 00:13 is unknown. Build log, 2026-11-02.
-- Test fixes found by that diagnosis, ready for a chore: `reveal-performance.spec.ts` sets the
-  rate from a benchmark taken under the throttle, or reports only off CI, and `REFERENCE_MS` is
-  measured again. `jira.spec.ts` polls the write count, `sign-in.spec.ts` counts its 2.5 s from
-  the click, and its audit waits for the enter fade. All three fail locally and pass in CI.
-- Image size: 239 MB of 250 MB after #40 (236 MB before). A dependency of more than a few MB
-  needs a look first. The Dockerfile's header comments still quote 220 MB and 247 MB.
-- Chores to fold into a later issue: a lazy catalog for the panels' copy (settings and
-  history, a few kB off both pages); the burst test's one `room_not_found` under load;
-  a higher anonymous sign-in limit for the db tests through `SetupTuning` (about 41 of
-  60 a minute used, 3 more per new block); `/dev/table` crashes in WebKit (React #185),
-  with or without the CSP; no per-address cap on socket handshakes yet; nothing uses
-  Motion's `m` any more (ADR-008), so `motion` could go, with `AppMotionConfig`; a new e2e
-  test that creates a room on the plain `page` fixture tips a fast local run over the 20
-  rooms in 10 minutes (use `newPerson`).
-  - Each later setting drops its control into #25's panel (see the web README).
-- Left by #39 for later: rate limits shared through Redis, a sticky-session setting
-  with polling, a Redis key prefix so two deployments can share one Redis.
+- Image size: 239 MB of 250 MB after #40. A dependency of more than a few MB needs a look first.
+- Each later setting drops its control into #25's panel (see the web README).
 - Notes to carry into the briefs:
   - #29: change after reveal never applies to anonymous rounds. The panel's `locked`
     toggle shows why.
-  - Later: a person removed while their socket was down comes back to the join form
-    with no notice (accepted at #30's review).
   - The table's geometry is proven from 360 px; 320 px is checked for reflow only
     (#37).
 

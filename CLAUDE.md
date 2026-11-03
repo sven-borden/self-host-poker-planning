@@ -20,12 +20,12 @@ Code conventions live next to the code (package READMEs); do not duplicate them 
 
 ## Build process
 
-- **Until the end of 2026-11-02 (Sven, 2026-11-01): agents again, issue after issue.** The
-  main session orchestrates by the agent rules below and does not stop between issues. It
-  skips what only Sven can decide and goes on with what is unblocked. CI is watched with a
-  background shell command. After that date it stops and asks; the rule from 2026-10-29
-  (no subagents, the main session does each task itself, one at a time) was in force until
-  then.
+- **Since 2026-11-03 (Sven: "start with agents, you orchestrate"): agents, issue after
+  issue.** The main session orchestrates by the agent rules below and does not stop between
+  issues. It skips what only Sven can decide and goes on with what is unblocked. CI is
+  watched with a background shell command. No end date was given: when the unblocked work
+  runs out, it stops and reports. Before: agents from 2026-11-01 to the end of 2026-11-02,
+  and from 2026-10-29 no subagents, one task at a time in the main session.
 - Two issues may be in flight at once (Sven, 2026-10-26), when both have their "Depends
   on" issues merged and they touch different parts of the repo. Otherwise one at a time.
   One implementer agent per issue; the main session orchestrates.
@@ -35,7 +35,9 @@ Code conventions live next to the code (package READMEs); do not duplicate them 
 - When two PRs are open, the one that merges second first merges `main` into its
   branch. It regenerates `pnpm-lock.yaml` with `pnpm install` (never by hand) and is
   green again before merging.
-- Order: milestones `W0` to `W7`, then issue number inside a wave. Issue keys `PP-NNN`
+- Order: milestones `W0` to `W7`, then issue number inside a wave, then the upkeep list
+  (`U1` onward) in `docs/STATUS.md`. Upkeep items have no GitHub issue: each is a `chore/uN-…`
+  branch and PR without `Closes`. Issue keys `PP-NNN`
   equal issue numbers. Order and blockers: `docs/STATUS.md`.
 - Per issue: read the issue and the "Handoff for the fixer" sections of the PRs it
   depends on; brief the agent with PO defaults; the agent works on a branch
