@@ -62,7 +62,8 @@ export interface Config {
   readonly cspExtraSources: CspSources;
   /**
    * Redis for running several instances (#39, `scale-out.ts`): set, the instances share
-   * room changes, presence and command ids through it, and sockets use WebSocket only.
+   * room changes, presence, command ids and the rate limits (U4) through it, and sockets use
+   * WebSocket only unless `stickySessions`.
    * Unset (the default), nothing about Redis is loaded. May hold a password: never log it.
    */
   readonly redisUrl: string | undefined;

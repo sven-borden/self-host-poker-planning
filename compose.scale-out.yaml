@@ -27,7 +27,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    # Pub/sub and short-lived command ids only: nothing to keep across a restart.
+    # Pub/sub, short-lived command ids and the rate limits' counters only: nothing to keep
+    # across a restart.
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]

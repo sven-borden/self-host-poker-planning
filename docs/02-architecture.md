@@ -962,7 +962,7 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   - **Limits** (`PASSWORD_LIMITS`, each in 10 minutes): 10 wrong passwords per person
     (session user) and room, in the process (and in Redis with several instances, U4), so
     one person's typos never lock out a team that shares an address; 25 wrong passwords per
-    address and room, in the process, so
+    address and room, in the process (and in Redis with several instances, U4), so
     one address with a handful of guest sessions cannot spend the room's 50 alone; 50
     wrong passwords per room whatever the people or addresses,
     in the database (`room.password_failures`, a fixed window updated atomically), so
@@ -1090,7 +1090,7 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   | Wrong passwords (database, every instance) | brute force | room | 50 in 10 min |
   | Password changes (`PUT`, `DELETE`) | hashing on demand | person (PO) | 30 in 10 min |
   | The rule's count (`GET /api/rooms/:code/restriction`) | reading seats' accounts, testing guesses | person (PO) | 60 in 10 min |
-  | Commits that set a rule (`updateSettings` with a rule) | testing guesses: up to 40 entries each, read back by the count and a refused hand-over | account, each instance | 5 an hour, so 200 entries; a commit that stored nothing does not count, and taking a rule off is free. No preview |
+  | Commits that set a rule (`updateSettings` with a rule) | testing guesses: up to 40 entries each, read back by the count and a refused hand-over | account (each instance without Redis) | 5 an hour, so 200 entries; a commit that stored nothing does not count, and taking a rule off is free. No preview |
   | Removing those who would not pass (`POST .../remove-outsiders`) | a kick per seat | person (PO) | 10 in 10 min |
   | "My rooms" reads (`GET /api/my-rooms`) | a query per page | person | 60 a minute |
   | "My rooms" changes (rename, delete, leave) | broadcasts and deletes in a loop | person | 30 a minute |
@@ -1125,8 +1125,11 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
   a forged cookie (its name is public) is refused for free and spends no bucket. Its size:
   - One browser shares one session across its tabs, and a person holds at most 8 sockets. A
     redeploy or a laptop waking up reconnects every tab at once (Socket.IO's backoff: 0.5 to
-    1.5 s, then doubling up to 5 s), one handshake each, on a process whose buckets are new
-    and full: 30 covers ten tabs three times over. Past it, one a second, and a refused tab
+    1.5 s, then doubling up to 5 s), one handshake each. Without Redis that lands on a
+    process whose buckets are new and full; with it (U4) a session's bucket survives the
+    redeploy, and a rolling deploy reconnects in waves, one per instance replaced, each well
+    under 30, with a token a second refilling between them: 30 covers ten tabs three times
+    over. Past it, one a second, and a refused tab
     tries again quietly, showing "reconnecting". Nothing is lost: the room is in Postgres,
     and the client sends its commands again once it is back.
   - A loop on one session gets 30, then one session lookup a second, and holds at most about
@@ -1190,8 +1193,22 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
     up to the number of instances times a limit (as before U4), and the room's 50 wrong
     passwords in 10 minutes, in Postgres, still cap a brute force. A Redis error never
     reaches a request. One line `rate limits: redis unavailable, counting on this instance`
-    (with the error's code) when it starts, `rate limits: shared through redis again` when it
-    ends; never a key, an address or a session.
+    when it starts, with `err`: `timeout`, `offline` or `closed` (no connection) at warn
+    level, or the code of a Redis refusal (`NOPERM`, `READONLY`, `OOM`, `ERR` …, or
+    `unexpected_reply`) at error level, since waiting does not heal those; and
+    `rate limits: shared through redis again` when a call that started after the instance
+    went local is answered. Never a key, an address or a session. A timeout is measured
+    after the instance has read its sockets, so a pause of its own event loop (a long GC)
+    does not count against Redis.
+  - **What Redis must allow.** The scripts need `EVAL` and `EVALSHA` (`+@scripting` in an
+    ACL) and writes, so a primary, not a replica. A user without them still answers `PING`,
+    so `/api/health` says `redis: ok` while every limit stays per instance, logged once at
+    error level with `NOPERM` or `READONLY`. Keep Redis's default `maxmemory-policy
+    noeviction`: with an eviction policy, a flood of fresh keys (one per address or session)
+    could evict the password guard's counters; with `noeviction` a full Redis refuses the
+    writes (`OOM`), the instances count locally, and the guard never opens. A Redis restart
+    without persistence resets the shared counters, as an app restart did before U4; the
+    room's 50 wrong passwords in Postgres still hold.
   - **A rolling deploy** from a build without U4 counts in two places for a while: the old
     instances in memory, the new ones in Redis. Nothing breaks; a client may get a little
     more for those minutes.
@@ -1504,7 +1521,9 @@ language, and an unknown code gets a generic one.
 | `CSP_REPORT_ONLY` | no (false) | `true` or `1` sends the Content Security Policy report-only: violations show in the browser console, nothing is blocked (section 8) |
 | `CSP_EXTRA_SOURCES` | no | origins added to the policy, such as `script-src https://stats.example.com; connect-src https://stats.example.com` (section 8) |
 | `POSTGRES_PASSWORD` | compose only | password of the bundled Postgres; letters and digits, since it goes into `DATABASE_URL` |
-| `REDIS_URL` | no | several instances only (#39): a `redis://` or `rediss://` URL that every instance reaches (Redis 6.2 or newer). Set, sockets use WebSocket only and `/api/health` adds `redis: ok` or `down`; may hold a password, never logged |
+| `REDIS_URL` | no | several instances only (#39): a `redis://` or `rediss://` URL that every instance reaches (Redis 6.2 or newer, a primary whose user may run scripts). Set, sockets use WebSocket only unless `STICKY_SESSIONS`; the rate limits and the handshake cap count in Redis (U4, section 8); `/api/health` adds `redis: ok` or `down`; may hold a password, never logged |
+| `REDIS_KEY_PREFIX` | no (`pp`) | with `REDIS_URL` (U4, section 1): what every Redis key and channel of this deployment starts with, 1 to 32 letters, digits or `_` (no dash). The default keeps #39's names, so a rolling deploy stays one cluster; two deployments on one Redis each take their own. Change it only with a full restart. Without `REDIS_URL` it changes nothing, and the start warns |
+| `STICKY_SESSIONS` | no (false) | with `REDIS_URL` (U4, section 1): `true` or `1` allows long-polling again, for a load balancer that keeps each client on one instance (cookie or address affinity); without that affinity, polling fails with 400 `Session ID unknown`. Without `REDIS_URL` it changes nothing, and the start warns |
 | `SENTRY_DSN` | no | error reports to Sentry or GlitchTip from the server and the page (#40, section 11): `http(s)://<public key>@<host>[/<path>]/<project id>`; a DSN with a secret key is refused, since the page receives it |
 | `UMAMI_URL`, `UMAMI_WEBSITE_ID` | no | page views in Umami (#40, section 11), both or neither: Umami's address (the tracker is `/script.js` under it) or the tracker's own URL ending in `.js`, and the website's UUID |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | no | sign-in with Google (#47, section 7), both or neither; the secret is never logged. Redirect URI: `<BASE_URL>/api/auth/callback/google` |

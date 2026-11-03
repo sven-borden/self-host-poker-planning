@@ -38,8 +38,8 @@ const SWEEP_EVERY_MS = 30_000;
 /**
  * A fixed-window counter per key, in this process. Better Auth's own memory store is one
  * map shared by every instance in the process, which would leak counts between tests;
- * this one belongs to its `setupServer`. With several instances (#39) each counts on its
- * own.
+ * this one belongs to its `setupServer`. With `REDIS_URL` (U4) it is the local counter of
+ * `shared-limits.ts`: it counts every call and answers when Redis does not.
  *
  * Memory stays bounded and each call costs O(1) amortized: expired counters are swept
  * every 30 s, and at `maxKeys` the oldest tenth (by window start) is dropped at once.

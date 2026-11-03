@@ -347,6 +347,14 @@ nothing about Redis is loaded or opened.
   ([architecture, section 8](docs/02-architecture.md#8-rooms-access-and-security)). Redis
   holds no address or session in clear: its keys are HMACs under a key derived from
   `BETTER_AUTH_SECRET`.
+- **What Redis must allow**: the limits run Lua scripts, so the Redis user needs `EVAL` and
+  `EVALSHA` (`+@scripting` in an ACL) and writes, which means a primary, not a replica.
+  Without them `/api/health` still says `redis: ok` (a `PING` passes) but every limit stays
+  per instance; the start of it is logged once at error level, `rate limits: redis
+  unavailable, counting on this instance` with `err` `NOPERM` or `READONLY`. Keep Redis's
+  default `maxmemory-policy noeviction`: with eviction, a flood of fresh keys could push out
+  the password guard's counters, while a full Redis under `noeviction` refuses the writes and
+  the instances count on their own, so the guard never opens.
 - **Redis must be trusted**: whoever can talk to it can read every connection's
   headers, session cookies included, and room codes from the instances (the Socket.IO
   adapter answers such questions from any Redis client), and can send any client a
@@ -363,13 +371,17 @@ nothing about Redis is loaded or opened.
   handshakes still pass, and a password room stays as closed to guessing as on one
   instance. A running instance never stops because of Redis; the start fails if Redis
   cannot be reached within 30 s. Redis keeps nothing that matters across a restart (no
-  persistence needed; every key it holds expires on its own).
+  persistence needed; every key it holds expires on its own): a Redis restart resets the
+  shared rate-limit counters, as an app restart did before, and the room's 50 wrong
+  passwords in 10 minutes, in Postgres, still hold.
 - **Two deployments on one Redis** (say staging and production): give each its own
   `REDIS_KEY_PREFIX`, such as `staging` and the default `pp`. Pub/sub ignores the database
   number, so the prefix is what keeps their rooms' signals, command ids and limits apart.
   The default keeps the names of earlier builds, so a rolling deploy keeps one cluster.
 - **Turning it on**: browser tabs opened before `REDIS_URL` was set keep long-polling
-  and are refused (400) until they reload the page.
+  and are refused (400) until they reload the page, unless `STICKY_SESSIONS=true`, where
+  they keep working. Turning `STICKY_SESSIONS` off later does the same to the tabs then
+  open: they long-poll and are refused (400, `Transport unknown`) until they reload.
 - **Example**: [`compose.scale-out.yaml`](compose.scale-out.yaml) runs two replicas behind
   nginx with a Redis, laid over `compose.yaml`:
   `docker compose -f compose.yaml -f compose.scale-out.yaml up -d --build`.

@@ -223,8 +223,11 @@ export const MAX_SOCKETS_PER_USER = 8;
  *
  * Sized for one browser: its tabs share the session, a person holds at most
  * `MAX_SOCKETS_PER_USER` (8) sockets, and a redeploy or a laptop waking up reconnects every tab
- * at once (Socket.IO's backoff, 0.5 to 1.5 s for the first try), one handshake each, on a
- * process whose buckets are new and full. 30 at once covers ten tabs three times over; past it,
+ * at once (Socket.IO's backoff, 0.5 to 1.5 s for the first try), one handshake each: without
+ * Redis on a process whose buckets are new and full, with it (U4) on a bucket that survived
+ * the redeploy, where a rolling deploy reconnects in waves, one per instance replaced, each
+ * well under 30, refilled a token a second between them. 30 at once covers ten tabs three
+ * times over; past it,
  * one a second, and a refused tab tries again quietly while it shows "reconnecting". A loop on
  * one session gets one session lookup a second, and holds at most about 35 connections without
  * a socket (each closed after `CONNECT_TIMEOUT_MS`).
