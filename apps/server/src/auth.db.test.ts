@@ -491,7 +491,7 @@ describe("connections that are nobody's (#36)", () => {
     const outcomes = await Promise.all([
       // No cookie: refused before the upgrade.
       ...Array.from({ length: 200 }, () => bareSocket({})),
-      // A cookie the session middleware refuses: the connection closes with the refusal.
+      // A cookie whose signature does not hold: refused before the upgrade too (U2).
       ...Array.from({ length: 20 }, () => bareSocket({ cookie: `${COOKIE}=junk` }, "40")),
     ]);
     expect(outcomes).toHaveLength(220);
@@ -503,18 +503,17 @@ describe("connections that are nobody's (#36)", () => {
 
 describe("the socket handshake", () => {
   it("refuses a socket without a cookie, with a junk one, or a forged token", async () => {
-    // Without the cookie, Engine.IO refuses the upgrade itself (#36): no socket, no message.
+    // Engine.IO refuses the upgrade itself, before any query, without the cookie (#36) or
+    // when its signature does not hold (U2): no socket, no message.
     expect(await handshake({})).toMatchObject({ ok: false });
-    expect(await handshake({ cookie: `${COOKIE}=junk` })).toEqual({
-      ok: false,
-      message: "unauthenticated",
-    });
+    expect(await handshake({ cookie: `${COOKIE}=junk` })).toMatchObject({ ok: false });
     const { cookie } = await signIn({ "x-forwarded-for": "198.51.100.40" });
     const [token] = cookie.slice(COOKIE.length + 1).split(".");
-    expect(await handshake({ cookie: `${COOKIE}=${token}.forgedsignature` })).toEqual({
+    expect(await handshake({ cookie: `${COOKIE}=${token}.forgedsignature` })).toMatchObject({
       ok: false,
-      message: "unauthenticated",
     });
+    // The cookie Better Auth set passes the same check, and the session behind it is looked up.
+    expect(await handshake({ cookie })).toMatchObject({ ok: true });
   });
 
   it("refuses an expired session and a revoked one", async () => {

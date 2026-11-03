@@ -519,7 +519,7 @@ describe("reveal modes (#28)", () => {
     // The PO reveals at one card: the PO facilitates, and a room with one voter moves on.
     const lone = await insert(step(roundWith(anonymous), bob.id, { type: "castVote", card: "8" }));
     const a = client(ada);
-    await a.enter(lone);
+    await enterAll(lone, a);
     expect(await a.cmd("reveal")).toEqual({ ok: true, version: 2 });
   });
 });
@@ -873,13 +873,11 @@ describe("the deck (#26)", () => {
       client(ada),
       client(cy),
     ];
+    const [first, second, third] = codes;
     await Promise.all([
-      a1.enter(codes[0]),
-      c1.enter(codes[0]),
-      a2.enter(codes[1]),
-      c2.enter(codes[1]),
-      a3.enter(codes[2]),
-      c3.enter(codes[2]),
+      enterAll(first, a1, c1),
+      enterAll(second, a2, c2),
+      enterAll(third, a3, c3),
     ]);
     const tshirt = { deck: { kind: "preset", id: "tshirt" } };
     const before = Date.now();
