@@ -136,6 +136,10 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
   never someone seated), and that person's own `enter` reply carries `notice: "removed"`, so the
   removal notice shows above the join, password or room-full screen. The export names the
   removal time. Migration 0013 (a GIN index for the account lookups). Live at 2984121.
+- Lighter pages from U6 (PR #123): the settings, history, queue, sound and My rooms copy loads
+  with its panel, in the page's language only; Motion is gone (ADR-008 note). Room route 185.4 kB
+  (budget 193), landing 163.8 kB (171): a PR that adds more than the 4 % margin raises its
+  route's budget and says why. Live at 97ddf37.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -146,21 +150,17 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 ## In flight (two at once when independent; see `CLAUDE.md`)
 
-- **Agents again since 2026-11-03** (Sven: "start with agents, you orchestrate"), no end date:
-  the upkeep list below, then stop and report.
-- U6 (lighter pages) builds, the last upkeep item. U1 to U5 merged.
+- Nothing in flight. The upkeep run (agents, since 2026-11-03) ended on 2026-11-04 with U1 to U6
+  merged; what is left needs Sven (Owner items). Ask him what comes next.
 - #38 is merged and stays open until Sven's run on a fresh subscription.
 - #54 and #55 are merged and stay open until the live checks at Sven's site and organisation.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
 
-## Upkeep (no GitHub issues: creating them was refused, so each is a `chore/uN-…` PR)
+## Upkeep (done)
 
-In this order; pairs run together where they touch different parts.
-- **U1 to U5, merged** (PRs #119, #118, #121, #120, #122): see Live. Left open from U1:
-  `room-password.spec.ts:291` stalled once in 7 local runs; it attaches a trace on failure.
-- **U6, lighter pages:** the settings and history panels'
-  copy loads with the panel; nothing uses Motion's `m` any more (ADR-008), so check whether
-  `motion` and `AppMotionConfig` can go.
+U1 to U6 merged on 2026-11-03 and 2026-11-04 as PRs #118 to #123, without GitHub issues (creating
+them was refused): see Live and the build log. Left open: `room-password.spec.ts:291` stalled
+once in 7 local runs; it attaches an auth and lock trace on failure.
 
 ## Next
 
