@@ -24,6 +24,9 @@ if (!databaseUrl) {
     "The e2e suite runs against the real server: set DATABASE_URL to a Postgres it may migrate",
   );
 }
+// Chromium for every project but WebKit's: Edge locally, Playwright's Chromium in CI. A
+// project cannot unset a `channel` from the shared `use`, so each project names its browser.
+const chromium = { browserName: "chromium", ...(ci ? {} : { channel: "msedge" }) } as const;
 const serve = "pnpm --filter @pp/server exec tsx src/main.ts";
 const serveWithFakeProviders =
   "pnpm --filter @pp/server exec tsx --import ./src/fake-oidc-start.ts --import ./src/fake-jira-start.ts --import ./src/fake-azure-devops-start.ts src/main.ts";
@@ -54,7 +57,14 @@ export default defineConfig({
   workers: ci ? 2 : undefined,
   reporter: ci ? [["list"], ["html", { open: "never" }]] : "list",
   projects: [
-    { name: "e2e", testIgnore: /reveal-performance/ },
+    { name: "e2e", testIgnore: [/reveal-performance/, /webkit\.spec/], use: chromium },
+    // The app in Playwright's WebKit (U3): the table's bench and one round, desktop and
+    // iPhone. `--project=webkit` runs it alone; `pnpm exec playwright install webkit` first.
+    {
+      name: "webkit",
+      testMatch: /webkit\.spec/,
+      use: { browserName: "webkit" },
+    },
     // Long tasks mean nothing on a machine busy with other tests: this one runs alone,
     // after them (#43). The worst task sits a little under 50 ms, so a stray 51 from the
     // system is one more try; a real regression fails all three. `--no-deps` runs it alone.
@@ -65,14 +75,13 @@ export default defineConfig({
       fullyParallel: false,
       workers: 1,
       retries: 2,
+      use: chromium,
     },
   ],
   use: {
     baseURL: `http://localhost:${PORT}`,
     // The same browser language on every machine; a test that needs another says so.
     locale: "en-US",
-    browserName: "chromium",
-    ...(ci ? {} : { channel: "msedge" }),
     // A failed test keeps its trace in test-results/ (`pnpm exec playwright show-trace
     // <trace.zip>`); a passing one does not. The trace's screencast covers every page,
     // also those of contexts a test makes itself, which a video would miss. CI uploads
