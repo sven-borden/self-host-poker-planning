@@ -1,6 +1,5 @@
 import { RouterProvider } from "@tanstack/react-router";
 import { TooltipProvider } from "./components/ui/tooltip.tsx";
-import { AppMotionConfig } from "./motion/motion.tsx";
 import type { AppRouter } from "./router.ts";
 
 /**
@@ -9,10 +8,8 @@ import type { AppRouter } from "./router.ts";
  */
 export function App({ router }: { router: AppRouter }) {
   return (
-    <AppMotionConfig>
-      <TooltipProvider>
-        <RouterProvider router={router} />
-      </TooltipProvider>
-    </AppMotionConfig>
+    <TooltipProvider>
+      <RouterProvider router={router} />
+    </TooltipProvider>
   );
 }

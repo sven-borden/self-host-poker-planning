@@ -1,4 +1,5 @@
 import { type ComponentType, lazy, Suspense } from "react";
+import { loadCopy } from "../i18n/i18n.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 
 /**
@@ -8,7 +9,10 @@ import { useRoomStore } from "../stores/room-store.ts";
  * failed load (an old chunk after a redeploy) costs the button, never the page.
  */
 const SoundControl = lazy<ComponentType>(() =>
-  import("./sound-control.tsx").catch(() => ({ default: () => null })),
+  // Its words load beside it, in the page's language (U6), so the button never shows a key.
+  Promise.all([import("./sound-control.tsx"), loadCopy("sound")])
+    .then(([module]) => module)
+    .catch(() => ({ default: () => null })),
 );
 
 /**

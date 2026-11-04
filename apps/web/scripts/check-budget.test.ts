@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BUDGET_ROUTES,
+  CEILING_BYTES,
   formatKb,
   initialChunks,
   LANDING_ROUTE,
@@ -14,10 +15,10 @@ const manifest: Manifest = {
     file: "assets/index.js",
     isEntry: true,
     imports: ["_vendor.js"],
-    dynamicImports: ["src/motion/features.ts", `${ROOM_ROUTE}?tsr-split=component`],
+    dynamicImports: ["src/i18n/fr.ts", `${ROOM_ROUTE}?tsr-split=component`],
   },
   "_vendor.js": { file: "assets/vendor.js" },
-  "src/motion/features.ts": { file: "assets/features.js", imports: ["index.html"] },
+  "src/i18n/fr.ts": { file: "assets/fr.js", imports: ["index.html"] },
   [`${ROOM_ROUTE}?tsr-split=component`]: {
     file: "assets/code.js",
     imports: ["index.html", "_room-shared.js"],
@@ -46,6 +47,12 @@ describe("initialChunks", () => {
       ].sort(),
     );
     expect(BUDGET_ROUTES.map((route) => route.source)).toEqual([ROOM_ROUTE, LANDING_ROUTE]);
+  });
+
+  it("keeps every route's budget under the architecture's ceiling", () => {
+    for (const route of BUDGET_ROUTES) {
+      expect(route.budget, route.name).toBeLessThanOrEqual(CEILING_BYTES);
+    }
   });
 
   it("fails loudly when the route is missing, rather than measuring the wrong thing", () => {

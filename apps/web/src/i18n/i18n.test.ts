@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { ACK_ERROR_CODES, CONNECTOR_ERROR_CODES, PROTOCOL_ERROR_CODES } from "@pp/protocol";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ACCOUNT_COPY } from "../account/account-copy.ts";
+import { COPY_LOADERS, COPY_PARTS } from "./copy-parts.ts";
 import { de } from "./de.ts";
 import { en } from "./en.ts";
 import { errorMessage, isKnownErrorCode } from "./errors.ts";
@@ -27,11 +28,31 @@ import {
 // The catalog checks run on the objects at run time, so they hold even if a catalog ever
 // bypasses the type check (a JSON import, a cast).
 
-// The account page's words (#51) live in its chunk, and meet every rule the catalogs meet.
+/** `base` with every key of `extra` added, nested objects merged. */
+function merged(base: object, extra: object): object {
+  const out: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(extra)) {
+    const known = out[key];
+    out[key] =
+      typeof known === "object" && known !== null && typeof value === "object" && value !== null
+        ? merged(known, value)
+        : value;
+  }
+  return out;
+}
+
+/** A language's whole catalog: the page's, the panels' parts (U6) and the account page's words. */
+async function wholeCatalog(language: Language, catalog: object): Promise<object> {
+  const parts = await Promise.all(COPY_PARTS.map((part) => COPY_LOADERS[part][language]()));
+  return merged(parts.reduce(merged, catalog), { accountPage: ACCOUNT_COPY[language] });
+}
+
+// The panels' parts (U6) and the account page's words (#51) live in chunks of their own, and meet
+// every rule the catalogs meet. copy-parts.test.ts checks that no key sits in two places.
 const CATALOGS: Record<Language, unknown> = {
-  en: { ...en, accountPage: ACCOUNT_COPY.en },
-  fr: { ...fr, accountPage: ACCOUNT_COPY.fr },
-  de: { ...de, accountPage: ACCOUNT_COPY.de },
+  en: await wholeCatalog("en", en),
+  fr: await wholeCatalog("fr", fr),
+  de: await wholeCatalog("de", de),
 };
 const PLURAL = /_(zero|one|two|few|many|other)$/;
 

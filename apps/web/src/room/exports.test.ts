@@ -1,7 +1,7 @@
 import { parse } from "csv-parse/sync";
 import { marked } from "marked";
 import { beforeAll, describe, expect, it } from "vitest";
-import { fixedT, loadLanguage } from "../i18n/i18n.ts";
+import { fixedT, loadCopyIn, loadLanguage } from "../i18n/i18n.ts";
 import type { Language } from "../i18n/language.ts";
 import {
   csvSeparator,
@@ -105,6 +105,9 @@ const ROUNDS: ExportRound[] = [
 beforeAll(async () => {
   await loadLanguage("fr");
   await loadLanguage("de");
+  // The panel's own words (U6), as the panel would load them.
+  await loadCopyIn("history", "fr");
+  await loadCopyIn("history", "de");
 });
 
 function context(language: Language, over: Partial<ExportContext> = {}): ExportContext {

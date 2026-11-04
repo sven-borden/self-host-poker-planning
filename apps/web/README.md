@@ -1,8 +1,8 @@
 # @pp/web
 
 The browser app: a React 19 single-page app built by Vite, with TanStack Router
-(file-based routes), Zustand, Tailwind v4, shadcn/ui and Motion. It renders what the
-server sends and never decides the outcome of a round.
+(file-based routes), Zustand, Tailwind v4 and shadcn/ui. It renders what the server sends
+and never decides the outcome of a round.
 
 ## Layout
 
@@ -19,8 +19,8 @@ server sends and never decides the outcome of a round.
 - `src/theme/`: light, dark or system; `public/theme-init.js` applies the saved choice
   before first paint (external script: the CSP forbids inline scripts).
 - `src/i18n/`: our own typed `t()` and the catalogs (#9); see "i18n" below.
-- `src/motion/`: `AppMotionConfig` (reduced motion), `MotionFeatures` (lazy Motion
-  features) and small wrappers.
+- `src/motion/`: `RiseIn` (the CSS page entrance), the design brief's easing and the
+  reduced-motion fade length. No animation library ships (ADR-008, U6).
 - `src/table/`: the table (#13). `layout.ts` is the pure layout engine
   (`layoutTable(count, variant)` gives seat and slot centres as stage percentages, plus
   whole-pixel sizes; `GEOMETRY` holds the design brief's numbers), `geometry.ts` the
@@ -723,27 +723,18 @@ tracker, since a queue can hold items of both.
   `--warn-ink`); control borders use `--line-strong` (via shadcn's `border-input`), not
   `--line`.
 - Motion: page entrances are CSS (`RiseIn`, tw-animate-css), so content never waits for
-  JavaScript. Measured in #18: importing Motion's `m` (or `motion.tsx`) from a lazy chunk
-  makes Vite 8's rolldown split shared modules (tailwind-merge, the English catalog,
-  React's runtime) out of the entry chunk and costs the room route 12.8 kB gzipped. A
-  keyframed one-off such as the card's flight or the reveal (#19) uses `Element.animate`
-  instead (no dependency, interruptible with `cancel`, `matchMedia` for reduced motion;
-  the reveal cost the lazy `seated` and `table-stage` chunks 1.8 kB and the room route
-  nothing). Two splits
-  keep Motion within budget, measured by #18's review: one lazy boundary for every
-  Motion component (room route 167.6 kB), or a dynamic `import("motion/mini")` inside the
-  effect (3.2 kB lazy). #20's results use `Element.animate` in their own lazy chunk
-  (`results` 2.7 kB; the room route grew 0.3 kB with the English copy). #21's subject
-  field and display add 2.0 kB to the lazy `seated` chunk (11.8 kB), the domain's
-  `cleanSubject` and `linkKey` included: they sit in their own module
-  (`apply-subject.ts`), apart from the join form's `cleanName`, so the room route grew
-  only 0.2 kB with the English copy (168.1 kB) and the landing page 0.3 kB (152.0 kB);
-  check the budget before reaching for `m` in a lazy chunk (ADR-008). An animated
-  component wraps its `m.div` elements in `<MotionFeatures>`
-  (`<MotionFeatures layout>` when it needs layout animations): the features chunk
-  (`domAnimation`, or `domMax` for layout) is fetched when the first one mounts, never at
-  page load. Biome refuses `import { motion } from "motion/react"`. Every animation has a
-  reduced-motion variant (120 ms cross-fade, no travel, no delay).
+  JavaScript. A keyframed one-off such as the card's flight, the reveal (#19) or the results'
+  columns (#20) uses `Element.animate` (no dependency, interruptible with `cancel`,
+  `matchMedia` for reduced motion). Motion for React went in U6 (ADR-008): since #43 no
+  component used it, and its `MotionConfig` cost both first loads 0.3 kB. Measured in #18:
+  importing Motion's `m` from a lazy chunk made Vite 8's rolldown split shared modules
+  (tailwind-merge, the English catalog, React's runtime) out of the entry chunk and cost the
+  room route 12.8 kB gzipped, so a library that comes back is measured against the budget
+  first. #21's subject field and display add 2.0 kB to the lazy `seated` chunk (11.8 kB), the
+  domain's `cleanSubject` and `linkKey` included: they sit in their own module
+  (`apply-subject.ts`), apart from the join form's `cleanName`. Every animation reads
+  `prefers-reduced-motion` itself and has a reduced variant (120 ms cross-fade, no travel, no
+  delay).
 - A reveal's cost (#43, ADR-019): `e2e/reveal-performance.spec.ts`
   plays the last vote of 16 seats on a Pixel 7 profile, with the CPU set from a small
   benchmark taken under the throttle so that every machine tests the same speed (Chromium's
@@ -778,10 +769,14 @@ tracker, since a queue can hold items of both.
   reach 50 ms at 4x CPU (ADR-019). Never stop a loop at once, and leave with `release()`, not
   `shut()`: both are clicks. `useAudioWhile` comes after the hooks that play, since effects
   clean up in order, and it calls `keep()` so that a release under way comes to nothing.
-- Budget: `pnpm build` ends with `scripts/check-budget.ts`, which reads the Vite manifest
-  and fails when the initial JavaScript of the room route or of the landing page (entry,
-  route chunk and their static imports) exceeds 200 kB gzipped. Lazy chunks (Motion features, the toaster, the
-  French and German catalogs) do not count.
+- Budget: `pnpm build` runs `scripts/check-budget.ts`, which reads the Vite manifest and
+  fails when the initial JavaScript of the room route or of the landing page (entry, route
+  chunk and their static imports) exceeds its budget in `BUDGET_ROUTES`: the route's last
+  measured size plus a 4 % margin chosen in U6, rounded up to a whole kB, never above the
+  architecture's 200 kB ceiling. Since U6: the room route 193 kB (185.4 measured), the landing
+  page 171 kB (163.8). A PR that adds more than the margin raises its route's budget in
+  `BUDGET_ROUTES` and says why, in the PR and the build log. Lazy chunks (the panels and their words, the toaster, the French
+  and German catalogs) do not count. `scripts/check-copy-parts.ts` runs next (see "i18n").
 - Nothing connects at module load: `createSocket()` returns an unconnected socket.
   `connectWhenIdentified(socket)` connects it once `ensureIdentity({ retry: true })`
   resolved; on `connect_error` `unauthenticated` it runs the bootstrap once more and
@@ -1021,10 +1016,14 @@ stays cheap. The files in `src/i18n/`:
 - `en.ts`: the reference catalog (`as const`), nested like `table.votedSoFar`; also the
   `Catalog` type that `fr.ts` and `de.ts` are declared with, so a missing or extra key
   fails `tsc`. English is bundled; `fr.ts` and `de.ts` are lazy chunks.
+- `parts/` and `copy-parts.ts` (U6): the words only a lazy panel shows, a part per panel and
+  per language (`settings-en.ts`, `settings-fr.ts`, …; `CatalogOf` types the French and
+  German ones). See "Panel words" below.
 - `i18n.ts`: `t` and its types (`MessageKey`, `Params`, `TFunction`: template-literal
   types check each key and its placeholders), the current language (a module store with
   `subscribe` and `currentLanguage`), `changeLanguage`, `chooseLanguage` (also saves),
-  `loadLanguage`, `startLanguage` and `fixedT(language)` for code outside React and tests.
+  `loadLanguage`, `startLanguage`, `loadCopy(part)` (below) and `fixedT(language)` for code
+  outside React and tests.
 - `language.ts`: `LANGUAGES`, `LANGUAGE_NAMES` (each in itself), `pickLanguage`,
   `detectLanguage` (the saved choice in `localStorage` `pp-language`, then
   `navigator.languages`, then English; storage errors are swallowed), and `localeFor`,
@@ -1057,9 +1056,39 @@ needs a way to do it, as an installed app has no browser controls (#46): a toast
 `room/room-status.tsx` shows a Reload button for the codes `asksForReload` (`i18n/errors.ts`)
 lists, a list `errors.test.ts` holds to the catalogs. Inline messages in forms still only say it.
 
+Panel words (U6): the room settings (`settings`), the history with its summary and exports
+(`history`), the queue with the Jira and Azure DevOps sections (`queue`), the sound popover
+(`sound`) and "My rooms" (`myRooms`) keep their words out of the catalogs, so the room route
+and the landing page carry none of them (4.9 kB gzipped) and a reader in French or German
+fetches that language alone. A part holds whole keys at their usual place (`settings.deck`):
+`t` looks in the page's catalog first, then in the parts loaded, and its types add the
+English parts (`PartMessages`), so components call `t` as before. The panel's loader awaits
+`loadCopy(part)` beside its chunk (`settings-button.tsx`, `history-button.tsx`,
+`queue-button.tsx`, `sound-button.tsx`, the `/rooms` route's `loader`), so it shows once both
+are in, never a key or English first. A part that cannot load fails like the chunk: settings,
+history and queue show their `loadFailed` toast, the sound button stays empty, and `/rooms`
+shows the route's error page. `loadCopy` loads the part in the page's language, and again in a
+language picked meanwhile; while the page starts (`startLanguage`), in the language it starts
+in, fetched beside the catalog, so a French start on `/rooms` fetches the French part alone and
+a part that fails then fails its page while the page speaks French; from then on `changeLanguage` loads the parts of every panel opened
+so far before the page switches, so an open panel changes language with the page. A key that
+anything outside the panel shows (its button, the table, the live region, another panel)
+stays in the catalog: `settings.openOwner` and `settings.loadFailed` belong to the header's
+button, and `settings-words.ts` speaks in the live region. `pnpm build` ends with
+`scripts/check-copy-parts.ts`, which fails when a built chunk that loads without the panel
+names one of its part's keys, quoted or as the head of a key built in code
+(`` `exports.${column}` ``); `PART_ROOTS` there lists the chunks each part loads with (a
+panel's further chunks, such as `exports.ts`, must be loaded by the panel alone). The test
+setup loads every part in English without asking for it; a test of French or German words
+loads its part with `loadCopyIn(part, language)`. The account page (#51) keeps its own words,
+all three languages, in its route's chunk (`account-copy.ts`). The table's words (`seated`
+and the live region) stay in the catalogs: they show with the table.
+
 Adding copy:
 
-1. Add the key to `en.ts`, then to `fr.ts` and `de.ts` (`tsc` reminds you). Call it as
+1. Add the key to `en.ts`, then to `fr.ts` and `de.ts` (`tsc` reminds you). A key that only a
+   panel with a part shows goes in that part's three files instead; one that something else
+   shows too stays in the catalogs. Call it as
    `t("section.key")` in a component that got `t` from `useT()`. Never write copy as JSX
    text or as a literal `aria-label`, `title`, `placeholder` or `alt`:
    `scripts/check-copy.ts` (in `pnpm lint`) fails on it.
@@ -1079,13 +1108,17 @@ Adding copy:
 5. A new server error code goes in `@pp/protocol`'s `ACK_ERROR_CODES` and in the
    `errors` section of all three catalogs; `en.ts` checks the codes with `satisfies`.
 
-`src/i18n/i18n.test.ts` checks the catalogs at run time, so the checks hold even for a
-catalog that skips the type check (a JSON import): the same keys in every language, the
+`src/i18n/i18n.test.ts` checks the catalogs at run time, each with every part and the
+account page's words merged in, so the checks hold even for a catalog that skips the type
+check (a JSON import): the same keys in every language, the
 plural forms each language's `Intl.PluralRules` needs and no others, the same
 placeholders with the same formats, formatted number placeholders, no French or German
 string equal to the English outside a short allowlist (`SAME_AS_ENGLISH`), the
 typography rules, and a message for every code in `ACK_ERROR_CODES`. `t.test.ts` covers
-`t` itself, the region rule, limits in error messages and slow or failing catalogs. The
+`t` itself, the region rule, limits in error messages and slow or failing catalogs.
+`copy-parts.test.tsx` checks the split: every part in every language with the English
+part's keys, each key in one place, `loadCopy` in the right language, a change of language
+that waits for an open panel's part, and the settings panel that waits for its words. The
 French and German tone is reviewed in #41.
 
 ## CSP notes for #36

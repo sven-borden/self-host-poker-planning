@@ -9,6 +9,8 @@
     "scripts/**/*.ts",
     "src/i18n/en.ts",
     "src/i18n/fr.ts",
-    "src/i18n/de.ts"
+    "src/i18n/de.ts",
+    "src/i18n/copy-parts.ts",
+    "src/i18n/parts/*.ts"
   ]
 }

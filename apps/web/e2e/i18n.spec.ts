@@ -1,5 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "./fixtures.ts";
+import { SIGN_IN_BASE } from "./signed-in.ts";
+import { createRoom, join } from "./support.ts";
 
 // Languages in a real browser (#9): the switcher changes every string without a reload and
 // moves <html lang>, the choice survives a reload, a French browser starts in French with
@@ -257,5 +259,112 @@ test.describe("in forced-colours mode", () => {
     await expect(items.first()).toBeFocused();
     expect(await outline(items.first())).not.toBe("none");
     expect(await outline(items.nth(1))).toBe("none");
+  });
+});
+
+// The panels' words load with the panels (U6): a part per panel and per language.
+test.describe("a room's panels", () => {
+  test.skip(!process.env.DATABASE_URL, "needs DATABASE_URL: runs against the real server");
+
+  /** The panels' parts the page fetched, by name: `settings-fr`, `history-de`… */
+  function partsFetched(page: Page): string[] {
+    const fetched: string[] = [];
+    page.on("requestfinished", (request) => {
+      const part =
+        /\/assets\/((?:settings|history|queue|sound|my-rooms)-(?:en|fr|de))-[\w-]+\.js$/.exec(
+          request.url(),
+        )?.[1];
+      if (part) fetched.push(part);
+    });
+    return fetched;
+  }
+
+  test("open after a switch in that language alone, and follow the next switch", async ({
+    page,
+  }) => {
+    const fetched = partsFetched(page);
+    await createRoom(page);
+    await join(page, "Pia");
+    await pick(page, /^Language: English$/, "Français");
+    await expect(page.locator("html")).toHaveAttribute("lang", "fr");
+
+    await page.getByRole("button", { name: "Réglages de la salle" }).click();
+    const settings = page.getByRole("dialog", { name: "Réglages de la salle" });
+    await expect(settings.getByRole("switch", { name: "Vote anonyme" })).toBeVisible();
+    await expect(settings).not.toContainText(/\b(?:settings|deckField|restriction|password)\.\w/);
+    await page.keyboard.press("Escape");
+    await expect(settings).toBeHidden();
+
+    await page.getByRole("button", { name: "Historique" }).click();
+    const history = page.getByRole("dialog", { name: "Historique" });
+    await expect(
+      history.getByText("Chaque tour terminé, du plus récent au plus ancien."),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(history).toBeHidden();
+    // The sound popover's part came with the room, in English then in French (its button is
+    // in the top bar); the panels' parts only as each opened, in French alone.
+    const panels = () => fetched.filter((part) => /^(?:settings|history)-/.test(part)).sort();
+    await expect.poll(panels).toEqual(["history-fr", "settings-fr"]);
+
+    // The parts of the panels opened so far come with the next language, before the page
+    // switches. The open switcher prefetches the other languages, their parts included.
+    await pick(page, /^Langue/, "Deutsch");
+    await expect(page.locator("html")).toHaveAttribute("lang", "de");
+    await expect.poll(panels).toEqual(expect.arrayContaining(["history-de", "settings-de"]));
+    expect(fetched.filter((part) => /^(?:queue|my-rooms)-/.test(part))).toEqual([]);
+    await page.getByRole("button", { name: "Raumeinstellungen" }).click();
+    await expect(
+      page
+        .getByRole("dialog", { name: "Raumeinstellungen" })
+        .getByRole("switch", { name: "Anonyme Abstimmung" }),
+    ).toBeVisible();
+  });
+
+  test("wait for their words, so they never show English or a key first", async ({ page }) => {
+    // Records whether the page ever shows the panel's English words or a bare key.
+    await page.addInitScript(() => {
+      const flags = { english: false, key: false };
+      (window as unknown as { ppFlags: typeof flags }).ppFlags = flags;
+      new MutationObserver(() => {
+        const text = document.body?.textContent ?? "";
+        if (text.includes("Anonymous voting")) flags.english = true;
+        if (/\b(?:settings|deckField)\.[a-z]/.test(text)) flags.key = true;
+      }).observe(document, { childList: true, subtree: true, characterData: true });
+    });
+    await page.route(/\/assets\/settings-fr-[\w-]+\.js$/, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await route.continue();
+    });
+    await createRoom(page);
+    await join(page, "Pia");
+    await pick(page, /^Language: English$/, "Français");
+    await expect(page.locator("html")).toHaveAttribute("lang", "fr");
+    const button = page.getByRole("button", { name: "Réglages de la salle" });
+    await button.click();
+    await page.waitForTimeout(700);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    const dialog = page.getByRole("dialog", { name: "Réglages de la salle" });
+    await expect(dialog.getByRole("switch", { name: "Vote anonyme" })).toBeVisible();
+    const flags = await page.evaluate(
+      () => (window as unknown as { ppFlags: { english: boolean; key: boolean } }).ppFlags,
+    );
+    expect(flags).toEqual({ english: false, key: false });
+  });
+
+  // "My rooms" loads its words as the route's data, in the same turn as the French catalog: the
+  // French part comes beside the catalog, never the English one first. A guest sees the page once
+  // the server has sign-in providers, as the fake-provider server has.
+  test("load in the language a page starts in, the first one included", async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.setItem("pp-language", "fr"));
+    const fetched = partsFetched(page);
+    await page.goto(`${SIGN_IN_BASE}/rooms`);
+    await expect(
+      page.getByText(/^Connectez-vous pour voir les salles dont vous êtes/),
+    ).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("lang", "fr");
+    await expect
+      .poll(() => fetched.filter((part) => part.startsWith("my-rooms-")))
+      .toEqual(["my-rooms-fr"]);
   });
 });
