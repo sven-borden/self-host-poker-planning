@@ -18,14 +18,33 @@ driver is node-postgres (`pg`) through drizzle's `node-postgres` driver.
   retention job. `beforeClose` stops the job before the server closes its sockets;
   `dispose` stops it again, clears the deadline and presence timers, closes Redis (when
   set), then ends the pool. With `config.redisUrl` (#39) it first awaits
-  `connectScaleOut` and adds `realtimeCluster` (the Redis adapter, `transports:
-  ["websocket"]`), `checkRedis` and `websocketOnly` to `deps`, and `shared` to the room sync.
-- `src/scale-out.ts`: `connectScaleOut(url, logger, { signal })` (#39): imports
+  `connectScaleOut`, before `createAuth`, so Better Auth's limiter can be the shared one
+  (U4): the one limiter is then `sharedLimits.rateLimiter(memoryRateLimit())`, with
+  `sharedLimits = scaleOut.limits(config.betterAuthSecret)`. It adds `realtimeCluster` (the
+  Redis adapter, `transports: ["websocket"]` only without `config.stickySessions`, and
+  `sharedLimits` for the handshake cap), `checkRedis` and `socketTransports` (`"websocket"`,
+  or `"polling websocket"` with sticky sessions, for `index.html`) to `deps`, and `shared`
+  to the room sync. It warns at start when `REDIS_KEY_PREFIX` or `STICKY_SESSIONS` is set
+  without `REDIS_URL` (`redisOnlyGaps`).
+- `src/scale-out.ts`: `connectScaleOut(url, logger, { signal, prefix })` (#39): imports
   `@redis/client` and `@socket.io/redis-adapter` only then, opens three clients (adapter
   publisher and subscriber, and one without an offline queue for the command ids) within
   `REDIS_CONNECT_BUDGET_MS` (30 s) or throws `RedisUnavailableError`, and logs only
   "redis: connected" and "redis: unavailable" with a driver error code, never the URL or
-  a driver message. Returns `{ adapter, acks, ping, close }`.
+  a driver message. `prefix` (`REDIS_KEY_PREFIX`, default `pp`, U4) starts the adapter's
+  channels (`<prefix>#/#…`, `<prefix>-request#/#`, `<prefix>-response#/#…`) and every key.
+  Returns `{ adapter, acks, limits(secret), ping, close }`.
+- `src/shared-limits.ts`: `createSharedLimits({ redis, prefix, secret, logger })` (U4),
+  through `ScaleOut.limits(secret)`: `rateLimiter(local)` and `tokenBuckets(name, limit,
+  local)`, run by three Lua scripts (`FIXED_WINDOW_SCRIPT`, `RELEASE_SCRIPT`,
+  `TOKEN_BUCKET_SCRIPT`, by `EVALSHA`, `EVAL` once on `NOSCRIPT`) on Redis's clock. The
+  local limiter or bucket always counts, first; Redis's answer wins when it comes. A call
+  Redis has not answered within `LIMIT_TIMEOUT_MS` (250 ms), or that fails, gets the local
+  answer, and the next `LIMIT_LOCAL_FOR_MS` (5 s) do not ask Redis; `limitErrorCode` names
+  the failure for the one log line (error level for a Redis refusal such as `NOPERM`).
+  Keys: `<prefix>:rl:<hmac>` (fixed windows) and `<prefix>:tb:<name>:<hmac>` (buckets), an
+  HMAC-SHA256 of the counted key under a key derived from the secret, 32 base64url
+  characters; command ids are `<prefix>:ack:…` (`sync/shared-acks.ts`).
 - `src/retention.ts`: `startRetention({ store, ttlDays, logger, occupied, now? })`
   (`occupied` may return a promise; a rejection skips the run), the
   retention job (#35): first run 3 to 5 minutes after the start (`RETENTION_START_DELAY_MS`
@@ -293,7 +312,10 @@ keeps (#35).
   (the timers, fake clock);
   `restart.db.test.ts` runs the built `dist/main.mjs` (build it first; CI does);
   `scale-out.db.test.ts` runs two instances on one Postgres and one Redis
-  (`TEST_REDIS_URL`; skipped without it locally, a failure in CI).
+  (`TEST_REDIS_URL`; skipped without it locally, a failure in CI), and so does
+  `../shared-limits.db.test.ts` for the limits shared through Redis (U4);
+  `../room-rule.db.test.ts` reads it too, for its two-instance block ("the one invariant
+  across two instances"), on the default prefix.
 
 ## Identity
 
@@ -367,7 +389,9 @@ keeps (#35).
   client's copy; its own `X-Forwarded-For` reading is not used.
 - `setupServer` creates one limiter (`memoryRateLimit`, bounded) for Better Auth,
   `/api/me/name` and room creation: Better Auth's own memory store is shared by the
-  whole process. Keys start with their purpose (`rename|…`, `rooms|create|…`).
+  whole process. With `REDIS_URL` it is `sharedLimits.rateLimiter(memoryRateLimit())`
+  (U4, `src/shared-limits.ts`), counted in Redis by every instance. Keys start with their
+  purpose (`rename|…`, `rooms|create|…`).
 - A POST route of the app's own checks `foreignOrigin` (403 `not_allowed`) and
   `isJsonBody` (415 `bad_payload`) first, and counts its rate limit before reading the
   session, so a flood costs no query.

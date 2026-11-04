@@ -13,7 +13,12 @@
  * Needs `TEST_REDIS_URL` (a throwaway Redis: `docker run --rm -p 6379:6379 redis:7-alpine`,
  * CI's `db-tests` job has one). Without it the file is skipped locally and fails in CI.
  * Not `REDIS_URL`: the other db tests read their config from defaults, never from Redis.
+ *
+ * Each run takes its own `REDIS_KEY_PREFIX` (U4): the limits live in Redis now, and a second
+ * run within a minute on one prefix would find the 60 guest sign-ins a minute spent (this
+ * file signs in 44). `shared-limits.db.test.ts` checks the default prefix's names.
  */
+import { randomBytes } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { type ApplyResult, apply, type Command, createRoom, type RoomState } from "@pp/domain";
 import type { Snapshot } from "@pp/protocol";
@@ -43,6 +48,7 @@ import {
 } from "./test-support.ts";
 
 const REDIS_URL = process.env.TEST_REDIS_URL;
+const PREFIX = `t_${randomBytes(5).toString("hex")}`;
 if (!REDIS_URL && process.env.CI) throw new Error("TEST_REDIS_URL is not set in CI");
 
 const ORIGIN = VALID_ENV.BASE_URL;
@@ -70,7 +76,7 @@ async function redisClient(): Promise<Redis> {
 }
 
 /** The adapter's request channel: where `serverSideEmit` publishes (`scale-out.ts`). */
-const REQUESTS = "pp-request#/#";
+const REQUESTS = `${PREFIX}-request#/#`;
 /** Publishes a room change as a third instance would (the adapter's SERVER_SIDE_EMIT). */
 let publisher: Redis | undefined;
 async function signal(payload: Record<string, unknown>) {
@@ -108,7 +114,11 @@ describe.skipIf(!REDIS_URL)("two instances on one room (Redis)", () => {
   beforeAll(async () => {
     t = await createTestDatabase();
     admin = databaseClient(t.url);
-    config = testConfig({ DATABASE_URL: t.url, REDIS_URL: REDIS_URL ?? "" });
+    config = testConfig({
+      DATABASE_URL: t.url,
+      REDIS_URL: REDIS_URL ?? "",
+      REDIS_KEY_PREFIX: PREFIX,
+    });
     const tuning = {
       presenceGraceMs: GRACE_MS,
       presenceRestartGraceMs: GRACE_MS,
@@ -226,7 +236,7 @@ describe.skipIf(!REDIS_URL)("two instances on one room (Redis)", () => {
       // A stranger on Redis hears everything the instances say, and reads every ack key.
       const spy = await redisClient();
       const heard: string[] = [];
-      await spy.pSubscribe("pp*", (message, channel) => heard.push(`${channel} ${message}`));
+      await spy.pSubscribe(`${PREFIX}*`, (message, channel) => heard.push(`${channel} ${message}`));
       const code = await insert(createRoom({ ownerId: ada.id }));
       const a = client(ada, one());
       const b = client(bob, two());
@@ -261,7 +271,7 @@ describe.skipIf(!REDIS_URL)("two instances on one room (Redis)", () => {
       await spy.pUnsubscribe();
       const reader = await redisClient();
       const acks: string[] = [];
-      for await (const keys of reader.scanIterator({ MATCH: "pp:ack:*", COUNT: 100 })) {
+      for await (const keys of reader.scanIterator({ MATCH: `${PREFIX}:ack:*`, COUNT: 100 })) {
         for (const key of keys) acks.push(`${key} ${String(await reader.get(key))}`);
       }
       expect(heard.length).toBeGreaterThan(0);
@@ -604,7 +614,7 @@ describe.skipIf(!REDIS_URL)("two instances on one room (Redis)", () => {
       await b.enter(code);
       // As if the first instance claimed it and still runs it (`shared-acks.ts`).
       const redis = await redisClient();
-      const key = `pp:ack:${bob.id} ${id} held-1`;
+      const key = `${PREFIX}:ack:${bob.id} ${id} held-1`;
       await redis.set(key, "", { expiration: { type: "PX", value: 15_000 } });
       const vote = { card: "5", round: 1, restart: 0 };
       expect(await b.cmd("castVote", vote, "held-1")).toEqual({ ok: false, code: "busy" });

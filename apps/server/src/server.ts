@@ -40,8 +40,11 @@ export interface ServerDeps extends AppDeps {
     | "handshakeLimit"
     | "handshakeWarnEveryMs"
   >;
-  /** Several instances (#39, `scale-out.ts`): the Redis adapter, WebSocket only. */
-  realtimeCluster?: Pick<RealtimeOptions, "adapter" | "transports">;
+  /**
+   * Several instances (#39, `scale-out.ts`): the Redis adapter, WebSocket only unless
+   * `STICKY_SESSIONS` is on, and the handshake cap in Redis (U4).
+   */
+  realtimeCluster?: Pick<RealtimeOptions, "adapter" | "transports" | "sharedLimits">;
 }
 
 /**

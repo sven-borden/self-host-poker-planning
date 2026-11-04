@@ -1213,8 +1213,11 @@ describe("the query", () => {
        select r.id, g, '{}', '{}', '{"kind":"anonymous","cards":[]}', '{}', now(), now(), now()
        from room r, generate_series(1, 12) g where r.code like 'mine1%'`,
     );
-    await admin.query("analyze room");
-    await admin.query("analyze round_history");
+    // VACUUM, not ANALYZE alone: a GIN index's pending list (rows not merged yet), which only
+    // VACUUM or autovacuum empties, is charged in full to an index scan, and its length here
+    // depended on when autovacuum last ran: a long one gave a sequential scan. See guest-link.
+    await admin.query("vacuum analyze room");
+    await admin.query("vacuum analyze round_history");
 
     const plan = await planOf(myRoomsQuery(me.id, MY_ROOMS_PAGE));
     expect(plan).toContain("CTE Scan on mine");

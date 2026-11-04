@@ -53,10 +53,11 @@ export interface AppDeps {
    */
   checkRedis?: () => Promise<RedisStatus>;
   /**
-   * Sockets use WebSocket only (#39): `index.html` carries
-   * `<meta name="pp-socket-transport" content="websocket">`, which the web app reads.
+   * The transports sockets may use with several instances, which `index.html` tells the web
+   * app in `<meta name="pp-socket-transport">`: `websocket` (#39), or `polling websocket`
+   * with `STICKY_SESSIONS` on (U4). Left out (one instance), no tag: Socket.IO's default.
    */
-  websocketOnly?: boolean;
+  socketTransports?: SocketTransports;
 }
 
 /** A hung pool must not hang the Docker HEALTHCHECK: the check gives up after this. */
@@ -156,7 +157,7 @@ export function createApp(config: Config, deps: AppDeps): Hono<AppEnv> {
 
   if (deps.staticDir && existsSync(join(deps.staticDir, "index.html"))) {
     const tags = [
-      ...(deps.websocketOnly ? [TRANSPORT_META] : []),
+      ...(deps.socketTransports ? [transportMeta(deps.socketTransports)] : []),
       ...observabilityTags(config),
       ...signInTags(config),
       ...connectorTags(config),
@@ -283,8 +284,16 @@ function mountWebApp(app: Hono<AppEnv>, root: string, headTags: readonly string[
   });
 }
 
-/** What tells the web app that sockets use WebSocket only (`apps/web/src/realtime/socket.ts`). */
-export const TRANSPORT_META = '<meta name="pp-socket-transport" content="websocket">';
+/** What the page may be told about its socket's transports (`AppDeps.socketTransports`). */
+export type SocketTransports = "websocket" | "polling websocket";
+
+/** What tells the web app which transports its socket uses (`apps/web/src/realtime/socket.ts`). */
+export function transportMeta(transports: SocketTransports): string {
+  return `<meta name="pp-socket-transport" content="${transports}">`;
+}
+
+/** WebSocket only (#39). */
+export const TRANSPORT_META = transportMeta("websocket");
 
 /**
  * What tells the web app which sign-ins this install has (#47): the providers' ids, never a

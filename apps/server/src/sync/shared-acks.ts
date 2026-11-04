@@ -42,15 +42,23 @@ export interface AckCommands {
 /** The value of a claim whose command still runs. An ack is JSON, never empty. */
 const RUNNING = "";
 
-/** One key per person, room and command id. None of the three holds a space. */
+/**
+ * One key per person, room and command id. None of the three holds a space. `redisAcks` puts
+ * it under `<prefix>:ack:` (`pp:ack:` by default, as #39 named them).
+ */
 export function sharedAckKey(user: string, roomId: string, commandId: string): string {
-  return `pp:ack:${user} ${roomId} ${commandId}`;
+  return `${user} ${roomId} ${commandId}`;
 }
 
-export function redisAcks(redis: AckCommands, timeoutMs = ACK_TIMEOUT_MS): SharedAcks {
+export function redisAcks(
+  redis: AckCommands,
+  prefix = "pp",
+  timeoutMs = ACK_TIMEOUT_MS,
+): SharedAcks {
   const answer = <T>(command: Promise<T>) => within(command, timeoutMs);
   return {
-    async claim(key) {
+    async claim(id) {
+      const key = `${prefix}:ack:${id}`;
       // A second turn only when the key expired between the SET and the GET.
       for (let turn = 0; turn < 2; turn++) {
         const set = await answer(
@@ -67,7 +75,8 @@ export function redisAcks(redis: AckCommands, timeoutMs = ACK_TIMEOUT_MS): Share
       }
       return { state: "running" };
     },
-    async settle(key, ack) {
+    async settle(id, ack) {
+      const key = `${prefix}:ack:${id}`;
       if (ack === null) {
         await answer(redis.del(key));
         return;
@@ -88,11 +97,23 @@ function parseAck(value: string): CmdAck | undefined {
   }
 }
 
-/** `promise`, or a rejection once `ms` passed without an answer. */
+/**
+ * `promise`, or a rejection (`Error("timeout")`) once `ms` passed without an answer. The
+ * rejection waits one more turn of the event loop (`setImmediate`, after the poll phase): when
+ * this process's own loop was blocked past `ms` (a long GC, a heavy request), Node runs the
+ * timers before it reads the sockets, so a reply already waiting in the socket would otherwise
+ * lose to the timer although the other side answered in time.
+ */
 export function within<T>(promise: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let immediate: ReturnType<typeof setImmediate> | undefined;
   const timedOut = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("timeout")), ms);
+    timer = setTimeout(() => {
+      immediate = setImmediate(() => reject(new Error("timeout")));
+    }, ms);
   });
-  return Promise.race([promise, timedOut]).finally(() => clearTimeout(timer));
+  return Promise.race([promise, timedOut]).finally(() => {
+    clearTimeout(timer);
+    if (immediate) clearImmediate(immediate);
+  });
 }

@@ -1,11 +1,12 @@
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../app.tsx";
 import { changeLanguage } from "../i18n/i18n.ts";
 import type { Language } from "../i18n/language.ts";
 import { resetIdentityModule } from "../identity/identity.ts";
 import { createAppRouter } from "../router.ts";
+import { settleToasts } from "../settle-toasts.ts";
 import { useIdentityStore } from "../stores/identity-store.ts";
 
 // "My rooms" (#49) in a real router: who sees what, the list's states, and what each press asks
@@ -92,6 +93,9 @@ beforeEach(() => {
   useIdentityStore.getState().reset();
   providers("google");
 });
+
+// Sonner's removal timer must not outlive the file (settle-toasts.ts).
+afterAll(settleToasts);
 
 afterEach(async () => {
   cleanup();

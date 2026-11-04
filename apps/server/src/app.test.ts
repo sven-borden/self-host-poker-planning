@@ -286,7 +286,7 @@ describe("the built web app", () => {
 
   it("tells the web app WebSocket only in index.html when several instances run (#39)", async () => {
     const shared = (path: string, method = "GET") =>
-      app({ staticDir: root, websocketOnly: true }).app.request(path, { method });
+      app({ staticDir: root, socketTransports: "websocket" }).app.request(path, { method });
     for (const path of ["/", "/r/AbCdEf1234", "/index.html"]) {
       const response = await shared(path);
       expect(response.status, path).toBe(200);
@@ -298,6 +298,16 @@ describe("the built web app", () => {
     }
     expect((await shared("/r/AbCdEf1234", "POST")).status).toBe(404);
     expect(await (await get("/index.html")).text()).toBe(INDEX);
+  });
+
+  it("tells the web app both transports when sticky sessions are on (U4)", async () => {
+    const response = await app({
+      staticDir: root,
+      socketTransports: "polling websocket",
+    }).app.request("/r/AbCdEf1234");
+    expect(await response.text()).toBe(
+      '<!doctype html><meta name="pp-socket-transport" content="polling websocket"><title>Poker Planning</title>',
+    );
   });
 
   it("puts Sentry's DSN and Umami's tracker in index.html only when they are on (#40)", async () => {
@@ -317,7 +327,7 @@ describe("the built web app", () => {
       expect(await (await on({}, path)).text(), path).toBe(
         `<!doctype html>${tags}<title>Poker Planning</title>`,
       );
-      expect(await (await on({ websocketOnly: true }, path)).text(), path).toBe(
+      expect(await (await on({ socketTransports: "websocket" }, path)).text(), path).toBe(
         `<!doctype html>${TRANSPORT_META}${tags}<title>Poker Planning</title>`,
       );
     }

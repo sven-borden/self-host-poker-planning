@@ -39,6 +39,7 @@ import { Decoder, Encoder } from "socket.io-parser";
 import type { SocketUser } from "./auth.ts";
 import type { Logger } from "./logger.ts";
 import { sessionKey, signedSessionToken } from "./session-cookie.ts";
+import type { SharedLimits } from "./shared-limits.ts";
 import {
   createKeyedTokenBuckets,
   createTokenBucket,
@@ -187,6 +188,11 @@ export interface RealtimeOptions {
    * stays on one instance, so no sticky sessions are needed (#39).
    */
   transports?: ("polling" | "websocket")[];
+  /**
+   * Several instances (U4, `shared-limits.ts`): the handshake cap counts in Redis for every
+   * instance at once, and this instance's own buckets answer while Redis does not.
+   */
+  sharedLimits?: Pick<SharedLimits, "tokenBuckets">;
 }
 
 /**
@@ -217,8 +223,11 @@ export const MAX_SOCKETS_PER_USER = 8;
  *
  * Sized for one browser: its tabs share the session, a person holds at most
  * `MAX_SOCKETS_PER_USER` (8) sockets, and a redeploy or a laptop waking up reconnects every tab
- * at once (Socket.IO's backoff, 0.5 to 1.5 s for the first try), one handshake each, on a
- * process whose buckets are new and full. 30 at once covers ten tabs three times over; past it,
+ * at once (Socket.IO's backoff, 0.5 to 1.5 s for the first try), one handshake each: without
+ * Redis on a process whose buckets are new and full, with it (U4) on a bucket that survived
+ * the redeploy, where a rolling deploy reconnects in waves, one per instance replaced, each
+ * well under 30, refilled a token a second between them. 30 at once covers ten tabs three
+ * times over; past it,
  * one a second, and a refused tab tries again quietly while it shows "reconnecting". A loop on
  * one session gets one session lookup a second, and holds at most about 35 connections without
  * a socket (each closed after `CONNECT_TIMEOUT_MS`).
@@ -326,8 +335,12 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
     sessionCookie,
     adapter,
     transports,
+    sharedLimits,
   } = options;
-  const handshakes = createKeyedTokenBuckets(handshakeLimit);
+  const localHandshakes = createKeyedTokenBuckets(handshakeLimit);
+  const handshakes: { take(key: string): boolean | Promise<boolean> } = sharedLimits
+    ? sharedLimits.tokenBuckets("handshake", handshakeLimit, localHandshakes)
+    : localHandshakes;
   // Only how many were refused and over how long: no address, no token, no room.
   let refused = 0;
   let windowStart = 0;
@@ -376,11 +389,30 @@ export function createRealtime(httpServer: HttpServer, options: RealtimeOptions)
         // Engine.IO answers 403 with this message over polling, which the web app reads and
         // retries (`refusalOf`), and a bare 400 on a WebSocket opened without a polling
         // connection, which Socket.IO retries itself.
-        if (!handshakes.take(sessionKey(token))) {
+        let answered = false;
+        const decide = (allowed: boolean) => {
+          answered = true;
+          if (allowed) {
+            callback(null, true);
+            return;
+          }
           refuseHandshake();
           callback("rate_limited", false);
-          return;
+        };
+        // In memory the answer comes at once; through Redis it should never reject (U4), but
+        // a request must not hang if it does: refused as `internal`, which the page retries.
+        const taken = handshakes.take(sessionKey(token));
+        if (typeof taken === "boolean") decide(taken);
+        else {
+          taken.then(decide).catch(() => {
+            // No address, token or room: the error itself may carry any of them.
+            logger.error("handshake decision failed");
+            if (answered) return;
+            answered = true;
+            callback("internal", false);
+          });
         }
+        return;
       }
       callback(null, true);
     },

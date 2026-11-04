@@ -75,8 +75,10 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-      # Two server instances share rooms through it (#39, scale-out.db.test.ts). Only that
-      # file reads TEST_REDIS_URL; every other test runs one instance without Redis.
+      # Two server instances share rooms (#39, scale-out.db.test.ts) and limits (U4,
+      # shared-limits.db.test.ts) through it, and room-rule.db.test.ts's two-instance block
+      # uses it on the default prefix. Only those files read TEST_REDIS_URL; every other test
+      # runs one instance without Redis.
       redis:
         image: redis:7-alpine
         ports:
