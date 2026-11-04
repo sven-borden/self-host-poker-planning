@@ -4,7 +4,8 @@
  * record is server-held, like `keeperId`: no snapshot carries it.
  *
  * Bounded twice. In time: an entry counts for `REMOVAL_NOTICE_MS` (24 hours), and every write of
- * the room (`apply`) drops what is older. In size: a kick keeps at most `MAX_REMOVED` entries,
+ * the room (`apply`) drops what is older, and the entry of anyone seated (an entry never names
+ * someone with a seat, whichever write seated them). In size: a kick keeps at most `MAX_REMOVED` entries,
  * newest first. A `join` takes the person's own entry out, so someone back in the room never
  * hears of the old removal again; an account's deletion takes it out too (ADR-029), and a guest's
  * sign-in moves it to the account (ADR-025).
@@ -67,12 +68,18 @@ export function dropRemoval(state: RoomState, who: UserId): RoomState {
   );
 }
 
-/** The entries older than `REMOVAL_NOTICE_MS` gone; the same state when none is. */
+/**
+ * The entries older than `REMOVAL_NOTICE_MS` gone, and those of someone seated: an entry never
+ * names a person with a seat, whichever write seated them (a guest's sign-in moving a seat onto
+ * the account, an older instance's `join`). The same state when none is.
+ */
 export function pruneRemovals(state: RoomState, now: number): RoomState {
   const removed = state.removed;
   if (removed === undefined) return state;
   const entries = Object.entries(removed);
-  const kept = entries.filter(([, at]) => live(now)(at));
+  const kept = entries.filter(
+    ([id, at]) => live(now)(at) && !Object.hasOwn(state.participants, id),
+  );
   return kept.length === entries.length ? state : withRecord(state, Object.fromEntries(kept));
 }
 

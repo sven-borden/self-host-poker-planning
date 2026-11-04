@@ -122,6 +122,19 @@ describe("the removals a room remembers (U5)", () => {
     expect(merged.removed).toBeUndefined();
   });
 
+  it("never keeps an entry for someone seated, whichever write seated them", () => {
+    let s = step(room(), "acc", { type: "join", name: "Acc", role: "voter" });
+    s = step(s, "ada", { type: "kick", who: "acc" }, T0 + 1);
+    // The same person, as a guest, sits down; then signs in: the seat moves onto the account.
+    s = step(s, "g", { type: "join", name: "Acc", role: "voter" }, T0 + 2);
+    expect(s.removed).toEqual({ acc: T0 + 1 });
+    const moved = step(s, ":server", { type: "moveGuest", guest: "g", account: "acc" }, T0 + 3);
+    expect(moved.participants.acc).toBeDefined();
+    expect(moved.removed).toBeUndefined();
+    const left = step(moved, "acc", { type: "leave" }, T0 + 4);
+    expect(wasRemoved(left, "acc", T0 + 5)).toBe(false);
+  });
+
   it("holds a time and nothing of a vote, in an anonymous round too", () => {
     let s = step(room(), "ada", { type: "updateSettings", patch: { revealNames: false } });
     s = step(s, "ada", { type: "startRound", subject: { kind: "none" } });

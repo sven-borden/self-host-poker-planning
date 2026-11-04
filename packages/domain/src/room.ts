@@ -198,7 +198,7 @@ export type RoomState = {
    * The people the PO removed, with when (U5, `removed.ts`): someone whose socket was down at
    * the kick hears it at their next `enter`, and nobody else hears anything. Server-held, like
    * `keeperId`: no snapshot carries it. At most `MAX_REMOVED` entries, none older than
-   * `REMOVAL_NOTICE_MS` after a write. Absent: nobody to tell, as in every room stored before.
+   * `REMOVAL_NOTICE_MS` and none of someone seated after a write. Absent: nobody to tell, as in every room stored before.
    */
   removed?: Record<UserId, number>;
 };
