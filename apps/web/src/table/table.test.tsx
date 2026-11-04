@@ -320,6 +320,60 @@ describe("cards", () => {
     }
   });
 
+  it("measures a label once per change, even when its clip would change the answer (U3)", () => {
+    // WebKit snapped a corner index's width one pixel wider than the corner it sat in, and
+    // measured against the clip once clipped: in, out, in, until React gave up (error 185). Here
+    // the label reads 20 px in the open and 15 px inside its clip, on an 18 px card: it is
+    // clipped once and stays clipped, with no second look.
+    const offset = vi
+      .spyOn(HTMLElement.prototype, "offsetWidth", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        if (!this.hasAttribute("data-card-value")) return 0;
+        return this.parentElement?.hasAttribute("data-label-clip") ? 15 : 20;
+      });
+    const client = vi
+      .spyOn(HTMLElement.prototype, "clientWidth", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.hasAttribute("data-face") ? 18 : 0;
+      });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { container } = render(
+        <SlotCard face="up" value="WWWW" size={{ width: 20, height: 28 }} />,
+      );
+      expect(container.querySelector("[data-clipped]")?.textContent).toBe("WWWW");
+      expect(errors).not.toHaveBeenCalled();
+    } finally {
+      offset.mockRestore();
+      client.mockRestore();
+      errors.mockRestore();
+    }
+  });
+
+  it("measures a hand card's labels against the card itself, wherever it is drawn (U3)", () => {
+    // A corner index's own box shrink-wraps it: the button is the room, also outside the hand.
+    const offset = vi
+      .spyOn(HTMLElement.prototype, "offsetWidth", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.hasAttribute("data-card-value") ? 6 : 0;
+      });
+    const client = vi
+      .spyOn(HTMLElement.prototype, "clientWidth", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.hasAttribute("data-hand-card")) return 48;
+        return this.hasAttribute("data-corner") ? 5 : 0;
+      });
+    try {
+      const { container } = render(<HandCard value="5" label="5" />);
+      expect(container.querySelector("button")?.dataset.handCard).toBe("5");
+      expect(container.querySelectorAll("[data-card-value]")).toHaveLength(3);
+      expect(container.querySelector("[data-clipped]")).toBeNull();
+    } finally {
+      offset.mockRestore();
+      client.mockRestore();
+    }
+  });
+
   it("sizes slot cards in whole pixels from the layout", () => {
     const { container } = render(<SlotCard face="up" value="8" size={{ width: 36, height: 50 }} />);
     const style = (container.firstElementChild as HTMLElement).style;

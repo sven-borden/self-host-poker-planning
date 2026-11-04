@@ -213,7 +213,6 @@ function HandCards({
             selected={value === selected}
             aria-disabled={disabled || undefined}
             tabIndex={i === tabStop ? 0 : -1}
-            data-hand-card={value}
             onFocus={() => {
               setFocused(i);
               lastFocus.current = { value, index: i };
