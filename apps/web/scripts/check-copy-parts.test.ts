@@ -1,6 +1,9 @@
 // @vitest-environment node
+import { readdirSync, readFileSync } from "node:fs";
+import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { COPY_PARTS } from "../src/i18n/copy-parts.ts";
+import { COPY_PARTS, type CopyPart } from "../src/i18n/copy-parts.ts";
 import { LANDING_ROUTE, type Manifest, ROOM_ROUTE } from "./check-budget.ts";
 import { findings, loadedWith, names, PART_ROOTS, partKeys } from "./check-copy-parts.ts";
 
@@ -111,5 +114,42 @@ describe("findings", () => {
 
   it("knows a loading chunk for every part", () => {
     expect(Object.keys(PART_ROOTS).sort()).toEqual([...COPY_PARTS].sort());
+  });
+});
+
+// The build's check trusts that the first chunk of each part is the one whose loader awaits it.
+// This holds the source to that: whoever imports that chunk also asks for the part.
+describe("the chunk each part loads with", () => {
+  const src = fileURLToPath(new URL("../src", import.meta.url));
+  const files = (readdirSync(src, { recursive: true }) as string[])
+    .filter((file) => /\.tsx?$/.test(file) && !/\.test\.tsx?$/.test(file))
+    .map((file) => ({
+      file: file.replaceAll("\\", "/"),
+      code: readFileSync(join(src, file), "utf8"),
+    }));
+  const panels = COPY_PARTS.filter((part) => part !== "myRooms");
+
+  it.each(panels)(
+    "%s: every file that imports its first chunk awaits loadCopy beside it",
+    (part) => {
+      const first = basename(PART_ROOTS[part][0] ?? "");
+      // Every `import("…")` in the file, a type's `typeof import("…")` included.
+      const importers = files.filter(({ code }) =>
+        [...code.matchAll(/import\(\s*["']([^"']+)["']/g)].some(
+          ([, specifier]) => basename(specifier ?? "") === first,
+        ),
+      );
+      expect(importers.length, `nothing imports ${first}`).toBeGreaterThan(0);
+      for (const { file, code } of importers) {
+        expect(code, `${file} imports ${first}`).toContain(`loadCopy("${part}")`);
+      }
+    },
+  );
+
+  it("myRooms: the /rooms route loads its words as the route's data", () => {
+    const part: CopyPart = "myRooms";
+    expect(PART_ROOTS[part][0]).toBe("src/routes/rooms.tsx");
+    const route = files.find(({ file }) => file === "routes/rooms.tsx");
+    expect(route?.code).toMatch(/loader:\s*\(\)\s*=>\s*loadCopy\("myRooms"\)/);
   });
 });

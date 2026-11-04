@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "./fixtures.ts";
+import { SIGN_IN_BASE } from "./signed-in.ts";
 import { createRoom, join } from "./support.ts";
 
 // Languages in a real browser (#9): the switcher changes every string without a reload and
@@ -349,5 +350,21 @@ test.describe("a room's panels", () => {
       () => (window as unknown as { ppFlags: { english: boolean; key: boolean } }).ppFlags,
     );
     expect(flags).toEqual({ english: false, key: false });
+  });
+
+  // "My rooms" loads its words as the route's data, in the same turn as the French catalog: the
+  // French part comes beside the catalog, never the English one first. A guest sees the page once
+  // the server has sign-in providers, as the fake-provider server has.
+  test("load in the language a page starts in, the first one included", async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.setItem("pp-language", "fr"));
+    const fetched = partsFetched(page);
+    await page.goto(`${SIGN_IN_BASE}/rooms`);
+    await expect(
+      page.getByText(/^Connectez-vous pour voir les salles dont vous êtes/),
+    ).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("lang", "fr");
+    await expect
+      .poll(() => fetched.filter((part) => part.startsWith("my-rooms-")))
+      .toEqual(["my-rooms-fr"]);
   });
 });
