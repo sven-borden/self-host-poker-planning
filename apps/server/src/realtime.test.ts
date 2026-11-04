@@ -611,7 +611,9 @@ describe("handshakes per session (U2)", () => {
       { timeout: 5 * warnEveryMs },
     );
     const lines = refusals(logs);
-    expect(lines[0]).toMatchObject({ level: 40, refused: 1, windowMs: 0 });
+    expect(lines[0]).toMatchObject({ level: 40, refused: 1 });
+    // The first window opens at the refusal: the real clock may tick before the line is written.
+    expect(Number(lines[0]?.windowMs)).toBeLessThan(warnEveryMs / 2);
     for (const line of lines.slice(1)) {
       expect(Number(line.windowMs)).toBeGreaterThanOrEqual(warnEveryMs - 5);
     }
