@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/check-budget.ts",
+    "build": "vite build && node scripts/check-budget.ts && node scripts/check-copy-parts.ts",
     "preview": "vite preview",
     "test": "vitest run --root ../.. --project=web",
     "test:e2e": "playwright test"
