@@ -124,6 +124,11 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
   reveal budget calibrates its throttle under the throttle, against a benchmark isolated from the
   app's CSS (ADR-019 note); each e2e test has its own client address; axe scans a settled page.
   Live at da20e9d (tests only).
+- Several instances from U4 (PR #120), off unless `REDIS_URL` is set: the rate limits and the
+  handshake cap count in Redis (atomic scripts on Redis's clock, HMAC keys), each falling back
+  to the instance's own counter if Redis is slow (250 ms) or down, never to "allow all";
+  `REDIS_KEY_PREFIX` (default `pp`, #39's names) and `STICKY_SESSIONS` for long-polling behind
+  affinity. Live at c719f1a; nothing changes without Redis (a real handshake checked there).
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -136,7 +141,7 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 - **Agents again since 2026-11-03** (Sven: "start with agents, you orchestrate"), no end date:
   the upkeep list below, then stop and report.
-- U4 (PR #120) waits for CI after `main` went in; U3 builds beside it. U1 and U2 merged.
+- U3 (PR #121) in review; U5 builds beside it. U1, U2 and U4 merged.
 - #38 is merged and stays open until Sven's run on a fresh subscription.
 - #54 and #55 are merged and stay open until the live checks at Sven's site and organisation.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
@@ -149,8 +154,7 @@ In this order; pairs run together where they touch different parts.
 - **U2, merged** (PR #118): see Live.
 - **U3, `/dev/table` crashes in WebKit** (React #185, with or without the CSP). Check a real
   round in WebKit too: no Safari has run the app. Fix and hold it with a WebKit test.
-- **U4, left by #39**, after U2: rate limits shared through Redis, a Redis key prefix so two
-  deployments share one Redis, a sticky-session setting with polling.
+- **U4, merged** (PR #120): see Live.
 - **U5, a person removed while their socket was down** comes back to the join form with no
   notice (accepted at #30's review): tell them, in en, fr and de.
 - **U6, lighter pages**, after U5 (both touch the catalogues): the settings and history panels'
