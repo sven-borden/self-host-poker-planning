@@ -76,15 +76,15 @@ export function partKeys(copy: object, prefix = ""): string[] {
   ];
 }
 
-const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const literal = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Whether `code` names `key`, quoted or as the head of a key it builds. */
 export function names(code: string, key: string): boolean {
-  if (new RegExp(`[\`"']${escape(key)}[\`"']`).test(code)) return true;
+  if (new RegExp(`[\`"']${literal(key)}[\`"']`).test(code)) return true;
   const head = key.slice(0, key.lastIndexOf(".") + 1);
   return (
     head !== "" &&
-    new RegExp(`[\`"']${escape(head)}(?:\\$\\{|["']\\s*\\+|["']\\.concat)`).test(code)
+    new RegExp(`[\`"']${literal(head)}(?:\\$\\{|["']\\s*\\+|["']\\.concat)`).test(code)
   );
 }
 

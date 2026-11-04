@@ -35,6 +35,9 @@ function build(): Manifest {
   };
 }
 
+/** Built code holding a template literal: `$(x)` stands for its placeholder. */
+const built = (text: string) => text.replaceAll("$(", "$" + "{").replaceAll(")`", "}`");
+
 const settings = { settings: { deck: "Deck", deckCount_one: "x", deckCount_other: "y" } };
 const ROOTS = { settings: [PANEL, EXPORTS] };
 
@@ -58,11 +61,11 @@ describe("names", () => {
   it("finds a key quoted or built from its head, never inside a longer key", () => {
     expect(names('t("settings.deck")', "settings.deck")).toBe(true);
     expect(names("label:`settings.deck`", "settings.deck")).toBe(true);
-    expect(names("t(`settings.${e}`)", "settings.deck")).toBe(true);
+    expect(names(built("t(`settings.$(e)`)"), "settings.deck")).toBe(true);
     expect(names('t("settings."+e)', "settings.deck")).toBe(true);
     expect(names('t("settings.deckHint")', "settings.deck")).toBe(false);
     expect(names('t("mysettings.deck")', "settings.deck")).toBe(false);
-    expect(names("t(`settings.deck.${e}`)", "settings.deck")).toBe(false);
+    expect(names(built("t(`settings.deck.$(e)`)"), "settings.deck")).toBe(false);
   });
 
   it("reads a part's keys without their plural suffixes", () => {
@@ -74,7 +77,7 @@ describe("findings", () => {
   it("passes a key used only in its panel's chunks", () => {
     const code = chunks({
       "assets/settings-panel.js": 't("settings.deck");t("settings.deckCount",{count:n})',
-      "assets/exports.js": "t(`settings.${column}`)",
+      "assets/exports.js": built("t(`settings.$(column)`)"),
     });
     expect(findings(build(), code, { settings }, ROOTS)).toEqual([]);
   });
@@ -82,7 +85,7 @@ describe("findings", () => {
   it("fails a key the first screen, the table or a chunk shared with it names", () => {
     const code = chunks({
       "assets/code.js": 't("settings.deck")',
-      "assets/shared.js": "t(`settings.${e}`)",
+      "assets/shared.js": built("t(`settings.$(e)`)"),
     });
     expect(findings(build(), code, { settings }, ROOTS)).toEqual([
       "settings: settings.deck is in assets/code.js, which loads with the first screen.",

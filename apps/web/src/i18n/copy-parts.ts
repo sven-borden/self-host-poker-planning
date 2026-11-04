@@ -1,4 +1,3 @@
-import type { Language } from "./language.ts";
 import type { copy as history } from "./parts/history-en.ts";
 import type { copy as myRooms } from "./parts/my-rooms-en.ts";
 import type { copy as queue } from "./parts/queue-en.ts";
@@ -13,6 +12,9 @@ import type { copy as sound } from "./parts/sound-en.ts";
 // `t` looks in the page's catalog first, then in the parts loaded. A key that anything outside
 // the panel shows stays in the catalog; `scripts/check-copy-parts.ts` holds the built chunks to
 // that after every build.
+
+// No import of language.ts: the build's check (scripts/check-copy-parts.ts) reads this file
+// under Node's types, where that one does not compile; i18n.ts indexes these by `Language`.
 
 const pick = (module: Promise<{ copy: object }>) => module.then(({ copy }) => copy);
 
@@ -43,7 +45,7 @@ export const COPY_LOADERS = {
     fr: () => pick(import("./parts/my-rooms-fr.ts")),
     de: () => pick(import("./parts/my-rooms-de.ts")),
   },
-} satisfies Record<string, Record<Language, () => Promise<object>>>;
+} satisfies Record<string, Record<"en" | "fr" | "de", () => Promise<object>>>;
 
 export type CopyPart = keyof typeof COPY_LOADERS;
 
