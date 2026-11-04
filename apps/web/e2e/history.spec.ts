@@ -7,7 +7,6 @@ import {
   historyOf,
   join,
   newPerson,
-  ownAddress,
   phone,
   SHOTS,
   sameUser,
@@ -32,10 +31,6 @@ test.beforeAll(() => {
     throw new Error("CI must run the history tests: set DATABASE_URL");
   }
 });
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
-});
-
 const JIRA = "https://acme.atlassian.net/browse/PAY-482";
 
 const historyButton = (page: Page) => page.getByRole("button", { name: "History" });

@@ -5,7 +5,6 @@ import {
   join,
   newGuest,
   newPerson,
-  ownAddress,
   recordFrames,
   sameUser,
   seats,
@@ -29,10 +28,6 @@ test.beforeAll(() => {
     throw new Error("CI must run the presence tests: set DATABASE_URL");
   }
 });
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
-});
-
 const live = (page: Page) => page.locator("[data-table-live]");
 const awaySeats = (page: Page) => seats(page).locator("[data-seat][data-away]");
 

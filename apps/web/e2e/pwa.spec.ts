@@ -4,8 +4,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { extname, join as joinPath } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AxeBuilder } from "@axe-core/playwright";
-import { WCAG_TAGS } from "./a11y.ts";
+import { scan } from "./a11y.ts";
 import { chromium, expect, type Page, test } from "./fixtures.ts";
 import { OBSERVED_BASE } from "./observed.ts";
 import { createRoom, guestsJoin, handCard, join, newPerson, ownAddress } from "./support.ts";
@@ -149,7 +148,7 @@ test("offline, a page says the app cannot be reached, and comes back", async ({ 
     await expect(page.getByRole("heading", { name: "Cannot reach Poker Planning" })).toBeVisible();
     for (const colorScheme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme });
-      const { violations } = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+      const { violations } = await scan(page);
       expect(violations).toEqual([]);
     }
 

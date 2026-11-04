@@ -7,7 +7,7 @@ import {
   SERVICES_ORIGIN,
   UMAMI_WEBSITE_ID,
 } from "./observed.ts";
-import { createRoom, handCard, join, ownAddress, ROOM_PATH } from "./support.ts";
+import { createRoom, handCard, join, ROOM_PATH } from "./support.ts";
 
 // Opt-in observability (#40) in a real browser. With the variables unset (the first
 // server), a whole round, the history and the settings send no request outside the app's
@@ -21,10 +21,6 @@ test.skip(
   !process.env.DATABASE_URL && !process.env.CI,
   "needs DATABASE_URL: runs against the real server",
 );
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
-});
-
 /** Every address the page asks for: requests and WebSockets. */
 function recordAddresses(page: Page): string[] {
   const addresses: string[] = [];

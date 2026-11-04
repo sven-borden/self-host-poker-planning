@@ -4,7 +4,6 @@ import {
   handCard,
   join,
   newPerson,
-  ownAddress,
   phone,
   shoot,
   subjectField,
@@ -20,10 +19,6 @@ test.skip(
   !process.env.DATABASE_URL && !process.env.CI,
   "needs DATABASE_URL: runs against the real server",
 );
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
-});
-
 const JIRA_TABLE = [
   "T\tKey\tSummary\tAssignee\tStatus",
   "\tPAY-1\tCheckout fails on expired card\tAna\tTo Do",

@@ -325,6 +325,13 @@ frames, so the PO's focus lands on "Record" when it arrives.
 `reveal-performance.spec.ts` holds the line at a speed set from a benchmark, so a slower CI
 runner tests the same phone, and it runs alone after the other specs, on a quiet machine,
 with three tries.
+(2026-11-04, U1) The rate is now calibrated under the throttle, against a benchmark isolated
+from the app's CSS (a shadow root with its own sheet and system fonts), so a change that slows
+all style or layout fails the reveal instead of lowering the rate to match. The phone is
+4 × `REFERENCE_MS` in `measure` units (the median of five best-of-ten): 7.2 ms, from 1.8 ms on
+Sven's desktop. Why: Windows' nominal 4x ran layout about 8x slower (Linux 3.4x to 4.7x), so a
+rate taken at its word tested a slower phone on Windows than in CI. Slower CI runners now test
+a somewhat faster phone than before, about 20 % faster by the review's estimate.
 
 **Consequences.** The table answers first, and React can pause the rest for the page. The
 decision and the results arrive a few frames after the first flip, which nobody can see:

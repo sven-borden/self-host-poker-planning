@@ -4,7 +4,6 @@ import {
   dbQuery,
   guestsJoin,
   join,
-  ownAddress,
   packetsIn,
   ROOM_PATH,
   recordFrames,
@@ -30,10 +29,6 @@ test.beforeAll(() => {
     throw new Error("CI must run the summary load test: set DATABASE_URL");
   }
 });
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
-});
-
 const ROUNDS = 1050;
 
 async function ok(ack: Promise<Ack>, what: string) {

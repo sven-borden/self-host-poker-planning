@@ -6,7 +6,6 @@ import {
   handCard,
   join,
   newPerson,
-  ownAddress,
   phone,
   recordFrames,
   SHOTS,
@@ -34,10 +33,6 @@ test.beforeAll(() => {
     throw new Error("CI must run the timer tests: set DATABASE_URL");
   }
 });
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
-});
-
 const NB = "\u{a0}";
 /** Everyone's timer in the centre: the chip, which is a button for the PO. */
 const chip = (page: Page) => page.locator("[data-centre] [data-timer]");

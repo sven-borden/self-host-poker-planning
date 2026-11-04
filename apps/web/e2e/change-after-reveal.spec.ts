@@ -6,7 +6,6 @@ import {
   hand as handOf,
   join,
   newPerson,
-  ownAddress,
   phone,
   recordAnimations,
   roomHistory,
@@ -30,10 +29,6 @@ test.beforeAll(() => {
     throw new Error("CI must run the change-after-reveal tests: set DATABASE_URL");
   }
 });
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
-});
-
 const status = (page: Page) => page.locator("[data-centre] [data-centre-status]");
 const tableLive = (page: Page) => page.locator("[data-table-live]");
 const handLive = (page: Page) => page.locator("[data-hand-live]");

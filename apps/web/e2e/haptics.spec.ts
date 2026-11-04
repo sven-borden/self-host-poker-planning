@@ -1,6 +1,5 @@
-import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { WCAG_TAGS } from "./a11y.ts";
+import { scan } from "./a11y.ts";
 import { expect, test } from "./fixtures.ts";
 import {
   createRoom,
@@ -97,7 +96,7 @@ test("the switch in the speaker's popover stops it, on this device, and comes ba
   try {
     await speaker(ana.page).click();
     await expect(theSwitch(ana.page)).toBeChecked();
-    const { violations } = await new AxeBuilder({ page: ana.page }).withTags(WCAG_TAGS).analyze();
+    const { violations } = await scan(ana.page);
     expect(violations).toEqual([]);
     await theSwitch(ana.page).click();
     await expect(theSwitch(ana.page)).not.toBeChecked();

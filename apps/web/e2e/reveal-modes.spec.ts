@@ -7,7 +7,6 @@ import {
   handCard,
   join,
   newPerson,
-  ownAddress,
   packetsIn,
   recordFrames,
   SHOTS,
@@ -33,10 +32,6 @@ test.beforeAll(() => {
     throw new Error("CI must run the reveal-modes tests: set DATABASE_URL");
   }
 });
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
-});
-
 const status = (page: Page) => page.locator("[data-centre] [data-centre-status]");
 const revealButton = (page: Page) => page.getByRole("button", { name: "Reveal cards" });
 const tableLive = (page: Page) => page.locator("[data-table-live]");

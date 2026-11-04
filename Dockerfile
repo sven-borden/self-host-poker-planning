@@ -8,10 +8,11 @@
 # flip side: nothing updates them, so Debian security fixes arrive only when someone
 # repeats the steps below (README, "Base image updates"; no Dependabot or Renovate, by
 # choice). node:24-slim builds; the runtime is the Debian it is built on plus its node
-# binary alone. Plain node:24-slim would pass the 250 MB budget with this app (247 MB, 3 MB
-# to spare), but it also ships npm, corepack and yarn, which a runtime never uses; the
-# binary-only image leaves headroom, fewer packages to patch and fewer CVEs. Measured with
-# du: Debian 77 MB, node 127 MB, app 16 MB, 220 MB in all.
+# binary alone. Plain node:24-slim also ships npm, corepack and yarn, which a runtime never
+# uses: 27 MB more when first measured (247 MB against 220 MB), enough to push today's app
+# past the 250 MB budget. The binary-only image leaves headroom, fewer packages to patch and
+# fewer CVEs. Unpacked, as scripts/docker-check.sh reports it in CI's `docker` job: 240 MB in
+# November 2026; 220 MB when first measured with du (Debian 77 MB, node 127 MB, app 16 MB).
 # To update (every month or after a Debian security advisory):
 #  1. docker pull both tags;
 #  2. check that `docker run --rm <node image> cat /etc/debian_version` matches the Debian

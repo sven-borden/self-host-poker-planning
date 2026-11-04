@@ -746,7 +746,8 @@ tracker, since a queue can hold items of both.
   reduced-motion variant (120 ms cross-fade, no travel, no delay).
 - A reveal's cost (#43, ADR-019): `e2e/reveal-performance.spec.ts`
   plays the last vote of 16 seats on a Pixel 7 profile, with the CPU set from a small
-  benchmark so that every machine tests the same speed, and fails on any long task; it runs
+  benchmark taken under the throttle so that every machine tests the same speed (Chromium's
+  nominal 4x runs layout about 8x slower on Windows, about 4x on Linux), and fails on any long task; it runs
   alone after the other specs (`performance` project; add `--no-deps` to run it by
   itself). Three rules keep it green. A commit on the table's side reads no layout: use a
   ResizeObserver's first delivery (`CardValue`). Set what only the root needs on the root itself, not in
@@ -873,7 +874,12 @@ tracker, since a queue can hold items of both.
   read the clipboard (`clipboard-read=()`): grant `clipboard-write` and spy on
   `navigator.clipboard.writeText`, as `room.spec.ts` and `exports.spec.ts` do. A test
   that breaks a policy on purpose sets `policyViolationsExpected` and reads what the guard
-  saw from the `policyProblems` fixture.
+  saw from the `policyProblems` fixture. The fixture also gives each test's default context
+  (`page`) a client address of its own, so the server's per-address limits (20 rooms in 10
+  minutes) count each test alone; a context the test makes without its own header inherits
+  the test's address (Playwright applies `use` options, `extraHTTPHeaders` included, to every
+  `browser.newContext()` in a test); `newPerson`, `phone` or `ownAddress()` in
+  `e2e/support.ts` give it one of its own.
   `e2e/security.spec.ts` checks the headers and that style props, the Web Animations
   API, the scroll lock and sonner's sheet work under the policy. Locally it builds first and uses the installed Microsoft Edge; in CI
   (`web-e2e` job) it uses Chromium on the build from the step before. Screenshots go to

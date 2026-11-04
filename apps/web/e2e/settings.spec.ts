@@ -6,7 +6,6 @@ import {
   join,
   newGuest,
   newPerson,
-  ownAddress,
   phone,
   recordFrames,
   SHOTS,
@@ -30,10 +29,6 @@ test.beforeAll(() => {
     throw new Error("CI must run the settings tests: set DATABASE_URL");
   }
 });
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
-});
-
 const tableLive = (page: Page) => page.locator("[data-table-live]");
 const panel = (page: Page, name: "Room settings" | "Room rules") =>
   page.getByRole("dialog", { name });

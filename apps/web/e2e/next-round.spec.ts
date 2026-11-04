@@ -9,7 +9,6 @@ import {
   join,
   newGuest,
   newPerson,
-  ownAddress,
   roomHistory,
   sameUser,
   seats,
@@ -35,10 +34,6 @@ test.beforeAll(() => {
     throw new Error("CI must run the next-round tests: set DATABASE_URL");
   }
 });
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
-});
-
 const pressedCards = (page: Page) => hand(page).locator("[aria-pressed='true']");
 const tableLive = (page: Page) => page.locator("[data-table-live]");
 const centreStatus = (page: Page) => page.locator("[data-centre-status='voting']");

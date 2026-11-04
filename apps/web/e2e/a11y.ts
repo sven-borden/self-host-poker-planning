@@ -14,7 +14,10 @@ export const VIEWPORTS = [
   { name: "phone", width: 390, height: 844 },
 ] as const;
 
-/** Waits until no animation runs (a flip, a slide-in, a fade), so axe reads the end state. */
+/**
+ * Waits until no animation runs (a flip, a slide-in, a fade), so axe reads the end state: text
+ * read mid-fade fails contrast.
+ */
 export async function settle(page: Page) {
   await page.waitForTimeout(100);
   await expect
@@ -34,6 +37,16 @@ export async function settle(page: Page) {
       { timeout: 10_000 },
     )
     .toBe(0);
+}
+
+/**
+ * axe over `page` with the WCAG tags, once it has settled: every scan outside `audit` goes
+ * through here, so none reads a page mid-animation. `include` limits it to a part.
+ */
+export async function scan(page: Page, include?: string): ReturnType<AxeBuilder["analyze"]> {
+  await settle(page);
+  const builder = new AxeBuilder({ page }).withTags(WCAG_TAGS);
+  return (include === undefined ? builder : builder.include(include)).analyze();
 }
 
 export interface Finding {
@@ -64,12 +77,11 @@ export async function audit(page: Page, label: string) {
       await page.emulateMedia({ colorScheme: scheme });
       for (const viewport of VIEWPORTS) {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
-        await settle(page);
         const variant = `${scheme} ${viewport.name}`;
         const where = `${label}, ${variant}`;
         // No rule is switched off and nothing is excluded: a page that needs an exclusion
         // gets it here, by selector, with its reason on the line above.
-        const result = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+        const result = await scan(page);
         // A scan that ran no rule would pass anything.
         expect(result.passes.length, where).toBeGreaterThan(10);
         // What axe could not decide (text over the felt's gradient, mostly) is reported as

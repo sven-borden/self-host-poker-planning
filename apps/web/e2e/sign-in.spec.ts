@@ -1,5 +1,4 @@
-import { AxeBuilder } from "@axe-core/playwright";
-import { WCAG_TAGS } from "./a11y.ts";
+import { scan } from "./a11y.ts";
 import {
   type Browser,
   type BrowserContext,
@@ -9,7 +8,14 @@ import {
   test,
 } from "./fixtures.ts";
 import { SIGN_IN_BASE, SIGN_IN_FAKE_ORIGIN } from "./signed-in.ts";
-import { dbQuery, newPerson, ownAddress, ROOM_PATH, recordFrames } from "./support.ts";
+import {
+  dbQuery,
+  holdInTransaction,
+  newPerson,
+  ownAddress,
+  ROOM_PATH,
+  recordFrames,
+} from "./support.ts";
 
 // Sign-in with Google and Microsoft (#47, ADR-023) in a real browser, under the production
 // headers: `e2e/fixtures.ts` fails a test on any policy violation, so the whole flow proves the
@@ -199,6 +205,28 @@ test.describe("with provider keys", () => {
     await joinAs(page);
 
     const other = await context.newPage();
+    // When `signedIn` reaches the other tab, on its WebSocket or in a polling response: the
+    // server sends it as the move starts, after the callback's code exchange and new session.
+    let signedInAt = 0;
+    const heard = (at: number, payload: string) => {
+      if (signedInAt === 0 && payload.includes('"signedIn"')) signedInAt = at;
+    };
+    other.on("websocket", (ws) =>
+      ws.on("framereceived", ({ payload }) => heard(Date.now(), String(payload))),
+    );
+    other.on("response", async (response) => {
+      const at = Date.now();
+      if (
+        new URL(response.url()).pathname.startsWith("/socket.io/") &&
+        response.request().method() === "GET"
+      )
+        heard(at, await response.text().catch(() => ""));
+    });
+    let answeredAt = 0;
+    page.on("response", (response) => {
+      if (new URL(response.url()).pathname.startsWith("/api/auth/callback/"))
+        answeredAt = Date.now();
+    });
     await other.goto(`${SIGN_IN_BASE}/r/${code}`);
     await expect(other.locator("[data-you-name] bdi")).toHaveText("Seat Name");
     const asked: string[] = [];
@@ -218,36 +246,34 @@ test.describe("with provider keys", () => {
       }).observe(document.documentElement, { childList: true, subtree: true });
     });
 
-    // The room's row stays locked for over 3 s, so the commit waits as on a slow database, and
-    // the callback answers that much after the other tab heard `signedIn`.
-    const holding = dbQuery(
-      `do $$ begin perform 1 from room where code = '${code}' for update;
-       perform pg_sleep(3.5); end $$`,
-      [],
-    );
-    await expect
-      .poll(async () => {
-        const rows = await dbQuery(
-          "select 1 from pg_stat_activity where query like 'do $$ begin perform 1 from room%' and state = 'active' and pid <> pg_backend_pid()",
-          [],
-        );
-        return rows.length;
-      })
-      .toBeGreaterThan(0);
-    const started = Date.now();
-    await buttonOf(page, "Sign in with Google").click();
-
-    await expect(other.getByText(/Reconnecting/).first()).toBeVisible();
-    // Past the old 2 s: still the guest's page, reading nothing.
-    await other.waitForTimeout(2_500);
-    expect(asked).toEqual([]);
-    expect(
-      await other.evaluate(() => (window as unknown as { seen: { forms: number } }).seen.forms),
-    ).toBe(0);
+    // The room's row stays locked, so the move's commit waits as on a slow database, and the
+    // callback answers only once the test releases it: 2.5 s after `signedIn` reached the other
+    // tab, counted from that frame, not from the click (Edge reaches the callback about 1.6 s
+    // later than Chromium) nor from "Reconnecting" (a loaded machine shows it seconds late). The
+    // move must end within the callback's 5 s (`MOVE_WAIT_MS`, started just before `signedIn`),
+    // or the page lands and the other tab rightly reloads.
+    const hold = await holdInTransaction("select 1 from room where code = $1 for update", [code]);
+    expect(hold.rows).toBe(1);
+    let releasedAt = 0;
+    try {
+      await buttonOf(page, "Sign in with Google").click();
+      await expect.poll(() => signedInAt).toBeGreaterThan(0);
+      // Past the old 2 s after `signedIn`: still the guest's page, reading nothing.
+      await other.waitForTimeout(Math.max(0, signedInAt + 2_500 - Date.now()));
+      await expect(other.getByText(/Reconnecting/).first()).toBeVisible();
+      expect(asked).toEqual([]);
+      expect(
+        await other.evaluate(() => (window as unknown as { seen: { forms: number } }).seen.forms),
+      ).toBe(0);
+    } finally {
+      releasedAt = Date.now();
+      await hold.release();
+    }
 
     await expect(page.locator("section[data-you] [data-account]")).toHaveText("Slow Move");
-    expect(Date.now() - started).toBeGreaterThan(3_000);
-    await holding;
+    // The callback waited for the move, which outlasted the old 2 s after `signedIn`.
+    expect(answeredAt).toBeGreaterThanOrEqual(releasedAt);
+    expect(answeredAt - signedInAt).toBeGreaterThan(2_000);
 
     await expect(other.locator("section[data-you] [data-account]")).toHaveText("Slow Move");
     await expect(other.locator("[data-you-name] bdi")).toHaveText("Seat Name");
@@ -360,12 +386,13 @@ test.describe("with provider keys", () => {
       page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
     await expect(page.getByRole("button", { name: "Mit Google anmelden" })).toBeVisible();
     expect(await fits()).toBe(true);
-    const audit = () => new AxeBuilder({ page }).include("[data-sign-in]").withTags(WCAG_TAGS);
-    expect((await audit().analyze()).violations).toEqual([]);
+    // After the enter fade (260 ms): axe reading the text mid-fade finds low contrast.
+    const audit = async () => (await scan(page, "[data-sign-in]")).violations;
+    expect(await audit()).toEqual([]);
     await page.getByRole("button", { name: "Mit Google anmelden" }).click();
     await expect(page.locator("[data-account]")).toBeVisible();
     expect(await fits()).toBe(true);
-    expect((await audit().analyze()).violations).toEqual([]);
+    expect(await audit()).toEqual([]);
     await context.close();
   });
 });
