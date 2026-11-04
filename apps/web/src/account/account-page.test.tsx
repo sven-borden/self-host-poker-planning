@@ -1,12 +1,13 @@
 import { ACCOUNT_DELETE_WORDS } from "@pp/protocol";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../app.tsx";
 import { changeLanguage } from "../i18n/i18n.ts";
 import type { Language } from "../i18n/language.ts";
 import { resetIdentityModule } from "../identity/identity.ts";
 import { createAppRouter } from "../router.ts";
+import { settleToasts } from "../settle-toasts.ts";
 import { useIdentityStore } from "../stores/identity-store.ts";
 
 // The account page (#51) in a real router: who sees what, what each press asks of the server, and
@@ -114,6 +115,9 @@ beforeEach(() => {
   useIdentityStore.getState().reset?.();
   resetIdentityModule();
 });
+
+// Sonner's removal timer must not outlive the file (settle-toasts.ts).
+afterAll(settleToasts);
 
 afterEach(() => {
   cleanup();
