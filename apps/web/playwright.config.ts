@@ -59,7 +59,8 @@ export default defineConfig({
   projects: [
     { name: "e2e", testIgnore: [/reveal-performance/, /webkit\.spec/], use: chromium },
     // The app in Playwright's WebKit (U3): the table's bench and one round, desktop and
-    // iPhone. `--project=webkit` runs it alone; `pnpm exec playwright install webkit` first.
+    // iPhone, beside the e2e project, in CI too. `pnpm exec playwright install webkit` once;
+    // `--project=webkit` runs it alone.
     {
       name: "webkit",
       testMatch: /webkit\.spec/,
@@ -71,7 +72,7 @@ export default defineConfig({
     {
       name: "performance",
       testMatch: /reveal-performance/,
-      dependencies: ["e2e"],
+      dependencies: ["e2e", "webkit"],
       fullyParallel: false,
       workers: 1,
       retries: 2,
