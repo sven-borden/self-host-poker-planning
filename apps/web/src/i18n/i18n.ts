@@ -1,3 +1,4 @@
+import { COPY_LOADERS, type CopyPart, type PartMessages } from "./copy-parts.ts";
 import { en } from "./en.ts";
 import { formatNumber } from "./format.ts";
 import { detectLanguage, type Language, localeFor, saveLanguage } from "./language.ts";
@@ -12,11 +13,12 @@ import { detectLanguage, type Language, localeFor, saveLanguage } from "./langua
 //   `Intl.PluralRules`, falling back to `_other` when the language's form is absent.
 // Values are inserted as plain text: React escapes them when it renders, so nothing here
 // escapes twice. English is bundled and is the fallback; French and German are chunks
-// fetched on demand.
+// fetched on demand. The words only a lazy panel shows are parts of their own, per language,
+// loaded with the panel (`loadCopy`, copy-parts.ts).
 
 // --- Types: keys and their placeholders, checked by tsc ---------------------------------
 
-type Messages = typeof en;
+type Messages = typeof en & PartMessages;
 type Join<P extends string, K extends string> = P extends "" ? K : `${P}.${K}`;
 type Leaves<T, P extends string = ""> = {
   [K in keyof T & string]: T[K] extends string ? Join<P, K> : Leaves<T[K], Join<P, K>>;
@@ -66,6 +68,12 @@ export type TFunction = <K extends MessageKey>(key: K, ...args: Args<K>) => stri
 type Values = Readonly<Record<string, string | number>>;
 
 const catalogs: Partial<Record<Language, object>> = { en };
+/** The panels' parts loaded so far, per language (copy-parts.ts). */
+const parts: Record<Language, Map<CopyPart, object>> = {
+  en: new Map(),
+  fr: new Map(),
+  de: new Map(),
+};
 const pluralRules = new Map<Language, Intl.PluralRules>();
 const numberOptions = new Map<string, Intl.NumberFormatOptions>();
 const PLACEHOLDER = /\{\{\s*([^,}]+?)\s*(?:,\s*([^}]+?)\s*)?\}\}/g;
@@ -78,25 +86,42 @@ function lookup(catalog: object | undefined, key: string): string | undefined {
   return typeof node === "string" ? node : undefined;
 }
 
-function message(
-  catalog: object | undefined,
-  language: Language,
-  key: string,
-  count: unknown,
-): string | undefined {
+type Find = (key: string) => string | undefined;
+
+/** A language's words: its catalog first, then the panels' parts it has loaded. */
+function finder(language: Language): Find {
+  return (key) => {
+    const found = lookup(catalogs[language], key);
+    if (found !== undefined) return found;
+    for (const part of parts[language].values()) {
+      const inPart = lookup(part, key);
+      if (inPart !== undefined) return inPart;
+    }
+    return undefined;
+  };
+}
+
+const finders = new Map<Language, Find>();
+
+function wordsOf(language: Language): Find {
+  let find = finders.get(language);
+  if (!find) {
+    find = finder(language);
+    finders.set(language, find);
+  }
+  return find;
+}
+
+function message(find: Find, language: Language, key: string, count: unknown): string | undefined {
   if (typeof count !== "number") {
-    return lookup(catalog, key);
+    return find(key);
   }
   let rules = pluralRules.get(language);
   if (!rules) {
     rules = new Intl.PluralRules(language);
     pluralRules.set(language, rules);
   }
-  return (
-    lookup(catalog, `${key}_${rules.select(count)}`) ??
-    lookup(catalog, `${key}_other`) ??
-    lookup(catalog, key)
-  );
+  return find(`${key}_${rules.select(count)}`) ?? find(`${key}_other`) ?? find(key);
 }
 
 /** `number` or `number(maximumFractionDigits: 1; useGrouping: false)`, parsed once per spelling. */
@@ -130,8 +155,8 @@ function parseNumberFormat(format: string): Intl.NumberFormatOptions | undefined
 function translate(language: Language, key: string, values: Values | undefined): string {
   const count = values?.count;
   const text =
-    message(catalogs[language], language, key, count) ??
-    message(catalogs.en, "en", key, count) ??
+    message(wordsOf(language), language, key, count) ??
+    message(wordsOf("en"), "en", key, count) ??
     key;
   return fill(language, text, values);
 }
@@ -146,7 +171,8 @@ export function translateIn(
   key: string,
   values?: Values,
 ): string {
-  return fill(language, message(languages[language], language, key, values?.count) ?? key, values);
+  const find: Find = (part) => lookup(languages[language], part);
+  return fill(language, message(find, language, key, values?.count) ?? key, values);
 }
 
 function fill(language: Language, text: string, values: Values | undefined): string {
@@ -207,28 +233,75 @@ const LOADERS: Record<Exclude<Language, "en">, () => Promise<object>> = {
   de: () => import("./de.ts").then((module) => module.de),
 };
 
-const loading = new Map<Language, Promise<void>>();
+const loading = new Map<string, Promise<void>>();
 
-/** Fetches a language's catalog once; English is always there. */
-export function loadLanguage(language: Language): Promise<void> {
-  if (catalogs[language]) {
+/** Runs `load` once at a time under `id`; a failed load (offline, a new deploy) may run again. */
+function once(id: string, done: boolean, load: () => Promise<void>): Promise<void> {
+  if (done) {
     return Promise.resolve();
   }
-  let pending = loading.get(language);
+  let pending = loading.get(id);
   if (!pending) {
-    pending = LOADERS[language as Exclude<Language, "en">]().then(
-      (catalog) => {
-        catalogs[language] = catalog;
-      },
-      (error: unknown) => {
-        // A failed fetch (offline, a new deploy) may succeed on the next try.
-        loading.delete(language);
-        throw error;
-      },
-    );
-    loading.set(language, pending);
+    pending = load().catch((error: unknown) => {
+      loading.delete(id);
+      throw error;
+    });
+    loading.set(id, pending);
   }
   return pending;
+}
+
+function loadCatalog(language: Language): Promise<void> {
+  return once(language, catalogs[language] !== undefined, () =>
+    LOADERS[language as Exclude<Language, "en">]().then((catalog) => {
+      catalogs[language] = catalog;
+    }),
+  );
+}
+
+function loadPart(part: CopyPart, language: Language): Promise<void> {
+  return once(`${part}:${language}`, parts[language].has(part), () =>
+    COPY_LOADERS[part][language]().then((copy) => {
+      parts[language].set(part, copy);
+    }),
+  );
+}
+
+/** The panels' parts a page has opened so far: a change of language brings them along. */
+const wanted = new Set<CopyPart>();
+
+/**
+ * Fetches a language's catalog once, English is always there, with the part of every panel
+ * opened so far, so that a panel open in English speaks French at the same moment as the page.
+ */
+export async function loadLanguage(language: Language): Promise<void> {
+  const missing = () => [...wanted].filter((part) => !parts[language].has(part));
+  await Promise.all([loadCatalog(language), ...missing().map((part) => loadPart(part, language))]);
+  // A panel opened while these loaded wants its part too.
+  for (let left = missing(); left.length > 0; left = missing()) {
+    await Promise.all(left.map((part) => loadPart(part, language)));
+  }
+}
+
+/**
+ * Loads a panel's words in the language the page speaks (U6): a panel awaits this beside its
+ * own chunk and shows only once both are in, so it never shows a key or English first. From
+ * then on every change of language loads the part too, before the page switches. A language
+ * picked while this loaded is loaded as well before this resolves. Rejects when the part cannot
+ * load, like the panel's chunk.
+ */
+export async function loadCopy(part: CopyPart): Promise<void> {
+  let language: Language;
+  do {
+    language = current;
+    await loadPart(part, language);
+    wanted.add(part);
+  } while (language !== current);
+}
+
+/** Loads a part in one language without asking for it on later changes: for tests. */
+export function loadCopyIn(part: CopyPart, language: Language): Promise<void> {
+  return loadPart(part, language);
 }
 
 /**

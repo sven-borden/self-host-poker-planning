@@ -1,0 +1,132 @@
+import type { CatalogOf } from "../en.ts";
+import type { copy as english } from "./queue-en.ts";
+
+// The queue sheet's words (#52, #54, #55): the queue and the Jira and Azure DevOps sections in it,
+// in German. Loaded with its panel when the page speaks German: see copy-parts.ts.
+export const copy: CatalogOf<typeof english> = {
+  queue: {
+    lede: "Was das Team als Nächstes schätzt, der Reihe nach. Nur Sie sehen diese Liste; der Raum sieht, was als Nächstes kommt.",
+    pasteLabel: "Tickets einfügen",
+    pasteHint:
+      "Eins pro Zeile: Schlüssel, Links oder eine aus Jira oder Azure DevOps kopierte Tabelle. Jede andere Zeile wird ein Titel. Kein Link wird geöffnet.",
+    add: "Zur Warteschlange hinzufügen",
+    nothingPasted: "Fügen Sie zuerst eine Liste ein.",
+    added_one: "{{count, number}} Eintrag hinzugefügt.",
+    added_other: "{{count, number}} Einträge hinzugefügt.",
+    addedNone: "Nichts Neues hinzuzufügen.",
+    duplicates_one: "{{count, number}} Duplikat entfernt.",
+    duplicates_other: "{{count, number}} Duplikate entfernt.",
+    refused_one: "{{count, number}} Zeile konnte nicht gelesen werden.",
+    refused_other: "{{count, number}} Zeilen konnten nicht gelesen werden.",
+    shortened_one: "{{count, number}} Titel wurde gekürzt.",
+    shortened_other: "{{count, number}} Titel wurden gekürzt.",
+    kept: "Diese Zeilen bleiben im Feld.",
+    partial_one:
+      "{{count, number}} Eintrag wurde aufgenommen, bevor der Vorgang abbrach. Der Rest steht noch im Feld: Fügen Sie ihn erneut hinzu, nichts kommt doppelt hinein.",
+    partial_other:
+      "{{count, number}} Einträge wurden aufgenommen, bevor der Vorgang abbrach. Der Rest steht noch im Feld: Fügen Sie ihn erneut hinzu, nichts kommt doppelt hinein.",
+    empty: "Die Warteschlange ist noch leer.",
+    loading: "Warteschlange wird geladen…",
+    retry: "Erneut versuchen",
+    list: "Einträge der Warteschlange",
+    moveUp: "{{item}} nach oben",
+    moveDown: "{{item}} nach unten",
+    remove: "{{item}} entfernen",
+    moved: "{{item}} ist jetzt Nummer {{place, number}} von {{total, number}}.",
+    removed: "{{item}} entfernt.",
+    clear: "Warteschlange leeren",
+    clearAsk_one: "{{count, number}} Eintrag entfernen?",
+    clearAsk_other: "Alle {{count, number}} Einträge entfernen?",
+    clearYes: "Alle entfernen",
+    clearNo: "Behalten",
+    cleared: "Die Warteschlange ist leer.",
+  },
+  connector: {
+    connect: "{{system}} verbinden",
+    lede: "Importieren Sie einen Sprint oder eine Suche in die Warteschlange und senden Sie Schätzungen zurück. Sie verbinden Ihr eigenes Konto, und niemand sonst im Raum nutzt es.",
+    signIn: "Melden Sie sich mit einem Konto an, um {{system}} zu verbinden.",
+    connectedTo: "Verbunden mit {{site}}",
+    site: "Website",
+    siteSave: "Diese Website verwenden",
+    siteChange: "Website wechseln",
+    field: "Schätzungen gehen in",
+    fieldIs: "Schätzungen gehen in {{field}}",
+    fieldHint:
+      "Ein Zahlenfeld dieser Website. Der Vorschlag richtet sich nach dem Namen: Prüfen Sie ihn vor dem Speichern.",
+    fieldSave: "Feld speichern",
+    fieldChange: "Feld wechseln",
+    fieldNone: "Diese Website hat kein Zahlenfeld, Schätzungen können also nicht zurück.",
+    importFrom: "Quelle",
+    bySprint: "Sprint",
+    byJql: "JQL-Suche",
+    board: "Board",
+    boardFilter: "Name des Boards",
+    boardFind: "Suchen",
+    noBoards: "Kein Board gefunden.",
+    noSites: "Dieses Konto erreicht keine {{system}}-Website.",
+    sprint: "Sprint",
+    sprintActive: "{{sprint}} (aktiv)",
+    noSprints: "Dieses Board hat keinen aktiven oder künftigen Sprint.",
+    jql: "JQL-Abfrage",
+    jqlHint:
+      "So, wie Sie sie in der Vorgangssuche eingeben würden. Sie geht an Jira und wird hier nicht gespeichert.",
+    import: "Importieren",
+    importing: "Wird importiert…",
+    nothingAsked: "Wählen Sie zuerst einen Sprint oder geben Sie eine Abfrage ein.",
+    leftOut_one:
+      "{{count, number}} Eintrag ausgelassen: Die Warteschlange ist voll, oder er konnte nicht gelesen werden.",
+    leftOut_other:
+      "{{count, number}} Einträge ausgelassen: Die Warteschlange ist voll, oder sie konnten nicht gelesen werden.",
+    beyond_one:
+      "Etwa {{count, number}} weiterer jenseits der Grenze von {{max, number}} Einträgen.",
+    beyond_other:
+      "Etwa {{count, number}} weitere jenseits der Grenze von {{max, number}} Einträgen.",
+    beyondUnknown: "Weitere Einträge liegen jenseits der Grenze von {{max, number}}.",
+    disconnect: "Trennen",
+    disconnectNote: "Damit wird Ihr Token hier gelöscht. {{system}} behält seine eigene Freigabe:",
+    grantsLink: "Entfernen Sie sie in Ihrem Atlassian-Konto",
+    result: {
+      expired:
+        "Das hat zu lange gedauert, {{system}} wurde nicht verbunden. Verbinden Sie es erneut.",
+      failed: "{{system}} konnte nicht verbunden werden. Versuchen Sie es erneut.",
+    },
+    azure: {
+      lede: "Importieren Sie eine gespeicherte Abfrage oder eine WIQL-Abfrage in die Warteschlange und senden Sie Schätzungen zurück. Sie verbinden sich mit Ihrem eigenen Token, und niemand sonst im Raum nutzt es.",
+      organization: "Organisation",
+      organizationHint: "Nur ihr Name: was in Ihrer Adressleiste auf dev.azure.com/ folgt.",
+      token: "Persönliches Zugriffstoken",
+      tokenScope:
+        "Erstellen Sie eines nur für diese Organisation, mit einem einzigen angehakten Bereich: Work Items, Read & write.",
+      tokenLink: "Token erstellen",
+      tokenUse:
+        "Es dient nur dazu, das Importierte zu lesen und Ihre Schätzungen zu schreiben. Bei Microsoft endet es an seinem Ablaufdatum, geben Sie ihm also die kürzeste Laufzeit, die für Sie passt. Hier bleibt es verschlüsselt, bis Sie die Verbindung trennen, ein anderes einfügen oder Ihr Konto löschen.",
+      tokenReplace: "Dieses Token verwenden",
+      checking: "Token wird geprüft…",
+      project: "Projekt",
+      projectIs: "Projekt: {{project}}",
+      projectSave: "Dieses Projekt verwenden",
+      projectChange: "Projekt wechseln",
+      noProjects: "Dieses Token erreicht in dieser Organisation kein Projekt.",
+      fieldAuto:
+        "Schätzungen gehen in das Feld, das der Typ jedes Eintrags trägt: Story Points, Effort oder Size.",
+      fieldPick: "Feld wählen",
+      fieldReset: "Das Feld jedes Typs verwenden",
+      fieldType: "Arbeitselementtyp",
+      fieldHint: "Einträge eines Typs ohne dieses Feld bleiben bei Story Points, Effort oder Size.",
+      fieldNone: "Dieser Typ hat kein Zahlenfeld.",
+      fieldCancel: "Abbrechen",
+      bySaved: "Gespeicherte Abfrage",
+      byWiql: "WIQL-Abfrage",
+      saved: "Gespeicherte Abfrage",
+      noSaved: "Dieses Projekt hat keine gespeicherte Abfrage, die Sie sehen können.",
+      savedMore: "Einige Ordner wurden nicht gelesen, die Liste ist also nicht vollständig.",
+      wiql: "WIQL-Abfrage",
+      wiqlHint:
+        "Zum Beispiel: Select [System.Id] From WorkItems Where [System.TeamProject] = @project. Sie geht an Azure DevOps und wird hier nicht aufbewahrt.",
+      nothingAsked: "Wählen Sie zuerst eine gespeicherte Abfrage oder geben Sie eine Abfrage ein.",
+      disconnectNote:
+        "Das löscht Ihr Token hier. Bei Microsoft besteht es weiter, bis es abläuft oder Sie es widerrufen:",
+      revokeLink: "in Azure DevOps widerrufen",
+    },
+  },
+};

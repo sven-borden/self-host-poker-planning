@@ -4,11 +4,16 @@ import { reloadAction } from "../components/shell/reload-action.ts";
 import { Button } from "../components/ui/button.tsx";
 import { clearConnectorResult, connectorResult } from "../connectors/connector.ts";
 import { useT } from "../i18n/hooks.ts";
+import { loadCopy } from "../i18n/i18n.ts";
 
 type PanelModule = typeof import("./queue-panel.tsx");
 
-/** The panel's code: a chunk of its own, loaded on the first open. */
-const loadPanel = () => import("./queue-panel.tsx");
+/**
+ * The panel's code and its words in the page's language (U6): a chunk each, loaded on the first
+ * open, and the panel shows once both are in, so it never shows a key or English first.
+ */
+const loadPanel = () =>
+  Promise.all([import("./queue-panel.tsx"), loadCopy("queue")]).then(([module]) => module);
 
 /**
  * "Queue", beside the PO's subject field (#52): where the next round's subject is chosen.

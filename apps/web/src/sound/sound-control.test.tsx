@@ -3,7 +3,7 @@ import { type Snapshot, toSnapshot } from "@pp/protocol";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ARROW_SETTLE_MS } from "../components/ui/segment.ts";
-import { changeLanguage, loadLanguage } from "../i18n/i18n.ts";
+import { changeLanguage, loadCopyIn, loadLanguage } from "../i18n/i18n.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 import { audioContext, FakeAudioContext, fakeAudio } from "./fake-audio.ts";
 import { RoomSoundButton } from "./sound-button.tsx";
@@ -63,6 +63,9 @@ describe("the room's sound", () => {
   beforeAll(async () => {
     await loadLanguage("fr");
     await loadLanguage("de");
+    // The panel's own words (U6), as the panel would load them.
+    await loadCopyIn("sound", "fr");
+    await loadCopyIn("sound", "de");
   });
   beforeEach(() => {
     fakeAudio();

@@ -3,12 +3,17 @@ import { useRef, useState } from "react";
 import { reloadAction } from "../components/shell/reload-action.ts";
 import { Button } from "../components/ui/button.tsx";
 import { useT } from "../i18n/hooks.ts";
+import { loadCopy } from "../i18n/i18n.ts";
 import { useRoomStore } from "../stores/room-store.ts";
 
 type PanelModule = typeof import("./history-panel.tsx");
 
-/** The panel's code: a chunk of its own, loaded on the first open. */
-const loadPanel = () => import("./history-panel.tsx");
+/**
+ * The panel's code and its words in the page's language (U6): a chunk each, loaded on the first
+ * open, and the panel shows once both are in, so it never shows a key or English first.
+ */
+const loadPanel = () =>
+  Promise.all([import("./history-panel.tsx"), loadCopy("history")]).then(([module]) => module);
 
 /**
  * The room header's "History" button (#33), beside "Room settings" or "Room rules", for
