@@ -194,8 +194,18 @@ type RoomState = {
   participants: Record<UserId, Participant>;
   round: Round | null;              // null = lobby
   queue?: Queue;                    // at most 500 items; stored in its own column (section 6)
+  removed?: Record<UserId, number>; // U5: whom the PO removed, and when; server-held, never in a
+                                    //   snapshot; a day at most, 32 at most (below)
 };
 ```
+
+`removed` (U5, `removed.ts`) lets someone the PO removed while their socket was down learn it at
+their next `enter`, since they never heard `kicked`. A `kick` adds the person, keeping the newest
+32 (`MAX_REMOVED`); their `join` takes them out, so a later reconnect says nothing; every `apply`
+that changes the state drops entries older than 24 hours (`REMOVAL_NOTICE_MS`): a removal sets no
+lockout of its own to match, and a day covers a blip, a laptop asleep overnight or a phone tab in
+the background. `removeAccount` drops the person's entry (ADR-029) and `moveGuest` moves it to the
+account (ADR-025). It holds only an id the room already named and a time, never a card.
 
 `createRoom({ ownerId })` gives the ADR-011 defaults (`DEFAULT_SETTINGS`), no participants
 and `round: null`; the PO enters through `join` like everyone else. Character counts are
@@ -301,7 +311,7 @@ sends it. So every tab open across that deploy kept its room instead of reloadin
 
 | Event | Direction | Payload | Ack |
 |---|---|---|---|
-| `enter` | client → server | `{ code, protocol }`: subscribe to a room's snapshots | `{ ok: true, snapshot }` or `{ ok: false, code }` |
+| `enter` | client → server | `{ code, protocol }`: subscribe to a room's snapshots | `{ ok: true, snapshot, notice? }` or `{ ok: false, code, notice? }`; `notice: "removed"` (U5) only to someone the PO removed in the last day who has not joined since, with a snapshot or with `password_required` (the removal dropped their grant) |
 | `cmd` | client → server | `{ id, type, payload }`: one domain command | `{ ok: true, version }` or `{ ok: false, code }` |
 | `queue` | client → server | `{}`: the entered room's whole queue, for its PO (#52) | `{ ok: true, rev, items }` or `{ ok: false, code }`; shares `history`'s bucket |
 | `snapshot` | server → client | the viewer's projection, with `room.queue` (`{ count, rev, next }`) when items wait, never the list (ADR-024) | none |
@@ -318,8 +328,8 @@ sends it. So every tab open across that deploy kept its room instead of reloadin
   of the exact rules (grapheme counts, deck rules, ranges), so its codes reach the user.
 - **Ack codes** (`AckErrorCode`, listed in `ACK_ERROR_CODES`): the domain's `ErrorCode` plus
   `bad_payload`, `protocol_mismatch`, `room_not_found`, `password_required`,
-  `unauthenticated`, `rate_limited`, `busy`, `internal`. snake_case strings the web app
-  translates. `busy` (#15): the runner's `conflict`, every compare-and-set retry lost to
+  `unauthenticated`, `rate_limited`, `busy`, `internal`, and `removed`, which only an `enter`
+  ack's `notice` carries (U5). snake_case strings the web app translates. `busy` (#15): the runner's `conflict`, every compare-and-set retry lost to
   another instance; nothing was stored, so the same command id may be sent again (the web
   does so up to 4 times). `internal` is kept for "unknown whether it landed".
 - **Enter**: `parseEnter(input)` answers `protocol_mismatch` to any other `protocol` number
@@ -422,7 +432,10 @@ Server: `apps/server/src/sync/room-sync.ts` (the `handlers` of `createRealtime`)
   the room gets `toSnapshot(state, its user, { causes })` *before* the ack goes out, so a
   client holds the new snapshot when its command resolves. A refused command acks the
   domain code, and whatever the run stored anyway (a timer reveal resolved first) is
-  broadcast. A `kicked` cause sends `kicked` to that person's sockets and closes them.
+  broadcast. A `kicked` cause sends `kicked` to that person's sockets and closes them. A
+  person with no socket then (a network blip, a laptop asleep) hears it from the state: their
+  next `enter` answers `notice: "removed"` to them alone (U5, `removed` in section 3), and the
+  page shows the same notice above the join form. No other frame changes.
 - **Idempotency**: the last 100 results of each person (by room id and command id), for
   the 1000 people who sent a command last, in process memory; one person's flood evicts
   only their own results. A repeated id (in flight or done) gets the same ack and runs
@@ -817,7 +830,8 @@ password. Google and Microsoft Entra ID are optional (#47, below, ADR-023).
     that heard `signedIn` holds the `pp-identity` lock, and no tab reads the session, until the
     page the sign-in came back to says so on the `pp-sign-in` `BroadcastChannel`, or 10 s pass.
     `disableDeleteAnonymousUser` stays on, as the plugin's delete would ignore how the move went.
-    A person's rooms are found by `room_people_idx`, a GIN index on seats and votes, and named
+    A person's rooms are found by `room_people_idx`, a GIN index on seats and votes, by
+    `room_removed_idx` on `live -> 'removed'` where the PO removed them (U5), and named
     rounds by `round_history_votes_idx`. A user and its account row are written in one
     transaction (`transaction: true`).
   - **No seam**: nothing configures a provider's address; tests replace `fetch` in their own
