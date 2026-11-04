@@ -65,6 +65,11 @@ export interface ExportRoom {
    */
   cardOnTable: boolean;
   lastActiveAt: string;
+  /**
+   * When the PO removed the person from this room while no seat of theirs is in it (U5): the
+   * room's record of the removal, kept for a day and until the room's next write.
+   */
+  removedAt?: string;
 }
 
 /** A room the person may not read: that it names them, their own seat, and nothing about it. */
@@ -72,6 +77,8 @@ export interface WithheldRoom {
   id: string;
   withheld: true;
   seat: ExportRoom["seat"];
+  /** As on `ExportRoom`: the person's own data, so it stays when the room is withheld. */
+  removedAt?: string;
 }
 
 /** A room a correct password let the person into. */
@@ -180,6 +187,7 @@ export function createAccountDataStore(
         people: sql<Record<string, Seat>>`${room.live} -> 'participants'`,
         cardOnTable: sql<boolean>`coalesce((${room.live} #> '{round,votes}') ? ${who}, false)`,
         lastActiveAt: room.lastActiveAt,
+        removedAt: sql<string | null>`${room.live} -> 'removed' ->> ${who}`,
       })
       .from(room)
       .where(namesPerson(who));
@@ -266,6 +274,9 @@ export function createAccountDataStore(
         const rooms: (ExportRoom | WithheldRoom)[] = [];
         for (const row of await roomsNaming(who)) {
           const { id, name, productOwner, keeper, people, cardOnTable, lastActiveAt } = row;
+          const removal = row.removedAt !== null && {
+            removedAt: new Date(Number(row.removedAt)).toISOString(),
+          };
           const own = Object.hasOwn(people, who) ? people[who] : undefined;
           const seat = own
             ? {
@@ -284,8 +295,9 @@ export function createAccountDataStore(
               seat,
               cardOnTable,
               lastActiveAt: lastActive,
+              ...removal,
             });
-          } else rooms.push({ id, withheld: true, seat });
+          } else rooms.push({ id, withheld: true, seat, ...removal });
         }
 
         const grantRows = await db

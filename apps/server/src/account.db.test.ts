@@ -494,6 +494,29 @@ describe("the export", () => {
     }
   });
 
+  it("holds a room the PO removed the person from, with when, and no seat", async () => {
+    const me = await signedIn();
+    const other = await new Browser().asGuest();
+    const removedFrom = await roomOf(other.id, "Removed From");
+    const remover = await other.sit(removedFrom.code, "Other Person");
+    await me.sit(removedFrom.code, "Me There");
+    const before = Date.now();
+    await expect(remover.cmd("kick", { who: me.id })).resolves.toMatchObject({ ok: true });
+
+    const file = (await (await me.go("/api/account/export")).json()) as {
+      rooms: { id: string; seat: unknown; productOwner: boolean; removedAt?: string }[];
+    };
+    const entry = file.rooms.find((room) => room.id === removedFrom.id);
+    expect(entry).toMatchObject({ id: removedFrom.id, seat: null, productOwner: false });
+    const at = Date.parse(entry?.removedAt ?? "");
+    expect(at).toBeGreaterThanOrEqual(before - 1000);
+    expect(at).toBeLessThanOrEqual(Date.now());
+    // The other rooms carry no such field.
+    expect(file.rooms.filter((room) => "removedAt" in room).map((room) => room.id)).toEqual([
+      removedFrom.id,
+    ]);
+  });
+
   it("holds every room that names the person, and the grants, with no code", async () => {
     const me = await signedIn();
     const other = await new Browser().asGuest();
