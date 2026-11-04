@@ -120,6 +120,10 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
   address shares nothing. The cookie's signature is checked first with no query (a forged one
   costs nothing), then 30 at once and one a second; one CONNECT per connection. Live at 8626d35,
   a real guest handshake checked there.
+- Local test reliability from U1 (PR #119): the whole suite passes on Windows as in CI. The
+  reveal budget calibrates its throttle under the throttle, against a benchmark isolated from the
+  app's CSS (ADR-019 note); each e2e test has its own client address; axe scans a settled page.
+  Live at da20e9d (tests only).
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -132,7 +136,7 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 - **Agents again since 2026-11-03** (Sven: "start with agents, you orchestrate"), no end date:
   the upkeep list below, then stop and report.
-- U1 (PR not yet open) and U4 run together. U2 merged.
+- U4 (PR #120) waits for CI after `main` went in; U3 builds beside it. U1 and U2 merged.
 - #38 is merged and stays open until Sven's run on a fresh subscription.
 - #54 and #55 are merged and stay open until the live checks at Sven's site and organisation.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
@@ -140,13 +144,8 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 ## Upkeep (no GitHub issues: creating them was refused, so each is a `chore/uN-…` PR)
 
 In this order; pairs run together where they touch different parts.
-- **U1, local test reliability.** `jira.spec.ts:165` polls the write count; `sign-in.spec.ts:191`
-  counts its 2.5 s from the click; `sign-in.spec.ts:342` audits after the enter fade;
-  `reveal-performance.spec.ts` sets its rate from a benchmark under the throttle, or only reports
-  off CI, with `REFERENCE_MS` measured again (Windows overshoots the nominal 4x: build log,
-  2026-11-02); the db tests get sign-in headroom through `SetupTuning` (about 41 of 60 a minute);
-  e2e rooms made on the plain `page` fixture tip the 20-in-10-minutes limit; the Dockerfile's
-  comments quote 220 MB and 247 MB (the image is 239 MB of 250).
+- **U1, merged** (PR #119): see Live. Left open: `room-password.spec.ts:291` stalled once in
+  7 local runs (two fresh tabs on "Connecting to the room…"); it now attaches a trace on failure.
 - **U2, merged** (PR #118): see Live.
 - **U3, `/dev/table` crashes in WebKit** (React #185, with or without the CSP). Check a real
   round in WebKit too: no Safari has run the app. Fix and hold it with a WebKit test.
