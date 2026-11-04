@@ -202,7 +202,8 @@ type RoomState = {
 `removed` (U5, `removed.ts`) lets someone the PO removed while their socket was down learn it at
 their next `enter`, since they never heard `kicked`. A `kick` adds the person, keeping the newest
 32 (`MAX_REMOVED`); their `join` takes them out, so a later reconnect says nothing; every `apply`
-that changes the state drops entries older than 24 hours (`REMOVAL_NOTICE_MS`): a removal sets no
+that changes the state drops entries older than 24 hours (`REMOVAL_NOTICE_MS`), or of someone seated
+(an entry never names a person with a seat, whichever write seated them): a removal sets no
 lockout of its own to match, and a day covers a blip, a laptop asleep overnight or a phone tab in
 the background. `removeAccount` drops the person's entry (ADR-029) and `moveGuest` moves it to the
 account (ADR-025). It holds only an id the room already named and a time, never a card.
@@ -328,8 +329,7 @@ sends it. So every tab open across that deploy kept its room instead of reloadin
   of the exact rules (grapheme counts, deck rules, ranges), so its codes reach the user.
 - **Ack codes** (`AckErrorCode`, listed in `ACK_ERROR_CODES`): the domain's `ErrorCode` plus
   `bad_payload`, `protocol_mismatch`, `room_not_found`, `password_required`,
-  `unauthenticated`, `rate_limited`, `busy`, `internal`, and `removed`, which only an `enter`
-  ack's `notice` carries (U5). snake_case strings the web app translates. `busy` (#15): the runner's `conflict`, every compare-and-set retry lost to
+  `unauthenticated`, `rate_limited`, `busy`, `internal`. snake_case strings the web app translates. `busy` (#15): the runner's `conflict`, every compare-and-set retry lost to
   another instance; nothing was stored, so the same command id may be sent again (the web
   does so up to 4 times). `internal` is kept for "unknown whether it landed".
 - **Enter**: `parseEnter(input)` answers `protocol_mismatch` to any other `protocol` number
