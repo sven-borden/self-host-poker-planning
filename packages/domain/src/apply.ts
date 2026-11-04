@@ -31,7 +31,6 @@ import {
   removeFromQueue,
 } from "./apply-queue.ts";
 import { cleanSubject } from "./apply-subject.ts";
-import { addRemoval, dropRemoval, moveRemoval, pruneRemovals } from "./removed.ts";
 import { isAvatarId } from "./avatars.ts";
 import type {
   AccountRemoval,
@@ -43,6 +42,7 @@ import type {
   ErrorCode,
 } from "./commands.ts";
 import { baseCards, deckCards } from "./decks.ts";
+import { addRemoval, dropRemoval, moveRemoval, pruneRemovals } from "./removed.ts";
 import {
   AUTO_ADVANCE_MS,
   heirsOf,

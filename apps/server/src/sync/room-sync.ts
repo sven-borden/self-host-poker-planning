@@ -26,6 +26,11 @@
  * changes the password (`changePassword`, from the HTTP API), the sockets of everyone else
  * hear `locked` and leave the room; a kick drops the removed person's grant.
  *
+ * A person the PO removes (#30) hears `kicked` on every socket of theirs in the room. One whose
+ * socket was down then learns it at their next `enter` (U5): the room's state keeps the removal
+ * for a day (`removed`, in the domain), and the answer to their own `enter`, a snapshot or the
+ * password's refusal, carries `notice: "removed"`. Nobody else's frames change.
+ *
  * A room limited to accounts (#50, ADR-028) asks before the password. `rules` says what a
  * person's account proves, read fresh on every `enter` and `join`, and the domain's `roomRefusal`
  * judges it: a `join`, a hand-over and a claim are judged again in the run's step, on the state
@@ -94,6 +99,7 @@ import {
   type RoomState,
   requirementOf,
   roomRefusal,
+  wasRemoved,
 } from "@pp/domain";
 import {
   type CmdAck,
@@ -1639,7 +1645,9 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
         if ((lockouts.get(loaded.id) ?? 0) !== lockedBefore) {
           undo();
           // In a room with a rule it may have been the rule: the page enters again, and asks.
-          return loaded.state.settings.restriction ? refuse("busy") : refuse("password_required");
+          return loaded.state.settings.restriction
+            ? refuse("busy")
+            : { ...refuse("password_required"), ...removalNotice(loaded.state, user.id) };
         }
         if (last) return refuseEntry(last, { id: loaded.id, code }, loaded.state, user.id, undo);
       }
@@ -1680,6 +1688,7 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
       return {
         ok: true,
         snapshot: toSnapshot(loaded.state, user.id, { code, version: loaded.version, now: now() }),
+        ...removalNotice(loaded.state, user.id),
       };
     } catch (error) {
       undo();
@@ -1736,6 +1745,14 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
 
   const identityOf = (who: string) => readIdentity(rules, who);
 
+  /**
+   * U5: someone the PO removed within the last day, who has not joined since, hears it in their
+   * own `enter` answer, which nobody else sees: their socket may have been down at the kick. A
+   * rule's refusal says nothing of it, as the rule's screen replaces the join form.
+   */
+  const removalNotice = (state: RoomState, who: string): { notice?: "removed" } =>
+    wasRemoved(state, who, now()) ? { notice: "removed" } : {};
+
   /** What stops `who` on a room's rule (#50): their account, then how old their sign-in is. */
   function ruleRefusal(
     state: RoomState,
@@ -1784,7 +1801,8 @@ export function createRoomSync(options: RoomSyncOptions): RoomSync {
     undo: () => void,
   ): Promise<EnterAck> {
     undo();
-    if (code === "password_required") return refuse(code);
+    // The removal dropped their grant: the password form, with the notice above it (U5).
+    if (code === "password_required") return { ...refuse(code), ...removalNotice(state, who) };
     if (code !== "session_too_old" && participant(state, who) !== undefined) {
       await takeSeat(room, who);
     }

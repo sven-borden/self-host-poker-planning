@@ -65,10 +65,14 @@ describe("the removals a room remembers (U5)", () => {
     const later = step(kicked, "ada", { type: "rename", name: "Ada L" }, T0 + REMOVAL_NOTICE_MS);
     expect(later.removed).toBeUndefined();
     // A command that changes nothing returns the very same state, entry and all.
-    const result = apply(kicked, { type: "rename", name: "Ada" }, {
-      actor: "ada",
-      now: T0 + REMOVAL_NOTICE_MS,
-    });
+    const result = apply(
+      kicked,
+      { type: "rename", name: "Ada" },
+      {
+        actor: "ada",
+        now: T0 + REMOVAL_NOTICE_MS,
+      },
+    );
     expect(result.ok && result.state).toBe(kicked);
   });
 

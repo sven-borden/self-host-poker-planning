@@ -57,6 +57,7 @@ const errors = {
   room_not_found:
     "This room does not exist, or it was deleted after a long time without use. Check the link.",
   password_required: "This room has a password. Enter it to join.",
+  removed: "The product owner removed you from this room.",
   wrong_password: "That password is not right.",
   bad_password: "A password needs {{min, number}} to {{max, number}} characters.",
   unauthenticated: "Your session has ended. Reload the page to continue.",

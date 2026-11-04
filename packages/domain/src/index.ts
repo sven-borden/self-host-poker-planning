@@ -44,6 +44,7 @@ export {
   UNITS_PER_CHARACTER,
 } from "./decks.ts";
 export { generateRange, type RangeErrorCode } from "./range.ts";
+export { MAX_REMOVED, REMOVAL_NOTICE_MS, wasRemoved } from "./removed.ts";
 export {
   type AccessIdentity,
   cleanDomain,
@@ -59,7 +60,6 @@ export {
   restrictionRefusal,
   roomRefusal,
 } from "./restriction.ts";
-export { MAX_REMOVED, REMOVAL_NOTICE_MS, wasRemoved } from "./removed.ts";
 export { computeResults, type Results } from "./results.ts";
 export {
   AUTO_ADVANCE_MS,

@@ -735,6 +735,13 @@ describe("after a deletion", () => {
     await awayLongEnough(claimed.id, other.id);
     await expect(claimer.cmd("claimOwner")).resolves.toMatchObject({ ok: true });
 
+    // A room whose PO removed the person, who has not come back: it remembers the removal (U5).
+    const removedFrom = await roomOf(other.id, "Removed");
+    const remover = await other.sit(removedFrom.code, "Other Person");
+    await me.sit(removedFrom.code, person.name);
+    await expect(remover.cmd("kick", { who: me.id })).resolves.toMatchObject({ ok: true });
+    expect(Object.keys((await liveOf(removedFrom.id))?.live.removed ?? {})).toEqual([me.id]);
+
     // What sits beside the rooms.
     await admin.query("insert into room_access (room_id, user_id) values ($1, $2)", [
       theirs.id,
@@ -794,6 +801,8 @@ describe("after a deletion", () => {
         .map(({ card }) => card)
         .sort(),
     ).toEqual(["1", "21"]);
+    // The room the person was removed from goes on, its record without them.
+    expect((await liveOf(removedFrom.id))?.live.removed).toBeUndefined();
   });
 
   it("every foreign key to a user cascades, so no row can hold a deleted person back", async () => {

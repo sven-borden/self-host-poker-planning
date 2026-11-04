@@ -5,7 +5,7 @@
  * socket, and room codes kept out of the logs. Against Postgres, with real identity, see
  * `room-sync.db.test.ts`.
  */
-import { createRoom, type RoomState } from "@pp/domain";
+import { createRoom, REMOVAL_NOTICE_MS, type RoomState } from "@pp/domain";
 import { PROTOCOL_VERSION } from "@pp/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DatabaseError } from "../db/errors.ts";
@@ -337,6 +337,60 @@ describe("cmd", () => {
     expect((await ada.cmd("kick", { who: "ub" })).ok).toBe(true);
     expect(await closed).toBe("io server disconnect");
     expect(bob.kicked.count).toBe(1);
+  });
+
+  it("tells a person removed while their socket was down at their next enter, and nobody else (U5)", async () => {
+    const { client } = await start(lobby());
+    const ada = client("ua");
+    const away = client("ub");
+    await ada.enter(CODE);
+    await away.enter(CODE);
+    away.close();
+    expect((await ada.cmd("kick", { who: "ub" })).ok).toBe(true);
+    const framesBefore = ada.frames.length;
+    const bob = client("ub");
+    const back = await bob.enter(CODE);
+    expect(back.ok && back.notice).toBe("removed");
+    expect(back.ok && back.snapshot.room.you).toBeNull();
+    // A stranger and the PO hear nothing of it.
+    const cy = await client("uc").enter(CODE);
+    expect(cy.ok && cy.notice).toBeUndefined();
+    const again = await ada.enter(CODE);
+    expect(again.ok && again.notice).toBeUndefined();
+    expect(ada.frames.slice(framesBefore).join("")).not.toContain("removed");
+    // A reload before joining tells them again; once seated, never.
+    expect(await client("ub").enter(CODE)).toMatchObject({ ok: true, notice: "removed" });
+    expect((await bob.cmd("join", { name: "Bob", role: "voter" })).ok).toBe(true);
+    const later = await client("ub").enter(CODE);
+    expect(later.ok && later.notice).toBeUndefined();
+    expect(later.ok && later.snapshot.room.you).toBe("ub");
+  });
+
+  it("says nothing of a removal a day old (U5)", async () => {
+    let clock = Date.now();
+    const { client } = await start(lobby(), { now: () => clock });
+    const ada = client("ua");
+    await ada.enter(CODE);
+    expect((await ada.cmd("kick", { who: "ub" })).ok).toBe(true);
+    clock += REMOVAL_NOTICE_MS - 1;
+    expect(await client("ub").enter(CODE)).toMatchObject({ ok: true, notice: "removed" });
+    clock += 1;
+    const late = await client("ub").enter(CODE);
+    expect(late.ok && late.notice).toBeUndefined();
+  });
+
+  it("puts the notice on the password's refusal: the removal dropped the grant (U5)", async () => {
+    const locked = play(lobby(), "ua", { type: "password", on: true }, 2);
+    const { client } = await start(locked);
+    const ada = client("ua");
+    await ada.enter(CODE);
+    expect((await ada.cmd("kick", { who: "ub" })).ok).toBe(true);
+    expect(await client("ub").enter(CODE)).toEqual({
+      ok: false,
+      code: "password_required",
+      notice: "removed",
+    });
+    expect(await client("uz").enter(CODE)).toEqual({ ok: false, code: "password_required" });
   });
 
   it("answers rate_limited past the bucket and keeps the socket and the room working", async () => {

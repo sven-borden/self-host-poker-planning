@@ -33,6 +33,13 @@ export const PROTOCOL_ERROR_CODES = [
    * room, not its PO, and no access granted to them by a correct password.
    */
   "password_required",
+  /**
+   * Only as an `enter` ack's `notice` (U5), never as its `code`: the PO removed this person from
+   * the room within the last day, and they have not joined again since. It goes with an `enter`
+   * that let them in (the join form) or asked for the password (a removal drops the grant), and
+   * reaches nobody else.
+   */
+  "removed",
   /** `POST /api/rooms/:code/access`: the password is not the room's (#31). HTTP only. */
   "wrong_password",
   /**
