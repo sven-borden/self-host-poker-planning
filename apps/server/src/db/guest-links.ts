@@ -17,6 +17,7 @@ import {
   IS_KEEPER_APART,
   KEEPER_APART,
   ROOM_PEOPLE,
+  ROOM_REMOVED,
   room,
   roomAccess,
   roundHistory,
@@ -58,13 +59,14 @@ export interface GuestRoom {
 }
 
 /**
- * A room that names `who`: as owner, in a seat, by a vote on the table or as a keeper apart. Each
- * side has its index, as long as `ROOM_PEOPLE`, `KEEPER_APART` and `IS_KEEPER_APART` are spelled
- * exactly.
+ * A room that names `who`: as owner, in a seat, by a vote on the table, as a keeper apart, or in
+ * the record of the people its PO removed (U5). Each side has its index, as long as
+ * `ROOM_PEOPLE`, `KEEPER_APART`, `IS_KEEPER_APART` and `ROOM_REMOVED` are spelled exactly.
  */
 export const namesPerson = (who: string): SQL =>
   sql`${room.ownerUserId} = ${who} or ${ROOM_PEOPLE} ? ${who}
-    or (${KEEPER_APART} = ${who} and ${IS_KEEPER_APART})`;
+    or (${KEEPER_APART} = ${who} and ${IS_KEEPER_APART})
+    or ${ROOM_REMOVED} ? ${who}`;
 
 /** What finds a person's named rounds, through `round_history_votes_idx`. */
 export const namedRoundsOf = (who: string): string =>

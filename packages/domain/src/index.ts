@@ -44,6 +44,7 @@ export {
   UNITS_PER_CHARACTER,
 } from "./decks.ts";
 export { generateRange, type RangeErrorCode } from "./range.ts";
+export { MAX_REMOVED, REMOVAL_NOTICE_MS, wasRemoved } from "./removed.ts";
 export {
   type AccessIdentity,
   cleanDomain,

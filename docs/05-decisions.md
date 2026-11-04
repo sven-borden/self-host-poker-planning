@@ -908,6 +908,7 @@ thousand small rows Postgres may rightly prefer a scan. #49 and #51 can read thr
 indexes. The migration is additive and its indexes are not built `concurrently`, which drizzle's
 migrator cannot do inside its transaction: writes to those tables wait while they build, and fail
 nothing. What the indexes cost a large database is under *Accepted*.
+(2026-11-04, U5) Two more indexes joined the lookup, so it is now a BitmapOr of four: `room_keeper_apart_idx` (a keeper apart from the PO and the seats) and `room_removed_idx` (a GIN index on `live -> 'removed'`, the people the PO removed), each read only if `KEEPER_APART` and `ROOM_REMOVED` are spelled exactly. `guest-link.db.test.ts` explains the real `namesPerson` predicate.
 
 **All or nothing, and repeatable.** A transaction across rooms would hold a lock per room around
 the runner, so each room moves alone, and a row makes the whole repeatable. In order:
@@ -1748,6 +1749,7 @@ data and says nothing of the room: without it "what this server holds about you"
 Someone the rule would pass, on a sign-in over 30 days old, reads the same for now, and that is no
 refusal: a session slides and `created_at` never moves, so this is common. The file then carries
 `signInAgain`, the number of rooms a new sign-in would show, and the page says so.
+(2026-11-04, U5) A room whose PO removed the person, while no seat of theirs is in it, is in the file too, with `removedAt`, the time of the removal, on the room and on its withheld form: the removal is the person's own data (`removed` in the room's state, `namesPerson` finds it), and it is why the room is there with `seat: null`. A removal older than a day stays in the file until the room's next write, as the server drops it only then. Additive, so the version stays 1.
 
 **No room codes.** A code is a bearer capability, and this file may be mailed around, kept in a
 downloads folder or attached to a ticket. Rooms go by name and id. An id opens nothing, and the

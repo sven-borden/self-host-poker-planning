@@ -282,13 +282,22 @@ export const enterPayloadSchema = z.strictObject({
 });
 export type EnterPayload = z.output<typeof enterPayloadSchema>;
 
+/**
+ * U5: the PO removed this person within the last day, and they have not joined since; their
+ * socket may have been down at the kick, so they never heard `kicked`. Only in their own
+ * answer. Optional: protocol 4 still, and an older page ignores it.
+ */
+const removedNoticeSchema = z.literal("removed").optional();
+
 export const enterAckSchema = z.union([
-  z.object({ ok: z.literal(true), snapshot: snapshotSchema }),
+  z.object({ ok: z.literal(true), snapshot: snapshotSchema, notice: removedNoticeSchema }),
   z.object({
     ok: z.literal(false),
     code: ackErrorCodeSchema,
     /** With the four codes of a room's rule (#50): what the join screen asks for. */
     requirement: requirementSchema.optional(),
+    /** With `password_required` only: the removal dropped the person's grant (#31). */
+    notice: removedNoticeSchema,
   }),
 ]);
 export type EnterAck = z.output<typeof enterAckSchema>;

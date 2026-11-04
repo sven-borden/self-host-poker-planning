@@ -60,6 +60,14 @@ export const ROOM_KEEPER = sql`coalesce(live ->> 'keeperId', owner_user_id)`;
 export const ROOM_RULE = sql`(case when live -> 'settings' ? 'restriction'
   then coalesce(nullif(live #> '{settings,restriction}', 'null'::jsonb), '{}'::jsonb) end)`;
 
+/**
+ * The people the PO removed in the last day (U5, `removed` in the domain), keyed by user id. An
+ * account's deletion (ADR-029) and a guest's sign-in (ADR-025) find such a room through
+ * `room_removed_idx`, as long as a query spells `(…) ? id` with exactly this. Nearly no room has
+ * one, and an entry lasts a day, so the index stays small.
+ */
+export const ROOM_REMOVED = sql`(live -> 'removed')`;
+
 export const KEEPER_APART = sql`(live ->> 'keeperId')`;
 export const IS_KEEPER_APART = sql`(live ->> 'keeperId') <> owner_user_id`;
 
@@ -102,6 +110,8 @@ export const room = pgTable(
     // A guest who signs in (#48) and "my rooms" (W5) find a person's seats through this.
     index("room_people_idx").using("gin", ROOM_PEOPLE),
     index("room_keeper_apart_idx").on(KEEPER_APART).where(IS_KEEPER_APART),
+    // A person the PO removed (U5): their account's deletion and their sign-in find it.
+    index("room_removed_idx").using("gin", ROOM_REMOVED),
   ],
 );
 

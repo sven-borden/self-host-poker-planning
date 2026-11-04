@@ -257,6 +257,43 @@ describe("openRoom", () => {
     expect(useRoomStore.getState()).toMatchObject({ status: "error", error: "offline" });
   });
 
+  it("shows the removal an enter tells, when kicked never came (U5)", async () => {
+    let version = 1;
+    const fake = fakeSocket(() =>
+      version === 1
+        ? { ok: true, snapshot: snapshot(version) }
+        : { ok: true, snapshot: snapshot(version), notice: "removed" },
+    );
+    open(fake);
+    fake.up();
+    await settle();
+    expect(useRoomStore.getState().removed).toBe(false);
+    // The socket was down while the PO removed this viewer; it comes back.
+    fake.drop();
+    version = 2;
+    fake.up();
+    await settle();
+    expect(useRoomStore.getState()).toMatchObject({ status: "live", removed: true });
+  });
+
+  it("asks for the password as required, not changed, after a removal it hears on enter (U5)", async () => {
+    const withPassword = { ...createRoom({ ownerId: "ua" }), hasPassword: true as const };
+    let answer: unknown = { ok: true, snapshot: snapshot(1, withPassword) };
+    const fake = fakeSocket(() => answer);
+    open(fake);
+    fake.up();
+    await settle();
+    fake.drop();
+    answer = { ok: false, code: "password_required", notice: "removed" };
+    fake.up();
+    await settle();
+    expect(useRoomStore.getState()).toMatchObject({
+      status: "locked",
+      locked: "required",
+      removed: true,
+    });
+  });
+
   it("after signedIn, ignores the socket and waits for the page that signed in (#48)", async () => {
     vi.useFakeTimers();
     try {

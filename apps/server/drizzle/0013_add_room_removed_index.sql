@@ -1,0 +1,1 @@
+CREATE INDEX "room_removed_idx" ON "room" USING gin ((live -> 'removed'));

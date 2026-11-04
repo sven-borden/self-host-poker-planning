@@ -92,6 +92,13 @@
       "when": 1793615090166,
       "tag": "0012_add_connector_settings_and_round_source",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793752937988,
+      "tag": "0013_add_room_removed_index",
+      "breakpoints": true
     }
   ]
 }

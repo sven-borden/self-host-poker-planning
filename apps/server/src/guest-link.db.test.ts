@@ -13,7 +13,8 @@ import type { Snapshot } from "@pp/protocol";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Config } from "./config.ts";
 import { DatabaseError } from "./db/errors.ts";
-import { createGuestLinkStore } from "./db/guest-links.ts";
+import { createGuestLinkStore, namesPerson } from "./db/guest-links.ts";
+import { room } from "./db/schema.ts";
 import { createTestDatabase, type TestDatabase, testClient } from "./db/test-db.ts";
 import {
   atFake,
@@ -931,7 +932,10 @@ describe("the lookup", () => {
           'ownerId', 'owner' || n,
           'participants', ${seats},
           'round', case when n % 2 = 0 then 'null'::jsonb
-            else jsonb_build_object('votes', ${votes}) end),
+            else jsonb_build_object('votes', ${votes}) end)
+          || case when n % 100 = 0
+            then jsonb_build_object('removed', jsonb_build_object('gone' || n, 1))
+            else '{}'::jsonb end,
         1
       from generate_series(1, 20000) n`);
     await admin.query(`
@@ -965,6 +969,20 @@ describe("the lookup", () => {
     expect(rooms).toContain("room_people_idx");
     expect(rooms).toContain("room_owner_user_id_idx");
     expect(rooms).not.toContain("Seq Scan");
+    // The real predicate, with all four of its arms: a person's rooms are found by the owner,
+    // seat, keeper-apart and removal indexes together. Without `room_removed_idx` the OR over
+    // the whole predicate cannot use a bitmap and the planner falls back to a sequential scan.
+    const real = setup.database.db
+      .select({ id: room.id })
+      .from(room)
+      .where(namesPerson("gone700"))
+      .toSQL();
+    const everything = await plan(real.sql, real.params as string[]);
+    expect(everything).toContain("room_removed_idx");
+    expect(everything).toContain("room_keeper_apart_idx");
+    expect(everything).toContain("room_people_idx");
+    expect(everything).toContain("room_owner_user_id_idx");
+    expect(everything).not.toContain("Seq Scan");
     const rounds = await plan("select id from round_history where votes @> $1::jsonb", [
       JSON.stringify({ kind: "named", votes: [{ who: "owner77-3" }] }),
     ]);
@@ -975,6 +993,7 @@ describe("the lookup", () => {
     const codeIn = async (who: string) => (await store.roomsOf(who)).map((found) => found.code);
     await expect(codeIn("person77-3")).resolves.toEqual(["bulk77"]);
     await expect(codeIn("voter77-2")).resolves.toEqual(["bulk77"]);
+    await expect(codeIn("gone700")).resolves.toEqual(["bulk700"]);
     await expect(codeIn("owner78")).resolves.toEqual(["bulk78"]);
     await expect(store.roomsOf("nobody")).resolves.toEqual([]);
     await admin.query("delete from room where code like 'bulk%'");

@@ -494,6 +494,29 @@ describe("the export", () => {
     }
   });
 
+  it("holds a room the PO removed the person from, with when, and no seat", async () => {
+    const me = await signedIn();
+    const other = await new Browser().asGuest();
+    const removedFrom = await roomOf(other.id, "Removed From");
+    const remover = await other.sit(removedFrom.code, "Other Person");
+    await me.sit(removedFrom.code, "Me There");
+    const before = Date.now();
+    await expect(remover.cmd("kick", { who: me.id })).resolves.toMatchObject({ ok: true });
+
+    const file = (await (await me.go("/api/account/export")).json()) as {
+      rooms: { id: string; seat: unknown; productOwner: boolean; removedAt?: string }[];
+    };
+    const entry = file.rooms.find((room) => room.id === removedFrom.id);
+    expect(entry).toMatchObject({ id: removedFrom.id, seat: null, productOwner: false });
+    const at = Date.parse(entry?.removedAt ?? "");
+    expect(at).toBeGreaterThanOrEqual(before - 1000);
+    expect(at).toBeLessThanOrEqual(Date.now());
+    // The other rooms carry no such field.
+    expect(file.rooms.filter((room) => "removedAt" in room).map((room) => room.id)).toEqual([
+      removedFrom.id,
+    ]);
+  });
+
   it("holds every room that names the person, and the grants, with no code", async () => {
     const me = await signedIn();
     const other = await new Browser().asGuest();
@@ -735,6 +758,13 @@ describe("after a deletion", () => {
     await awayLongEnough(claimed.id, other.id);
     await expect(claimer.cmd("claimOwner")).resolves.toMatchObject({ ok: true });
 
+    // A room whose PO removed the person, who has not come back: it remembers the removal (U5).
+    const removedFrom = await roomOf(other.id, "Removed");
+    const remover = await other.sit(removedFrom.code, "Other Person");
+    await me.sit(removedFrom.code, person.name);
+    await expect(remover.cmd("kick", { who: me.id })).resolves.toMatchObject({ ok: true });
+    expect(Object.keys((await liveOf(removedFrom.id))?.live.removed ?? {})).toEqual([me.id]);
+
     // What sits beside the rooms.
     await admin.query("insert into room_access (room_id, user_id) values ($1, $2)", [
       theirs.id,
@@ -794,6 +824,8 @@ describe("after a deletion", () => {
         .map(({ card }) => card)
         .sort(),
     ).toEqual(["1", "21"]);
+    // The room the person was removed from goes on, its record without them.
+    expect((await liveOf(removedFrom.id))?.live.removed).toBeUndefined();
   });
 
   it("every foreign key to a user cascades, so no row can hold a deleted person back", async () => {

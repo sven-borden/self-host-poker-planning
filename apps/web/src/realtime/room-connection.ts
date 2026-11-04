@@ -42,6 +42,9 @@ import {
 // server enters again and hears the same. Nothing on this page moves past it but a sign-in, which
 // reloads the page.
 //
+// A person the PO removed while their socket was down never heard `kicked`: the `enter` that
+// brings them back carries `notice: "removed"` (U5), and the page shows the same notice.
+//
 // A guest who signs in (#48) comes back as a new page. Another tab of that guest hears
 // `signedIn`, and reloads into the account once the new cookie is here (`sign-in-wait.ts`): the
 // server closed its socket, its identity and its snapshot are the guest's, and the provider's
@@ -147,6 +150,10 @@ export function openRoom(code: string, options: OpenRoomOptions = {}): () => voi
 
   const onEnter = (ack: EnterAck) => {
     if (stopped || signedIn) return;
+    // The PO removed this viewer while their socket was down (U5), so `kicked` never came:
+    // the same notice, above the join form or the password form. Before the password's
+    // reason below, which a removal decides.
+    if (ack.notice === "removed") store().setRemoved(true);
     if (ack.ok) {
       attempt = 0;
       reauthenticated = false;

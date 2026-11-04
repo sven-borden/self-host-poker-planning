@@ -105,7 +105,7 @@ export function RoomView() {
       </p>
       {refusal !== null ? <RoomRestricted refusal={refusal} /> : null}
       {ready && screen === "full" ? <RoomFull /> : null}
-      {screen === "join" && removed ? <RemovedNotice /> : null}
+      {(screen === "join" || screen === "full") && removed ? <RemovedNotice /> : null}
       {/* One place for the form, locked or not: it stays mounted while the password lets
           the socket in, and its join goes on from there. */}
       {screen === "join" ? (
