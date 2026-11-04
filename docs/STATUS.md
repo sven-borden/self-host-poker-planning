@@ -129,6 +129,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
   to the instance's own counter if Redis is slow (250 ms) or down, never to "allow all";
   `REDIS_KEY_PREFIX` (default `pp`, #39's names) and `STICKY_SESSIONS` for long-polling behind
   affinity. Live at c719f1a; nothing changes without Redis (a real handshake checked there).
+- WebKit from U3 (PR #121): `/dev/table` looped there (a card label measured against its own
+  clip); real rooms never did. A label now measures only against its card. A `webkit` project
+  plays the bench and a whole round in CI (about 1.5 min more). Live at 659098b.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -141,7 +144,7 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 - **Agents again since 2026-11-03** (Sven: "start with agents, you orchestrate"), no end date:
   the upkeep list below, then stop and report.
-- U3 (PR #121) in review; U5 builds beside it. U1, U2 and U4 merged.
+- U5 (PR #122) waits for CI after `main` went in; U6 starts once it merges. U1 to U4 merged.
 - #38 is merged and stays open until Sven's run on a fresh subscription.
 - #54 and #55 are merged and stay open until the live checks at Sven's site and organisation.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
@@ -149,12 +152,8 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 ## Upkeep (no GitHub issues: creating them was refused, so each is a `chore/uN-…` PR)
 
 In this order; pairs run together where they touch different parts.
-- **U1, merged** (PR #119): see Live. Left open: `room-password.spec.ts:291` stalled once in
-  7 local runs (two fresh tabs on "Connecting to the room…"); it now attaches a trace on failure.
-- **U2, merged** (PR #118): see Live.
-- **U3, `/dev/table` crashes in WebKit** (React #185, with or without the CSP). Check a real
-  round in WebKit too: no Safari has run the app. Fix and hold it with a WebKit test.
-- **U4, merged** (PR #120): see Live.
+- **U1 to U4, merged** (PRs #119, #118, #121, #120): see Live. Left open from U1:
+  `room-password.spec.ts:291` stalled once in 7 local runs; it attaches a trace on failure.
 - **U5, a person removed while their socket was down** comes back to the join form with no
   notice (accepted at #30's review): tell them, in en, fr and de.
 - **U6, lighter pages**, after U5 (both touch the catalogues): the settings and history panels'
@@ -240,7 +239,8 @@ issues are merged.
   the refused tokens in PR #115 and tell me what each page says. Then #55 can close. Later: decide
   whether to build Entra OAuth, as Microsoft warns against tokens as long-term credentials.
 - **After #46**: install the app on a phone and check the icon, the name "Poker" and the bar
-  colour, and on Android feel the reveal's beats. No real phone has run it. #46 closed with
+  colour, and on Android feel the reveal's beats. No real phone has run it. Play one round in
+  Safari on an iPhone and a Mac: U3 proved WebKit's engine, not Safari's toolbars, keyboard or ITP. #46 closed with
   the icon judged by eye and Lighthouse's check replaced by Chromium's.
 - **After #44 and #45**: turn the sound and the music on at poker.borden.ch and listen.
   Nobody has heard either; they were measured, not judged. The sounds are numbers in
