@@ -1,21 +1,16 @@
-import { createRoom, type Participant } from "@pp/domain";
-import { toSnapshot } from "@pp/protocol";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { RoomSettingsButton } from "../room/settings-button.tsx";
-import { useRoomStore } from "../stores/room-store.ts";
+import { act } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { COPY_LOADERS, COPY_PARTS, type CopyPart } from "./copy-parts.ts";
 import { de } from "./de.ts";
 import { en } from "./en.ts";
 import { fr } from "./fr.ts";
 import { changeLanguage, currentLanguage, fixedT, loadCopy } from "./i18n.ts";
-import { LANGUAGES, type Language } from "./language.ts";
+import { LANGUAGE_STORAGE_KEY, LANGUAGES, type Language } from "./language.ts";
 
 // The panels' words load with the panels (U6). i18n.test.ts holds the parts to every rule of the
-// catalogs; this file holds the split itself and the loading. The test setup has loaded every
-// part in English without asking for it, as a page that opened every panel once would have.
-
-vi.mock("../realtime/room-connection.ts", () => ({ sendCommand: vi.fn(), commandSender: vi.fn() }));
+// catalogs; this file holds the split itself and the loading (the panels' buttons waiting for
+// their parts: room/panel-copy.test.tsx). The test setup has loaded every part in English without
+// asking for it, as a page that opened every panel once would have.
 
 const PLURAL = /_(zero|one|two|few|many|other)$/;
 
@@ -48,11 +43,20 @@ function held() {
 const settled = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
 afterEach(async () => {
-  cleanup();
   vi.restoreAllMocks();
-  useRoomStore.getState().reset();
   await act(() => changeLanguage("en"));
 });
+
+/**
+ * A new i18n module, with nothing loaded but the English catalog and nothing wanted, and the
+ * loaders it calls. Nothing it loads reaches the module the rest of this file uses. Only data is
+ * imported after it, never a component, so React stays one copy.
+ */
+async function fresh() {
+  vi.resetModules();
+  const { COPY_LOADERS: loaders } = await import("./copy-parts.ts");
+  return { loaders, ...(await import("./i18n.ts")) };
+}
 
 describe("the parts", () => {
   it.each(COPY_PARTS)("%s has every language, each with the English part's keys", async (name) => {
@@ -135,39 +139,83 @@ describe("loadCopy", () => {
   });
 });
 
-describe("a panel", () => {
-  beforeAll(async () => {
-    await import("../room/settings-panel.tsx");
-  }, 30_000);
+describe("loading, from a new page", () => {
+  it("keeps the language when a wanted part fails on a change, and switches on the next try", async () => {
+    const i18n = await fresh();
+    await i18n.changeLanguage("fr");
+    await i18n.loadCopy("history");
+    const german = vi.spyOn(i18n.loaders.history, "de").mockRejectedValueOnce(new Error("offline"));
+    await expect(i18n.changeLanguage("de")).rejects.toThrow("offline");
+    expect(i18n.currentLanguage()).toBe("fr");
+    await expect(i18n.changeLanguage("de")).resolves.toBe(true);
+    expect(i18n.currentLanguage()).toBe("de");
+    expect(german).toHaveBeenCalledTimes(2);
+  });
 
-  it("shows once its words are in, in the page's language, never a key or English first", async () => {
-    const room = createRoom({ ownerId: "po" });
-    const participants: Record<string, Participant> = {
-      po: { name: "Pia", role: "voter", joinedAt: 1, connected: true },
-    };
-    useRoomStore.getState().open("abcdefghij");
-    act(() => {
-      useRoomStore
-        .getState()
-        .receive(
-          toSnapshot({ ...room, participants }, "po", { code: "abcdefghij", version: 2, now: 0 }),
-        );
-      useRoomStore.getState().setStatus("live");
+  // The switch's last look at the wanted parts and its change of language run in one turn: a
+  // part that lands in between (in English, the page's language until then) is not left behind.
+  // Each run moves the English part's landing by a microtask, from well before the switch starts
+  // to well after it ends.
+  it("never switches without a part a panel asked for while the switch looked", async () => {
+    const english = await import("./parts/my-rooms-en.ts").then(({ copy }) => copy);
+    const french = await import("./parts/my-rooms-fr.ts").then(({ copy }) => copy);
+    for (let offset = -8; offset <= 8; offset += 1) {
+      const i18n = await fresh();
+      // The catalog first, so the switch below waits on nothing but microtasks.
+      await i18n.loadLanguage("fr");
+      const part = held();
+      vi.spyOn(i18n.loaders.myRooms, "en").mockImplementation(() => part.promise);
+      vi.spyOn(i18n.loaders.myRooms, "fr").mockResolvedValue(french);
+      const asked = i18n.loadCopy("myRooms");
+      let switching = Promise.resolve(false);
+      const land = () => part.settle(english);
+      const change = () => {
+        switching = i18n.changeLanguage("fr");
+      };
+      // -1: the part lands, then the switch starts in the same turn; 0: the other way round.
+      const [first, then] = offset < 0 ? [land, change] : [change, land];
+      first();
+      for (let tick = 0; tick < (offset < 0 ? -offset - 1 : offset); tick += 1) {
+        await Promise.resolve();
+      }
+      then();
+      await Promise.all([asked, switching]);
+      expect(i18n.currentLanguage()).toBe("fr");
+      expect(i18n.fixedT("fr")("myRooms.signedOut"), `offset ${offset}`).toBe(
+        french.myRooms.signedOut,
+      );
+    }
+  });
+
+  describe("a page that starts in French", () => {
+    afterEach(() => localStorage.removeItem(LANGUAGE_STORAGE_KEY));
+
+    it("fetches a part it asks for while the catalog loads in French alone, beside it", async () => {
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, "fr");
+      const i18n = await fresh();
+      const english = vi.spyOn(i18n.loaders.myRooms, "en");
+      const french = vi.spyOn(i18n.loaders.myRooms, "fr");
+      const started = i18n.startLanguage();
+      // As main.tsx does: the router's loader runs in the same turn as the start.
+      const asked = i18n.loadCopy("myRooms");
+      expect(french).toHaveBeenCalledTimes(1);
+      await Promise.all([started, asked]);
+      expect(i18n.currentLanguage()).toBe("fr");
+      expect(english).not.toHaveBeenCalled();
+      expect(french).toHaveBeenCalledTimes(1);
     });
-    render(<RoomSettingsButton />);
-    await act(() => changeLanguage("de"));
-    const german = held();
-    vi.spyOn(COPY_LOADERS.settings, "de").mockImplementation(() => german.promise);
 
-    const button = document.querySelector<HTMLButtonElement>("[data-settings-open]");
-    if (!button) throw new Error("no settings button");
-    fireEvent.click(button);
-    await settled();
-    expect(screen.queryByRole("dialog")).toBeNull();
-
-    german.settle(await import("./parts/settings-de.ts").then(({ copy }) => copy));
-    const dialog = await screen.findByRole("dialog");
-    expect(dialog.textContent).not.toMatch(/\b(settings|deckField|restriction|password)\.\w/);
-    expect(screen.getByRole("switch", { name: "Anonyme Abstimmung" })).toBeTruthy();
+    it("still speaks French when that part fails: only its page fails", async () => {
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, "fr");
+      const i18n = await fresh();
+      const english = vi.spyOn(i18n.loaders.myRooms, "en");
+      vi.spyOn(i18n.loaders.myRooms, "fr").mockRejectedValue(new Error("offline"));
+      const started = i18n.startLanguage();
+      const asked = i18n.loadCopy("myRooms");
+      await expect(asked).rejects.toThrow("offline");
+      await started;
+      expect(i18n.currentLanguage()).toBe("fr");
+      expect(english).not.toHaveBeenCalled();
+    });
   });
 });

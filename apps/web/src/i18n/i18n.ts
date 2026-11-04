@@ -12,9 +12,13 @@ import { detectLanguage, type Language, localeFor, saveLanguage } from "./langua
 // - Plural keys end in `_one`, `_other`, `_many`…; `count` picks the form through
 //   `Intl.PluralRules`, falling back to `_other` when the language's form is absent.
 // Values are inserted as plain text: React escapes them when it renders, so nothing here
-// escapes twice. English is bundled and is the fallback; French and German are chunks
-// fetched on demand. The words only a lazy panel shows are parts of their own, per language,
-// loaded with the panel (`loadCopy`, copy-parts.ts).
+// escapes twice. The English catalog is bundled; French and German are chunks fetched on demand.
+// The words only a lazy panel shows are parts of their own, per language, loaded with the panel
+// (`loadCopy`, copy-parts.ts). A key is looked up in the page's catalog, then its parts loaded,
+// then the English catalog, then the English parts loaded, and else printed as it is. So the
+// English catalog is the fallback for a catalog key, but a part key read outside its panel
+// usually prints the key: in production the English part is there only once its panel opened in
+// English.
 
 // --- Types: keys and their placeholders, checked by tsc ---------------------------------
 
@@ -193,7 +197,10 @@ function fill(language: Language, text: string, values: Values | undefined): str
 
 const bound = new Map<Language, TFunction>();
 
-/** A `t` bound to one language (English where its catalog is not loaded yet). */
+/**
+ * A `t` bound to one language: English where its catalog is not loaded yet, and for a part's key
+ * the part in that language, else in English, else the key itself (see the top of this file).
+ */
 export function fixedT(language: Language): TFunction {
   let t = bound.get(language);
   if (!t) {
@@ -289,8 +296,19 @@ export async function loadLanguage(language: Language): Promise<void> {
  * then on every change of language loads the part too, before the page switches. A language
  * picked while this loaded is loaded as well before this resolves. Rejects when the part cannot
  * load, like the panel's chunk.
+ *
+ * While the page starts (`startLanguage`), the part is fetched in the language it starts in,
+ * beside the catalog rather than after it, and this waits for the start to settle: a French
+ * page asks for the French part alone, and a part that fails then fails its panel only, while
+ * the page speaks French.
  */
 export async function loadCopy(part: CopyPart): Promise<void> {
+  if (starting) {
+    // A failure here is the loop's to report, which tries once more.
+    loadPart(part, starting.language).catch(() => {});
+    // Never rejects, and settles within the start's timeout.
+    await starting.settled;
+  }
   let language: Language;
   do {
     language = current;
@@ -313,7 +331,11 @@ export function loadCopyIn(part: CopyPart, language: Language): Promise<void> {
 export async function changeLanguage(language: Language): Promise<boolean> {
   const pick = ++latestPick;
   try {
-    await loadLanguage(language);
+    // Again while a panel asked for its part meanwhile: the last look runs in the same turn as
+    // the switch below, so no part is left behind between the two.
+    do {
+      await loadLanguage(language);
+    } while ([...wanted].some((part) => !parts[language].has(part)));
   } catch (error) {
     // A pick the reader has already moved on from fails quietly.
     if (pick !== latestPick) {
@@ -346,6 +368,12 @@ export async function chooseLanguage(language: Language): Promise<void> {
   }
 }
 
+/**
+ * The start under way, if any: the language it starts in, and when it has settled. A panel's
+ * part asked for meanwhile loads in that language (`loadCopy`).
+ */
+let starting: { language: Language; settled: Promise<void> } | null = null;
+
 /** How long the first render waits for a French or German catalog before showing English. */
 export const START_TIMEOUT_MS = 3000;
 
@@ -356,7 +384,8 @@ export const START_TIMEOUT_MS = 3000;
  * language meanwhile).
  */
 export function startLanguage(timeoutMs = START_TIMEOUT_MS): Promise<void> {
-  const change = changeLanguage(detectLanguage()).then(
+  const language = detectLanguage();
+  const change = changeLanguage(language).then(
     () => {},
     () => {},
   );
@@ -364,5 +393,10 @@ export function startLanguage(timeoutMs = START_TIMEOUT_MS): Promise<void> {
   const timeout = new Promise<void>((resolve) => {
     timer = setTimeout(resolve, timeoutMs);
   });
-  return Promise.race([change, timeout]).finally(() => clearTimeout(timer));
+  const settled = Promise.race([change, timeout]).finally(() => {
+    clearTimeout(timer);
+    if (starting?.settled === settled) starting = null;
+  });
+  starting = { language, settled };
+  return settled;
 }
