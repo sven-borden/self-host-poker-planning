@@ -147,10 +147,11 @@ const TIME_UP: Command = { type: "timeUp" };
 export const MAX_AWAY_RETRIES = 3;
 
 /**
- * A cap on the commits that set a rule, per account and per instance, in a fixed window: each can
- * test up to 40 entries against the people in the room, read back by the count and a refused
- * hand-over (ADR-028). Five an hour is more than a PO getting a rule right needs. A cap, not a
- * wall: a hand-over to a second account gets five more, and up to ten fit around a window's end.
+ * A cap on the commits that set a rule, per account (each instance without Redis), in a fixed
+ * window: each can test up to 40 entries against the people in the room, read back by the
+ * count and a refused hand-over (ADR-028). Five an hour is more than a PO getting a rule right
+ * needs. A cap, not a wall: a hand-over to a second account gets five more, and up to ten fit
+ * around a window's end.
  * Taking a rule off is free: it tests nothing.
  */
 export const RULE_CHANGE_LIMIT = { window: 3600, max: 5 } as const;

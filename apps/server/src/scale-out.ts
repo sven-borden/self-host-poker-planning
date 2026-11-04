@@ -19,12 +19,25 @@
  * handler (an unhandled rejection exits the process, `run.ts`). Each instance then serves
  * its own sockets alone until the connection is back.
  *
+ * The connection without an offline queue also carries the shared rate limits (U4,
+ * `shared-limits.ts`). Every channel and key starts with `REDIS_KEY_PREFIX` (`pp` by default,
+ * the names #39 used, so a rolling deploy keeps one cluster): `<prefix>#/#…`,
+ * `<prefix>-request#/#`, `<prefix>-response#/#…`, `<prefix>:ack:…`, `<prefix>:rl:…` and
+ * `<prefix>:tb:…`. Two deployments with their own prefixes share one Redis without hearing
+ * each other.
+ *
  * Redis must be trusted (README, "Running several instances"): the adapter answers any
  * client of it that asks for the sockets (their handshake headers, session cookie
  * included) and obeys a broadcast or a disconnect published by anyone.
  */
 import type { RedisAdapter } from "@socket.io/redis-adapter";
 import type { Logger } from "./logger.ts";
+import {
+  createSharedLimits,
+  type LimitCommands,
+  redisErrorCode,
+  type SharedLimits,
+} from "./shared-limits.ts";
 import { type AckCommands, redisAcks, type SharedAcks, within } from "./sync/shared-acks.ts";
 
 /** How long the start waits for Redis before it gives up (as for the database). */
@@ -33,8 +46,11 @@ export const REDIS_CONNECT_BUDGET_MS = 30_000;
 export const CLUSTER_REQUEST_TIMEOUT_MS = 2_000;
 /** `/api/health` gives up on Redis after this. */
 const PING_TIMEOUT_MS = 1_000;
-/** The adapter's channel prefix: `pp#/#room:<id>#`, never a room code. */
-const CHANNEL_PREFIX = "pp";
+/**
+ * `REDIS_KEY_PREFIX`'s default: the adapter's channels (`pp#/#room:<id>#`, never a room code)
+ * and the keys as #39 named them.
+ */
+export const DEFAULT_REDIS_KEY_PREFIX = "pp";
 /** Commands queued while Redis is away, at most; past it, a publish fails (and is dropped). */
 const OFFLINE_QUEUE_MAX = 10_000;
 
@@ -45,6 +61,8 @@ export interface ScaleOut {
   readonly adapter: (nsp: unknown) => RedisAdapter;
   /** The command ids shared by every instance. */
   readonly acks: SharedAcks;
+  /** The rate limits shared by every instance, keyed by HMACs under `secret`. */
+  limits(secret: string): SharedLimits;
   /** For `/api/health`: whether Redis answers a PING now. */
   ping(): Promise<RedisStatus>;
   /** Closes the three connections. After the Socket.IO server closed (its adapter). */
@@ -55,6 +73,8 @@ export interface ScaleOutOptions {
   /** Aborts the wait: a signal during the start. */
   signal?: AbortSignal;
   budgetMs?: number;
+  /** `REDIS_KEY_PREFIX`; `DEFAULT_REDIS_KEY_PREFIX` by default. */
+  prefix?: string;
 }
 
 /** The error the start fails with: a fixed message, never the URL or the driver's text. */
@@ -63,14 +83,6 @@ export class RedisUnavailableError extends Error {
     super("redis: unavailable");
     this.name = "RedisUnavailableError";
   }
-}
-
-/** A driver error's code (`ECONNREFUSED`, `NOAUTH` …); never its message. */
-function codeOf(error: unknown): string {
-  const code = (error as { code?: unknown } | null)?.code;
-  if (typeof code === "string" && /^[A-Z][A-Z0-9_]{1,31}$/.test(code)) return code;
-  const name = (error as { name?: unknown } | null)?.name;
-  return typeof name === "string" && /^\w{1,40}$/.test(name) ? name : "unknown";
 }
 
 /** The client methods the adapter calls without awaiting or catching what they return. */
@@ -113,7 +125,11 @@ export function catchFireAndForget<T extends object>(client: T): T {
 export async function connectScaleOut(
   url: string,
   logger: Logger,
-  { signal, budgetMs = REDIS_CONNECT_BUDGET_MS }: ScaleOutOptions = {},
+  {
+    signal,
+    budgetMs = REDIS_CONNECT_BUDGET_MS,
+    prefix = DEFAULT_REDIS_KEY_PREFIX,
+  }: ScaleOutOptions = {},
 ): Promise<ScaleOut> {
   const [{ createClient }, { createAdapter }] = await Promise.all([
     import("@redis/client"),
@@ -152,7 +168,7 @@ export async function connectScaleOut(
       client.on("error", (error: unknown) => {
         if (!available) return;
         available = false;
-        log.warn({ err: codeOf(error) }, "redis: unavailable");
+        log.warn({ err: redisErrorCode(error) }, "redis: unavailable");
       });
       client.on("ready", () => {
         if (available || !clients.every((c) => c.isReady)) return;
@@ -180,7 +196,7 @@ export async function connectScaleOut(
   }
 
   const adapter = createAdapter(pub, sub, {
-    key: CHANNEL_PREFIX,
+    key: prefix,
     requestsTimeout: CLUSTER_REQUEST_TIMEOUT_MS,
     // Answers go to the asking instance's own channel, not to every instance.
     publishOnSpecificResponseChannel: true,
@@ -188,7 +204,14 @@ export async function connectScaleOut(
   let closed = false;
   return {
     adapter,
-    acks: redisAcks(commands as unknown as AckCommands),
+    acks: redisAcks(commands as unknown as AckCommands, prefix),
+    limits: (secret) =>
+      createSharedLimits({
+        redis: commands as unknown as LimitCommands,
+        prefix,
+        secret,
+        logger,
+      }),
     ping: async () => {
       try {
         return (await within(commands.ping(), PING_TIMEOUT_MS)) === "PONG" ? "ok" : "down";

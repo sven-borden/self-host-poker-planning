@@ -55,6 +55,11 @@ describe("createSocket", () => {
       const socket = createSocket();
       expect(socket.io.opts.transports).toEqual(["websocket"]);
       socket.close();
+      meta.content = "polling websocket";
+      expect(socketTransports()).toEqual(["polling", "websocket"]);
+      const sticky = createSocket();
+      expect(sticky.io.opts.transports).toEqual(["polling", "websocket"]);
+      sticky.close();
       meta.content = "polling";
       expect(socketTransports()).toBeUndefined();
     } finally {

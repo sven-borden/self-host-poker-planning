@@ -62,10 +62,25 @@ export interface Config {
   readonly cspExtraSources: CspSources;
   /**
    * Redis for running several instances (#39, `scale-out.ts`): set, the instances share
-   * room changes, presence and command ids through it, and sockets use WebSocket only.
+   * room changes, presence, command ids and the rate limits (U4) through it, and sockets use
+   * WebSocket only unless `stickySessions`.
    * Unset (the default), nothing about Redis is loaded. May hold a password: never log it.
    */
   readonly redisUrl: string | undefined;
+  /**
+   * What every Redis key and channel of this deployment starts with (`REDIS_KEY_PREFIX`, U4):
+   * `pp` by default, today's keys, so a rolling deploy keeps one cluster. Two deployments on one
+   * Redis each take their own. Letters, digits and `_` only: the adapter's channels are
+   * `<prefix>#…`, `<prefix>-request#…` and `<prefix>-response#…`, and one prefix must never be
+   * the start of another's channel.
+   */
+  readonly redisKeyPrefix: string;
+  /**
+   * Long-polling with several instances (`STICKY_SESSIONS`, U4): off by default, and sockets
+   * use WebSocket only once `REDIS_URL` is set. On, both transports, for a load balancer that
+   * keeps each client on one instance (cookie or address affinity). No effect without Redis.
+   */
+  readonly stickySessions: boolean;
   /**
    * Error reports to Sentry (#40, `observability.ts`), from the server and the page. A DSN
    * carries only a public key (one with a secret key is refused, since the page gets it);
@@ -127,6 +142,20 @@ export const azureDevOpsGaps = (
   config: Pick<Config, "azureDevOps" | "vault" | "socialProviders">,
 ): readonly string[] => (config.azureDevOps ? accountGaps(config) : []);
 
+/**
+ * The scale-out variables set although `REDIS_URL` is not, so they change nothing (U4): a
+ * prefix other than the default, sticky sessions on. Names only, never a value.
+ */
+export const redisOnlyGaps = (
+  config: Pick<Config, "redisUrl" | "redisKeyPrefix" | "stickySessions">,
+): readonly string[] =>
+  config.redisUrl !== undefined
+    ? []
+    : [
+        ...(config.redisKeyPrefix === "pp" ? [] : ["REDIS_KEY_PREFIX"]),
+        ...(config.stickySessions ? ["STICKY_SESSIONS"] : []),
+      ];
+
 /** The providers `config` has keys for, in the order the page shows them. */
 export function socialProviderIds(config: Pick<Config, "socialProviders">): SignInProvider[] {
   return SIGN_IN_PROVIDERS.filter((id) => config.socialProviders[id] !== undefined);
@@ -149,6 +178,8 @@ const REASONS = {
   CSP_EXTRA_SOURCES:
     "must be directives and origins such as script-src https://stats.example.com; connect-src https://stats.example.com",
   REDIS_URL: "must be a redis:// or rediss:// URL",
+  REDIS_KEY_PREFIX: "must be 1 to 32 letters, digits or underscores",
+  STICKY_SESSIONS: "must be true, false, 1 or 0",
   SENTRY_DSN:
     "must be a Sentry DSN such as https://0123abcd@o0.ingest.sentry.io/0, without a secret key",
   UMAMI_URL:
@@ -268,6 +299,14 @@ const schema = z.object({
       return Boolean(url?.hostname) && /^(\/\d*)?$/.test(url?.pathname ?? "");
     })
     .optional(),
+  REDIS_KEY_PREFIX: z
+    .string()
+    .regex(/^\w{1,32}$/)
+    .default("pp"),
+  STICKY_SESSIONS: z
+    .enum(["true", "false", "1", "0"])
+    .transform((v) => v === "true" || v === "1")
+    .default(false),
   // https://<public key>@<host>[/<path>]/<project id>, as the SDK reads it (a key of
   // letters, digits and underscores, a numeric project id): it ignores a DSN it cannot read.
   SENTRY_DSN: z
@@ -403,6 +442,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
     cspReportOnly: v.CSP_REPORT_ONLY,
     cspExtraSources: v.CSP_EXTRA_SOURCES,
     redisUrl: v.REDIS_URL,
+    redisKeyPrefix: v.REDIS_KEY_PREFIX,
+    stickySessions: v.STICKY_SESSIONS,
     sentryDsn: v.SENTRY_DSN,
     umami:
       v.UMAMI_URL && v.UMAMI_WEBSITE_ID

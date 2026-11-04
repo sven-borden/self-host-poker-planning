@@ -15,7 +15,13 @@ import {
   sessionChecker,
   sessionMiddleware,
 } from "./auth.ts";
-import { azureDevOpsGaps, type Config, connectorGaps, connectorNames } from "./config.ts";
+import {
+  azureDevOpsGaps,
+  type Config,
+  connectorGaps,
+  connectorNames,
+  redisOnlyGaps,
+} from "./config.ts";
 import { createConnectorAccess } from "./connectors/access.ts";
 import { createAzureConnector } from "./connectors/azure-devops.ts";
 import { createJiraConnector } from "./connectors/jira.ts";
@@ -81,11 +87,30 @@ export async function setupServer(
   if (azureMissing.length > 0) {
     logger.warn({ missing: azureMissing }, "azure devops connector off: variables missing");
   }
+  // So are scale-out settings without the Redis they belong to.
+  const redisOnly = redisOnlyGaps(config);
+  if (redisOnly.length > 0) {
+    logger.warn({ unused: redisOnly }, "scale-out settings ignored: REDIS_URL is not set");
+  }
   const opened = await setupDatabase(config, logger, signal);
   const { database } = opened;
+  let scaleOut: ScaleOut | undefined;
+  if (config.redisUrl !== undefined) {
+    try {
+      scaleOut = await connectScaleOut(config.redisUrl, logger, {
+        ...(signal && { signal }),
+        prefix: config.redisKeyPrefix,
+      });
+    } catch (error) {
+      await database.close();
+      throw error;
+    }
+  }
   // Building the auth instance queries nothing; if it throws, release the pool first.
-  // One limiter for Better Auth's endpoints and the app's own (`/api/me/name`, rooms).
-  const limiter = memoryRateLimit();
+  // One limiter for Better Auth's endpoints and the app's own (`/api/me/name`, rooms), in
+  // Redis with several instances (U4), each instance's own counters answering without it.
+  const sharedLimits = scaleOut?.limits(config.betterAuthSecret);
+  const limiter = sharedLimits?.rateLimiter(memoryRateLimit()) ?? memoryRateLimit();
   // Nothing calls these before the server listens, and by then `sync` is there.
   let sync: RoomSync;
   const links = createGuestLinks({
@@ -119,17 +144,9 @@ export async function setupServer(
       tuning.anonymousSignInLimit,
     );
   } catch (error) {
+    await scaleOut?.close();
     await database.close();
     throw error;
-  }
-  let scaleOut: ScaleOut | undefined;
-  if (config.redisUrl !== undefined) {
-    try {
-      scaleOut = await connectScaleOut(config.redisUrl, logger, signal ? { signal } : {});
-    } catch (error) {
-      await database.close();
-      throw error;
-    }
   }
   const { runner, store, db, retention: retentionStore } = database;
   sync = createRoomSync({
@@ -239,10 +256,16 @@ export async function setupServer(
       handlers: sync,
       ...(scaleOut && {
         // WebSocket only: a connection stays on the instance it reached, so no sticky
-        // sessions are needed; the web app learns it from index.html (`app.ts`).
-        realtimeCluster: { adapter: scaleOut.adapter, transports: ["websocket"] },
+        // sessions are needed; the web app learns it from index.html (`app.ts`). With
+        // `STICKY_SESSIONS` (U4) the balancer keeps each client on one instance, and polling
+        // is back. The handshake cap counts in Redis (U4).
+        realtimeCluster: {
+          adapter: scaleOut.adapter,
+          ...(!config.stickySessions && { transports: ["websocket"] }),
+          ...(sharedLimits && { sharedLimits }),
+        },
         checkRedis: scaleOut.ping,
-        websocketOnly: true,
+        socketTransports: config.stickySessions ? "polling websocket" : "websocket",
       }),
     },
     // Before the server closes its sockets: a run that started during the close would see

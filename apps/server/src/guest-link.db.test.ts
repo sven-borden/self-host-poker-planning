@@ -947,8 +947,12 @@ describe("the lookup", () => {
           from generate_series(1, 8) s)),
         now(), now(), now()
       from room r where r.code like 'bulk%'`);
-    await admin.query("analyze room");
-    await admin.query("analyze round_history");
+    // VACUUM, not ANALYZE alone: rows a GIN index has not merged yet wait in its pending list,
+    // which a manual ANALYZE leaves as it is and the planner charges in full to an index scan.
+    // How long it is here depends on when autovacuum last emptied it, and a long one made the
+    // planner choose a sequential scan (CI, 2026-11-03). VACUUM empties it, then statistics.
+    await admin.query("vacuum analyze room");
+    await admin.query("vacuum analyze round_history");
     const plan = async (query: string, values: string[]) => {
       const { rows } = await admin.query(`explain ${query}`, values);
       return rows.map((row) => row["QUERY PLAN"]).join("\n");
