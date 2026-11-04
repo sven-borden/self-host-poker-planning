@@ -116,10 +116,15 @@ const CARD_BOX = "[data-hand-card], [data-face], [data-mini-card], [data-card-bo
  * on the real element: whatever font the system drew it in (Archivo has no Cyrillic, so
  * "щщщщ" comes from a fallback without a width axis), the check holds. Layout widths,
  * not boxes, so a card mid-turn (a transform) measures the same.
+ *
+ * Only a card is measured against (U3). A label's own parent is no room: a corner index's
+ * box shrink-wraps the label, and once clipped the parent is the clip itself, so the check
+ * would read its own answer. WebKit snaps a 5.01 px label at a fractional offset to an
+ * `offsetWidth` of 6 and its 5.01 px corner to a `clientWidth` of 5: clipped, then 5 against
+ * 5, unclipped, without end (React #185 on `/dev/table`, whose hand cards had no box).
  */
-function overflows(label: HTMLElement): boolean {
-  const card = label.closest<HTMLElement>(CARD_BOX) ?? label.parentElement;
-  if (!card || card.clientWidth === 0) return false;
+function overflows(label: HTMLElement, card: HTMLElement): boolean {
+  if (card.clientWidth === 0) return false;
   const style = getComputedStyle(card);
   const room =
     card.clientWidth -
@@ -158,21 +163,26 @@ export function CardValue({
   // whenever the card's size changes without a render (a breakpoint). The observer's first
   // delivery does it, once the frame's layout is done: a read here, in the commit, would
   // force a layout per label, and sixteen cards turning over would stall the reveal (#43).
-  // The wrapper of a clipped label remounts the label, hence `clipped`.
+  // The clip's wrapper remounts the label, but the card stays and so does its size: the
+  // observer, which watches the card, delivers nothing new, and a check never runs again on
+  // its own answer (U3), so `clipped` is not a dependency; `check` reads the label as it is
+  // now. A label on no card has no room to measure against, and is never clipped.
   // biome-ignore lint/correctness/useExhaustiveDependencies: each of these redraws the label.
   useLayoutEffect(() => {
-    const label = ref.current;
-    if (!label) return;
-    const check = () => setClipped(overflows(label));
-    const card = label.closest(CARD_BOX);
-    if (!card || typeof ResizeObserver === "undefined") {
+    const card = ref.current?.closest<HTMLElement>(CARD_BOX);
+    if (!card) return;
+    const check = () => {
+      const label = ref.current;
+      if (label) setClipped(overflows(label, card));
+    };
+    if (typeof ResizeObserver === "undefined") {
       check();
       return;
     }
     const observer = new ResizeObserver(check);
     observer.observe(card);
     return () => observer.disconnect();
-  }, [value, scale, narrow, fonts, clipped]);
+  }, [value, scale, narrow, fonts]);
 
   if (value === "☕" || value === "∞") {
     const Icon = value === "☕" ? CoffeeIcon : InfinityIcon;
@@ -245,6 +255,8 @@ export function HandCard({ value, selected = false, label, className, ...props }
       type="button"
       aria-pressed={selected}
       aria-label={label}
+      // The box its labels are measured against (`CardValue`), wherever it is drawn.
+      data-hand-card={value}
       className={cn(
         CARD_FACE,
         "relative grid h-[72px] w-[50px] shrink-0 cursor-pointer place-items-center rounded-[7px] p-0 text-[20px]/none shadow-sm phone:h-16 phone:w-11 phone:text-[18px]/none",
