@@ -929,6 +929,22 @@ tracker, since a queue can hold items of both.
   `deck-range-*`, `deck-restart-question-*`, `deck-20-hand-*`, `deck-20-hand-phone-*`,
   `deck-20-results-*`, `deck-decimals-fr-*`, `deck-emoji-results-*`. `E2E_WEB_PORT` moves the
   server, for two worktrees at once.
+- WebKit (U3). The `webkit` project runs `e2e/webkit.spec.ts` in Playwright's WebKit, locally
+  and in CI (`web-e2e`, beside the other projects; `performance` waits for it): the table's
+  bench in five states at a desktop's size and on an iPhone 13, and one round between a
+  desktop PO and an iPhone voter (landing page, join form, a named round the PO reveals,
+  anonymity turned on in the settings, an anonymous round the last vote reveals, the rules
+  and history sheets, a third round). It fails on any uncaught error and on any console error
+  or React warning: a React error the router's boundary catches only logs. Install the
+  browser once with `pnpm --filter @pp/web exec playwright install webkit`; run it alone with
+  `DATABASE_URL=… pnpm --filter @pp/web exec playwright test --project=webkit` (about 25 s
+  with the build). It caught `/dev/table` looping with React #185: a card label measured
+  against its own parent, which WebKit snaps a pixel apart from Chromium (`overflows` in
+  `table/cards.tsx`). Playwright's WebKit is WebKit's engine on Playwright's own port, not
+  Safari: it proves layout, style, script and events, not Safari's toolbars and the viewport
+  they resize, iOS's keyboard, touch scrolling, Safari's storage and privacy rules, its
+  fonts, or Apple's GPU. Those take a real iPhone or Mac. A press inside a sheet waits for
+  the sheet to slide in (`slidIn`): WebKit clicked where a control had been mid-slide.
 - The four-person round (#23), `e2e/four-person.spec.ts`: the proof of W1 on every pull
   request. Four browser contexts, the PO, Ben on a Pixel 7, Cleo and the observer Dee,
   play four rounds: a Jira round with a changed card that the PO reveals, a titled round

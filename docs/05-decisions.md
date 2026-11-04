@@ -315,6 +315,13 @@ all style or layout fails the reveal instead of lowering the rate to match. The 
 Sven's desktop. Why: Windows' nominal 4x ran layout about 8x slower (Linux 3.4x to 4.7x), so a
 rate taken at its word tested a slower phone on Windows than in CI. Slower CI runners now test
 a somewhat faster phone than before, about 20 % faster by the review's estimate.
+(2026-11-04, U3) `CardValue` measures a label only against its card (`[data-hand-card]`,
+`[data-face]`, `[data-mini-card]`, `[data-card-box]`), never its own parent, and once per
+change of label, fit or font: the observer watches the card, which a clip does not resize,
+so a check never runs again on its own answer. Before, a hand card drawn outside the hand
+(`/dev/table`) measured its corner index against the corner's shrink-wrapped box, and then
+against the clip it had just added; WebKit snapped the two a pixel apart and looped (React
+#185). `HandCard` now carries `data-hand-card` itself. A label on no card is never clipped.
 
 **Consequences.** The table answers first, and React can pause the rest for the page. The
 decision and the results arrive a few frames after the first flip, which nobody can see:
