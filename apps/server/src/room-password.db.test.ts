@@ -296,7 +296,12 @@ describe("setting, changing and removing a password", () => {
     await expect.poll(() => e.kicked.count).toBe(1);
 
     const back = client(eve);
-    expect(await back.enter(code)).toEqual({ ok: false, code: "password_required" });
+    // Told why, too (U5): the same notice as `kicked`, above the password form.
+    expect(await back.enter(code)).toEqual({
+      ok: false,
+      code: "password_required",
+      notice: "removed",
+    });
     expect((await tryPassword(code, eve, "sesame street")).status).toBe(204);
     expect((await back.enter(code)).ok).toBe(true);
     expect((await back.cmd("join", { name: "Eve", role: "voter" })).ok).toBe(true);
@@ -699,9 +704,11 @@ describe("a join commits only with the grant it needs (B1, the kick race)", () =
       await sleep(200);
       const view = await client(ana).enter(code);
       expect(view.ok && view.snapshot.room.participants.some((p) => p.id === eve.id)).toBe(false);
+      // No join in flight seated her again, so the removal still stands, and says so (U5).
       expect(await client(eve, eveOn).enter(code)).toEqual({
         ok: false,
         code: "password_required",
+        notice: "removed",
       });
       for (const e of eves) e.close();
     }
