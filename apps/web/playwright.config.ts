@@ -7,7 +7,10 @@ import { SIGN_IN_ENV, SIGN_IN_PORT } from "./e2e/signed-in.ts";
 // headers (#36: the Content Security Policy and the rest), not by `vite preview`: a policy
 // that breaks the page must fail here before it reaches poker.borden.ch. Not part of
 // `pnpm gate`; CI runs them in the `web-e2e` job. Locally they use the installed Microsoft
-// Edge and build first; in CI they use Playwright's Chromium on a fresh build.
+// Edge and build first; in CI they use Playwright's Chromium on a fresh build. The `webkit`
+// project uses Playwright's WebKit (`pnpm --filter @pp/web exec playwright install webkit`
+// once): without it a full local run fails `webkit` and then skips `performance`, which
+// depends on it.
 //
 // The server needs a Postgres it may migrate: DATABASE_URL. E2E_WEB_PORT moves the app,
 // so two worktrees can run the suite side by side. The secret is a fake. A second server,

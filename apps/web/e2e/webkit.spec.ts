@@ -39,7 +39,13 @@ async function slidIn(page: Page, name: string) {
   const dialog = page.getByRole("dialog", { name });
   await expect(dialog).toBeVisible();
   await dialog.evaluate((element) =>
-    Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+    Promise.all(
+      element
+        .getAnimations({ subtree: true })
+        .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
+        // A cancelled animation rejects its `finished`: it has ended all the same.
+        .map((animation) => animation.finished.catch(() => undefined)),
+    ),
   );
   return dialog;
 }
@@ -70,10 +76,14 @@ test.describe("WebKit", () => {
           await test.step(`${who} /dev/table${query}`, async () => {
             await at.goto(`/dev/table${query}`);
             await expectBench(at, people, problems);
-            // The labels are measured on the observer's first delivery, a frame or two on.
-            await at.evaluate(
-              () => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 50))),
-            );
+            // The labels are measured on the observer's first delivery, a frame or two on, and
+            // again when the font loads: wait for both.
+            await at.evaluate(async () => {
+              await document.fonts.ready;
+              for (let frame = 0; frame < 3; frame += 1) {
+                await new Promise((resolve) => requestAnimationFrame(resolve));
+              }
+            });
             await expectBench(at, people, problems);
           });
         }

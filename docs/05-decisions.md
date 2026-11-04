@@ -334,7 +334,7 @@ rate taken at its word tested a slower phone on Windows than in CI. Slower CI ru
 a somewhat faster phone than before, about 20 % faster by the review's estimate.
 (2026-11-04, U3) `CardValue` measures a label only against its card (`[data-hand-card]`,
 `[data-face]`, `[data-mini-card]`, `[data-card-box]`), never its own parent, and once per
-change of label, fit or font: the observer watches the card, which a clip does not resize,
+change of label, fit or font, and on each resize of the card: the observer watches the card, which a clip does not resize,
 so a check never runs again on its own answer. Before, a hand card drawn outside the hand
 (`/dev/table`) measured its corner index against the corner's shrink-wrapped box, and then
 against the clip it had just added; WebKit snapped the two a pixel apart and looped (React

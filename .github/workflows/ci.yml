@@ -139,8 +139,9 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # The browser downloads are cached per Playwright version and set of browsers (a cache
-      # is saved only when its key missed, so the key names both); their system packages
+      # The browser downloads are cached per Playwright version, distro and set of browsers (a
+      # cache is saved only when its key missed, so the key names all three; WebKit's build is
+      # per distro: change the distro in the key together with `runs-on`); their system packages
       # install every time. A dry run of install-deps (#23) found fonts missing on
       # ubuntu-26.04 on every run, so it never saved the apt step.
       - id: playwright
@@ -148,7 +149,7 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium-webkit
+          key: playwright-ubuntu-26.04-${{ steps.playwright.outputs.version }}-chromium-webkit
       - run: pnpm --filter @pp/web exec playwright install --with-deps chromium
       # The `webkit` project (U3): the table's bench and a round in the engine of every
       # iPhone browser and Safari. A step of its own, so its cost shows on every run.

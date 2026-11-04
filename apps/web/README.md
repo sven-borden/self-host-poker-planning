@@ -882,7 +882,10 @@ tracker, since a queue can hold items of both.
   `e2e/support.ts` give it one of its own.
   `e2e/security.spec.ts` checks the headers and that style props, the Web Animations
   API, the scroll lock and sonner's sheet work under the policy. Locally it builds first and uses the installed Microsoft Edge; in CI
-  (`web-e2e` job) it uses Chromium on the build from the step before. Screenshots go to
+  (`web-e2e` job) it uses Chromium on the build from the step before. The `webkit` project
+  uses Playwright's WebKit instead (`pnpm --filter @pp/web exec playwright install webkit`
+  once); without it a full local `test:e2e` fails `webkit` and then skips `performance`,
+  which depends on it. Screenshots go to
   `tmp/screenshots/` (gitignored). `e2e/mobile.spec.ts` runs phones: the iPhone 13 and
   Pixel 7 descriptors in the configured Chromium or Edge (`phone()`, which removes
   `navigator.vibrate` on the iPhone, as Safari has none, and records it elsewhere), touch
@@ -939,8 +942,8 @@ tracker, since a queue can hold items of both.
   browser once with `pnpm --filter @pp/web exec playwright install webkit`; run it alone with
   `DATABASE_URL=… pnpm --filter @pp/web exec playwright test --project=webkit` (about 25 s
   with the build). It caught `/dev/table` looping with React #185: a card label measured
-  against its own parent, which WebKit snaps a pixel apart from Chromium (`overflows` in
-  `table/cards.tsx`). Playwright's WebKit is WebKit's engine on Playwright's own port, not
+  against its own parent, which WebKit snapped a pixel narrower than the label (Chromium snaps both alike; `overflows`
+  in `table/cards.tsx`). Playwright's WebKit is WebKit's engine on Playwright's own port, not
   Safari: it proves layout, style, script and events, not Safari's toolbars and the viewport
   they resize, iOS's keyboard, touch scrolling, Safari's storage and privacy rules, its
   fonts, or Apple's GPU. Those take a real iPhone or Mac. A press inside a sheet waits for
