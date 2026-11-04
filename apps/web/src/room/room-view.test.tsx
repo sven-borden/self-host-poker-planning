@@ -404,6 +404,21 @@ describe("the join form", () => {
     expect(screen.getByText(/16 people are already here/)).toBeTruthy();
   });
 
+  it("keeps the removal notice above the room-full screen", async () => {
+    await renderView();
+    const sixteen = Array.from({ length: 16 }, (_, i): [string, string, Participant["role"]] => [
+      `u${i}`,
+      `P${i}`,
+      "voter",
+    ]);
+    show(stateWith(sixteen));
+    act(() => useRoomStore.getState().setRemoved(true));
+    expect(screen.getByRole("heading", { name: "This room is full" })).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBe(
+      "The product owner removed you from this room.",
+    );
+  });
+
   it("gives the form the focus, and says so, when a seat frees up", async () => {
     await renderView();
     const sixteen = Array.from({ length: 16 }, (_, i): [string, string, Participant["role"]] => [
