@@ -6,7 +6,6 @@ import {
   newGuest,
   newPerson,
   observerRow,
-  ownAddress,
   ROOM_PATH,
   SHOTS,
   sameUser,
@@ -27,10 +26,6 @@ test.skip(
 );
 test.beforeAll(() => {
   if (!process.env.DATABASE_URL) throw new Error("CI must run the join tests: set DATABASE_URL");
-});
-
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
 });
 
 test("three people join one room and each sees the other two seated", async ({

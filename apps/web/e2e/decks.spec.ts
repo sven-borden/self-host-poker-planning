@@ -35,10 +35,6 @@ test.beforeAll(() => {
     throw new Error("CI must run the deck tests: set DATABASE_URL");
   }
 });
-test.beforeEach(async ({ page }) => {
-  await page.setExtraHTTPHeaders(ownAddress());
-});
-
 const tableLive = (page: Page) => page.locator("[data-table-live]");
 const settings = (page: Page) => page.getByRole("dialog", { name: "Room settings" });
 const deckGroup = (page: Page) => settings(page).getByRole("radiogroup", { name: "Deck" });

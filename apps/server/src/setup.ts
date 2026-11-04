@@ -55,6 +55,8 @@ export interface SetupTuning {
   retentionNow?: () => number;
   /** Several instances: how often the presence sweep runs (`PRESENCE_SWEEP_MS`). */
   presenceSweepMs?: number;
+  /** Guest sign-ins per address (`ANONYMOUS_SIGN_IN_LIMIT`, 60 a minute, by default). */
+  anonymousSignInLimit?: RateLimitRule;
 }
 
 export async function setupServer(
@@ -107,7 +109,15 @@ export async function setupServer(
   });
   let auth: ReturnType<typeof createAuth>;
   try {
-    auth = createAuth(config, database.db, logger, limiter, links, deletions);
+    auth = createAuth(
+      config,
+      database.db,
+      logger,
+      limiter,
+      links,
+      deletions,
+      tuning.anonymousSignInLimit,
+    );
   } catch (error) {
     await database.close();
     throw error;

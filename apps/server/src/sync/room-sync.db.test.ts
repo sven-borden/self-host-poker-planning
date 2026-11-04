@@ -52,8 +52,17 @@ let ada: Guest;
 let bob: Guest;
 let cy: Guest;
 
+/**
+ * Every block signs in guests of its own from one address, about 41 in a run: the limit
+ * (`ANONYMOUS_SIGN_IN_LIMIT`, 60 a minute) would leave the next few blocks no room.
+ */
+const SIGN_IN_HEADROOM = { window: 60, max: 1_000 } as const;
+
 async function startInstance(tuning: SetupTuning = {}): Promise<Instance> {
-  const setup = await setupServer(config, logs.logger, undefined, tuning);
+  const setup = await setupServer(config, logs.logger, undefined, {
+    anonymousSignInLimit: SIGN_IN_HEADROOM,
+    ...tuning,
+  });
   const server = createServer(config, { ...setup.deps, logger: logs.logger });
   const { port } = await server.listen();
   const instance = { ...setup, server, base: `http://localhost:${port}` };
@@ -71,8 +80,8 @@ beforeAll(async () => {
  * New guests for each `describe` block, in its own `beforeAll`. A person's message bucket
  * (20, refilling at 10 a second) is shared by all their sockets, so a block that spends
  * Bob's would leave the next block `rate_limited`; with its own guests no block depends
- * on the buckets the blocks before it left, and none has to wait for a refill. Sign-ins
- * stay under the 60 a minute an address may make (`ANONYMOUS_SIGN_IN_LIMIT`).
+ * on the buckets the blocks before it left, and none has to wait for a refill. The test
+ * server takes more sign-ins an address than production (`SIGN_IN_HEADROOM`).
  */
 async function freshGuests(): Promise<void> {
   [ada, bob, cy] = await Promise.all([

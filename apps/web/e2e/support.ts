@@ -42,7 +42,8 @@ let addresses = 0;
  * A client address of its own, as an X-Forwarded-For header: the e2e server trusts one
  * proxy (playwright.config.ts), so each person here counts alone against the server's
  * per-address limits (20 rooms in 10 minutes, 60 sign-ins a minute), which the whole
- * suite from one machine would otherwise share.
+ * suite from one machine would otherwise share. The default context gets one per test
+ * (e2e/fixtures.ts); a context a test makes itself takes one here (`newPerson`, `phone`).
  */
 export function ownAddress(): Record<string, string> {
   const n = ++addresses;
@@ -371,6 +372,37 @@ export async function dbQuery<Row>(sql: string, params: unknown[]): Promise<Row[
   } finally {
     await client.end();
   }
+}
+
+/**
+ * Runs `sql` (a `for update`, say) in a transaction left open, so its locks hold until the
+ * returned `release` commits it. Call `release` in a `finally`: a lock left behind blocks the
+ * room for the rest of the run. `rows` is the query's row count, so a test can check that it
+ * locked what it meant to (a `for update` that matched nothing locks nothing).
+ */
+export async function holdInTransaction(
+  sql: string,
+  params: unknown[],
+): Promise<{ rows: number; release: () => Promise<void> }> {
+  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  client.on("error", () => {});
+  await client.connect();
+  let rows: number;
+  try {
+    await client.query("begin");
+    rows = (await client.query(sql, params)).rowCount ?? 0;
+  } catch (error) {
+    await client.end();
+    throw error;
+  }
+  const release = async () => {
+    try {
+      await client.query("commit");
+    } finally {
+      await client.end();
+    }
+  };
+  return { rows, release };
 }
 
 /** A finished round as the history request answers it (#33). */
