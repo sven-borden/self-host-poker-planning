@@ -132,6 +132,10 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 - WebKit from U3 (PR #121): `/dev/table` looped there (a card label measured against its own
   clip); real rooms never did. A label now measures only against its card. A `webkit` project
   plays the bench and a whole round in CI (about 1.5 min more). Live at 659098b.
+- Removed while offline from U5 (PR #122): the room keeps who was removed for 24 h (at most 32,
+  never someone seated), and that person's own `enter` reply carries `notice: "removed"`, so the
+  removal notice shows above the join, password or room-full screen. The export names the
+  removal time. Migration 0013 (a GIN index for the account lookups). Live at 2984121.
 - The decisions are in `docs/05-decisions.md`.
 
 - `packages/domain` has decks, custom-deck validation, the range generator and
@@ -144,7 +148,7 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 
 - **Agents again since 2026-11-03** (Sven: "start with agents, you orchestrate"), no end date:
   the upkeep list below, then stop and report.
-- U5 (PR #122) waits for CI after `main` went in; U6 starts once it merges. U1 to U4 merged.
+- U6 (lighter pages) builds, the last upkeep item. U1 to U5 merged.
 - #38 is merged and stays open until Sven's run on a fresh subscription.
 - #54 and #55 are merged and stay open until the live checks at Sven's site and organisation.
 - #47 is merged and stays open until the sign-ins work on poker.borden.ch.
@@ -152,11 +156,9 @@ about 20 kB. History: `docs/06-build-log/` (current: `2026-11.md`). Working agre
 ## Upkeep (no GitHub issues: creating them was refused, so each is a `chore/uN-…` PR)
 
 In this order; pairs run together where they touch different parts.
-- **U1 to U4, merged** (PRs #119, #118, #121, #120): see Live. Left open from U1:
+- **U1 to U5, merged** (PRs #119, #118, #121, #120, #122): see Live. Left open from U1:
   `room-password.spec.ts:291` stalled once in 7 local runs; it attaches a trace on failure.
-- **U5, a person removed while their socket was down** comes back to the join form with no
-  notice (accepted at #30's review): tell them, in en, fr and de.
-- **U6, lighter pages**, after U5 (both touch the catalogues): the settings and history panels'
+- **U6, lighter pages:** the settings and history panels'
   copy loads with the panel; nothing uses Motion's `m` any more (ADR-008), so check whether
   `motion` and `AppMotionConfig` can go.
 
