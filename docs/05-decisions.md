@@ -178,8 +178,8 @@ settings, the history with its summary and exports, the queue with its trackers,
 popover and "My rooms" are parts of the catalog (`src/i18n/parts/`, a chunk per part and per
 language, `copy-parts.ts`), which the panel's loader awaits beside its own chunk (`loadCopy`), so
 it never shows a key or English first. A change of language loads the parts of the panels opened
-so far before the page switches. Keys keep their dotted place, so `t` and its types do not
-change. A key that anything outside its panel shows stays in the catalog, and
+so far before the page switches. Keys keep their dotted place, so calls to `t` do not change;
+its types add the English parts. A key that anything outside its panel shows stays in the catalog, and
 `scripts/check-copy-parts.ts` fails the build when a built chunk outside the panel names one.
 The room route went from 190.3 to 185.4 kB gzipped, the landing page from 168.7 to 163.8 kB, and
 the French and German catalogs from 16 to 10 kB each.

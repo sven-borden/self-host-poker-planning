@@ -30,9 +30,10 @@ export const LANDING_ROUTE = "src/routes/index.tsx";
 
 /**
  * The routes the budget covers, each named as the build log prints it, with its budget: the
- * route's last measured size plus 4 %, rounded up to a whole kB, the headroom the image's size
- * check keeps (240 of its 250 MB). Measured in U6: the room route 185.4 kB, the landing page
- * 163.8 kB. A change that needs more raises the figure here and says why in the build log.
+ * route's last measured size plus a 4 % margin, rounded up to a whole kB. The margin was chosen
+ * in U6, enough for a few small changes, small enough that growth is noticed. Measured in U6: the
+ * room route 185.4 kB, the landing page 163.8 kB. A PR that adds more than the margin raises its
+ * route's budget here and says why, in the PR and the build log.
  */
 export const BUDGET_ROUTES = [
   { name: "the room route", source: ROOM_ROUTE, budget: 193_000 },

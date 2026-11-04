@@ -42,7 +42,7 @@ Source: `input.md`. Decisions: `docs/05-decisions.md`.
 | R17 | Optionally edit a vote after reveal | Setting, off by default; changed votes are marked; named rounds only | W2 |
 | R18 | Efficient, professional design around a table | The boardroom table (ADR-005) | W0–W1 |
 | R19 | Jira / Azure DevOps paste or connector, later | Paste first, then connectors | W6 |
-| R20 | Top-notch card animations | Motion for React and a motion spec (ADR-008) | W1, W4 |
+| R20 | Top-notch card animations | CSS and the Web Animations API, by a motion spec (ADR-008) | W1, W4 |
 | R21 | Paid branding later; base free | A free tool for now; paid branding parked (ADR-015, ADR-033) | W7, parked |
 | R22 | Background music while waiting, later | Original loops composed in code | W4 |
 | R23 | Light and dark mode | Design tokens, system default plus toggle | W0 |

@@ -772,10 +772,10 @@ tracker, since a queue can hold items of both.
 - Budget: `pnpm build` runs `scripts/check-budget.ts`, which reads the Vite manifest and
   fails when the initial JavaScript of the room route or of the landing page (entry, route
   chunk and their static imports) exceeds its budget in `BUDGET_ROUTES`: the route's last
-  measured size plus 4 %, rounded up to a whole kB (the headroom of the image's 250 MB check),
-  never above the architecture's 200 kB ceiling. Since U6: the room route 193 kB (185.4
-  measured), the landing page 171 kB (163.8). A change that needs more raises the figure and
-  says why in the build log. Lazy chunks (the panels and their words, the toaster, the French
+  measured size plus a 4 % margin chosen in U6, rounded up to a whole kB, never above the
+  architecture's 200 kB ceiling. Since U6: the room route 193 kB (185.4 measured), the landing
+  page 171 kB (163.8). A PR that adds more than the margin raises its route's budget in
+  `BUDGET_ROUTES` and says why, in the PR and the build log. Lazy chunks (the panels and their words, the toaster, the French
   and German catalogs) do not count. `scripts/check-copy-parts.ts` runs next (see "i18n").
 - Nothing connects at module load: `createSocket()` returns an unconnected socket.
   `connectWhenIdentified(socket)` connects it once `ensureIdentity({ retry: true })`
@@ -1065,9 +1065,12 @@ fetches that language alone. A part holds whole keys at their usual place (`sett
 English parts (`PartMessages`), so components call `t` as before. The panel's loader awaits
 `loadCopy(part)` beside its chunk (`settings-button.tsx`, `history-button.tsx`,
 `queue-button.tsx`, `sound-button.tsx`, the `/rooms` route's `loader`), so it shows once both
-are in, never a key or English first; a part that cannot load fails like the chunk (the
-panel's `loadFailed` toast). `loadCopy` loads the part in the page's language, and again in a
-language picked meanwhile; from then on `changeLanguage` loads the parts of every panel opened
+are in, never a key or English first. A part that cannot load fails like the chunk: settings,
+history and queue show their `loadFailed` toast, the sound button stays empty, and `/rooms`
+shows the route's error page. `loadCopy` loads the part in the page's language, and again in a
+language picked meanwhile; while the page starts (`startLanguage`), in the language it starts
+in, fetched beside the catalog, so a French start on `/rooms` fetches the French part alone and
+a part that fails then fails its page while the page speaks French; from then on `changeLanguage` loads the parts of every panel opened
 so far before the page switches, so an open panel changes language with the page. A key that
 anything outside the panel shows (its button, the table, the live region, another panel)
 stays in the catalog: `settings.openOwner` and `settings.loadFailed` belong to the header's
