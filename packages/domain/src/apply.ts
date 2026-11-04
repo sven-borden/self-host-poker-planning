@@ -10,6 +10,7 @@
  * 3. On success, settle the round: drop the votes of people who are no longer voters
  *    (while Voting), then reveal when every eligible voter has voted. `moveGuest` only
  *    drops: a sign-in is nothing anyone at the table did, so it reveals nothing itself.
+ *    A state that changed also drops the removals older than a day (`removed.ts`, U5).
  */
 import {
   canonicalDeck,
@@ -30,6 +31,7 @@ import {
   removeFromQueue,
 } from "./apply-queue.ts";
 import { cleanSubject } from "./apply-subject.ts";
+import { addRemoval, dropRemoval, moveRemoval, pruneRemovals } from "./removed.ts";
 import { isAvatarId } from "./avatars.ts";
 import type {
   AccountRemoval,
@@ -115,12 +117,12 @@ export function apply(state: RoomState, command: Command, ctx: ApplyContext): Ap
   const step = run(resolved.state, command, ctx);
   if ("error" in step) return { ok: false, error: step.error, ...resolved };
   const settled = settle(step.state, ctx.now, command.type !== "moveGuest");
+  // Only a write prunes: a command that changes nothing returns the input itself.
+  const next = settled.state === state ? state : pruneRemovals(settled.state, ctx.now);
   const causes = [...resolved.causes, ...step.causes, ...settled.causes];
   // The round the deadline ended is the revealed one; the command can only abandon the next.
   const ended = resolved.ended ?? step.ended;
-  return ended
-    ? { ok: true, state: settled.state, causes, ended }
-    : { ok: true, state: settled.state, causes };
+  return ended ? { ok: true, state: next, causes, ended } : { ok: true, state: next, causes };
 
   function resolveDeadline(s: RoomState): Done {
     const round = s.round;
@@ -162,7 +164,11 @@ function run(state: RoomState, command: Command, { actor, now }: ApplyContext): 
     case "kick":
       if (command.who === actor) return refuse("cannot_kick_self");
       if (!participant(state, command.who)) return refuse("unknown_participant");
-      return done(removeParticipant(state, command.who), { type: "kicked", who: command.who });
+      // Remembered for their next `enter`: their socket may be down and miss `kicked` (U5).
+      return done(addRemoval(removeParticipant(state, command.who), command.who, now), {
+        type: "kicked",
+        who: command.who,
+      });
     case "startRound": {
       // Pressed for a round that is gone: a countdown started the next item under the press.
       if (command.round !== undefined && command.round !== (state.round?.number ?? 0)) {
@@ -317,8 +323,10 @@ function join(
     joinedAt: now,
     connected: true,
   };
+  // Back in the room: an old removal is never told again (U5).
+  const back = dropRemoval(state, actor);
   return done(
-    { ...state, participants: { ...state.participants, [actor]: person } },
+    { ...back, participants: { ...back.participants, [actor]: person } },
     { type: "joined", who: actor },
   );
 }
@@ -446,9 +454,12 @@ function moveGuest(state: RoomState, guest: UserId, account: UserId): Step {
   const movesOwner = state.ownerId === guest;
   const movesKeeper = state.keeperId === guest;
   const votes = round && guestVote ? movedVotes(round, guest, account, guestVote) : round?.votes;
-  if (!seat && !movesOwner && !movesKeeper && votes === round?.votes) return done(state);
+  const removal = moveRemoval(state, guest, account);
+  if (!seat && !movesOwner && !movesKeeper && votes === round?.votes && removal === state) {
+    return done(state);
+  }
   const next: RoomState = {
-    ...state,
+    ...removal,
     ...(movesOwner && { ownerId: account }),
     ...(movesKeeper && { keeperId: account }),
     participants: movedSeat(state, guest, account),
@@ -525,14 +536,16 @@ function removeAccount(state: RoomState, removal: AccountRemoval): Step {
   const card = round ? ownVote(round, who) : undefined;
   const keeper = keeperOf(state);
   const keeps = keeper === who;
-  if (!seat && !card && !keeps && state.ownerId !== who) return done(state);
+  // A removal the PO made names the person too (U5): it goes with the rest.
+  const unlisted = dropRemoval(state, who);
+  if (!seat && !card && !keeps && state.ownerId !== who && unlisted === state) return done(state);
   const participants = omit(state.participants, who);
   if (keeps && !vacate && Object.keys(participants).length === 0) return done(state);
   const taker = keeps ? heirsOf(state, who, { chosen: heir, mayTake })[0]?.id : undefined;
   const roleBack = mayTake === undefined || mayTake.includes(keeper) ? keeper : vacant;
   const owner = taker ?? (state.ownerId !== who ? state.ownerId : keeps ? vacant : roleBack);
   const next: RoomState = {
-    ...state,
+    ...unlisted,
     ownerId: owner,
     ...(keeps && { keeperId: taker ?? vacant }),
     participants,
