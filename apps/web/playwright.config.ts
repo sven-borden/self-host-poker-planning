@@ -7,7 +7,10 @@ import { SIGN_IN_ENV, SIGN_IN_PORT } from "./e2e/signed-in.ts";
 // headers (#36: the Content Security Policy and the rest), not by `vite preview`: a policy
 // that breaks the page must fail here before it reaches poker.borden.ch. Not part of
 // `pnpm gate`; CI runs them in the `web-e2e` job. Locally they use the installed Microsoft
-// Edge and build first; in CI they use Playwright's Chromium on a fresh build.
+// Edge and build first; in CI they use Playwright's Chromium on a fresh build. The `webkit`
+// project uses Playwright's WebKit (`pnpm --filter @pp/web exec playwright install webkit`
+// once): without it a full local run fails `webkit` and then skips `performance`, which
+// depends on it.
 //
 // The server needs a Postgres it may migrate: DATABASE_URL. E2E_WEB_PORT moves the app,
 // so two worktrees can run the suite side by side. The secret is a fake. A second server,
@@ -24,6 +27,9 @@ if (!databaseUrl) {
     "The e2e suite runs against the real server: set DATABASE_URL to a Postgres it may migrate",
   );
 }
+// Chromium for every project but WebKit's: Edge locally, Playwright's Chromium in CI. A
+// project cannot unset a `channel` from the shared `use`, so each project names its browser.
+const chromium = { browserName: "chromium", ...(ci ? {} : { channel: "msedge" }) } as const;
 const serve = "pnpm --filter @pp/server exec tsx src/main.ts";
 const serveWithFakeProviders =
   "pnpm --filter @pp/server exec tsx --import ./src/fake-oidc-start.ts --import ./src/fake-jira-start.ts --import ./src/fake-azure-devops-start.ts src/main.ts";
@@ -54,25 +60,32 @@ export default defineConfig({
   workers: ci ? 2 : undefined,
   reporter: ci ? [["list"], ["html", { open: "never" }]] : "list",
   projects: [
-    { name: "e2e", testIgnore: /reveal-performance/ },
+    { name: "e2e", testIgnore: [/reveal-performance/, /webkit\.spec/], use: chromium },
+    // The app in Playwright's WebKit (U3): the table's bench and one round, desktop and
+    // iPhone, beside the e2e project, in CI too. `pnpm exec playwright install webkit` once;
+    // `--project=webkit` runs it alone.
+    {
+      name: "webkit",
+      testMatch: /webkit\.spec/,
+      use: { browserName: "webkit" },
+    },
     // Long tasks mean nothing on a machine busy with other tests: this one runs alone,
     // after them (#43). The worst task sits a little under 50 ms, so a stray 51 from the
     // system is one more try; a real regression fails all three. `--no-deps` runs it alone.
     {
       name: "performance",
       testMatch: /reveal-performance/,
-      dependencies: ["e2e"],
+      dependencies: ["e2e", "webkit"],
       fullyParallel: false,
       workers: 1,
       retries: 2,
+      use: chromium,
     },
   ],
   use: {
     baseURL: `http://localhost:${PORT}`,
     // The same browser language on every machine; a test that needs another says so.
     locale: "en-US",
-    browserName: "chromium",
-    ...(ci ? {} : { channel: "msedge" }),
     // A failed test keeps its trace in test-results/ (`pnpm exec playwright show-trace
     // <trace.zip>`); a passing one does not. The trace's screencast covers every page,
     // also those of contexts a test makes itself, which a video would miss. CI uploads
