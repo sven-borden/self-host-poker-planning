@@ -2,7 +2,7 @@ import { expect, type Page, test } from "./fixtures.ts";
 import { createRoom, handCard, join, newPerson, phone, seats } from "./support.ts";
 
 // The app in WebKit (U3), the engine of every browser on an iPhone and of Safari on a Mac.
-// `/dev/table` crashed here with React #185 (a card label measured against its own clip,
+// `/dev/table` crashed here with React error 185 (a card label measured against its own clip,
 // in and out without end) while Chromium drew it, and no Safari had run the app. This
 // project runs the table's bench and one whole round, at a desktop's size and on an
 // iPhone 13, in Playwright's WebKit, and fails on any uncaught error (e2e/fixtures.ts) and

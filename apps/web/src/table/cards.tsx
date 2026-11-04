@@ -121,7 +121,7 @@ const CARD_BOX = "[data-hand-card], [data-face], [data-mini-card], [data-card-bo
  * box shrink-wraps the label, and once clipped the parent is the clip itself, so the check
  * would read its own answer. WebKit snaps a 5.01 px label at a fractional offset to an
  * `offsetWidth` of 6 and its 5.01 px corner to a `clientWidth` of 5: clipped, then 5 against
- * 5, unclipped, without end (React #185 on `/dev/table`, whose hand cards had no box).
+ * 5, unclipped, without end (React error 185 on `/dev/table`, whose hand cards had no box).
  */
 function overflows(label: HTMLElement, card: HTMLElement): boolean {
   if (card.clientWidth === 0) return false;

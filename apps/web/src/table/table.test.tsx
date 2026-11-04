@@ -322,7 +322,7 @@ describe("cards", () => {
 
   it("measures a label once per change, even when its clip would change the answer (U3)", () => {
     // WebKit snapped a corner index's width one pixel wider than the corner it sat in, and
-    // measured against the clip once clipped: in, out, in, until React gave up (#185). Here
+    // measured against the clip once clipped: in, out, in, until React gave up (error 185). Here
     // the label reads 20 px in the open and 15 px inside its clip, on an 18 px card: it is
     // clipped once and stays clipped, with no second look.
     const offset = vi
