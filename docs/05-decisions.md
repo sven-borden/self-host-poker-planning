@@ -93,6 +93,17 @@ may use either, or the Web Animations API; whichever they pick, the budget check
 **Amended (#43, 2026-11-01).** The whole motion spec runs on CSS and the Web Animations API:
 no component uses Motion's `m`. See ADR-019 for how a reveal is drawn.
 
+**Amended (U6, 2026-11-04): Motion is gone.** Since #43 nothing rendered a Motion component, so
+`AppMotionConfig` (`MotionConfig reducedMotion="user"`) and `MotionFeatures` (`LazyMotion`)
+wrapped nothing: no features chunk was ever fetched, and the provider still cost both first loads
+0.3 kB gzipped. Reduced motion never went through it: every animation reads
+`prefers-reduced-motion` itself, through a `motion-reduce:` variant, the reduced-motion block of
+`styles.css` or `matchMedia` before `Element.animate`, and the specs that assert it are unchanged.
+`motion` left the dependencies with `pnpm remove`, with Biome's rule against its import;
+`src/motion/motion.tsx` keeps `RiseIn` (CSS) and the brief's easing and fade length. A future
+spring or layout animation starts from the Web Animations API, and brings a library back only
+with a measured reason.
+
 ## ADR-009: Guest-first identity with Better Auth
 
 **Decision.** Every visitor gets an anonymous Better Auth session: a real user row
@@ -161,6 +172,17 @@ is one less thing to keep straight. The words each language uses are in
 imperatives (at a sentence start, or after "et", "und", "bitte") in a catalog, and on a German
 Sie written small in an order or before the reader's own things. The lists are words, not
 grammar: a verb that is not on them gets through, so a review reads the screens too.
+
+**Amended 2026-11-04 (U6).** The words only a lazy panel shows load with that panel: the room
+settings, the history with its summary and exports, the queue with its trackers, the sound
+popover and "My rooms" are parts of the catalog (`src/i18n/parts/`, a chunk per part and per
+language, `copy-parts.ts`), which the panel's loader awaits beside its own chunk (`loadCopy`), so
+it never shows a key or English first. A change of language loads the parts of the panels opened
+so far before the page switches. Keys keep their dotted place, so `t` and its types do not
+change. A key that anything outside its panel shows stays in the catalog, and
+`scripts/check-copy-parts.ts` fails the build when a built chunk outside the panel names one.
+The room route went from 190.3 to 185.4 kB gzipped, the landing page from 168.7 to 163.8 kB, and
+the French and German catalogs from 16 to 10 kB each.
 
 ## ADR-013: pnpm monorepo and the serial issue loop
 

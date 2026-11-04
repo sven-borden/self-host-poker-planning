@@ -112,7 +112,7 @@ pnpm workspaces, TypeScript strict, Biome, Vitest, Playwright.
 
 ```
 apps/
-  web/        Vite + React 19 SPA (TanStack Router, Zustand, Tailwind v4, shadcn/ui, Motion, own typed i18n)
+  web/        Vite + React 19 SPA (TanStack Router, Zustand, Tailwind v4, shadcn/ui, own typed i18n)
   server/     Hono + Socket.IO + Better Auth + Drizzle; serves the built SPA
 packages/
   domain/     pure TypeScript: state machine, decks, statistics, projections. No I/O.
@@ -1565,7 +1565,8 @@ language, and an unknown code gets a generic one.
 ## 14. Budgets
 
 - Initial JavaScript under 200 KB gzipped for the room route and for the landing page
-  (`apps/web/scripts/check-budget.ts` checks both after every build).
+  (`apps/web/scripts/check-budget.ts` checks both after every build, each against its own
+  tighter budget: its last measured size plus 4 %, 193 and 171 kB since U6).
 - Command to snapshot under 150 ms p95 on one instance.
 - Reveal with 16 seats at 60 fps on a mid-range phone: no long task of 50 ms or more
   (`apps/web/e2e/reveal-performance.spec.ts`, ADR-019).
